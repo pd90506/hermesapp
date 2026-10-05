@@ -1,0 +1,13 @@
+// Shared build settings for both app targets (referenced from project.yml).
+//
+// Signing: do NOT put your team id or real bundle prefix here. Copy
+// Local.xcconfig.example to Local.xcconfig (git-ignored) and set them there.
+
+// Placeholder reverse-DNS prefix; targets append .mac / .ios.
+HERMES_BUNDLE_ID_PREFIX = com.example.hermesapp
+
+// Empty = choose a team in Xcode, or set it in Local.xcconfig.
+DEVELOPMENT_TEAM =
+
+// Optional per-developer overrides (missing file is fine).
+#include? "Local.xcconfig"

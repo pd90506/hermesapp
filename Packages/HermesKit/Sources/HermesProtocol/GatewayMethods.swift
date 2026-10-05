@@ -1,0 +1,309 @@
+import Foundation
+
+/// Client→server method names used by the MVP client.
+/// Source: `tui_gateway/contracts/` (see `docs/protocol.md` for citations).
+public enum GatewayMethod {
+    public static let clientCapabilities = "client.capabilities"
+    /// Answered inline by the WS read loop (`tui_gateway/ws.py`); used as heartbeat.
+    public static let gatewayPing = "gateway.ping"
+    public static let sessionList = "session.list"
+    public static let sessionCreate = "session.create"
+    public static let sessionResume = "session.resume"
+    public static let sessionActivate = "session.activate"
+    public static let sessionHistory = "session.history"
+    public static let sessionEventsSince = "session.events.since"
+    public static let sessionClose = "session.close"
+    public static let sessionInterrupt = "session.interrupt"
+    public static let promptSubmit = "prompt.submit"
+    public static let approvalRespond = "approval.respond"
+    public static let clarifyLock = "clarify.lock"
+    public static let requestAnswer = "request.answer"
+}
+
+// MARK: - client.capabilities
+
+public struct ClientCapabilitiesParams: Sendable, Hashable, Codable {
+    /// Must be `true` or the gateway never sends approval/clarify requests to
+    /// this connection (`tui_gateway/server_requests.py:30-34`).
+    public var serverRequests: Bool
+
+    public init(serverRequests: Bool = true) { self.serverRequests = serverRequests }
+
+    enum CodingKeys: String, CodingKey { case serverRequests = "server_requests" }
+}
+
+public struct ClientCapabilitiesResult: Sendable, Hashable, Codable {
+    /// Server→client request methods this backend may send.
+    public var serverRequests: [String]
+    public var declinesNotShown: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case serverRequests = "server_requests"
+        case declinesNotShown = "declines_not_shown"
+    }
+}
+
+// MARK: - session.*
+
+public struct SessionListParams: Sendable, Hashable, Codable {
+    public var limit: Int?
+    public var includeHidden: Bool?
+
+    public init(limit: Int? = nil, includeHidden: Bool? = nil) {
+        self.limit = limit
+        self.includeHidden = includeHidden
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case limit
+        case includeHidden = "include_hidden"
+    }
+}
+
+public struct SessionListResult: Sendable, Hashable, Codable {
+    public var sessions: [SessionSummary]
+}
+
+public struct SessionCreateParams: Sendable, Hashable, Codable {
+    public var title: String?
+    public var cwd: String?
+    public var model: String?
+    public var provider: String?
+    /// Free-form origin tag; the gateway stores it on the session row.
+    public var source: String?
+    public var closeOnDisconnect: Bool?
+
+    public init(title: String? = nil, cwd: String? = nil, model: String? = nil, provider: String? = nil,
+                source: String? = nil, closeOnDisconnect: Bool? = nil) {
+        self.title = title
+        self.cwd = cwd
+        self.model = model
+        self.provider = provider
+        self.source = source
+        self.closeOnDisconnect = closeOnDisconnect
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case title, cwd, model, provider, source
+        case closeOnDisconnect = "close_on_disconnect"
+    }
+}
+
+public struct SessionCreateResult: Sendable, Hashable, Codable {
+    /// Runtime id for subsequent calls.
+    public var sessionID: String
+    /// Durable DB key. The row only exists after the first prompt.
+    public var storedSessionID: String
+    public var messageCount: Int
+    public var messages: [TranscriptMessage]
+    public var info: SessionLiveInfo?
+
+    enum CodingKeys: String, CodingKey {
+        case messages, info
+        case sessionID = "session_id"
+        case storedSessionID = "stored_session_id"
+        case messageCount = "message_count"
+    }
+
+    public var snapshot: LiveSessionSnapshot {
+        LiveSessionSnapshot(sessionID: sessionID, messages: messages, info: info,
+                            storedSessionID: storedSessionID, running: false)
+    }
+}
+
+public struct SessionResumeParams: Sendable, Hashable, Codable {
+    /// Stored session id (or exact title).
+    public var sessionID: String
+    public var source: String?
+    public var closeOnDisconnect: Bool?
+
+    public init(sessionID: String, source: String? = nil, closeOnDisconnect: Bool? = nil) {
+        self.sessionID = sessionID
+        self.source = source
+        self.closeOnDisconnect = closeOnDisconnect
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case source
+        case sessionID = "session_id"
+        case closeOnDisconnect = "close_on_disconnect"
+    }
+}
+
+/// Params for the many methods that take only a session id
+/// (`session.history`, `session.close`, `session.interrupt`, `session.activate`).
+public struct SessionIDParams: Sendable, Hashable, Codable {
+    public var sessionID: String
+
+    public init(sessionID: String) { self.sessionID = sessionID }
+
+    enum CodingKeys: String, CodingKey { case sessionID = "session_id" }
+}
+
+/// `session.activate`: re-attaches this connection to a live session (cancels
+/// its orphan reap and rebinds event delivery, `methods_session.py:1160-1172`).
+public struct SessionActivateParams: Sendable, Hashable, Codable {
+    public var sessionID: String
+    /// Skip the DB history read when only the reattach is wanted.
+    public var omitMessages: Bool?
+
+    public init(sessionID: String, omitMessages: Bool? = nil) {
+        self.sessionID = sessionID
+        self.omitMessages = omitMessages
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case omitMessages = "omit_messages"
+    }
+}
+
+public struct SessionHistoryResult: Sendable, Hashable, Codable {
+    public var count: Int
+    public var messages: [TranscriptMessage]
+}
+
+public struct SessionEventsSinceParams: Sendable, Hashable, Codable {
+    public var sessionID: String
+    public var lastSeen: Int?
+
+    public init(sessionID: String, lastSeen: Int?) {
+        self.sessionID = sessionID
+        self.lastSeen = lastSeen
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case lastSeen = "last_seen"
+    }
+}
+
+public struct SessionEventsSinceResult: Sendable, Hashable, Codable {
+    /// Inner `params` objects of the replayed `event` notifications, each with its `seq`.
+    public var events: [GatewayEvent]
+    public var latestSeq: Int
+    /// Events were evicted from the replay ring; refetch state with `session.resume`.
+    public var truncated: Bool
+    public var count: Int
+    /// The backend's replay epoch (compare with `gateway.ready.replay_epoch`).
+    public var epoch: String
+    public var openRequests: [OpenRequestEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case events, truncated, count, epoch
+        case latestSeq = "latest_seq"
+        case openRequests = "open_requests"
+    }
+}
+
+public struct SessionCloseResult: Sendable, Hashable, Codable {
+    public var closed: Bool
+}
+
+public struct SessionInterruptResult: Sendable, Hashable, Codable {
+    /// `interrupted` | `not_interrupted`
+    public var status: String
+    public var interrupted: Bool?
+}
+
+// MARK: - prompt.submit
+
+public struct PromptSubmitParams: Sendable, Hashable, Codable {
+    public var sessionID: String
+    public var text: String
+
+    public init(sessionID: String, text: String) {
+        self.sessionID = sessionID
+        self.text = text
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case sessionID = "session_id"
+    }
+}
+
+public struct PromptSubmitResult: Sendable, Hashable, Codable {
+    /// `streaming` (turn started) | `queued` | `steered` | `redirected` (session was busy).
+    public var status: String?
+    public var userRowID: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case userRowID = "user_row_id"
+    }
+}
+
+// MARK: - Server-request answer side channels
+
+/// `approval.respond` — alternative to answering the `approval` server
+/// request frame directly. The frame response is the primary path.
+public struct ApprovalRespondParams: Sendable, Hashable, Codable {
+    public var sessionID: String
+    public var choice: ApprovalChoice
+    public var all: Bool?
+    public var requestID: String?
+
+    public init(sessionID: String, choice: ApprovalChoice, all: Bool? = nil, requestID: String? = nil) {
+        self.sessionID = sessionID
+        self.choice = choice
+        self.all = all
+        self.requestID = requestID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case choice, all
+        case sessionID = "session_id"
+        case requestID = "request_id"
+    }
+}
+
+public struct ApprovalRespondResult: Sendable, Hashable, Codable {
+    public var resolved: Int
+}
+
+/// `clarify.lock` — lock one answer of a batch clarify request.
+public struct ClarifyLockParams: Sendable, Hashable, Codable {
+    public var requestID: String
+    public var questionID: String
+    /// `nil` = skipped; sent as JSON `null` (`contracts/prompt_voice.py:254`).
+    public var answer: String?
+
+    public init(requestID: String, questionID: String, answer: String?) {
+        self.requestID = requestID
+        self.questionID = questionID
+        self.answer = answer
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case answer
+        case requestID = "request_id"
+        case questionID = "question_id"
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(requestID, forKey: .requestID)
+        try container.encode(questionID, forKey: .questionID)
+        try container.encode(answer, forKey: .answer)  // explicit null, not omitted
+    }
+}
+
+/// Result of `clarify.lock` and `request.answer`.
+public struct RequestLockResult: Sendable, Hashable, Codable {
+    /// `ok` | `expired`
+    public var status: String
+    public var remaining: [String]?
+}
+
+/// `request.answer` — answer an open server request this connection never
+/// received as a frame (e.g. listed in `open_requests`).
+public struct RequestAnswerParams: Sendable, Hashable, Codable {
+    public var id: String
+    public var result: JSONValue
+
+    public init(id: String, result: JSONValue) {
+        self.id = id
+        self.result = result
+    }
+}

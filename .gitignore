@@ -1,0 +1,44 @@
+# --- macOS / editors ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+*.swp
+*~
+.vscode/
+.idea/
+
+# --- Xcode (project is generated from project.yml by XcodeGen; never commit it) ---
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+build/
+timeline.xctimeline
+playground.xcworkspace
+
+# --- Swift Package Manager (both hosts) ---
+.build/
+.swiftpm/
+Package.resolved.bak
+/Packages/*/.build/
+/Packages/*/.swiftpm/
+
+# --- Local tooling / secrets ---
+# Per-developer signing overrides (see README "Signing").
+Config/Local.xcconfig
+# Info.plist / entitlements written by `xcodegen generate` from project.yml.
+Config/Generated/
+.env
+.env.*
+*.p12
+*.mobileprovision
+*.provisionprofile

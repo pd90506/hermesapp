@@ -83,12 +83,35 @@ one of two forms:
   - `POST /auth/native/token {"code","code_verifier"}` returns
     `{access_token, refresh_token, token_type:"Bearer", expires_at, provider, user_id}`
     (`routes.py:499-516`). The code is consumed even when the request fails.
-  - `POST /auth/native/refresh {"refresh_token","provider"}` returns the same shape
-    (`routes.py:519-547`).
-  - Use the token as `Authorization: Bearer` for the ticket mint.
-  - **App mode "Access token (ticket)"** takes such a token. The package has the PKCE helpers
-    (`PKCE`, `DashboardClient.nativeAuthorizeURL/exchangeNativeCode/refreshNativeTokens`). The
-    loopback-listener UI is not built yet.
+  - `POST /auth/native/refresh {"refresh_token","provider"}` returns the same shape with a
+    **new** refresh token (`routes.py:519-547`).
+    - A rejected refresh token (expired, revoked, or the `basic` secret changed) is 401
+      `{"error":"session_expired","detail":"Refresh token expired or invalid; start a new sign-in."}`
+      (`routes.py:544-547`). An unreachable provider is 503 (`routes.py:537-538`).
+    - Hermes coalesces refreshes of the same refresh token: one provider call, and its result is
+      cached for 30 s (a rejection for 5 s) and handed to concurrent callers
+      (`dashboard_auth/refresh_singleflight.py:1-11,24-29,53-83`). Providers with
+      refresh-token reuse detection revoke the whole session when an already-rotated token is
+      replayed after that window. `basic` tokens are stateless and have no reuse detection
+      (`plugins/dashboard_auth/basic/__init__.py:157-167`).
+  - Use the token as `Authorization: Bearer` for the ticket mint. An expired or invalid bearer
+    gets 401 `{"error":"session_expired","reason":"invalid_or_expired_session",…}`
+    (`middleware.py:65-79,163-175`).
+  - `[client choice]` **Refresh.** `GatewayCredential.native(NativeTokenSession)` holds the pair.
+    - Per connect it refreshes at most once: before the mint if `expires_at` is less than 60 s
+      away, otherwise after the mint returns 401. Then it mints again with the new token. A
+      second 401 is final (`DashboardError.unauthenticated`).
+    - Refreshes are single-flight per `NativeTokenSession`. Callers holding the same rejected
+      access token share one request, and a caller whose token was already replaced reuses the
+      new one. This does not rely on the server's 30 s cache.
+    - The new pair goes to the app's `onRotate` callback, to be saved, **before** any request
+      uses it, so a relaunch never replays a rotated refresh token.
+    - A rejected refresh token throws `DashboardError.refreshRejected`. `GatewayConnection` then
+      stops reconnecting and the user has to sign in again.
+  - `.bearer(accessToken:)` (access token only) is never refreshed.
+  - **App mode "Access token (ticket)"** takes an access token only, as `.bearer`. The package
+    has the PKCE helpers (`PKCE`, `DashboardClient.nativeAuthorizeURL/exchangeNativeCode`) and
+    `NativeTokenSession`. The loopback-listener UI and token-pair storage are not built yet.
 - `basic` access tokens last 12 h and refresh tokens 30 days. If no `dashboard.basic_auth`
   secret is configured, all tokens become invalid when the gateway restarts
   (`plugins/dashboard_auth/basic/__init__.py:32-33,191-202`).

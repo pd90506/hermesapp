@@ -71,6 +71,9 @@ public enum DashboardError: Error, Sendable, Equatable {
     case unauthenticated(reason: String?)
     /// 401 from `/auth/password-login`: wrong username/password (`routes.py:430-432`).
     case invalidCredentials
+    /// 401 from `/auth/native/refresh`: the refresh token expired or was
+    /// revoked (`routes.py:544-547`). Retrying cannot help; sign in again.
+    case refreshRejected
     /// 429 from the login rate limiter.
     case rateLimited
     case http(status: Int, body: String?)
@@ -135,10 +138,18 @@ public struct DashboardClient: Sendable {
                                json: ["code": .string(code), "code_verifier": .string(verifier)]))
     }
 
-    /// `POST /auth/native/refresh`.
+    /// `POST /auth/native/refresh`. Returns a new pair; the old refresh
+    /// token must not be used again. A rejected refresh token throws
+    /// `DashboardError.refreshRejected`; an unreachable provider is a 503
+    /// (`routes.py:519-547`). Prefer `NativeTokenSession`, which also
+    /// prevents parallel refreshes.
     public func refreshNativeTokens(refreshToken: String, provider: String) async throws -> NativeTokens {
-        try await send(request(path: "/auth/native/refresh", method: "POST",
-                               json: ["refresh_token": .string(refreshToken), "provider": .string(provider)]))
+        do {
+            return try await send(request(path: "/auth/native/refresh", method: "POST",
+                                          json: ["refresh_token": .string(refreshToken), "provider": .string(provider)]))
+        } catch DashboardError.unauthenticated {
+            throw DashboardError.refreshRejected
+        }
     }
 
     // MARK: Plumbing

@@ -15,9 +15,14 @@ public enum GatewayCredential: Sendable, Hashable {
     /// Gated dashboard with a password provider (e.g. `basic`): log in via
     /// `/auth/password-login` (cookie session), then mint a ticket per connect.
     case password(provider: String, username: String, password: String)
-    /// Gated dashboard with an access token (from the native PKCE flow):
-    /// mint a ticket with `Authorization: Bearer` per connect.
+    /// Gated dashboard with an access token alone: mint a ticket with
+    /// `Authorization: Bearer` per connect. Never refreshed; once the token
+    /// expires (12 h for `basic`) connects fail with `.unauthenticated`.
     case bearer(accessToken: String)
+    /// Gated dashboard with a native token pair (from `/auth/native/token`):
+    /// like `.bearer`, but an expired or rejected access token is refreshed
+    /// once per connect through the shared session, and the connect retried.
+    case native(NativeTokenSession)
     /// Token sent directly as `/api/ws?token=`. Accepted as a provider access
     /// token on gated dashboards (`web_server_chat.py:332-365`), or as the
     /// dashboard session token on an un-gated *loopback* bind, which rejects
@@ -63,6 +68,9 @@ public struct DashboardConnector: GatewayConnector {
         case .bearer(let accessToken):
             let ticket = try await dashboard.mintWebSocketTicket(bearer: accessToken)
             query = URLQueryItem(name: "ticket", value: ticket.ticket)
+        case .native(let session):
+            let ticket = try await mintTicket(with: session)
+            query = URLQueryItem(name: "ticket", value: ticket.ticket)
         case .password(let provider, let username, let password):
             let ticket: WebSocketTicket
             do {
@@ -78,5 +86,18 @@ public struct DashboardConnector: GatewayConnector {
         var request = URLRequest(url: endpoint.webSocketURL(query: [query]))
         request.timeoutInterval = 15
         return request
+    }
+
+    /// At most one refresh per connect: proactively when the token is known
+    /// to be expired, otherwise after the server rejects it (401
+    /// `session_expired`, `middleware.py:65-79,163-175`). A second 401 is final.
+    private func mintTicket(with session: NativeTokenSession) async throws -> WebSocketTicket {
+        let (accessToken, refreshed) = try await session.accessToken(using: dashboard)
+        do {
+            return try await dashboard.mintWebSocketTicket(bearer: accessToken)
+        } catch DashboardError.unauthenticated where !refreshed {
+            let fresh = try await session.refresh(replacing: accessToken, using: dashboard)
+            return try await dashboard.mintWebSocketTicket(bearer: fresh)
+        }
     }
 }

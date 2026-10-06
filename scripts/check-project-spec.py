@@ -13,7 +13,12 @@ import pathlib
 import re
 import sys
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:
+    sys.exit(f"check-project-spec.py needs PyYAML, which {sys.executable} cannot import.\n"
+             f"Install it with:  {sys.executable} -m pip install --user pyyaml\n"
+             "(Debian/Ubuntu: sudo apt install python3-yaml)")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 errors: list[str] = []

@@ -33,10 +33,15 @@ extension GatewayClient {
     /// returned `sessionID` is the runtime id for later calls; pass
     /// `openRequests` to `redeliver(_:)` once the UI is ready to show them.
     /// `profile` names the profile whose state.db holds the row (`nil` = launch profile).
+    ///
+    /// Never asks for the transcript: the ack stays bounded however long the
+    /// history is (`omit_messages` + `defer_history`, as Hermes Desktop resumes).
+    /// Read the transcript in pages with `SessionMessagesSource`.
     public func resumeSession(storedSessionID: String, source: String? = nil,
                               profile: String? = nil) async throws -> LiveSessionSnapshot {
         try await call(GatewayMethod.sessionResume,
-                       params: SessionResumeParams(sessionID: storedSessionID, source: source, profile: profile))
+                       params: SessionResumeParams(sessionID: storedSessionID, source: source, profile: profile,
+                                                   omitMessages: true, deferHistory: true))
     }
 
     public func history(sessionID: String) async throws -> SessionHistoryResult {

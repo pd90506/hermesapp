@@ -1,10 +1,28 @@
 import Foundation
 import HermesProtocol
 
+/// A resume ack and, when it can be trusted, the newest transcript page read alongside it.
+struct ResumedChat: Sendable {
+    let snapshot: LiveSessionSnapshot
+    let prefetch: Task<LatestHistory, any Error>?
+}
+
 /// A chat that was opened but not necessarily shown yet.
 struct OpenedChat: Sendable {
     let session: ChatSession
     let openRequests: [OpenRequestEntry]
+    var prefetch: Task<LatestHistory, any Error>? = nil
+
+    init(session: ChatSession, openRequests: [OpenRequestEntry]) {
+        self.session = session
+        self.openRequests = openRequests
+    }
+
+    init(session: ChatSession, resumed: ResumedChat) {
+        self.session = session
+        self.openRequests = resumed.snapshot.openRequests ?? []
+        self.prefetch = resumed.prefetch
+    }
 }
 
 /// Bot sidebar: the roster, each bot's one permanent Bot Chat, side chats and History.
@@ -110,7 +128,10 @@ extension GatewayConnection {
             throw error
         }
         if botChatOpens[profile] == task { botChatOpens[profile] = nil }
-        guard gen == generation else { throw CancellationError() }
+        guard gen == generation else {
+            opened.prefetch?.cancel()
+            throw CancellationError()
+        }
         try await show(opened, token: token, client: client)
         refreshListsInBackground()
         return opened.session
@@ -192,10 +213,10 @@ extension GatewayConnection {
     private func resumeBotChat(_ row: SessionSummary, profile: String,
                                client: GatewayClient) async throws -> OpenedChat {
         let target = row.resolvedID.flatMap { $0.isEmpty ? nil : $0 } ?? row.id
-        let snapshot = try await client.resumeSession(storedSessionID: target, profile: profile)
-        let session = ChatSession(snapshot: snapshot, storedSessionID: target, title: Bot.chatTitle,
+        let resumed = try await resume(target, profile: profile, client: client)
+        let session = ChatSession(snapshot: resumed.snapshot, storedSessionID: target, title: Bot.chatTitle,
                                   profile: profile, kind: .botChat, connection: self)
-        return OpenedChat(session: session, openRequests: snapshot.openRequests ?? [])
+        return OpenedChat(session: session, resumed: resumed)
     }
 
     // MARK: Side chats and History
@@ -224,10 +245,10 @@ extension GatewayConnection {
             return current
         }
         guard let client else { throw GatewayClientError.notConnected }
-        let snapshot = try await client.resumeSession(storedSessionID: entry.summary.id, profile: entry.profile)
-        let session = ChatSession(snapshot: snapshot, storedSessionID: entry.summary.id, title: entry.summary.title,
-                                  profile: entry.profile, kind: .sideChat, connection: self)
-        try await show(OpenedChat(session: session, openRequests: snapshot.openRequests ?? []), token: token, client: client)
+        let resumed = try await resume(entry.summary.id, profile: entry.profile, client: client)
+        let session = ChatSession(snapshot: resumed.snapshot, storedSessionID: entry.summary.id,
+                                  title: entry.summary.title, profile: entry.profile, kind: .sideChat, connection: self)
+        try await show(OpenedChat(session: session, resumed: resumed), token: token, client: client)
         return session
     }
 }

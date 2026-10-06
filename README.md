@@ -12,6 +12,8 @@ Status: foundation only.
 - The app UIs are minimal shells: connection settings, a bot sidebar (every Hermes profile as a
   bot with its one permanent "Bot Chat", shared with Hermes Desktop's Bot Mode, plus a History
   area for side chats), and a chat with approval/clarify cards.
+- Opening a chat loads only its newest 120 messages; older ones load page by page as you scroll
+  up, as in Hermes Desktop.
 - Assistant replies (and reasoning) render as Markdown: headings, lists, quotes, code blocks,
   GFM tables and LaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`), typeset natively with SwiftMath.
   User messages and tool rows stay plain text.
@@ -25,7 +27,8 @@ Packages/HermesKit/        Swift package — all non-UI logic. Builds and tests 
                              events, server→client requests.
   Sources/HermesKit/         Transport (URLSession WebSocket), GatewayClient (id correlation,
                              event/request dispatch, heartbeat, replay), dashboard auth
-                             (ticket, password login, PKCE), Transcript reducer, ChatSession and
+                             (ticket, password login, PKCE), REST transcript pages, Transcript
+                             reducer (paging; stored rows are the source of truth), ChatSession and
                              GatewayConnection (@Observable, reconnect + resume), Markdown/LaTeX
                              parsing for chat rendering (Markdown/).
   Tests/                     Swift Testing suites driven by a fake transport and a fake HTTP client.

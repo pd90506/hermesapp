@@ -184,7 +184,7 @@ other call takes the runtime id.
 |---|---|---|---|
 | `session.list` | `{limit?, include_hidden?, title?, profile?}` | `{sessions:[{id, title, preview, started_at, message_count, source}]}`. With `title`: an exact-title lookup (§8.2). | sessions.py:221-246 |
 | `session.create` | `{title?, cwd?, model?, provider?, source?, close_on_disconnect?=false, profile?, hidden?=false, follow_profile_config?=false}` | `{session_id, stored_session_id, message_count, messages, info}`. The DB row appears on the first prompt. | sessions.py:118-151 |
-| `session.resume` | `{session_id:<stored id or exact title>, profile?}` | `LiveSessionSnapshot`: `{session_id, message_count, messages:[TranscriptMessage], info, session_key, resumed?, running?, status?, inflight?, open_requests?, pending_approval?, …}` (see the note on stored keys below) | sessions.py:73-98,182-202; methods_session.py:898-914; server.py:3172-3186 |
+| `session.resume` | `{session_id:<stored id or exact title>, profile?, omit_messages?, defer_history?}`. The app always sends both flags as `true` (§4.1). | `LiveSessionSnapshot`: `{session_id, message_count, messages:[TranscriptMessage], info, session_key, resumed?, running?, status?, inflight?, open_requests?, pending_approval?, hydrating?, messages_omitted?, …}` (see the note on stored keys below) | sessions.py:73-98,182-202; methods_session.py:898-914; server.py:3172-3186 |
 | `session.activate` | `{session_id:<runtime id>, omit_messages?}` | same snapshot. **Re-binds this socket to a live session and cancels its orphan reap**; 4001/4007 if it is gone. | methods_session.py:1160-1172 |
 | `session.history` | `{session_id}` | `{count, messages}` | sessions.py:484-494 |
 | `prompt.submit` | `{session_id, text}` | `{status:"streaming"\|"queued"\|"steered"\|"redirected", user_row_id?}`. For an idle session it returns immediately and the turn streams as events. A busy session queues, steers or redirects according to `display.busy_input_mode`. The Desktop allows 1800 s for the ack (`apps/desktop/src/api/client.ts:27`), and so does `GatewayClient`. It also re-binds a detached session (methods_prompt.py:741-747). | prompt_voice.py:26-77; methods_prompt.py:681-831 |
@@ -213,6 +213,260 @@ other call takes the runtime id.
     must render as failed (`session_auto_continue.py:524-552`).
 - On a cold rebuild, `inflight` is null (`methods_session.py:898-914`).
 
+### 4.1 Opening a chat: bounded resume, transcript in REST pages
+
+A plain `session.resume` sends every message of the lineage in its reply, read before the reply
+is sent. A permanent Bot Chat only grows, so the app opens every chat the way Hermes Desktop does
+(`apps/desktop/src/app/session/hooks/use-session-actions/index.ts:2169-2194`): a bounded resume,
+plus the newest page of the transcript over REST.
+
+**Resume flags** (`SessionResumeParams`, `apps/shared/src/gateway-contract.openrpc.json`;
+`tui_gateway/methods_session.py:624-641`):
+- `omit_messages: true`: `messages` is `[]` and `message_count` is the stored size
+  (`methods_session.py:689-691,898-909`). A live session's payload says `messages_omitted: true`
+  (`server.py:3163-3175`).
+- `defer_history: true`: a cold resume answers with a bounded ack (`_resume_deferred`,
+  `methods_session.py:949-967`): `hydrating: true`, `status: "resuming"`, `inflight: null`,
+  `running: false`. The model history loads on a background thread (`server.py:2968-3025`), and a
+  turn waits for it (`_await_resume_history`, `server.py:1066-1074`).
+  - When the session is already live, the ack is the live payload with `messages: []` and
+    `hydrating` from the live record (`methods_session.py:880-895`). It keeps `running`,
+    `inflight` and `open_requests`.
+  - The resume size guard (`sessions.max_resume_messages`, error 4130) then counts the tip segment
+    only (`methods_session.py:854-869`).
+  - `[unverified]` A non-Desktop `source` makes the hydration read the display history as well
+    (`model_history_only` is only set for `source == "desktop"`, `methods_session.py:961-963`).
+    That cost stays on the server; nothing more goes over the wire. The app sends no `source`.
+
+**Newest page:**
+`GET {base}/api/sessions/{id}/messages?profile=<p>&order=latest&limit=120&offset=0&include_compacted=true&inline_images=false`
+(`hermes_cli/web_routers/sessions.py:685-729`).
+- `{id}` is any stored id of the lineage; the server follows it to the tip (`:697`) and includes
+  compression ancestors (`:709-711`).
+- `order=latest` pages back from the newest row but returns the page oldest first
+  (`hermes_state_messages.py:1384-1431`, `rows[::-1][offset:][:limit][::-1]` at :1409).
+- `limit` is capped at 500 (`:702`). 120 is Desktop's `LATEST_SESSION_MESSAGES_LIMIT`
+  (`apps/desktop/src/api/sessions.ts:502`).
+- `include_compacted=true` keeps the turns that in-place compaction archived.
+- `inline_images=false` turns image parts into `[image]` (`sessions.py:636-646`); the apps show
+  no images. `[client choice]` Desktop leaves the default (`true`).
+- `profile` picks the profile's state.db. Omitted, it reads the dashboard's own profile.
+- **Response:** `{session_id, profile, messages, pagination:{limit, offset, order, returned}}`.
+  - The rows are raw state.db rows (`hermes_state_common.py:449-480`) as `_row_to_message_dict`
+    returns them (`hermes_state_messages.py:1311-1333`): `id`, `role`, `content` (a string or
+    parts), `tool_calls`, `tool_call_id`, `tool_name`, `reasoning`, `display_kind`, …
+  - `_project_for_display` (`sessions.py:617-682`) keeps one output row per row. It marks
+    scaffolding `display_kind: "hidden"` instead of dropping it, and adds `display_content` to
+    compaction summaries and steers.
+  - They are **not** the `TranscriptMessage` shape `session.resume` sends. The app projects them
+    the way `_history_to_messages` does (`tui_gateway/session_history.py:285-362`); see
+    `StoredMessageProjection`. That includes the user-text rewrites: Discord trigger notes are
+    removed (`:13-15,307-308`), and a slash-skill turn shows `/skill args`
+    (`:239-241,349-352`, `agent/skill_commands.py:101-171`).
+  - `[client choice]` Like Desktop, the session's opening user row stays visible when compaction
+    stamped it hidden (`apps/desktop/src/app/chat/transcript-backfill.ts:29-71`, #96875). That also
+    holds when the beginning turns out to be an empty older page (a history of exactly a page):
+    the hidden prompt already loaded is shown then. Desktop does this with an origin read
+    (`transcript-backfill.ts:599-622`).
+- **Errors:** an unknown session is 404 `{"detail":"Session not found"}` (`sessions.py:714-715`).
+  A corrupt store is 503 (`:153-168`).
+- **Auth** is the dashboard's, with the same credential as the socket:
+  - On a gated dashboard: `Authorization: Bearer <access token>`
+    (`dashboard_auth/middleware.py:153-175`), or the cookie session from `/auth/password-login`.
+  - On an un-gated loopback dashboard: the session token as `Authorization: Bearer`
+    (`hermes_cli/web_server.py:452-463,697-715`).
+  - `[client choice]` Native token pairs refresh once, as for the ticket mint (§1.3): before the
+    call when the token is known to have expired, otherwise after a 401. Password mode logs in
+    again after a 401.
+
+**Older pages:** the same call with `offset=<rows already received>`.
+- The offset counts **display rows**, `hidden` ones included: one per `display_order` group of a
+  segment, or per row of the deduped merged lineage (`hermes_state_messages.py:1336-1357,1402-1409`).
+  The projection keeps them 1:1, so the app counts the rows it received, as Desktop does:
+  `pagination.offset + messages.length` (`apps/desktop/src/store/transcript-tail.ts:132-153`).
+- A page shorter than `limit` is the first page of the session.
+- Rows stored after the newest page was read shift every offset toward the past, so the next page
+  overlaps rows already held. The overlap is dropped by row id, which is also how Desktop merges
+  (`app/chat/transcript-backfill.ts:10-16,89-192`).
+  - Rows named by live acks are deliberately **not** added to the offset. A receipt can name
+    model-only rows, or rows that fold into an existing display row (compaction during the turn),
+    and counting them would skip rows. Overlap is harmless; a gap is not.
+  - Rows that leave the display read shift offsets the other way. For example, a queued prompt's
+    accept-time row is deactivated when the prompt runs (`session_auto_continue.py:387-390`), and
+    the read counts only active or compacted rows (`hermes_state_messages.py:1340-1356`).
+    `[client choice]` Each older page therefore starts 10 rows early
+    (`Transcript.olderPageOverlap`), and the overlap is dropped like any other. More than 10 such
+    rows inside one loaded window would still skip rows.
+  - A rewind by another client shrinks the transcript too, possibly by more than 10 rows.
+    `[unverified]` Not handled; the app has no rewind.
+- At most one older page is in flight per chat.
+
+**Old gateways:**
+- A response without `pagination` is the whole history, as in Desktop
+  (`transcript-tail.ts:132-153`).
+- If `pagination.order` is not `latest`, the gateway pages but ignored `order`, and the page holds
+  the oldest rows. A short page is still the whole history. Otherwise the app reads the rest
+  oldest first, 500 rows per page, as Desktop's `completeTranscriptForOrderlessBackend` does
+  (`api/sessions.ts:579-592,653-698`).
+  - `[client choice]` The read is bounded. It fails (`HistoryReadError`) when a page brings no row
+    it has not seen, i.e. the gateway ignores `offset` too, or when it passes 20,000 rows. Desktop
+    bounds the same read by size (`maxJsonChars`). A retry would fail the same way, so the chat
+    shows its history as unavailable, with no Retry.
+- A resume ack that still carries `messages` (a gateway that ignores `omit_messages`) is used as
+  the whole history, and no page is read.
+- An ack that says it left the messages out (`hydrating` or `messages_omitted`) is always followed
+  by one page read, even with `message_count: 0`. That count is the tip segment's row counter
+  (`methods_session.py:956-957`). Acks that never omit anything are complete when empty:
+  `session.create`, and the resume of a live session with no row yet (`methods_session.py:726-750`).
+- With no REST access at all, the chat opens without its history and says so, with no retry.
+
+**Live events and stored rows: the stored rows are the source of truth.** `[client choice]`
+(`Transcript`, `ChatSession.rereadIfNeeded`)
+
+- **Which first read to trust.** The page read alongside the resume can predate a turn that
+  finished before this socket was attached; this socket never saw that turn's events. That read is
+  kept only when the ack says `hydrating: true`, meaning no turn has run on that runtime session
+  yet. Otherwise the page is read again after the ack, and from then on every turn reaches this
+  socket.
+- **What is on screen.** The stored rows, plus live items only for what isn't settled yet:
+  - the turn streaming now, including the turn that was running at open (`inflight`);
+  - prompts sent here;
+  - finished turns, until their re-read lands.
+- **No matching.** Live and stored content are never matched: no text, row-id, call-id or anchor
+  comparison. While a turn runs, some content can show twice:
+  - the stored part of a turn that was already running at open (Hermes stores each tool round
+    before its tools run, `agent/turn_tool_round.py:127-130`);
+  - its echoed `inflight.user`;
+  - a prompt the history already holds.
+- **When a turn finishes** (`message.complete`, from any source), the app reads the newest rows
+  again:
+  - same endpoint, `order=latest`, 120 rows;
+  - older pages only until one overlaps the shown rows, at most 4 pages, never the whole history;
+  - one re-read at a time, and a turn that finishes meanwhile gets the next one.
+- **What the re-read does.** It replaces the shown history from the first shown row it holds
+  onward. Older pages the user loaded stay. If it overlaps nothing (more new rows than 4 pages), it
+  becomes the history, and older rows load again by scrolling.
+- **What the re-read drops.** A turn's rows are stored before its `message.complete` is emitted
+  (`prompt_turn.py:1153-1182`), so a re-read requested after it holds them. That includes a turn
+  stopped by the user:
+  - Stop during the model call stores the partial reply as an assistant row
+    (`agent/turn_api_call.py:206-214`; a repetition loop is stored hidden on purpose);
+  - Stop during a tool stores a closing row (`agent/message_sanitization.py:287-299`).
+
+  It drops:
+  - the live items of every turn that finished before the re-read was requested;
+  - prompts sent here, but only if the session was quiet throughout the re-read: no turn running,
+    none started since it was requested, and every `prompt.submit` answered.
+
+  The quiet rule exists because a follow-up turn announces itself with `message.start` before it
+  stores its prompt (`prompt_turn.py:421-427`). Follow-up turns are a queued prompt, or a steer the
+  turn couldn't deliver, which is re-queued after the turn (`prompt_turn.py:438-450`,
+  `agent/turn_finalizer.py:742-746`). Until such a turn finishes, the bubble stays.
+
+  How many quiet re-reads a prompt needs depends on its answer:
+  - **`streaming` with `user_row_id`: one.** Its row was written before the answer
+    (`methods_prompt.py:815-819`), so the first quiet re-read holds it, and the bubble never sits
+    below its own reply. Without `user_row_id` (compute-host isolation, or a submit-time write that
+    failed: `methods_prompt.py:798-803`, `session_workdir.py:639-641`) no row may exist yet, so it
+    needs two, as does a missing status.
+  - **`queued`, `steered`, `redirected`, and the cases above: two in a row**, the second requested
+    once the first had landed. `message.start` travels on the socket in batches of about 33 ms
+    (`ws.py:82-83`), and a single re-read's HTTP answer could arrive before a start that was already
+    sent. By the second read, the follow-up's prompt row has been written, or its start has arrived
+    and ended the quiet spell.
+- **Unstored partial replies.** The segment still streaming when a turn ended stays live, and
+  the rest of the turn is dropped, when the partial may not be stored:
+  - `error`: always. The partial reply is kept only in memory (`session_auto_continue.py:524-552`).
+  - `interrupted`: unless the segment and `message.complete`'s non-empty text, both trimmed, are
+    the same reply. The normal runtime stores the partial and sends exactly it
+    (`agent/turn_api_call.py:206-214`); another runtime may store nothing (the Codex app-server,
+    `agent/transports/codex_app_server_session.py:583-586`, whose event text is its last completed
+    message, `agent/codex_runtime.py:743-749`). The segment goes when:
+    - it equals the text;
+    - it ends with the text. What streamed before the current call is stored by then, or by the
+      same Stop (`agent/turn_api_call.py:213`), yet can run into one segment: a redirect sends no
+      event, and the text before it is stored as a placeholder (`conversation_loop.py:345-365`);
+      the segment rebuilt at open holds the turn's earlier calls (`session_history.py:400-408`);
+    - the text ends with it: a prompt sent here during the call split the call's text into two
+      segments, and the stored text holds both.
+
+    An empty text keeps the segment. A repetition loop, sent as its sentinel, is stored hidden on
+    purpose and goes as well.
+
+  This compares a turn with its own event, never with stored rows. Where the event and the stored
+  rows disagree, it leaves a duplicate; text Hermes streams but never stores goes, as it does for a
+  `complete` turn (see Known limits). Bot Mode rewrites the text of `complete` turns only
+  (`prompt_turn.py:18-27,936-937`), so an interrupted turn settles the same there.
+- **Prompts sent during a reply.** The composer allows this. The prompt shows at once, whatever
+  `prompt.submit` answers:
+  - `streaming`: stored at submit, `methods_prompt.py:817-820`;
+  - `queued`: stored at accept, `session_auto_continue.py:436-439`, and merged into an earlier
+    queued prompt's row when sent in a burst, `:308-335`;
+  - `steered`: stored when delivered, `agent/prompt_builder.py:595-601`;
+  - `redirected`: `agent/interrupt_control.py:261-305`.
+
+  Once the session is quiet, the stored rows show what Hermes made of it, including a merge, or a
+  queued prompt Hermes retired instead of running (`methods_session.py:693-710`). An answer that
+  arrives while no turn runs asks for a re-read itself, since no turn will finish to settle it. A
+  submit that fails keeps its bubble, since only that bubble holds the text.
+- **Tool rows.** Call ids repeat across rounds and turns (`deterministic_call_id`,
+  `agent/message_sanitization.py:492-495`). `tool.start` reuses a live row only while that call is
+  still running; `tool.complete` finishes the running row of that call, or adds one for a tool that
+  started before this chat attached.
+- **Nothing keeps spinning.** At `message.complete`, every live item stops; empty reply bubbles go.
+- **Item ids are unique and stable** (SwiftUI's `ForEach`). A stored item is always `row-<id>`,
+  whatever live rows exist, so it keeps its identity across re-reads. Live ids are `local-<n>` or
+  `tool-<call>`. Any item whose id is taken, a live row or a row a page repeats, gets a suffix.
+- **A cold restore** (§7 step 4) rebuilds the transcript from scratch. Any read in flight for the
+  old one is cancelled, and is discarded if it lands anyway.
+  - `[client choice]` Desktop instead grafts the new page onto the older rows it holds
+    (`transcript-backfill.ts:381-438`).
+- **No re-read on old gateways.** A history read from a gateway without `order=latest` paging is
+  never re-read, because that read is not bounded. Its live items stay.
+
+`[unverified]` Known limits:
+- **Temporary duplicates while a turn runs:** the stored part and echoed prompt of a turn that
+  was running at open, and a prompt the history already holds. They clear when that turn's re-read
+  lands.
+- **Duplicates until a later re-read or reopening:** when a re-read fails. The next finished turn
+  re-reads.
+- **Duplicates that only reopening clears:**
+  - A turn running at open that ends with `error` before any tool boundary since the open: its
+    one live segment holds both stored text and the unstored partial, and is kept whole so nothing
+    is lost.
+  - An `error` turn whose partial reply Hermes did store after all, e.g. collapsed into an
+    assistant row after a mid-stream death and continuation (`agent/turn_recovery.py:807-820`).
+  - An `interrupted` turn whose stored partial differs from the event's text, or whose runtime
+    stored it but sent other text.
+  - An old gateway, which is never re-read.
+- **Older pages after a long gap:** after more new rows than a re-read covers, older pages the
+  user loaded are dropped from view. They load again by scrolling.
+- **A gap from deactivated rows:** more than 10 rows leaving the display read inside one loaded
+  window skips rows on the next older page (see Older pages).
+- **Foreign turns:** a turn started by another client shows no prompt bubble while it streams (no
+  event carries it); its stored prompt shows after its re-read.
+- **Prompts Hermes drops vanish.** A queued prompt Hermes retires, or a steer that Stop wipes
+  (`agent/interrupt_control.py:246-247`), disappears after the quiet re-reads, as the stored rows
+  say. The same goes for a pre-redirect partial that Hermes keeps only as model-facing text
+  (`conversation_loop.py:345`).
+- **Request rate.** Each finished turn costs one re-read of 120 rows (two after a busy prompt).
+  Re-reads run one at a time.
+- **A Stop that races a finished response.** If Stop clears a redirect between the model call's
+  `finally` and `clear_interrupt` (`agent/turn_api_call.py:148-155`), Hermes discards the fully
+  streamed response and stores nothing. When the event carries that text, the client drops it
+  too. The window is microseconds wide.
+- **Reasoning of an interrupted turn.** The interrupted row stores no reasoning, so reasoning
+  streamed during the turn goes with the re-read, as a reopen shows it.
+- **Streamed text Hermes never stores** goes with the re-read, for any turn status, as a reopen
+  shows it:
+  - ephemeral scaffolding, e.g. narration streamed with `finish_reason=tool_calls` but no tool
+    calls, before the re-prompt (`agent/turn_final_response.py:289-316`,
+    `session_persistence.py:43`);
+  - the preamble of an attempt whose tool call was truncated and retried
+    (`agent/turn_truncation.py:400-415`);
+  - the `⚠ Connection dropped mid tool-call; reconnecting…` marker and the preamble before it
+    (`agent/chat_completion_helpers.py:3730-3747`).
+
 ## 5. Events a chat client handles
 
 From `contracts/events.py`:
@@ -228,7 +482,7 @@ From `contracts/events.py`:
 | `tool.start` | `{tool_id, name, context?, args?, preview?}` | Add a tool row. |
 | `tool.complete` | `{tool_id, name, duration_s?, summary?, result?, result_text?, …}` | Finish the tool row. |
 | `status.update` | `{kind, text}` | Transient status line. |
-| `message.complete` | `{text: str \| JsonValue, status?: complete\|error\|interrupted, reasoning?, error?, usage?, …}` (`events.py:189`; decode `text` as any JSON) | **The terminal frame of every turn.** Errors inside a turn arrive here with `status:"error"`; there is no separate turn-end event (`events.py:138-208`, `session_auto_continue.py:555-581`). `[unverified]` When a turn contained tool calls, the app shows the streamed segments and uses `text` only when nothing was streamed; the doc does not say whether `text` is the last segment or the whole reply. |
+| `message.complete` | `{text: str \| JsonValue, status?: complete\|error\|interrupted, reasoning?, error?, usage?, persisted_turn?, …}` (`events.py:189,205`; decode `text` as any JSON). The app does not use `persisted_turn`; it re-reads the newest rows instead (§4.1). | **The terminal frame of every turn.** Errors inside a turn arrive here with `status:"error"`; there is no separate turn-end event (`events.py:138-208`, `session_auto_continue.py:555-581`). `[unverified]` When a turn contained tool calls, the app shows the streamed segments and uses `text` only when nothing was streamed; the doc does not say whether `text` is the last segment or the whole reply. |
 | `session.title` | `{session_id:<stored id>, title}` | Rename. |
 | `session.info` | `SessionLiveInfo` | |
 | `error` | `{message}` | A session-level failure outside a turn. |
@@ -315,10 +569,12 @@ client's replay (`apps/shared/src/json-rpc-gateway.ts:504-670`), but adds the ex
    4. Trust the result only if `truncated` is false, `epoch` matches and `latest_seq >= last_seen`.
       Then deliver the replayed events, then the held-back ones (deduplicated by `seq`), and
       re-deliver `open_requests`.
-4. Otherwise, call `session.resume {session_id:<stored key>, profile?}` (the profile the session
-   was opened on, §8.1) and rebuild the transcript from
-   `messages` + `inflight`; re-deliver `open_requests`. The held-back events are dropped; the
-   snapshot supersedes them.
+4. Otherwise, call `session.resume {session_id:<stored key>, profile?, omit_messages:true,
+   defer_history:true}` (the profile the session was opened on, §8.1). Rebuild the transcript from
+   `inflight` plus the newest REST page (§4.1), and re-deliver `open_requests`.
+   - The held-back events are dropped; the snapshot supersedes them.
+   - Older pages loaded before are dropped too, and a page still in flight for the old
+     transcript is discarded when it lands.
 5. A fresh `connect()` (e.g. the iOS app returning to the foreground) restores the active session
    the same way.
    - The session is cleared, and the connection stays up, only when restore fails with
@@ -407,7 +663,8 @@ it as it is.
    - Hidden rows are returned (Bot Chats are born hidden).
    - Archived and denied-source rows are not.
    - The single row carries `resolved_id`, the lineage tip (`methods_session.py:526-559`).
-2. **Row found:** `session.resume {session_id:<resolved_id or id>, profile}`.
+2. **Row found:** `session.resume {session_id:<resolved_id or id>, profile, omit_messages:true,
+   defer_history:true}`, then the newest REST page (§4.1).
 3. **Fail closed.** Neither of these may create a chat (`canonical-chat.ts:282-292,328-338`):
    - The lookup errors → `BotChatError.registryUnavailable`.
    - The lookup is empty but the roster's `canonical_session` says the chat exists →
@@ -468,7 +725,8 @@ row.
     - Hermes uses `hidden` only to decide whether such a row may be renamed
       (`hermes_state_titles.py:100-110`).
   - `[client choice]` The app does not run that sweep. It never writes `hidden`.
-- **Opening a History row:** `session.resume {session_id, profile}`.
+- **Opening a History row:** `session.resume {session_id, profile, omit_messages:true,
+  defer_history:true}`, then the newest REST page (§4.1).
 
 ## 9. HTTP API server (secondary option, not used by the MVP)
 

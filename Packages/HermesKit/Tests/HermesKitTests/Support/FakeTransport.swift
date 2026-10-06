@@ -157,9 +157,11 @@ final class FrameLog: Sendable {
 /// Hands out pre-built transports, one per connection attempt.
 final class FakeConnector: GatewayConnector, @unchecked Sendable {
     private let transports: Mutex<[FakeTransport]>
+    let messagesSource: (any SessionMessagesSource)?
 
-    init(_ transports: [FakeTransport]) {
+    init(_ transports: [FakeTransport], messages: (any SessionMessagesSource)? = nil) {
         self.transports = Mutex(transports)
+        self.messagesSource = messages
     }
 
     func makeTransport() async throws -> any MessageTransport {

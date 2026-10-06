@@ -8,21 +8,16 @@ struct ChatView: View {
     /// Overrides the session title (a Bot Chat is titled "Bot Chat"; show the bot instead).
     var title: String?
     @Environment(AppModel.self) private var model
-    /// One per chat: `RootView` gives every chat a fresh `ChatView` (`.id`).
-    @State private var composer: ChatComposer
 
-    init(session: ChatSession, title: String? = nil) {
-        self.session = session
-        self.title = title
-        _composer = State(initialValue: ChatComposer(session: session))
-    }
+    /// The chat's own composer: it outlives this view (`GatewayConnection.composer(for:)`).
+    private var composer: ChatComposer { model.connection.composer(for: session) }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 HistoryHeader(session: session)
                 ForEach(session.transcript.items) { item in
-                    MessageRow(item: item)
+                    MessageRow(item: item, profile: session.profile)
                 }
                 ForEach(session.transcript.pendingRequests) { request in
                     RequestCardView(session: session, request: request)
@@ -122,17 +117,33 @@ private struct HistoryHeader: View {
 
 private struct MessageRow: View {
     let item: TranscriptItem
+    /// The chat's profile: stored images are read for it.
+    let profile: String?
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         switch item.role {
         case .user:
             // Shown verbatim: what the user typed, not a reinterpretation of it.
+            // Images sent with it show as cards above the caption, live and stored alike.
             HStack {
                 Spacer(minLength: 40)
-                Text(item.text)
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !item.images.isEmpty {
+                        TrailingFlowLayout {
+                            ForEach(item.images) { image in
+                                TranscriptImageCard(image: image, profile: profile, store: model.thumbnails,
+                                                    connection: model.connection)
+                            }
+                        }
+                    }
+                    if !item.text.isEmpty || item.images.isEmpty {
+                        Text(item.text)
+                            .textSelection(.enabled)
+                            .padding(10)
+                            .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+                    }
+                }
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {

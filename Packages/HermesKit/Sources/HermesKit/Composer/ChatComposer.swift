@@ -68,13 +68,13 @@ public final class ChatComposer {
             attachments.removeAll { sent.contains($0.id) }
         } catch is CancellationError {
             // Cancelled before the prompt went out: nothing to report, all kept.
-            restoreDraft(text)
+            restoreText(text)
         } catch {
             let failure = error as? ComposerError
             // A `ComposerError` means nothing reached the transcript; with images
             // the cards stay, so the text belongs with them. (A failed text-only
             // `prompt.submit` is already on the transcript, via `submitFailed`.)
-            if failure != nil || !images.isEmpty { restoreDraft(text) }
+            if failure != nil || !images.isEmpty { restoreText(text) }
             if let failure { self.error = failure.message }
         }
     }
@@ -90,7 +90,9 @@ public final class ChatComposer {
     }
 
     /// Puts a failed send's text back, keeping whatever the user typed meanwhile.
-    private func restoreDraft(_ text: String) {
+    /// Also takes back a failed prompt's text when its bubble is gone (`ChatSession`):
+    /// the earlier text first, then what is typed now; nothing is overwritten.
+    func restoreText(_ text: String) {
         let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         if typed.isEmpty {
             draft = text

@@ -151,6 +151,9 @@ struct GatewayConnectionBotTests {
         // The registry moved (e.g. Desktop compressed the chat): the next open follows it.
         server.botChats.withLock { $0["coder"] = botChatRow(id: "coder-chat", tip: "coder-chat-2") }
         let again = try await connection.openBotChat(profile: "coder")
+        // Shown before, so it is back on screen at once; the lookup by name runs in
+        // the background reconcile (`GatewayConnection+Revisit`) and follows the tip.
+        await again.revisitTask?.value
 
         let lookups = log.requests("session.list").filter(isBotChatLookup).map { $0["params"]?["profile"] }
         #expect(lookups == ["coder", "finance", "coder"])

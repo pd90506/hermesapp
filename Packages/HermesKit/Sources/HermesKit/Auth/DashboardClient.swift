@@ -174,6 +174,38 @@ public struct DashboardClient: Sendable {
         return try await send(request)
     }
 
+    // MARK: Media
+
+    /// `GET /api/media?path=` answers `{data_url}` (`hermes_cli/web_routers/files.py:329-354`).
+    public func mediaDataURL(path: String, bearer: String? = nil) async throws -> String {
+        var request = request(path: "/api/media", method: "GET", query: [URLQueryItem(name: "path", value: path)])
+        if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
+        let answer: MediaAnswer = try await send(request)
+        guard let url = answer.dataURL ?? answer.dataUrl else { throw DashboardError.invalidResponse("no data_url") }
+        return url
+    }
+
+    /// `GET /api/fs/read-data-url?path=&profile=` answers `{dataUrl}` (`files.py:901-922`).
+    public func fileDataURL(path: String, profile: String?, bearer: String? = nil) async throws -> String {
+        var query = [URLQueryItem(name: "path", value: path)]
+        if let profile { query.append(URLQueryItem(name: "profile", value: profile)) }
+        var request = request(path: "/api/fs/read-data-url", method: "GET", query: query)
+        if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
+        let answer: MediaAnswer = try await send(request)
+        guard let url = answer.dataUrl ?? answer.dataURL else { throw DashboardError.invalidResponse("no dataUrl") }
+        return url
+    }
+
+    private struct MediaAnswer: Decodable {
+        var dataURL: String?
+        var dataUrl: String?
+
+        enum CodingKeys: String, CodingKey {
+            case dataURL = "data_url"
+            case dataUrl
+        }
+    }
+
     // MARK: Plumbing
 
     private func request(path: String, method: String, json: JSONValue? = nil,

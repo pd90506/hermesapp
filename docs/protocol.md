@@ -476,6 +476,98 @@ plus the newest page of the transcript over REST.
   - the `⚠ Connection dropped mid tool-call; reconnecting…` marker and the preamble before it
     (`agent/chat_completion_helpers.py:3730-3747`).
 
+### 4.2 Switching chats
+
+Where the time goes when a chat opens:
+- **Round trips, in sequence:**
+  - **A Bot Chat** first needs its registry lookup (`session.list` by title, §8.2).
+  - **Then `session.resume`.** It is pool-dispatched (`server.py:179-191`), so it can wait behind
+    other slow handlers. The deferred ack itself is cheap: it mints the runtime record and only
+    schedules the history read (`methods_session.py:949-967`).
+  - **Then the REST page** (§4.1). For a History or launch-profile chat it is read alongside the
+    resume. For a Bot Chat it could only start once the lookup had named the chat.
+- **Before this change:**
+  - The previous chat stayed on screen until the ack arrived. Going back to a chat paid the whole
+    chain again.
+  - On the client, a 120-row page costs about 0.5 ms to decode, 0.15 ms to project
+    (`Transcript.installLatestPage`), and 0.07 ms per reply to parse Markdown (release build,
+    Apple silicon). The wait is the network and the gateway, not the client.
+
+What the app does now (`GatewayConnection+Revisit.swift`):
+- **A warm cache, like Desktop's** (`apps/desktop/src/app/session/hooks/use-session-actions/index.ts:1378-1760`).
+  - The last `warmChatLimit` (6) chats keep their `ChatSession`.
+  - While this socket still serves their runtime session, they keep receiving its events, so they
+    stay current.
+  - Going back to one shows it at once, as it was. In the background:
+    1. A Bot Chat is looked up by name again (§8.2). If its tip changed, the new tip is resumed
+       into the same chat.
+    2. `session.activate {session_id, omit_messages:true}` binds the runtime session to this socket
+       again. Another client may have taken it (events are routed to one transport,
+       `server.py:681-689`), or a reconnect dropped the binding.
+    3. The newest rows are read again (`Transcript.installRereadPage`). That brings in whatever was
+       stored while the events went elsewhere.
+  - Stored rows stay the source of truth, and no text is matched. A turn that ended elsewhere is
+    ended here too (`Transcript.reconcileRunning`); its live items wait for that re-read.
+  - **4001/4007** (the runtime session is gone), or an ack naming another stored key, resumes the
+    chat's stored key into the same `ChatSession`, as a reconnect does (§7).
+  - Any other failure keeps the cached transcript.
+  - **Sends wait for the reconcile.** The cached transcript shows at once, but a send waits
+    until the reconcile has settled which runtime session the chat belongs to
+    (`ChatSession.settleIdentity`). Otherwise a prompt could go to a runtime session the chat is
+    about to leave: one that is gone, or a retired Bot Chat.
+    - The wait can be cancelled from the composer, and then the draft comes back.
+  - A send waits through a replaced reconcile too, until none is in progress.
+  - **A rebuild** (`ChatSession.reset`, after a resume or a reconnect) carries no bubbles over.
+    The rebuilt transcript holds only the snapshot and the stored rows, so nothing can show
+    twice. Nothing typed is lost:
+    - **A failed prompt's text goes back to the composer**, ahead of any draft already there,
+      and its error stays on screen. Several come back in the order they were sent.
+      - A failed image send already put its text and cards back when it failed
+        (`ChatComposer.submit`).
+      - If an input method is composing at that moment, the composition is left alone: the
+        draft holds the returned text at once (a send reads it), and the text view shows it
+        when the composition ends, combined with what was composed (`DraftMerge`,
+        `ComposerTextView.Coordinator.showDraft`). If the draft was replaced over the
+        composed stretch instead (cleared by a send), the draft wins.
+    - **A send still in flight settles itself.** Its live ids are numbered above the old
+      transcript's (`Transcript(snapshot:localIDsAfter:)`), so its old bubble id names nothing
+      in the new one.
+      - If it fails, its text goes back to the draft.
+      - If Hermes took it, a re-read of the newest rows shows its stored row. If the newest
+        page is not in yet, the re-read waits for it.
+      - On a gateway older than `order=latest` paging, rows cannot be re-read (§4.1). There
+        such a prompt does not show until the user opens the chat again. Its reply still
+        streams in.
+    - **A row-less prompt** (answered `streaming` without `user_row_id`, e.g. image-only, §4.1)
+      is dropped: its turn stores the row.
+  - **One reconcile per chat.** Going back again while one still runs on this socket joins it.
+    One started on an older socket is cancelled and replaced.
+  - **Late answers are dropped.** Results are applied only while their socket is still the
+    connection's own; a reconnect keeps `generation`, so the client is checked too.
+  - **Memory:** at most 6 chats, each holding the pages the user loaded.
+- **Drafts belong to the chat** (`GatewayConnection.composer(for:)`), not to its view.
+  - Opening another chat leaves the draft and attached images alone, whether that open
+    succeeds, fails or is cancelled. Going back to a warm chat brings its draft back.
+  - A draft goes when its chat leaves the warm cache, or on disconnect.
+- **Known limits.**
+  - **Eviction drops the draft.** Opening a 7th chat evicts the least recently shown one from
+    the cache, and with it that chat's draft and attached images. A chat dropped because it no
+    longer exists (a Bot Chat the registry lost) loses its draft too.
+  - **A short gap for a row-less prompt.** An image-only prompt whose turn has not stored its
+    row yet shows nothing for a few seconds after a rebuild. It appears with that turn's
+    events, or with the re-read after the turn. No text is lost: it had none.
+  - **A failed prompt Hermes took anyway.** A submit that failed on the client side may still
+    have been accepted, e.g. when the socket dropped after the gateway took it (§10.3). After a
+    rebuild its stored row shows, and its text is also back in the draft. The client cannot
+    tell the two cases apart and never matches by text; the user decides whether to resend.
+- **A first open** publishes `GatewayConnection.opening` at once. The app shows that chat's
+  title and a spinner instead of the previous chat, until the chat is active or the open fails.
+  Picking the chat already on screen meanwhile shows it again; the slower open, now
+  superseded, does not take the screen when it finishes.
+- **A Bot Chat's newest page** is read while its registry lookup runs, for the tip the roster
+  names (`canonical_session.resolved_id`). It is used only if the lookup names the same tip; the
+  lookup stays the identity (§8.2).
+
 ## 5. Events a chat client handles
 
 From `contracts/events.py`:
@@ -664,7 +756,8 @@ DB's title uniqueness makes that a registry of at most one row per profile
 (`apps/desktop/src/AGENTS.md`, Bot Mode). **No session id is ever stored as the bot's chat or
 used as a fallback.** Every open of a bot (`GatewayConnection.openBotChat(profile:)`) looks the
 chat up again. The one exception: if that bot's Bot Chat is already on screen, the open returns
-it as it is.
+it as it is. A Bot Chat shown earlier in this connection (§4.2) comes back on screen at once;
+the lookup then runs in the background, and a changed tip is resumed into it.
 
 1. **Look up the chat by title:**
    `session.list {profile, title:"Bot Chat", include_hidden:true, limit:200}`.
@@ -923,9 +1016,35 @@ Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/C
   - Either way, the prompt's bubble follows the §4.1 lifecycle. It shows at once and is marked
     answered with the `prompt.submit` status (`streaming`, `queued`, `steered` or `redirected`)
     and `user_row_id`. It is dropped by quiet re-reads once the stored rows hold the outcome.
-  - An image prompt's stored row carries `@image:<path>` lines rather than the bubble's
-    `[Image: name]` text (`tui_gateway/session_history.py:51-60`). That is fine: bubbles settle by
-    quiet re-reads, never by matching text.
+  - Bubbles settle by quiet re-reads (or with their own turn, §4.1), never by matching text or
+    images.
+- **How images show** (`ImageDirectives`, `TranscriptImage`).
+  - A user message's images are cards above its caption, never text.
+  - **The live bubble** carries each image's local id, so its thumbnail is already on this
+    device, and the gateway path `image.attach_bytes` answered.
+  - **The stored row** names the same path in an `@image:<path>` line
+    (`tui_gateway/session_history.py:51-60`). Quoted values are read back as
+    `format_reference_value` writes them (`agent/context_references.py:141-149`). Only whole
+    lines are directives.
+  - So the row shows the bubble's thumbnail, cached under its path, without a download. Cards
+    have a fixed size (160×120 pt), so nothing moves when the bubble is replaced.
+- **Reading a stored image** (`DashboardConnector.imageData`).
+  - First `GET /api/media?path=` → `{data_url}` (`hermes_cli/web_routers/files.py:329-354`).
+  - That route serves only the dashboard's own `HERMES_HOME/{images,screenshots,cache}`
+    (`files.py:307-318`). An upload to a session on another profile lives under *that* profile's
+    home (`tui_gateway/prompt_attachments.py:82-95,133-134`), so the route answers 403.
+  - Those are read as Desktop's remote mode reads them:
+    `GET /api/fs/read-data-url?path=&profile=` → `{dataUrl}` (`files.py:901-922`,
+    `apps/desktop/src/lib/media.ts:132-136`).
+  - The fallback is only for paths with an image extension: `@image:/some/large.log` is not
+    downloaded just to show a placeholder.
+  - **Failures** (404 gone, 413 too large, offline) show a placeholder card with the file name.
+    They are retried after a minute at most.
+  - **Thumbnails** are decoded downsampled, to at most 480 px. An image whose header reports
+    more than 100 million pixels is not decoded at all; a small, highly compressible file can
+    expand to gigabytes.
+  - At most 3 images are downloaded and decoded at a time (`AsyncLimiter`). The cache holds at
+    most 300 thumbnails, or 64 MB.
 - `[client choice]` **Re-encoding** (`ImageAttachmentPolicy.encodeAttempts`).
   - PNG/JPEG/GIF/WebP up to 25 MB are sent unchanged.
   - Anything else (HEIC photos, pasted TIFF), and anything larger, is re-encoded, and the first

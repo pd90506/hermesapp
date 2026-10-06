@@ -42,8 +42,9 @@ enum ImageLoader {
         }
     }
 
-    /// Side of the card's square thumbnail, in pixels (28 pt at up to 3x).
-    private static let thumbnailPixels = 84
+    /// Longest side of the thumbnail, in pixels: the composer card's 28 pt square and
+    /// the sent bubble's 160 pt card (`TranscriptImageCard`) share it.
+    nonisolated static let thumbnailPixels = 480
 
     /// Decodes and, if needed, re-encodes. `@concurrent`: always off the main
     /// actor, whatever the module's default isolation.
@@ -150,34 +151,44 @@ enum ImageLoader {
     // MARK: - Pasteboard and drops
 
     #if os(macOS)
-    /// Images on a pasteboard (a paste or a drag), or none when it holds text:
-    /// image files first, then raw image data unless there is a string — a
-    /// copied spreadsheet range carries both, and the user meant the text.
+    /// What a pasteboard (a paste or a drag) holds, for `ClipboardPolicy`.
+    @MainActor
+    static func contents(of pasteboard: NSPasteboard) -> ClipboardPolicy.Contents {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        return ClipboardPolicy.Contents(types: pasteboard.types?.map(\.rawValue) ?? [],
+                                        string: pasteboard.string(forType: .string), fileURLs: urls ?? [])
+    }
+
+    /// The images a pasteboard holds, or none when it should paste as text
+    /// (`ClipboardPolicy.decide`).
     @MainActor
     static func sources(from pasteboard: NSPasteboard) -> [ImageSource] {
-        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [
-            .urlReadingFileURLsOnly: true,
-            .urlReadingContentsConformToTypes: [UTType.image.identifier],
-        ]) as? [URL] ?? []
-        if !urls.isEmpty { return urls.map(ImageSource.file) }
-        if pasteboard.string(forType: .string) != nil { return [] }
-        for type in [NSPasteboard.PasteboardType.png, .tiff, NSPasteboard.PasteboardType(UTType.jpeg.identifier),
-                     NSPasteboard.PasteboardType(UTType.heic.identifier)]
-        {
-            if let data = pasteboard.data(forType: type) {
-                let ext = UTType(type.rawValue)?.preferredFilenameExtension ?? "png"
-                return [.data(data, filename: "Pasted Image.\(ext)")]
-            }
+        switch ClipboardPolicy.decide(contents(of: pasteboard)) {
+        case .text:
+            return []
+        case .files(let urls):
+            return urls.map(ImageSource.file)
+        case .imageData(let type):
+            guard let data = pasteboard.data(forType: NSPasteboard.PasteboardType(type)) else { return [] }
+            let ext = UTType(type)?.preferredFilenameExtension ?? "png"
+            return [.data(data, filename: "Pasted Image.\(ext)")]
         }
-        return []
     }
     #else
-    /// Images on the general pasteboard when it holds no text (see the macOS twin).
+    /// The general pasteboard's image providers, or none when it should paste as
+    /// text (`ClipboardPolicy.decide`). Reads the pasteboard's contents: call it only
+    /// once the user chose Paste, or iOS shows its paste-permission alert.
     @MainActor
     static func pastedImageProviders() -> [NSItemProvider] {
         let pasteboard = UIPasteboard.general
-        guard !pasteboard.hasStrings, pasteboard.hasImages else { return [] }
-        return pasteboard.itemProviders.filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }
+        guard pasteboard.hasImages || pasteboard.hasURLs else { return [] }
+        let contents = ClipboardPolicy.Contents(types: pasteboard.types, string: pasteboard.string,
+                                                fileURLs: (pasteboard.urls ?? []).filter(\.isFileURL))
+        if case .text = ClipboardPolicy.decide(contents) { return [] }
+        return pasteboard.itemProviders.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+                || $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
     }
     #endif
 

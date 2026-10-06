@@ -163,7 +163,13 @@ struct ChatComposerTests {
         #expect(composer.attachments.isEmpty)
         #expect(composer.draft.isEmpty)
         #expect(composer.error == nil)
-        #expect(composer.session.transcript.items.last?.text == "what is this?\n[Image: a.png]\n[Image: b.jpg]")
+        // The bubble: the caption, and the images with their local ids and gateway paths.
+        let bubble = try #require(composer.session.transcript.items.last)
+        #expect(bubble.text == "what is this?")
+        #expect(bubble.images.map(\.name) == ["a.png", "b.jpg"])
+        #expect(bubble.images.map(\.path) == ["/home/u/.hermes/images/upload_20261006_120000_1.png",
+                                              "/home/u/.hermes/images/upload_20261006_120000_2.jpg"])
+        #expect(bubble.images.allSatisfy { $0.localID != nil })
     }
 
     @Test func imageOnlyPromptSendsEmptyText() async throws {

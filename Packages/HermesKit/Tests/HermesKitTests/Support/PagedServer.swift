@@ -49,19 +49,48 @@ final class PagedServer: Sendable {
     let busyStatus = Mutex<String?>(nil)
     /// When set, `prompt.submit` gets no answer; the test fails it with `respondError`.
     let holdSubmits = Mutex(false)
+    /// Methods left unanswered; the test answers them (`respond(to:)`) or fails them.
+    let held = Mutex<Set<String>>([])
+    /// The Bot Chat lineage tip the registry lookup names (default `coder-chat`):
+    /// Desktop compressed or replaced the chat.
+    let botTip = Mutex<String?>(nil)
+    /// The registry has no Bot Chat any more (Desktop deleted it).
+    let botChatGone = Mutex(false)
+    /// The stored key each runtime session was resumed with.
+    let keysBySID = Mutex<[String: String]>([:])
+    /// Overrides the stored key `session.activate` reports (a recycled runtime id).
+    let activateKey = Mutex<String?>(nil)
+    /// Whether `session.activate` reports a turn running.
+    let activateRunning = Mutex(false)
     private let counter = Mutex(0)
 
     init(store: FakeMessageStore) { self.store = store }
 
     func handle(_ method: String, _ params: JSONValue) -> JSONValue? {
+        if held.withLock({ $0.contains(method) }) { return nil }
+        return answer(method, params)
+    }
+
+    /// What this gateway answers, held or not.
+    func answer(_ method: String, _ params: JSONValue) -> JSONValue? {
         switch method {
+        case "session.activate":
+            // `_live_session_payload(omit_messages=True)` (`server.py:3146-3186`,
+            // `methods_session.py:1160-1172`): no messages, the stored key, idle.
+            let sid = params["session_id"]?.stringValue ?? ""
+            return ["session_id": .string(sid), "session_key": .string(activateKey.withLock { $0 } ?? keysBySID.withLock { $0[sid] } ?? sid),
+                    "message_count": .number(Double(store.rows.count)), "messages": [], "messages_omitted": true,
+                    "info": ["model": "test-model"], "running": .bool(activateRunning.withLock { $0 }),
+                    "status": "idle", "inflight": nil]
         case "profiles.list":
             return ["profiles": [profileRowPayload("default", isDefault: true),
                                  profileRowPayload("coder", canonical: canonicalPayload(id: "coder-chat"))],
                     "bot_mode_protocol": true, "install_id": "test"]
         case "session.list":
             if params["title"] == "Bot Chat" {
-                return ["sessions": [["id": "coder-chat", "resolved_id": "coder-chat", "title": "Bot Chat",
+                if botChatGone.withLock({ $0 }) { return ["sessions": []] }
+                let tip = botTip.withLock { $0 } ?? "coder-chat"
+                return ["sessions": [["id": "coder-chat", "resolved_id": .string(tip), "title": "Bot Chat",
                                       "preview": "", "started_at": 1_700_000_000,
                                       "message_count": .number(Double(store.rows.count)), "source": "desktop"]]]
             }
@@ -69,6 +98,7 @@ final class PagedServer: Sendable {
         case "session.resume":
             let key = params["session_id"]?.stringValue ?? ""
             let n = counter.withLock { $0 += 1; return $0 }
+            keysBySID.withLock { $0["rt-\(n)"] = key }
             if let inflight = runningTurn.withLock({ $0 }) {
                 return liveAck(sid: "rt-\(n)", key: key, count: store.rows.count, inflight: inflight)
             }

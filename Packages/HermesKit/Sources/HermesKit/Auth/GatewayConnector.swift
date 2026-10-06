@@ -12,10 +12,19 @@ public protocol GatewayConnector: Sendable {
     /// the same credential. `nil`: this connector has no REST access, so opened
     /// chats show only what streams live and report their history unavailable.
     var messagesSource: (any SessionMessagesSource)? { get }
+    /// Reads images stored on the gateway (`@image:` paths), with the same credential.
+    var mediaSource: (any GatewayMediaSource)? { get }
 }
 
 extension GatewayConnector {
     public var messagesSource: (any SessionMessagesSource)? { nil }
+    public var mediaSource: (any GatewayMediaSource)? { nil }
+}
+
+/// Images stored on the gateway's disk, for a client that cannot read that disk.
+public protocol GatewayMediaSource: Sendable {
+    /// The bytes of the image at `path` (an `@image:` path), read for `profile`.
+    func imageData(path: String, profile: String?) async throws -> Data
 }
 
 /// Bounded pages of a stored transcript (`GET /api/sessions/{id}/messages`).
@@ -103,6 +112,7 @@ public struct DashboardConnector: GatewayConnector {
     }
 
     public var messagesSource: (any SessionMessagesSource)? { self }
+    public var mediaSource: (any GatewayMediaSource)? { self }
 
     /// At most one refresh per connect: proactively when the token is known
     /// to be expired, otherwise after the server rejects it (401
@@ -128,24 +138,64 @@ extension DashboardConnector: SessionMessagesSource {
     ///   to be expired, otherwise after a 401;
     /// - `.password` uses the cookie session and logs in again after a 401.
     public func messagesPage(_ query: SessionMessagesQuery) async throws -> SessionMessagesPage {
+        try await authorized { bearer in try await dashboard.sessionMessages(query, bearer: bearer) }
+    }
+
+    /// One authenticated REST call, with the retry rules above. `call` gets the
+    /// bearer token, or `nil` when the cookie session authenticates.
+    func authorized<T: Sendable>(_ call: @Sendable (String?) async throws -> T) async throws -> T {
         switch credential {
         case .sessionToken(let token), .bearer(let token):
-            return try await dashboard.sessionMessages(query, bearer: token)
+            return try await call(token)
         case .native(let session):
             let (accessToken, refreshed) = try await session.accessToken(using: dashboard)
             do {
-                return try await dashboard.sessionMessages(query, bearer: accessToken)
+                return try await call(accessToken)
             } catch DashboardError.unauthenticated where !refreshed {
                 let fresh = try await session.refresh(replacing: accessToken, using: dashboard)
-                return try await dashboard.sessionMessages(query, bearer: fresh)
+                return try await call(fresh)
             }
         case .password(let provider, let username, let password):
             do {
-                return try await dashboard.sessionMessages(query)
+                return try await call(nil)
             } catch DashboardError.unauthenticated {
                 try await dashboard.passwordLogin(provider: provider, username: username, password: password)
-                return try await dashboard.sessionMessages(query)
+                return try await call(nil)
             }
         }
+    }
+}
+
+extension DashboardConnector: GatewayMediaSource {
+    /// `GET /api/media?path=` first: the route meant for media, which serves only
+    /// files under the dashboard's own `HERMES_HOME/{images,screenshots,cache}`
+    /// (`hermes_cli/web_routers/files.py:307-354`). An upload to a session on
+    /// another profile is stored in *that* profile's home
+    /// (`tui_gateway/prompt_attachments.py:82-95,133-134`), outside those roots, so
+    /// the route answers 403. Those are read like Desktop's remote mode reads them:
+    /// `GET /api/fs/read-data-url?path=&profile=` (`apps/desktop/src/lib/media.ts:132-136`,
+    /// `files.py:901-922`). Any other failure (404 gone, 413 too large, offline) is thrown.
+    public func imageData(path: String, profile: String?) async throws -> Data {
+        let url: String
+        do {
+            url = try await authorized { bearer in try await dashboard.mediaDataURL(path: path, bearer: bearer) }
+        } catch DashboardError.http(status: 403, _) where TranscriptImage.isImagePath(path) {
+            // Only image files: `@image:/some/large.log` must not pull 16 MB to show a placeholder.
+            url = try await authorized { bearer in
+                try await dashboard.fileDataURL(path: path, profile: profile, bearer: bearer)
+            }
+        }
+        guard let data = DataURL.decode(url) else { throw DashboardError.invalidResponse("not a base64 data URL") }
+        return data
+    }
+}
+
+/// `data:<mime>;base64,<payload>`.
+enum DataURL {
+    static func decode(_ url: String) -> Data? {
+        guard url.hasPrefix("data:"), let comma = url.firstIndex(of: ","),
+            url[..<comma].hasSuffix(";base64")
+        else { return nil }
+        return Data(base64Encoded: String(url[url.index(after: comma)...]), options: .ignoreUnknownCharacters)
     }
 }

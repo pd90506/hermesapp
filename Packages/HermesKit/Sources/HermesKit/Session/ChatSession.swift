@@ -332,22 +332,183 @@ public final class ChatSession: Identifiable {
     // MARK: - Actions
 
     /// Shows the prompt immediately, then submits it. The reply streams in as events.
+    /// Throws `ComposerError.strandedImages`, before showing anything, when
+    /// images a failed send left queued could not be detached first. Cancelling
+    /// the caller while it waits for that throws `CancellationError`, also
+    /// before showing anything; once the prompt is shown it is submitted
+    /// regardless of cancellation.
     public func send(_ text: String) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if let client = connection?.client {
+            try await clearStrandedImages(using: client)
+        }
         let itemID = transcript.appendUserPrompt(trimmed)
         do {
             let client = try currentClient()
-            // Whatever the status (a turn of its own, or a busy session's steer, redirect
-            // or queue, `session_auto_continue.py:398-450`), the stored rows show the
-            // outcome once the session is quiet; the bubble shows until then.
-            let result = try await client.submitPrompt(sessionID: sessionID, text: trimmed)
-            transcript.promptAnswered(itemID: itemID, status: result.status, userRowID: result.userRowID)
-            rereadIfNeeded()
+            let result = try await Self.submitUncancellably(client, sessionID: sessionID, text: trimmed)
+            promptAnswered(itemID: itemID, result)
         } catch {
             transcript.submitFailed(GatewayConnection.describe(error), itemID: itemID)
             throw error
         }
+    }
+
+    /// Paths of this runtime session's images that a failed send uploaded but
+    /// could not take back (kept by the connection; see `StrandedImage`).
+    public var strandedImagePaths: [String] {
+        connection?.strandedImagePaths(sessionID: sessionID) ?? []
+    }
+
+    /// Uploads `images` (`image.attach_bytes`), then submits `text` with them.
+    /// - Idle session: the turn start takes every queued image
+    ///   (`tui_gateway/prompt_turn.py:147-149`).
+    /// - Busy session: Hermes claims the queued images at once and queues them
+    ///   with this prompt as their own turn; a prompt with images is never
+    ///   steered into the running one (`tui_gateway/session_auto_continue.py:414-448`).
+    ///
+    /// Throws `ComposerError` before anything is shown or submitted when the
+    /// app is offline, stranded images can't be cleared, or an upload fails;
+    /// the images already queued are then detached. A failed submit detaches
+    /// them too. Cancelling the caller before the prompt is shown throws
+    /// `CancellationError` and detaches the uploads; after that the prompt is
+    /// submitted regardless.
+    public func send(_ text: String, images: [ComposerAttachment]) async throws {
+        guard !images.isEmpty else { return try await send(text) }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sid = sessionID
+        let client: GatewayClient
+        do {
+            client = try currentClient()
+        } catch {
+            throw ComposerError.notConnected
+        }
+        try await clearStrandedImages(using: client)
+        var queued: [String] = []
+        for image in images {
+            do {
+                let result = try await client.attachImage(sessionID: sid, profile: profile, data: image.data,
+                                                          filename: image.filename)
+                guard result.attached, let path = result.path else {
+                    throw RPCError(code: 0, message: result.message ?? "the gateway did not queue it")
+                }
+                queued.append(path)
+            } catch {
+                await detach(queued, using: client, sessionID: sid)
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                throw ComposerError.attachmentFailed(filename: image.filename, reason: GatewayConnection.describe(error))
+            }
+        }
+        if Task.isCancelled {
+            await detach(queued, using: client, sessionID: sid)
+            throw CancellationError()
+        }
+        let names = images.map { "[Image: \($0.filename)]" }.joined(separator: "\n")
+        let itemID = transcript.appendUserPrompt(trimmed.isEmpty ? names : "\(trimmed)\n\(names)")
+        do {
+            let result = try await Self.submitUncancellably(client, sessionID: sid, text: trimmed)
+            // Its stored row carries `@image:` refs, not the bubble's text
+            // (`tui_gateway/session_history.py:51-60`); the bubble settles by the
+            // same quiet re-reads as any prompt, never by matching text.
+            promptAnswered(itemID: itemID, result)
+        } catch {
+            // Ambiguous when the socket dropped: Hermes may have accepted the
+            // submit (and taken the images) before the answer was lost. Then the
+            // detach below settles as `detached: false`, and a retry runs the
+            // message again; the client cannot tell the two cases apart.
+            transcript.submitFailed(GatewayConnection.describe(error), itemID: itemID)
+            await detach(queued, using: client, sessionID: sid)
+            throw error
+        }
+    }
+
+    /// `prompt.submit` answered. Whatever the status (a turn of its own, or a busy
+    /// session's steer, redirect or queue, `session_auto_continue.py:398-450`), the
+    /// stored rows show the outcome once the session is quiet; the bubble shows
+    /// until then.
+    private func promptAnswered(itemID: String, _ result: PromptSubmitResult) {
+        transcript.promptAnswered(itemID: itemID, status: result.status, userRowID: result.userRowID)
+        rereadIfNeeded()
+    }
+
+    /// A prompt already on screen goes out even if the send is cancelled now: a
+    /// cancelled request would be reported as failed while Hermes may run it.
+    private static func submitUncancellably(_ client: GatewayClient, sessionID: String, text: String) async throws
+        -> PromptSubmitResult
+    {
+        try await Task { try await client.submitPrompt(sessionID: sessionID, text: text) }.value
+    }
+
+    /// Detaches `paths`; the ones whose detach got no answer become stranded.
+    /// Runs outside the caller's task, so a cancelled send still cleans up.
+    private func detach(_ paths: [String], using client: GatewayClient, sessionID sid: String) async {
+        guard !paths.isEmpty else { return }
+        let images = paths.map { StrandedImage(sessionID: sid, profile: profile, path: $0) }
+        let unanswered = await Task {
+            var unanswered: [StrandedImage] = []
+            for image in images where !(await GatewayConnection.detach(image, using: client)) { unanswered.append(image) }
+            return unanswered
+        }.value
+        connection?.strand(unanswered)
+    }
+
+    /// Before a send: stranded images of this session would ride with it.
+    private func clearStrandedImages(using client: GatewayClient) async throws {
+        guard let connection, !(try await connection.clearStrandedImages(sessionID: sessionID, using: client)) else {
+            return
+        }
+        throw ComposerError.strandedImages
+    }
+
+    /// The models Hermes offers this session.
+    public func modelOptions() async throws -> ModelOptionsResult {
+        try await currentClient().modelOptions(sessionID: sessionID, profile: profile)
+    }
+
+    /// The session's effort as the gateway reports it (`config.get reasoning`).
+    public func fetchReasoningEffort() async throws -> String? {
+        try await currentClient().reasoningEffort(sessionID: sessionID, profile: profile)
+    }
+
+    /// Switches this session's model (never the profile default). When the
+    /// answer is `confirm_required`, nothing changed; call again with
+    /// `confirmExpensiveModel` once the user agrees.
+    public func setModel(_ choice: ModelChoice, confirmExpensiveModel: Bool = false) async throws -> ConfigSetResult {
+        modelSwitchGeneration += 1
+        let generation = modelSwitchGeneration
+        let result = try await currentClient().setSessionModel(sessionID: sessionID, profile: profile,
+                                                               model: choice.model, provider: choice.provider,
+                                                               confirmExpensiveModel: confirmExpensiveModel)
+        // Show the newest switch that was *applied*. The gateway applies them in
+        // arrival order, so a success newer than the last one shown is what the
+        // session runs, even when a later pick then fails or awaits confirmation.
+        // A success older than the one shown (answers out of order) is stale.
+        if result.confirmRequired != true, generation > appliedModelSwitchGeneration {
+            appliedModelSwitchGeneration = generation
+            // `session.info` follows when the agent is built; a lazy session or a
+            // deferred (mid-turn) switch sends none until later, so show the pick now.
+            var info = self.info ?? SessionLiveInfo()
+            info.model = choice.model
+            info.provider = choice.provider
+            self.info = info
+        }
+        return result
+    }
+
+    @ObservationIgnored private var modelSwitchGeneration = 0
+    @ObservationIgnored private var appliedModelSwitchGeneration = 0
+
+    /// Sets this session's reasoning effort (`none` turns thinking off). Only
+    /// `none` and `ReasoningEffort.levels` are sent: other words reach
+    /// `config.set reasoning`'s display branch, which rewrites the profile's
+    /// display config whatever the session (`methods_config_set.py:312-317`).
+    public func setReasoningEffort(_ effort: String) async throws {
+        guard ReasoningEffort.isSendable(effort) else { throw ComposerError.unsupportedEffort(effort) }
+        let result = try await currentClient().setSessionReasoningEffort(sessionID: sessionID, profile: profile,
+                                                                         effort: effort)
+        var info = self.info ?? SessionLiveInfo()
+        info.reasoningEffort = result.value?.stringValue ?? effort
+        self.info = info
     }
 
     /// Stops the running turn.

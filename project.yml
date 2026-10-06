@@ -60,6 +60,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # The composer's "Choose Image…" panel: read the images the user picks.
+        com.apple.security.files.user-selected.read-only: true
     settings:
       base:
         PRODUCT_NAME: Hermes

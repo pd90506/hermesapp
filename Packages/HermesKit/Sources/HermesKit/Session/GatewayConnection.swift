@@ -49,6 +49,12 @@ public final class GatewayConnection {
     /// after a restore succeeded, so a failed attempt on a restarted backend
     /// cannot make the next attempt believe it is on the same process.
     @ObservationIgnored private var committedEpoch: String?
+    /// Images a failed send left queued on the gateway (see `GatewayConnection+StrandedImages`).
+    /// Held here, not on `ChatSession`: reopening a chat makes a new `ChatSession`
+    /// for the same live runtime session, whose queue still holds them.
+    @ObservationIgnored var strandedImages: [StrandedImage] = []
+    /// The running detach flush of each runtime session that has stranded images.
+    @ObservationIgnored var strandedImageFlushes: [String: Task<Void, Never>] = [:]
     /// Bumped by every connect/disconnect; async work started under an older
     /// generation discards its result (and closes its socket) instead of
     /// overwriting newer state.
@@ -101,6 +107,7 @@ public final class GatewayConnection {
             guard gen == generation else { throw CancellationError() }
             committedEpoch = ready.replayEpoch
             state = .connected
+            flushStrandedImagesInBackground()
         } catch {
             guard gen == generation else { throw CancellationError() }
             await discardClient()
@@ -359,6 +366,7 @@ public final class GatewayConnection {
                 committedEpoch = ready.replayEpoch
                 state = .connected
                 reconnectTask = nil
+                flushStrandedImagesInBackground()
                 try? await refreshSessions()
                 refreshListsInBackground()
                 return

@@ -108,6 +108,11 @@ public struct Transcript: Sendable, Hashable {
     private var prompts: [String: PromptState] = [:]
     /// Answered prompts one quiet re-read has seen settled; the next one drops them.
     private var quietOnce: Set<String> = []
+    /// `starts` when each prompt sent here was shown.
+    private var promptSentAtStarts: [String: Int] = [:]
+    /// Prompts answered `streaming` without `user_row_id` whose turn has not started
+    /// yet: no row exists until that turn runs (see `promptAnswered`).
+    private var awaitingTurn: Set<String> = []
     /// Counts events that a re-read must not race: turn starts, completions, answers.
     private var clock = 0
     private var completions = 0
@@ -397,6 +402,7 @@ public struct Transcript: Sendable, Hashable {
         let item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
         items.append(item)
         prompts[item.id] = .sent
+        promptSentAtStarts[item.id] = starts
         isRunning = true
         lastError = nil
         return item.id
@@ -406,11 +412,33 @@ public struct Transcript: Sendable, Hashable {
     /// (`streaming`, `queued`: `methods_prompt.py:817-820`, `session_auto_continue.py:436-439`)
     /// or will before the session is quiet again (`steered`, `redirected`).
     /// `status` only decides how soon its bubble can go; no status hides it.
-    /// One quiet re-read is enough only for `streaming` with the stored row's id:
-    /// with compute-host isolation, or when the submit-time write fails, `streaming`
-    /// comes before any row (`methods_prompt.py:798-819`). Anything else waits for two.
+    /// One quiet re-read is enough only for `streaming` with the stored row's id.
+    /// `streaming` without it waits for its turn (below). Anything else, including
+    /// a missing status, waits for two quiet re-reads.
+    ///
+    /// `streaming` *without* `user_row_id` means no row was written at submit: the
+    /// text was empty (an image-only prompt; `_write_submit_user_row` returns early,
+    /// `tui_gateway/session_workdir.py:621`), compute-host isolation, or a failed write
+    /// (`methods_prompt.py:798-820`). Its row is stored by its own turn, which can start
+    /// well after any quiet re-read (the agent build waits for a deferred history,
+    /// `server.py:1164`). So such a bubble leaves the quiet rules and becomes part of
+    /// that turn: the turn running now if it started after the prompt was shown (its
+    /// `message.start` beat the answer), else the next one to start. It then goes like
+    /// the turn's other live items, with the first re-read requested after the turn
+    /// finished (`finishedItems`). If no turn ever starts, it stays: no row holds it.
     public mutating func promptAnswered(itemID: String, status: String? = nil, userRowID: Int? = nil) {
         guard prompts[itemID] != nil else { return }
+        if status == "streaming", userRowID == nil {
+            prompts[itemID] = nil
+            let sentAt = promptSentAtStarts.removeValue(forKey: itemID) ?? starts
+            if turnActive, starts > sentAt {
+                turnItemIDs.insert(itemID)
+            } else {
+                awaitingTurn.insert(itemID)
+            }
+            return
+        }
+        promptSentAtStarts[itemID] = nil
         clock += 1
         prompts[itemID] = .answered(clock, storedAtSubmit: status == "streaming" && userRowID != nil)
         // No turn will finish to settle it if none runs (Hermes may have dropped or
@@ -422,7 +450,10 @@ public struct Transcript: Sendable, Hashable {
     /// spinner stops unless a turn is running.
     public mutating func submitFailed(_ message: String, itemID: String? = nil) {
         lastError = message
-        if let itemID, prompts[itemID] != nil { prompts[itemID] = .failed }
+        if let itemID, prompts[itemID] != nil {
+            prompts[itemID] = .failed
+            promptSentAtStarts[itemID] = nil
+        }
         if !turnActive { isRunning = false }
     }
 
@@ -539,6 +570,9 @@ public struct Transcript: Sendable, Hashable {
         starts += 1
         clock += 1
         quietOnce = []
+        // The turn that stores a row-less `streaming` prompt (see `promptAnswered`).
+        turnItemIDs.formUnion(awaitingTurn)
+        awaitingTurn = []
     }
 
     /// The live tool row of a call that is still running.

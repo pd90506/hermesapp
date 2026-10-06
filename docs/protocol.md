@@ -366,10 +366,19 @@ plus the newest page of the transcript over REST.
   How many quiet re-reads a prompt needs depends on its answer:
   - **`streaming` with `user_row_id`: one.** Its row was written before the answer
     (`methods_prompt.py:815-819`), so the first quiet re-read holds it, and the bubble never sits
-    below its own reply. Without `user_row_id` (compute-host isolation, or a submit-time write that
-    failed: `methods_prompt.py:798-803`, `session_workdir.py:639-641`) no row may exist yet, so it
-    needs two, as does a missing status.
-  - **`queued`, `steered`, `redirected`, and the cases above: two in a row**, the second requested
+    below its own reply.
+  - **`streaming` without `user_row_id`: its own turn.** No row was written at submit. Causes:
+    - an empty text, i.e. an image-only prompt (`_write_submit_user_row` returns early,
+      `session_workdir.py:621`);
+    - compute-host isolation;
+    - a submit-time write that failed (`methods_prompt.py:798-803`, `session_workdir.py:639-641`).
+
+    The turn writes the row when it runs, and it can start well after any quiet re-read: the agent
+    build first waits for a deferred history (`server.py:1164`). So the bubble joins that turn:
+    the one running now if it started after the prompt was shown, else the next to start. It goes
+    with the turn's other live items, at the first re-read requested after the turn finished. If
+    no turn starts, it stays.
+  - **`queued`, `steered`, `redirected`, and a missing status: two in a row**, the second requested
     once the first had landed. `message.start` travels on the socket in batches of about 33 ms
     (`ws.py:82-83`), and a single re-read's HTTP answer could arrive before a start that was already
     sent. By the second read, the follow-up's prompt row has been written, or its start has arrived
@@ -748,3 +757,202 @@ This is the OpenAI-compatible server in `gateway/platforms/api_server.py`, descr
 
 `[unverified]` The SSE payload schemas were not reviewed; the doc points to
 `user-guide/features/api-server`.
+
+## 10. Composer: model, reasoning effort, images, voice
+
+The composer mirrors Hermes Desktop's (`apps/desktop/src/app/chat/composer/`). Every call below
+carries the chat's runtime `session_id`, plus its `profile` when it has one (§8.1). Without
+`profile`, `@_profile_scoped` handlers take the scope from the live session named by
+`session_id` (`server.py:598-623`).
+
+Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/Composer/` and
+`ChatSession` hold the logic.
+
+### 10.1 Model picker
+
+- **Listing.** `model.options {session_id, profile?, explicit_only:true}`
+  (`methods_complete.py:357-369`) returns `{providers, model, provider}` (`inventory.py:165`).
+  - Each provider row is
+    `{slug, name, models:[id], total_models, is_current?, authenticated?, capabilities?, …}`.
+  - `capabilities` maps each model id to `{fast, reasoning, ultrafast?, can_disable_reasoning?}`
+    (`inventory.py:317-362`).
+  - Desktop's chat picker sends `explicit_only: true` (`apps/desktop/src/lib/model-options.ts:146-169`),
+    so ambient credentials are hidden.
+  - Desktop skips rows with no models (`model-options.ts:131-133`).
+- **Current model.** The session's `session.info` `model`/`provider` win. The `model.options`
+  pair is the fallback (`model-status-label.ts:1-33`).
+  - A lazy session's info has `model` but neither `provider` nor `reasoning_effort`
+    (`server.py:2831-2839`).
+- **Switching.** The app sends
+  `config.set {session_id, key:"model", value:"<model> --provider <slug> --session"}`.
+  - The persistence rules are in `resolve_persist_behavior` (`hermes_cli/model_switch.py:510-540`).
+    Without a flag, a pick is written to the profile's `config.yaml` when no default is configured
+    yet, or when `model.persist_switch_by_default` is true. `--session` (and `--once`) always opt
+    out.
+  - Desktop's *primary* chat omits the flag and lets the gateway decide. Its secondary tiles send
+    `--session`, so that a pick there "must not rewrite the profile default"
+    (`apps/desktop/src/app/session/hooks/use-model-controls.ts:335-344`).
+  - `[client choice]` The app always sends `--session`. Changing the model here never changes
+    the bot's profile config, whatever that profile's settings.
+  - **Answer:** `{key, value, warning, confirm_required, confirm_message, scope}`
+    (`methods_config_set.py:161-163`).
+  - **`confirm_required: true`** (e.g. an expensive model) means nothing was applied. The app asks
+    the user. On yes, it resends with `confirm_expensive_model: true`. A second
+    `confirm_required` counts as a failure, as in Desktop
+    (`apps/desktop/src/lib/guarded-model-switch.ts:36-53`).
+  - **During a running turn**, the pick is stashed and applied at the next turn start, and the
+    answer carries `deferred: true` (`methods_config_set.py:69-90,122-123`).
+  - `session.info` follows once the agent exists (`methods_config_set.py:34-37`). The app shows
+    the pick right away and lets `session.info` correct it.
+  - Picks overlap when the user picks again before the first answer. The gateway applies the
+    switches in arrival order (`config.set` is not in the pool-dispatched set, `server.py:179-191`),
+    so the last pick sent wins there. The app likewise ignores an
+    answer to an older pick.
+- **Errors.**
+  - A sessionless `config.set model` is 4001 (`methods_config_set.py:153-160`).
+  - A `session_id` the backend no longer holds is 4001 for `model`/`fast`/`yolo`/`reasoning`, and
+    never falls back to a global write (`methods_config_set.py:482-494`).
+- **Not used:** the `/model` slash command (`slash.exec` / `command.dispatch`). It goes through
+  the same switch parser, but Desktop's picker uses `config.set`, and a structured answer is
+  easier to handle.
+
+### 10.2 Reasoning effort
+
+- **Read.** `config.get {key:"reasoning", session_id}` returns `{value, display}`
+  (`methods_config.py:206-224`).
+  - `value` is the session's pin (`create_reasoning_override` or the agent's
+    `reasoning_config`), else the profile's `agent.reasoning_effort`, else `medium`.
+  - `none` means thinking is off.
+  - The app reads `session.info.reasoning_effort` first and calls `config.get` only when that is
+    missing.
+- **Write.** `config.set {key:"reasoning", session_id, value:<level>}`, with **no** `scope`, pins
+  the effort on that session only (`methods_config_set.py:308-336`, branch at :321-331).
+  - `scope:"global"` writes the profile config. The app never sends it.
+  - This is the same call Desktop makes (`apps/desktop/src/lib/reasoning-step.ts:58-73`,
+    `store/model-presets.ts:170-176`).
+  - The display words (`show`/`on`, `hide`/`off`, `full`/`all`, `clamp`/…) rewrite the profile's
+    display config whatever the session (`methods_config_set.py:312-317`).
+    `ChatSession.setReasoningEffort` sends only `none` or one of the levels, exactly as written.
+    Anything else throws before a frame goes out.
+- **Levels:** `minimal, low, medium, high, xhigh, max, ultra`, plus `none`
+  (`apps/shared/src/reasoning-effort.ts`).
+  - The picker is hidden when the model's `capabilities.reasoning` is false
+    (`composer/reasoning-pill.tsx:43-45`).
+  - `none` ("Off") is offered unless `can_disable_reasoning` is false
+    (`app/shell/model-edit-submenu.tsx:134`).
+  - A model the catalog doesn't list keeps the dial: the catalog itself defaults `reasoning` to
+    true (`inventory.py:317-321`).
+
+### 10.3 Images
+
+- **Upload.** `image.attach_bytes {session_id, content_base64, filename}` writes the image into the
+  session's images directory and queues it (`methods_prompt.py:886-914`).
+  - Answer: `{attached, path, count, remainder, text, bytes, name, width?, height?, token_estimate?}`
+    (`methods_prompt.py:1222-1226`, `server.py:861-870`).
+  - The **filename's extension** decides the stored type; magic bytes decide only when there is
+    none (`prompt_attachments.py:64-71`).
+  - Accepted: png, jpg, jpeg, gif, webp, bmp, tiff, tif, svg, ico
+    (`hermes_cli/cli_terminal_input.py:33-36`). Anything else, HEIC included, is 4016.
+  - Errors: 4017 for bad base64, 4018 over 25 MB (`prompt_attachments.py:16,50-60`).
+- **Not usable from another device:**
+  - `image.attach {path}` reads a path on the gateway host.
+  - `clipboard.paste` reads the gateway host's clipboard (`methods_prompt.py:834-855`).
+- **Sending.** The next turn start takes every queued image and empties the queue
+  (`prompt_turn.py:147-149`).
+  - `prompt.submit` has no empty-text check (`methods_prompt.py:681-831`), and Desktop sends an
+    image-only prompt (`composer/hooks/use-composer-submit.ts:252`).
+- **Removing.** `image.detach {session_id, path}` returns `{detached, count}`
+  (`methods_prompt.py:998-1010`).
+- **Frame size.** The dashboard accepts WebSocket frames up to 384 MiB (`hermes_cli/web_server.py:434,1247`).
+- `[client choice]` **Upload at send, like Desktop's remote mode.** Desktop does not upload images
+  eagerly (`use-prompt-actions/index.ts:439-443`).
+  - Images stay on the device until Send. Then they are uploaded one by one, and then
+    `prompt.submit` is sent.
+  - Removing a card is local; nothing is queued yet.
+  - If an upload fails, the images already queued are detached, the cards stay, the draft comes
+    back, and the composer shows the error.
+  - If `prompt.submit` fails, the queued images are detached too, and the cards and draft stay for
+    a retry.
+  - With no connection, nothing is sent: the draft stays and the composer says so.
+  - **Stranded images.** When the socket drops mid-send, the `image.detach` for images already
+    queued cannot be delivered. The runtime session can outlive the outage with them still
+    queued, through a fast reattach (§7) or a `session.resume` of the still-live session.
+    - `GatewayConnection` keeps those paths, keyed by runtime session id. They are kept on the
+      connection, not the `ChatSession`, so they survive reopening the chat, and the list is
+      capped at 50 (the oldest are dropped).
+    - The paths are detached right after every connect or reattach, and again before any send on
+      their session.
+    - The work is per session. Each session's images are detached in parallel, chained only after
+      that session's previous flush. A send waits for its own session's detaches, never another
+      session's.
+    - A send whose session still has a stranded path that got no answer does not go out. The
+      composer shows the error and keeps the draft and the cards.
+    - While the send waits, its button is a spinner the user can tap to cancel. The draft and the
+      cards come back, and the detach carries on in the background. Once the prompt is on
+      screen, it is submitted regardless of cancellation.
+    - Any answer settles a path, including `detached:false` and 4001 (session gone).
+    - `image.detach` resolves the session with `_sess_building`, which also starts a lazy
+      session's agent build (`server.py:1245-1251`). That is harmless.
+    - **Windows that remain:**
+      - A turn **another client** starts on the session before the cleanup runs takes the
+        stranded images.
+      - `[client choice]` **A detach that times out on a socket that stays up** puts the image
+        back on the list. It is retried on the next send on that session or the next
+        connect, not in the background. Retrying at once on a live but silent socket would
+        loop; the heartbeat (§3) drops a dead socket within 45 s, and the reconnect then
+        retries. Until then, another client's turn can take the image.
+      - `[unverified]` An upload that **times out** may still have been queued, under a path the
+        client never learned. Nothing can detach that one.
+  - Why not upload eagerly: a queued image rides with whatever turn starts next, including one
+    started by another client on the same session. That window still exists between the upload
+    and `prompt.submit`, and the client can't close it: `prompt.submit` takes no image list.
+  - **Ambiguous drop during `prompt.submit`.** If the socket drops after Hermes accepted the
+    submit but before the answer arrived, the app reports a failure and keeps the cards and the
+    draft. A retry then runs the message, with its images, a second time. A client cannot tell
+    this case from a submit that never arrived.
+- **Sending while a turn runs.** The composer shows Send beside Stop whenever it holds something
+  to send. What Hermes does with the message depends on its content:
+  - **With images**, a busy `prompt.submit` claims the queued images at once and queues them with
+    the prompt as its own turn. It never steers such a prompt into the running turn, nor
+    interrupts it. The answer is `{status:"queued"}` (`session_auto_continue.py:414-448`).
+  - **Text alone** follows the profile's `display.busy_input_mode`, which defaults to
+    **`interrupt`** (`tui_gateway/server.py:375-377`). The running reply is redirected, or
+    stopped and the text queued (`session_auto_continue.py:415-446`). `queue` and `steer` are the
+    alternatives.
+  - The app reads no setting for this, so its tooltip and accessibility hint state both cases.
+  - Either way, the prompt's bubble follows the §4.1 lifecycle. It shows at once and is marked
+    answered with the `prompt.submit` status (`streaming`, `queued`, `steered` or `redirected`)
+    and `user_row_id`. It is dropped by quiet re-reads once the stored rows hold the outcome.
+  - An image prompt's stored row carries `@image:<path>` lines rather than the bubble's
+    `[Image: name]` text (`tui_gateway/session_history.py:51-60`). That is fine: bubbles settle by
+    quiet re-reads, never by matching text.
+- `[client choice]` **Re-encoding** (`ImageAttachmentPolicy.encodeAttempts`).
+  - PNG/JPEG/GIF/WebP up to 25 MB are sent unchanged.
+  - Anything else (HEIC photos, pasted TIFF), and anything larger, is re-encoded, and the first
+    output within 25 MB wins:
+    1. native size, unless the source alone is over the cap;
+    2. 4096 px on the long side;
+    3. 2048 px.
+  - Each size is tried in the preferred format (PNG when the image has alpha, else JPEG), then
+    as JPEG.
+  - Unknown dimensions start at native size.
+  - An oversized animated GIF becomes a single JPEG frame.
+- `[client choice]` **Card limit.** At most 10 cards per message. Each card holds its bytes in
+  memory, and an upload briefly needs several times that (base64, JSON, frame).
+
+### 10.4 Voice
+
+- **The gateway's voice methods are host-side.**
+  - `voice.record {action:"start"|"stop"}` is VAD push-to-talk on the **gateway host's**
+    microphone (`hermes_cli.voice.start_continuous`). It needs voice mode on, and the transcript
+    arrives as a `voice.transcript` event (`methods_voice.py:714-780`).
+  - `voice.toggle` reports or flips voice mode (`methods_voice.py:683-712`).
+  - Neither takes audio from the client, so neither helps a native client on another device.
+- **Desktop's dictation goes over HTTP.** Desktop records locally and posts `{data_url, mime_type}`
+  to the dashboard route `POST /api/audio/transcribe`, which answers `{ok, transcript, provider}`
+  (`apps/desktop/src/api/system.ts:183-204`, `hermes_cli/web_routers/audio.py:83-143`).
+  - It needs STT configured on the host.
+  - Using it would mean authenticated dashboard REST calls from HermesKit (cookie session or
+    bearer), plus microphone capture and permissions in the apps.
+- `[client choice]` **Not wired yet.** The macOS mic button is shown disabled, with an
+  explanation. iOS hides it, since it has no hover to show one.

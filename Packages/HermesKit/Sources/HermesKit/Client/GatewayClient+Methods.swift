@@ -5,8 +5,23 @@ import HermesProtocol
 extension GatewayClient {
     /// Human-facing stored sessions, most recent first.
     public func listSessions(limit: Int? = nil) async throws -> [SessionSummary] {
-        try await call(GatewayMethod.sessionList, params: SessionListParams(limit: limit),
-                       as: SessionListResult.self).sessions
+        try await listSessions(SessionListParams(limit: limit))
+    }
+
+    /// `session.list` with any params: a profile's listing, or an exact-title lookup.
+    public func listSessions(_ params: SessionListParams) async throws -> [SessionSummary] {
+        try await call(GatewayMethod.sessionList, params: params, as: SessionListResult.self).sessions
+    }
+
+    /// The profile roster, each row with its Bot Chat / newest / worker session.
+    public func listProfiles() async throws -> [ProfileRow] {
+        try await call(GatewayMethod.profilesList, params: ProfilesListParams(), as: ProfilesListResult.self).profiles
+    }
+
+    /// Sets a live session's title; persists its row if it has none yet.
+    @discardableResult
+    public func setTitle(sessionID: String, title: String) async throws -> SessionTitleResult {
+        try await call(GatewayMethod.sessionTitle, params: SessionTitleParams(sessionID: sessionID, title: title))
     }
 
     /// Mints a new live session. Its DB row appears with the first prompt.
@@ -17,9 +32,11 @@ extension GatewayClient {
     /// Attaches to a stored session (reusing it if already live). The
     /// returned `sessionID` is the runtime id for later calls; pass
     /// `openRequests` to `redeliver(_:)` once the UI is ready to show them.
-    public func resumeSession(storedSessionID: String, source: String? = nil) async throws -> LiveSessionSnapshot {
+    /// `profile` names the profile whose state.db holds the row (`nil` = launch profile).
+    public func resumeSession(storedSessionID: String, source: String? = nil,
+                              profile: String? = nil) async throws -> LiveSessionSnapshot {
         try await call(GatewayMethod.sessionResume,
-                       params: SessionResumeParams(sessionID: storedSessionID, source: source))
+                       params: SessionResumeParams(sessionID: storedSessionID, source: source, profile: profile))
     }
 
     public func history(sessionID: String) async throws -> SessionHistoryResult {

@@ -70,6 +70,8 @@ final class AppModel {
     var secret: String
     var isShowingSettings: Bool
     var lastError: String?
+    /// A failed sidebar action (opening a bot or a History chat), shown in the sidebar.
+    var actionError: String?
     var probeResult: String?
     private(set) var isConnecting = false
     private var connectedEndpoint: GatewayEndpoint?
@@ -119,6 +121,17 @@ final class AppModel {
     func disconnect() async {
         await connection.disconnect()
         connectedEndpoint = nil
+        actionError = nil
+    }
+
+    /// Pull-to-refresh: the bot roster, then History.
+    func refreshLists() async {
+        do {
+            try await connection.refreshBots()
+            try await connection.refreshHistory()
+        } catch {
+            actionError = GatewayConnection.describe(error)
+        }
     }
 
     /// Calls the public `/api/status` to check the URL before signing in.

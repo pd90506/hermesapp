@@ -5,6 +5,8 @@ import SwiftUI
 /// Placeholder chat: transcript, pending approval/clarify cards, composer.
 struct ChatView: View {
     let session: ChatSession
+    /// Overrides the session title (a Bot Chat is titled "Bot Chat"; show the bot instead).
+    var title: String?
     @State private var draft = ""
     @State private var error: String?
 
@@ -34,7 +36,7 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom) {
             composer
         }
-        .navigationTitle(session.title ?? "New Chat")
+        .navigationTitle(title ?? session.title ?? "New Chat")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

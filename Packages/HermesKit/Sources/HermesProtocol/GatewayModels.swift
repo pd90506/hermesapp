@@ -22,6 +22,10 @@ public struct SessionSummary: Sendable, Hashable, Codable, Identifiable {
     public var messageCount: Int?
     public var liveMessageCount: Int?
     public var source: String?
+    /// The lineage root's title. Desktop matches the Bot Chat on it first
+    /// (`canonical-chat.ts:196-204`); 0.21.5's `_session_row_summary` does not
+    /// send it yet (`methods_session.py:118-126`), so it is usually `nil`.
+    public var rootTitle: String?
 
     public init(id: String, title: String? = nil, preview: String? = nil, startedAt: Double? = nil,
                 messageCount: Int? = nil, source: String? = nil) {
@@ -39,6 +43,7 @@ public struct SessionSummary: Sendable, Hashable, Codable, Identifiable {
         case startedAt = "started_at"
         case messageCount = "message_count"
         case liveMessageCount = "live_message_count"
+        case rootTitle = "root_title"
     }
 }
 

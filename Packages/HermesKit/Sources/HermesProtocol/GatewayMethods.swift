@@ -14,6 +14,8 @@ public enum GatewayMethod {
     public static let sessionEventsSince = "session.events.since"
     public static let sessionClose = "session.close"
     public static let sessionInterrupt = "session.interrupt"
+    public static let sessionTitle = "session.title"
+    public static let profilesList = "profiles.list"
     public static let promptSubmit = "prompt.submit"
     public static let approvalRespond = "approval.respond"
     public static let clarifyLock = "clarify.lock"
@@ -45,17 +47,30 @@ public struct ClientCapabilitiesResult: Sendable, Hashable, Codable {
 
 // MARK: - session.*
 
+// `profile` on the session params below is `ProfileParams.profile` /
+// `SessionParams.profile` (`contracts/common.py:224-234`): the call runs against
+// that profile's state.db and HERMES_HOME (`server.py:558-596`). A name with no
+// profile on the host fails with 4064 (`rpc_dispatch.py:35-36`). Omitted = the
+// gateway's launch profile.
+
 public struct SessionListParams: Sendable, Hashable, Codable {
     public var limit: Int?
     public var includeHidden: Bool?
+    /// Exact-title lookup, window-free; hidden rows resolve and a compression
+    /// lineage resolves to its tip as `resolved_id` (`contracts/sessions.py:221-224`,
+    /// `methods_session.py:526-559`).
+    public var title: String?
+    public var profile: String?
 
-    public init(limit: Int? = nil, includeHidden: Bool? = nil) {
+    public init(limit: Int? = nil, includeHidden: Bool? = nil, title: String? = nil, profile: String? = nil) {
         self.limit = limit
         self.includeHidden = includeHidden
+        self.title = title
+        self.profile = profile
     }
 
     enum CodingKeys: String, CodingKey {
-        case limit
+        case limit, title, profile
         case includeHidden = "include_hidden"
     }
 }
@@ -72,20 +87,32 @@ public struct SessionCreateParams: Sendable, Hashable, Codable {
     /// Free-form origin tag; the gateway stores it on the session row.
     public var source: String?
     public var closeOnDisconnect: Bool?
+    public var profile: String?
+    /// Born hidden from the default `session.list` (`contracts/sessions.py:134`).
+    public var hidden: Bool?
+    /// Resume follows the profile's current model/provider instead of the
+    /// row's stored pin (`contracts/sessions.py:136`; Desktop sets it on Bot Chats,
+    /// `apps/desktop/src/plugins/hermes-bots/canonical-chat.ts:479-485`).
+    public var followProfileConfig: Bool?
 
     public init(title: String? = nil, cwd: String? = nil, model: String? = nil, provider: String? = nil,
-                source: String? = nil, closeOnDisconnect: Bool? = nil) {
+                source: String? = nil, closeOnDisconnect: Bool? = nil, profile: String? = nil,
+                hidden: Bool? = nil, followProfileConfig: Bool? = nil) {
         self.title = title
         self.cwd = cwd
         self.model = model
         self.provider = provider
         self.source = source
         self.closeOnDisconnect = closeOnDisconnect
+        self.profile = profile
+        self.hidden = hidden
+        self.followProfileConfig = followProfileConfig
     }
 
     enum CodingKeys: String, CodingKey {
-        case title, cwd, model, provider, source
+        case title, cwd, model, provider, source, profile, hidden
         case closeOnDisconnect = "close_on_disconnect"
+        case followProfileConfig = "follow_profile_config"
     }
 }
 
@@ -116,15 +143,18 @@ public struct SessionResumeParams: Sendable, Hashable, Codable {
     public var sessionID: String
     public var source: String?
     public var closeOnDisconnect: Bool?
+    /// Resume from this profile's state.db (`methods_session.py:634-636`).
+    public var profile: String?
 
-    public init(sessionID: String, source: String? = nil, closeOnDisconnect: Bool? = nil) {
+    public init(sessionID: String, source: String? = nil, closeOnDisconnect: Bool? = nil, profile: String? = nil) {
         self.sessionID = sessionID
         self.source = source
         self.closeOnDisconnect = closeOnDisconnect
+        self.profile = profile
     }
 
     enum CodingKeys: String, CodingKey {
-        case source
+        case source, profile
         case sessionID = "session_id"
         case closeOnDisconnect = "close_on_disconnect"
     }
@@ -193,6 +223,38 @@ public struct SessionEventsSinceResult: Sendable, Hashable, Codable {
         case events, truncated, count, epoch
         case latestSeq = "latest_seq"
         case openRequests = "open_requests"
+    }
+}
+
+/// `session.title` with a title sets it (`contracts/sessions.py:306-317`). Setting
+/// it on a session whose row does not exist yet persists the row now
+/// (`methods_session.py:1229-1241`). A title another row already holds fails
+/// with 4022 "Title '…' is already in use by session …"
+/// (`hermes_state_titles.py:154`, `methods_session.py:1242-1243`).
+public struct SessionTitleParams: Sendable, Hashable, Codable {
+    public var sessionID: String
+    public var title: String
+
+    public init(sessionID: String, title: String) {
+        self.sessionID = sessionID
+        self.title = title
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case sessionID = "session_id"
+    }
+}
+
+public struct SessionTitleResult: Sendable, Hashable, Codable {
+    public var title: String
+    public var sessionKey: String?
+    /// `true`: no row yet; the title is applied on the first turn.
+    public var pending: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case title, pending
+        case sessionKey = "session_key"
     }
 }
 

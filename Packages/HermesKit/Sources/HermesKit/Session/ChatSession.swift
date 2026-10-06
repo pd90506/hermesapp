@@ -19,6 +19,11 @@ public final class ChatSession: Identifiable {
     public private(set) var transcript: Transcript
     /// Highest event `seq` applied — the watermark for `session.events.since`.
     public private(set) var lastSeq: Int?
+    /// The profile whose state.db holds this session (`nil` = the gateway's
+    /// launch profile). Sent again on a cold resume, which otherwise looks in
+    /// the launch profile's db and answers 4007.
+    public nonisolated let profile: String?
+    public nonisolated let kind: ChatKind
 
     @ObservationIgnored weak var connection: GatewayConnection?
 
@@ -26,19 +31,24 @@ public final class ChatSession: Identifiable {
 
     /// - Parameter storedSessionID: the key the caller already knows (the
     ///   `session.list` row id); resume payloads only carry it as `session_key`.
-    init(snapshot: LiveSessionSnapshot, storedSessionID: String? = nil, title: String?, connection: GatewayConnection?) {
+    init(snapshot: LiveSessionSnapshot, storedSessionID: String? = nil, title: String?,
+         profile: String? = nil, kind: ChatKind = .session, connection: GatewayConnection?) {
         self.sessionID = snapshot.sessionID
         self.storedSessionID = snapshot.storedKey ?? storedSessionID
         self.title = title ?? snapshot.info?.title
         self.info = snapshot.info
         self.transcript = Transcript(snapshot: snapshot)
+        self.profile = profile
+        self.kind = kind
         self.connection = connection
     }
 
     /// Replaces local state with a fresh snapshot (after a cold resume).
-    func reset(to snapshot: LiveSessionSnapshot) {
+    /// - Parameter storedSessionID: the key that was resumed, used when the
+    ///   payload carries none.
+    func reset(to snapshot: LiveSessionSnapshot, storedSessionID resumedKey: String? = nil) {
         sessionID = snapshot.sessionID
-        storedSessionID = snapshot.storedKey ?? storedSessionID
+        storedSessionID = snapshot.storedKey ?? resumedKey ?? storedSessionID
         if let info = snapshot.info {
             self.info = info
             if let title = info.title, !title.isEmpty { self.title = title }

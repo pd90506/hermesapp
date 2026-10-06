@@ -187,7 +187,7 @@ other call takes the runtime id.
 | `session.resume` | `{session_id:<stored id or exact title>, profile?, omit_messages?, defer_history?}`. The app always sends both flags as `true` (§4.1). | `LiveSessionSnapshot`: `{session_id, message_count, messages:[TranscriptMessage], info, session_key, resumed?, running?, status?, inflight?, open_requests?, pending_approval?, hydrating?, messages_omitted?, …}` (see the note on stored keys below) | sessions.py:73-98,182-202; methods_session.py:898-914; server.py:3172-3186 |
 | `session.activate` | `{session_id:<runtime id>, omit_messages?}` | same snapshot. **Re-binds this socket to a live session and cancels its orphan reap**; 4001/4007 if it is gone. | methods_session.py:1160-1172 |
 | `session.history` | `{session_id}` | `{count, messages}` | sessions.py:484-494 |
-| `prompt.submit` | `{session_id, text}` | `{status:"streaming"\|"queued"\|"steered"\|"redirected", user_row_id?}`. For an idle session it returns immediately and the turn streams as events. A busy session queues, steers or redirects according to `display.busy_input_mode`. The Desktop allows 1800 s for the ack (`apps/desktop/src/api/client.ts:27`), and so does `GatewayClient`. It also re-binds a detached session (methods_prompt.py:741-747). | prompt_voice.py:26-77; methods_prompt.py:681-831 |
+| `prompt.submit` | `{session_id, text, queued?}` | `{status:"streaming"\|"queued"\|"steered"\|"redirected", user_row_id?}`. For an idle session it returns immediately and the turn streams as events. A busy session queues, steers or redirects according to `display.busy_input_mode`; `queued:true` always queues ("the busy path must hold it, never redirect/steer", prompt_voice.py:35). The Desktop allows 1800 s for the ack (`apps/desktop/src/api/client.ts:27`), and so does `GatewayClient`. It also re-binds a detached session (methods_prompt.py:741-747). | prompt_voice.py:26-77; methods_prompt.py:681-831 |
 | `session.interrupt` | `{session_id}` | `{status:"interrupted"\|"not_interrupted"}`. It also cancels the session's open server requests. | sessions.py:598-614 |
 | `session.close` | `{session_id}` | `{closed}`. The stored row stays resumable. | sessions.py:385-394 |
 | `session.title` | `{session_id, title}` | `{title, pending}`. Persists the row now if it has none yet; a title another row holds is 4022 (§8.2). | sessions.py:306-317; methods_session.py:1220-1250 |
@@ -576,19 +576,49 @@ From `contracts/events.py`:
 |---|---|---|
 | `message.start` | none | Open an assistant segment. |
 | `message.delta` | `{text, rendered?}` | Append the text. |
-| `reasoning.delta` / `thinking.delta` (legacy) | `{text}` | Append to the reasoning. |
-| `reasoning.available` | `{text}` | Whole reasoning block from a non-streaming provider. |
-| `message.interim` | `{text, already_streamed}` | Commentary beside tool calls, "sealed as its own segment". `[unverified]` Exactly how this splits segments is inferred from the contract summary. |
-| `tool.generating` | `{name}` | |
-| `tool.start` | `{tool_id, name, context?, args?, preview?}` | Add a tool row. |
-| `tool.complete` | `{tool_id, name, duration_s?, summary?, result?, result_text?, …}` | Finish the tool row. |
+| `reasoning.delta` | `{text}` | Append to the reasoning (`agent_callbacks.py:135-138`). |
+| `reasoning.available` | `{text}` | Whole reasoning block from a non-streaming provider. It replaces the streamed reasoning unless reply text already arrived; then it is dropped, even when no reasoning streamed (Desktop, `use-message-stream/index.ts:526-537`). |
+| `thinking.delta` | `{text}` | **Not reasoning** (`agent_callbacks.py:117-123`). Most frames are spinner rewrites and Desktop drops them. It keeps only an "explained provider wait" matching `providerWaitText` (`⏳/⚠/↻/⚙` + "waiting on", "loading", "rate limited", …), and any other frame clears it (`gateway-event/message-stream.ts:195-205`, `store/provider-wait.ts:43-53`). Model output also clears it (`PROVIDER_WAIT_SUPERSEDING_EVENT_TYPES`, `gateway-event/index.ts:67-78`). The app keeps it in `Transcript.providerWait`, never in `status`. |
+| `message.interim` | `{text, already_streamed}` | Commentary the model writes beside tool calls (`prompt_turn.py:768-773`). Like Desktop, the app seals the streaming bubble in place with the authoritative interim text, even when only part of it streamed. With nothing streaming it marks a same-text row of the turn (a duplicate delivery), else appends a standalone interim row. The next deltas open a new bubble (`use-message-stream/index.ts:614-719`). `TranscriptItem.isInterim` marks it. |
+| `tool.generating` | `{name}` | The model is writing a tool call's arguments. No row: Desktop shows a "drafting tool" status (`gateway-event/tools.ts:33-54`); `Transcript.generatingTool`. The streaming bubble is sealed. |
+| `tool.start` | `{tool_id, name, context?, args?, args_text?, preview?, labels?}` | Add a tool row (`TranscriptItem.tool`, a `ToolActivity` in phase `running`). `context` is an 80-char preview; `args_text` is verbose-mode only (`events.py:261-275`). |
+| `tool.complete` | `{tool_id, name, args?, duration_s?, result, summary?, result_text?, inline_diff?, todos?, revision?}` | Finish the row. **There is no tool-output or tool-progress event**: the output is `result_text`, else `result` (JSON-parsed, or the raw string, `tool_progress.py:343-346`). `inline_diff` comes with edit tools. The contract has no `error`; Desktop reads one only for an error animation (`gateway-event/tools.ts:109`). `[client choice]` The app marks such a row `failed`. A tool still running when the turn ends is marked complete. |
 | `status.update` | `{kind, text}` | Transient status line. |
+| `btw.complete` / `background.complete` | `{task_id, text, question?}` | Answer to `prompt.btw` / `prompt.background` (§10.7). `text` starts with `error: ` on failure (`methods_prompt.py:1282-1315`). |
 | `message.complete` | `{text: str \| JsonValue, status?: complete\|error\|interrupted, reasoning?, error?, usage?, persisted_turn?, …}` (`events.py:189,205`; decode `text` as any JSON). The app does not use `persisted_turn`; it re-reads the newest rows instead (§4.1). | **The terminal frame of every turn.** Errors inside a turn arrive here with `status:"error"`; there is no separate turn-end event (`events.py:138-208`, `session_auto_continue.py:555-581`). `[unverified]` When a turn contained tool calls, the app shows the streamed segments and uses `text` only when nothing was streamed; the doc does not say whether `text` is the last segment or the whole reply. |
 | `session.title` | `{session_id:<stored id>, title}` | Rename. |
 | `session.info` | `SessionLiveInfo` | |
 | `error` | `{message}` | A session-level failure outside a turn. |
 | `request.cancel` | `{id, method, reason}` | Remove the matching server-request card. |
 | `approval.cancelled` | `{session_id, request_ids:[approval request_id], reason, …}` | Broadcast globally (`session_lifecycle.py:505-510`). |
+| `sessions.changed`, `session.reclaimed`, `notification.show` / `.clear` | see §11 | Sidebar, reclaimed runtimes and notices. |
+
+**Rich content in stored rows** (`StoredMessageProjection`, REST rows of §4.1):
+- A tool row becomes a finished `ToolActivity`: name and arguments from the preceding assistant
+  row's `tool_calls`, by id. Its output is kept only for `write_file`, `patch` and
+  `skill_manage`, as `_history_to_messages` does (`session_history.py:322-334`); the app does not
+  hold other tools' raw output in memory.
+- A user row with `display_kind:"steer"` is a mid-turn steer. The REST read gives the user's own
+  words as `display_content` (`web_routers/sessions.py:663-667`); `TranscriptItem.isSteer`.
+- A user row that starts with `@file:` / `@folder:` lines (one per attached file, §10.5) shows
+  them as `TranscriptItem.attachments` (file names) and the rest as its text, like Desktop's
+  `splitLeadingAttachmentRefs` (`apps/desktop/src/components/assistant-ui/reference-kinds.ts:177-197`).
+  Only the leading run is lifted; a reference typed mid-prose stays text.
+- A snapshot that does carry messages (`session.create`, or a gateway that ignored
+  `omit_messages`) is read the same way from `_history_to_messages`' shape
+  (`{role:"tool", name, context, args?, tool_call_id?, content?}`, `session_history.py:285-362`).
+
+**Local rows.** Slash-command output, notices, and `/btw` / `/bg` questions and answers
+(§10.6-10.7) are shown on this device only; no stored row ever holds them, so no re-read can
+settle them. `[client choice]` Such a row joins the stored part of the transcript once the newest
+page is in and no unsettled live item is ahead of it, anchored to the stored row it follows, and
+keeps that place when pages are installed or re-read. A row added while a turn runs moves
+below that turn's rows once they are stored. A rebuild (cold resume, §7) drops them. A re-read
+that replaces the whole loaded window (§4.1) puts a row whose anchor it no longer holds at the
+top; older pages loaded later go above it, not around its anchor.
+
+A failed turn (`status:"error"`) keeps every live segment of its last model call, also the ones
+a local row or a prompt sealed mid-reply: none of them is stored.
 
 Unknown event types must be ignored. Hermes has about 80 notification types; see
 `x-notifications` in the OpenRPC file.
@@ -609,7 +639,7 @@ Source: `tui_gateway/server_requests.py:1-35,70-72` and `contracts/server_reques
   | Method | Params | Answer |
   |---|---|---|
   | `approval` | `{request_id, command, description, choices, allow_permanent?, allow_session?, tool_name?}` | `{choice: once\|session\|always\|deny, all?}` |
-  | `clarify` | `{questions:[{qid, question, choices?, multi_select}], answers?}` | `{answers:{qid: string\|null}}`. Omitting `answers` cancels. Per-question locking uses the `clarify.lock` RPC. |
+  | `clarify` | `{questions:[{qid, question, choices?, multi_select}], answers?}` | `{answers:{qid: string\|null}}`. Omitting `answers` cancels. Per-question locking uses the `clarify.lock` RPC. A multi-select answer is a JSON array string (§10.8). |
   | `sudo` | `{command?}` | `{value}`. An empty string means skipped. |
   | `secret` | `{env_var, prompt, metadata?}` | `{value}`. An empty string means skipped. |
 
@@ -684,6 +714,10 @@ client's replay (`apps/shared/src/json-rpc-gateway.ts:504-670`), but adds the ex
    - The reconnect loop does the same: it does not retry a restore that can never succeed.
    - Any other error fails the connect and keeps the session for the next attempt: 4009
      "disconnect interrupt settling" (`session_lifecycle.py:821-822,953-955`), 5000, -32000, …
+6. A chat whose runtime was reclaimed (`session.reclaimed`, §11) skips step 3: there is nothing to
+   re-bind. While the restore runs, the chat's actions wait for it
+   (`ChatSession.settleIdentity`), and a resume of the reclaimed runtime still in flight on the
+   old socket is cancelled, so the chat is resumed once, not twice.
 
 `[unverified]` Events emitted between the re-bind and the resume snapshot on the step-4 fallback
 could be counted twice or missed. The window is small and not covered by the server's contract.
@@ -741,7 +775,8 @@ the same conversation.
       (`row-helpers.ts:55-86`);
     - *waiting for you*: a server request for a session of that profile that this app opened.
   - **Refresh:** the roster is re-read after every connect, every finished turn of a profile's
-    session, and every 15 s while the sidebar is shown. Desktop polls every 5 s
+    session and every `sessions.changed` (both throttled, §11), and every 15 s while the sidebar
+    is shown. Desktop polls every 5 s
     (`methods_profiles.py:249-250`).
   - **Side effect:** History lists every profile, so the gateway serves profiles other than its
     launch profile from the first poll on. The first call scoped to such a profile switches it
@@ -851,15 +886,24 @@ This is the OpenAI-compatible server in `gateway/platforms/api_server.py`, descr
 `[unverified]` The SSE payload schemas were not reviewed; the doc points to
 `user-guide/features/api-server`.
 
-## 10. Composer: model, reasoning effort, images, voice
+## 10. Composer and session actions
 
-The composer mirrors Hermes Desktop's (`apps/desktop/src/app/chat/composer/`). Every call below
-carries the chat's runtime `session_id`, plus its `profile` when it has one (§8.1). Without
-`profile`, `@_profile_scoped` handlers take the scope from the live session named by
-`session_id` (`server.py:598-623`).
+The composer mirrors Hermes Desktop's (`apps/desktop/src/app/chat/composer/`), the reference
+client: model and reasoning effort (§10.1-10.2), images (§10.3), voice (§10.4), files (§10.5),
+slash commands (§10.6), steering a running turn (§10.7), clarify multi-select (§10.8), and
+renaming, archiving and deleting side chats (§10.9). Everything goes over the same `/api/ws`
+JSON-RPC.
 
-Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/Composer/` and
-`ChatSession` hold the logic.
+Every call takes the chat's **runtime** `session_id`, except `session.delete`, and
+`session.archive` on a row that is not open (stored id plus `profile`). The model, effort and
+image calls also carry the chat's `profile` when it has one (§8.1). Without `profile`,
+`@_profile_scoped` handlers take the scope from the live session named by `session_id`
+(`server.py:598-623`). A chat whose runtime was reclaimed is resumed before any of these calls
+(§11).
+
+Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/Composer/`
+(`ChatComposer`: one per warm chat, `GatewayConnection.composer(for:)`), `ChatSession`,
+`SlashCommands.swift` and `GatewayConnection+Manage.swift` hold the logic.
 
 ### 10.1 Model picker
 
@@ -1075,3 +1119,292 @@ Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/C
     bearer), plus microphone capture and permissions in the apps.
 - `[client choice]` **Not wired yet.** The macOS mic button is shown disabled, with an
   explanation. iOS hides it, since it has no hover to show one.
+
+### 10.5 Files
+
+| Method | Params | Result | Notes |
+|---|---|---|---|
+| `file.attach` | `{session_id, name, data_url}` (or a gateway-visible `path`) | `{attached, name, path, ref_path, ref_text, uploaded}` | Writes the bytes into the profile's `attachments/` folder, or `<workspace>/.hermes/attachments` with `attachments.storage: workspace` (`prompt_attachments.py:88-95`). A gateway-visible `path` inside the workspace is used as is (:208-211). Any MIME type is accepted, and a name collision gets `-2`, `-3`… The result's `ref_text` is `@file:<ref_path>`, quoted when needed (`methods_prompt.py:975-995`, `prompt_attachments.py:187-248`). Error 4015 without `path` or `data_url`, 5028 on failure. |
+
+- **Upload when attached.** `ChatComposer.attachFile(_:filename:mimeType:)` uploads a file at
+  once (`ChatSession.attachFile`), like Desktop's drop-time eager upload
+  (`use-prompt-actions/index.ts:176,324-327`), and keeps its `ref_text` as a `ComposerFile` card.
+  PDFs are files too; Desktop never calls `pdf.attach`. While an upload runs, `canSubmit` is false.
+  - An image Hermes takes unchanged (`ImageAttachmentPolicy.canSendUnchanged`) becomes an image
+    card instead and follows §10.3. Other images should be converted by the app first.
+  - `[client choice]` Files over 50 MB are refused before any call, and empty files too.
+    `file.attach` has no cap of its own, but the bytes travel base64 (about 4/3 larger) in one
+    JSON-RPC frame. The real limits:
+    - the dashboard WebSocket accepts frames up to 384 MiB (`_DESKTOP_ATTACHMENT_WS_MAX_BYTES`,
+      `hermes_cli/web_server.py:437-439`);
+    - gateways below desktop contract v5 keep a 16 MiB frame cap (`tui_gateway/server.py:2269`);
+    - Desktop reads at most 256 MiB for an attachment (`use-prompt-actions/utils.ts:443-446`).
+
+    50 MB is Hermes' own PDF cap (`_PDF_ATTACH_MAX_BYTES`, `prompt_attachments.py:17`); it keeps
+    one upload to a frame size every v5+ gateway takes, and the app's memory use bounded.
+- **Sending.** The prompt is the files' references, one per line, then a blank line and the
+  typed text (`use-prompt-actions/submit.ts:224-234`); a prompt of files alone is just the
+  references. The bubble shows the text and the files' names (`TranscriptItem.attachments`); the
+  stored row shows the same way (§5). Images ride the session's queue alongside (§10.3).
+- **Failures.** A failed send keeps the file cards and gives the text back, as with images. A
+  file staged on the gateway is not removed when its card is: the contract has no `file.detach`
+  (nor any other call that removes a staged file), and a file no prompt references is never read.
+- Chat attachments never use the dashboard's `/api/files/upload`, which belongs to the file
+  browser (`hermes_cli/web_routers/files.py:643-715`). `GatewayClient` allows 300 s for an upload.
+
+### 10.6 Slash commands
+
+| Method | Params | Result | Source |
+|---|---|---|---|
+| `commands.catalog` | `{session_id?, profile?}` | `{pairs:[[name, desc]], canon, commands:{"/x":{argument_mode?, desktop?, desktop_subcommands?}}, categories:[{name, pairs}], skills:{"/x":{usage, origin}}, skill_count, warning}` | tools_commands.py:185-229; methods_tools.py:503-537 |
+| `complete.slash` | `{text, session_id?, profile?}` | `{items:[{text, display, meta, kind?:"command"\|"skill"}], replace_from}` | profiles_vault_complete_foreign_subagents.py:50-67; methods_complete.py:278-331 |
+| `slash.exec` | `{session_id, command}` (no leading `/`) | `{output?, warning?}`, or a dispatch directive with `type` | tools_commands.py:283-305; methods_tools.py:1118-1196 |
+| `command.dispatch` | `{name, arg?, session_id?}` | `{type:"exec"\|"alias"\|"plugin"\|"send"\|"skill"\|"prefill", output?, target?, message?, notice?, display?, name?, status?}` | tools_commands.py:247-280; methods_tools.py:1098-1115 |
+| `session.compress` | `{session_id, focus_topic?}` | `{status: compressed\|aborted\|pending, removed, summary:{headline, token_line, note, noop, aborted}, info, messages, …}`, or `{compressed:false, lock_held, message}` | sessions.py:553-592; methods_session.py:2097-2167 |
+| `prompt.background` | `{session_id, text}` | `{task_id}`; the answer arrives as `background.complete {task_id, text}` | prompt_voice.py:232-233; events.py:451; methods_prompt.py:1039-1060 |
+| `session.save` | `{session_id}` | `{file}` | sessions.py:457-469; methods_session.py:2170-2199 |
+| `session.status` | `{session_id}` | `{output}` | sessions.py:472-481; methods_session.py:1972 |
+
+- **Catalog.**
+  - Quick commands (config `quick_commands`) form the "User commands" category; plugin commands
+    form "Plugin commands" (`methods_tools.py:460-486`).
+  - Skills appear only in `pairs` and `skills`, not in `categories` (:489-500). Desktop lists them
+    under "Skills" (`use-slash-completions.ts:173-215`).
+  - `commands[x].desktop` is either `hidden` (left out of the list, still runnable) or a reason the
+    command can't run in a GUI: `terminal`, `messaging`, `settings`, `advanced` or
+    `composer-voice` (`desktop-slash-commands.ts:440-483`).
+  - `commands[x].desktop_subcommands` narrows a command to the subcommands a GUI may run.
+    Desktop's local table gives `/skills` only `pending|approve|reject|diff|approval`: "the CLI
+    hub mutations must not be reachable from a desktop exec"
+    (`desktop-slash-commands.ts:314-325`).
+  - `canon` maps aliases to canonical names.
+  - `SlashCatalog` encodes all of this; `SlashCatalog.refusal(for:argument:)` is the gate.
+- **Completion.** `SlashCompletions.applying` inserts an accepted item as Desktop does:
+  - At the command stage, `replace_from` is 1 and `text` is the whole `/command`.
+  - At the argument stage, `replace_from` is the column after the last space and `text` is only
+    the argument stub (`methods_complete.py:331`). Desktop inserts
+    `text[..<replace_from] + item.text` (`use-slash-completions.ts:224-252`).
+- **What counts as a command.** Text matching `^/[^\s/]*(?:\s|$)` (`apps/shared/src/slash.ts:11`);
+  so `/usr/bin` is a prompt. The name is lower-cased, and the argument keeps its interior
+  whitespace (`slash.ts:35-39`). `ChatComposer.submit` sends the draft as a prompt; the app calls
+  `ChatSession.runSlash` for a draft that `SlashCommand.isCommand` accepts.
+- **Running one** (`use-prompt-actions/slash.ts:262-464`, `ChatSession.runSlash`):
+  1. **Bot Chat reset.** In a Bot Chat, `/new`, `/reset` and `/clear` run `/compress` instead:
+     "/new inside a bot's canonical forever-chat would fork the relationship"
+     (`plugins/hermes-bots/plugin.tsx:765-800`). `[client choice]` Desktop rewrites only a bare
+     `/new` or `/reset`. The package also covers arguments and the `/clear` alias, so a Bot Chat
+     never gets a client-side new chat.
+  2. **Client-side commands.** Desktop's client actions and pickers never reach the gateway
+     (`desktop-slash-commands.ts:189-325`).
+     - The package runs the ones that are a plain RPC with no UI:
+       - `/compress` (`/compact`) → `session.compress`, 660 s timeout like Desktop. The
+         transcript keeps the earlier messages, as Desktop's merge does, and gains the summary
+         line (`use-prompt-actions/slash.ts:684-865`).
+       - `/bg` (`/background`) → `prompt.background`, answered by `background.complete`.
+       - `/save` → `session.save`; `/status` → `session.status`.
+       - `/btw` (§10.7) and `/title` (§10.9).
+       - `/stop`, as Desktop does (`use-prompt-actions/slash.ts:525-570`): `session.interrupt`
+         for the running turn, then `process.stop {}`, the registry's meaning of `/stop` ("Kill
+         all running background processes", `hermes_cli/commands.py:124`), answering
+         `{killed}` (`contracts/tools_commands.py:54-64`). Both results show in one note,
+         a failure of either as its own line; a reclaimed chat has no turn to stop.
+     - The rest need UI (`/new`, `/model`, `/resume`, `/branch`, `/help`, `/skin`, …) and come back
+       to the app as `.clientAction`, under the command's canonical name when the loaded catalog
+       maps the typed alias to one (`/fork` → `branch`).
+  3. **The gate.** Before anything goes to `slash.exec`, the session's catalog is loaded if it
+     isn't yet; a failed load throws, so nothing is sent ungated. The typed name is resolved
+     through `canon`, then refused as `.unavailable` (`desktop-slash-commands.ts:551-587,705-720`)
+     when:
+     - the catalog marks it unavailable in a GUI and the first argument is not an allowed
+       subcommand;
+     - or its `desktop_subcommands` don't include the first argument (or there is none).
+  4. **Gateway commands.** Everything else goes to `slash.exec`. If that errors, the command falls
+     back to `command.dispatch`; a skill, for example, gets 4018 "use command.dispatch"
+     (`methods_tools.py:1118-1196`). If the fallback only answers "not a quick/plugin/skill
+     command", the `slash.exec` error is the one thrown (`slash.ts:430-463`).
+  5. **Directives:**
+     - `exec` / `plugin`: show `output` (a local row, §5).
+     - `alias`: run `/<target> <arg>`.
+     - `send` / `prefill` with a `notice`: show the notice first.
+     - `prefill`: put `message` in the composer (`.prefill`).
+     - `send` / `skill`: submit `message` with `prompt.submit`, showing `display`. The expanded
+       skill body is never shown; the bubble settles like any prompt (§4.1), and the stored row
+       shows the invocation as typed (`StoredMessageProjection.skillInvocation`).
+  6. `[client choice]` **While a turn is running**, Desktop holds the kickoff in its own
+     client-side queue. The app instead sends it with `prompt.submit {queued:true}`, which the
+     gateway holds until the turn ends.
+
+### 10.7 Steering a running turn
+
+| Method | Params | Result | Source |
+|---|---|---|---|
+| `session.steer` | `{session_id, text}` | `{status:"queued"\|"rejected", text}` | sessions.py:617-633; methods_session.py:2444-2479 |
+| `session.redirect` | `{session_id, text}` | `{status:"redirected"\|"queued"\|"rejected", text}` | sessions.py:634-635; methods_session.py:2453-2459,2480-2482 |
+| `prompt.btw` | `{session_id, text}` | `{task_id}` | prompt_voice.py:221-235; methods_prompt.py:1063-1082 |
+| `session.interrupt` | `{session_id}` | `{status}` | §4 |
+
+These are explicit actions (`ChatSession.steer`, `redirect`, `askBTW`). `ChatComposer.submit`
+while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_input_mode`
+(§10.3).
+- **Steer** injects the text into the running turn's next tool result, without a new user turn.
+  - On an idle session it answers `rejected`, and the client should send the text as a normal
+    prompt (`methods_session.py:2472-2475`). `ChatSession.steer` does.
+  - While compression runs, the text is `queued` for later (:2461-2469), as the next turn.
+    `[client choice]` The reply is the same `queued` a delivered steer gets, so the row still
+    shows as a steer; the re-read settles it either way.
+  - After `queued` the transcript shows the text as a user prompt with `displayKind == "steer"`.
+    Hermes stores a delivered steer as its own user row with `display_kind:"steer"`
+    (`agent/prompt_builder.py:594-601`), so the bubble settles like a `steered` prompt: by quiet
+    re-reads (§4.1), after which the stored steer row shows.
+- **Redirect** stops the active model request and resumes the turn with the correction.
+  - This is what Desktop's composer does on Enter while a turn runs: its `onSteer` is
+    `redirectPrompt`, which calls `session.redirect` (`use-prompt-actions/index.ts:775-895`).
+  - Desktop uses `session.steer` only for hidden notes (:901-940). The package offers both.
+- **Redirect rows** follow Desktop (`index.ts:817-861`):
+  - The correction is a **plain user prompt**, added before the call: the turn's end can race the
+    answer. The reply so far is sealed above it, and later deltas go below.
+  - `redirected`: the row stays and settles like a `redirected` prompt (§4.1).
+  - `queued`: during the turn's build window or a running compression the gateway makes the text
+    the *next turn* (`methods_session.py:2453-2469`). The row moves to the end, settles like a
+    `queued` prompt, and the outcome is `.queuedForNextTurn`.
+  - Anything else withdraws the row; `rejected` then sends the text as a normal prompt.
+- **Rows added mid-turn.** A user prompt, steer, redirect, note or `/btw` row added while a reply
+  streams seals the streaming bubble first (Desktop's `appendAfterActiveReply`). Later deltas open
+  a new bubble below the row, and `message.complete` stops every row of the turn. A final `text`
+  that the turn's segments, joined, already end with is not added again.
+- **By the way.** `prompt.btw` answers a side question from a snapshot of the conversation; the
+  live turn and its history are untouched.
+  - The answer arrives on the session as `btw.complete {task_id, text, question}`
+    (`events.py:443-452`).
+  - Desktop runs `/btw` this way rather than through `slash.exec`, whose worker would only return
+    the acknowledgement (`desktop-slash-commands.ts:271-279`).
+  - The transcript shows a local system row (§5) with a `SideQuestion`, filled in on
+    `btw.complete`; `sideQuestion.isPending` says it still waits (the row never spins). The
+    answer can arrive before the `prompt.btw` reply; the row is then created by the answer and
+    not added twice.
+  - `/bg` works the same way with `prompt.background` / `background.complete`, as a `SideQuestion`
+    of kind `.background` (`gateway-event/status.ts:212-240`).
+
+### 10.8 Clarify multi-select
+
+- **When it applies.** Desktop honours `multi_select` only when the question still has choices
+  after blank ones, and ones over 8000 characters (`MAX_CHOICE_CHARS`), are dropped
+  (`store/clarify.ts:42-102`). The tool suffixes the first choice
+  with " (Recommended)" when there are at least two (`mark_recommended`,
+  `tools/clarify_tool.py:14,19-25`).
+- **Answer format** (`clarify/pending.tsx:121-141`):
+  - Multi-select: a **JSON array string** of the picked choices without that suffix, plus the typed
+    "other" text as one more element.
+  - Single-select: the bare choice, else the typed text.
+  - Nothing picked: `null` (skipped).
+  - The tool accepts a list, a JSON array string or a single string (`clarify_tool.py:36-47`).
+- **Replay.** `answers` holds the locked answers; a multi-select one is parsed back as JSON
+  (`pending.tsx:90-111`).
+- **In the package:** `ClarifyQuestion.allowsMultipleChoices`, `answer(for:)` and
+  `selection(fromAnswer:)`; `ClarifyRequest.lockedSelection(for:)`; and
+  `ChatSession.answer(_:selections:)`.
+
+### 10.9 Rename, archive, delete
+
+| Method | Params | Result | Source |
+|---|---|---|---|
+| `session.title` | `{session_id:<runtime>, title}` | `{title, pending}` | §4; methods_session.py:1220-1249 |
+| `session.archive` | `{session_id:<runtime or stored id>, archived, profile?}` | `{archived, session_key}` | sessions.py:337-352; methods_session.py:1252-1279 |
+| `session.delete` | `{session_id:<stored id>, profile?}` | `{deleted:<stored id>}` | sessions.py:294-303; methods_session.py:1175-1198 |
+
+- **Desktop uses REST for these.**
+  - The endpoints are `PATCH /api/sessions/{id}` with `{title?, archived?, …}` and
+    `DELETE /api/sessions/{id}?profile=` (`hermes_cli/web_routers/sessions.py:792-879`,
+    `apps/desktop/src/api/sessions.ts:374-389,708-743`).
+  - It renames through `session.title` when the session is live in the window, and falls back to
+    REST otherwise (`session-actions-menu.tsx:112-143`).
+  - `session.archive` is the gateway's documented "Desktop PATCH parity" twin.
+  - `[client choice]` The package only uses JSON-RPC, so it needs no second auth surface.
+- **Rename** needs a live runtime id: `session.title` only resolves `session_id` among live
+  sessions. `[client choice]` The app renames only a chat it has open (on screen or warm, §4.2),
+  and throws `SessionActionError.notOpen` otherwise. Opening a row just to rename it would cause
+  two problems:
+  - Resuming re-binds the row's event stream to this socket (§7), away from a Desktop window
+    showing it.
+  - `session.close` would then tear it down for everyone (`methods_session.py:2202-2206`).
+- **Archive** applies to the whole lineage (`methods_session.py:1252-1279`).
+  - It takes a live runtime id first; an unpersisted chat gets `pending_archived`.
+  - Otherwise it takes a stored id, key or title in `profile`'s db. A reclaimed chat's stored id
+    is archived.
+  - `session.list` has no archived filter, so archived rows never list
+    (`hermes_state_sessions.py:1315`). Unarchive is therefore only offered as an undo.
+- **Delete.**
+  - The gateway refuses with 4023 while the session is live anywhere in the gateway process
+    (`methods_session.py:1185-1186`), and answers 4007 for an unknown id.
+  - Like Desktop (`use-session-actions/index.ts:3240-3403`), the app first interrupts and
+    `session.close`s the runtime it has live for that row (the chat on screen, a warm chat, or one
+    it opened earlier on this connection), then deletes. The chat leaves the warm cache with its
+    composer.
+  - `[client choice]` 4007 counts as deleted: a chat with no first turn has no row.
+  - A 4023 that remains means another client has the chat open; the error is shown.
+- **Bot Chats are protected.**
+  - A Bot Chat is (profile, hidden session titled exactly `Bot Chat`) (§8.2,
+    `hermes_state.py:1602-1608`).
+  - The server only refuses *renaming* it (`hermes_state_titles.py:100-109`). Archiving would
+    retire it: an archived hidden "Bot Chat" gives its title up to the next one
+    (`hermes_state_titles.py:140-153`). Deleting has no guard at all.
+  - Desktop only hides Rename for Bot Chat tabs (`workspace-scope.ts:75-85`).
+  - `[client choice]` The package refuses rename, archive, unarchive and delete with
+    `SessionActionError.botChatProtected`, and sends nothing, when:
+    - the chat was opened as a Bot Chat;
+    - its title or `root_title` is `Bot Chat`;
+    - its stored id is the roster's `canonical_session.id` or `resolved_id` for that profile.
+  - It also refuses to give any session the title `Bot Chat` (`.reservedTitle`), which would make
+    that session the bot's chat. `/title` goes through the same checks.
+
+## 11. Live sidebar (server pushes)
+
+These arrive in the same `event` notification envelope (§2). Broadcasts carry an empty
+`session_id` and go to every socket (`_broadcast_global_event`, `server.py:738-754`).
+
+| `type` | Scope | Payload | App behaviour |
+|---|---|---|---|
+| `sessions.changed` | broadcast | `{}` | See the note below the table. |
+| `session.title` | session | `{session_id:<stored key>, title}` | Renames the row (`prompt_turn.py:795-797`). |
+| `session.info` | session | `SessionLiveInfo` | Emitted whenever the live session's info moves, among others: after a `session.title` call (`methods_session.py:1248`), after a compression (`methods_session.py:2130-2132`), on a config change (`methods_config_set.py:37`), and by `broadcast_session_info` (`server.py:2449-2455`). The app also renames the row when `stored_session_id` and `title` are set. `[client choice]` Desktop does not use it for sidebar titles. |
+| `session.reclaimed` | broadcast | `{session_id:<runtime>, stored_session_id, reason: idle_timeout\|lru_evict\|ws_orphan_reap}` | The backend dropped a live session (`session_lifecycle.py:465-480`). See the note below the table. |
+| `notification.show` | session-routed | `{text, level: info\|warn\|error\|success, kind: sticky\|ttl\|agent, ttl_ms?, key?, id?}` | Added to `GatewayConnection.notifications`. A notice with the same `key` replaces the old one. Fields per `events.py:332-341`. Only a `kind:"ttl"` notice with a positive `ttl_ms` removes itself after that time; every other notice stays until cleared or dismissed. `ttl_ms` is "honored only when kind == ttl" (`agent/credits_tracker.py:111-112`), as in Desktop (`apps/desktop/src/store/agent-notices.ts:118-134`). `[client choice]` A `ttl` notice without a usable `ttl_ms` stays; Desktop falls back to its toast default. |
+| `notification.clear` | session-routed | `{key}` | Removes that notice (`events.py:344-349`). |
+
+**`sessions.changed`:**
+- **What triggers it.** The change watcher hashes the session columns (title, archived, hidden, …)
+  of every served profile db every 0.5 s. It broadcasts at most every 2 s, trailing edge included
+  (`change_watcher.py:285-331`). Any rename, archive, delete, new row or turn from any client
+  triggers it, including every streaming turn.
+- `[client choice]` The app refreshes `sessions`, the roster and History, at most once per
+  `pushedRefreshInterval` (10 s, Desktop's heavy-pass interval, `use-background-sync.ts:1302-1381`),
+  with one trailing refresh after a burst. The first change after a quiet period refreshes at once.
+  A profile chat's `message.complete` refreshes at once too, so the bot's preview follows the
+  finished turn: it replaces a pending trailing refresh and restarts the window, so the turn's
+  own `sessions.changed` still collapse behind it. A refresh asked for while one runs queues
+  exactly one more.
+
+**`session.reclaimed`:**
+- Like Desktop (`gateway-event/lifecycle.ts:123-165`), the app forgets the runtime id and drops
+  the requests opened under it (including `otherSessionRequests`), then refreshes the lists.
+- Every chat on that runtime, the one on screen or a warm one (§4.2), stays, with
+  `ChatSession.isRuntimeGone` set. A turn it still showed as running ends there: nothing will
+  complete it.
+- Its next action (send, steer, slash command, file upload, model or effort change, rename…)
+  resumes it from its stored key first, as a reconnect's cold restore does (§7; a Bot Chat by its
+  name, §8.2). Showing a warm one again does the same, without `session.activate`. Resuming at
+  once would undo an idle reclaim every TTL. A failed resume shows on the prompt's bubble; a
+  chat the gateway no longer has is forgotten.
+- Only a Bot Chat on screen is re-resolved at once, by title, as Desktop's bots plugin does
+  (`plugins/hermes-bots/plugin.tsx:653-701`). `[client choice]` Not after `lru_evict`, where the
+  resume would evict another session in turn.
+- One resume per chat at a time: a second action waits for the first, and none starts while a
+  reconnect restores the chat or a revisit reconciles it (`ChatSession.settleIdentity`, §7).
+- Reads made while the runtime is gone do not resume it: the model list is the profile's, and
+  the effort is the last one the session reported.
+
+Other events:
+- The contract has no `profiles.changed` or `bots.changed` event. Roster changes reach clients
+  only through `sessions.changed` and polling, so the sidebar keeps its 15 s poll.
+- The app ignores `projects.changed`, `cron.changed`, `platforms.changed`, `pairing.changed` and
+  `bot_relay.outbox.pending` (`change_watcher.py:285-296`); they are out of scope.

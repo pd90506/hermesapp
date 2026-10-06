@@ -73,6 +73,33 @@ struct ChatRevisitTests {
         expectWellFormed(first.transcript)
     }
 
+    /// A local row (a `/btw` answer) keeps its place through the revisit's re-read:
+    /// after the stored row it followed, above what another client stored meanwhile, once.
+    @Test func aLocalRowKeepsItsPlaceThroughARevisitReread() async throws {
+        let (connection, transport, server, _) = try await connect()
+        let (first, _) = try await openTwo(connection)
+        // A side question answered while the chat is warm (`events.py:443-452`).
+        transport.sendEvent("btw.complete", sessionID: first.sessionID,
+                            payload: ["task_id": "btw_1", "text": "Yes, green.", "question": "is CI green?"])
+        #expect(await eventually { first.transcript.items.last?.sideQuestion?.answer == "Yes, green." })
+        let localID = try #require(first.transcript.items.last?.id)
+        server.store.append([storedRow(id: 301, role: "user", text: "从桌面问的"),
+                             storedRow(id: 302, role: "assistant", text: "桌面的回答")])
+
+        let back = try await connection.open(SessionSummary(id: "stored-1"))
+        await back.revisitTask?.value
+        await settle(back)
+
+        #expect(await eventually { back.rereadTask == nil && occurrences(back.transcript, "桌面的回答") == 1 })
+        let items = back.transcript.items
+        #expect(items.filter { $0.id == localID }.count == 1)
+        let local = try #require(items.firstIndex { $0.id == localID })
+        #expect(items[local - 1].rowID == 300)
+        #expect(items[local + 1].rowID == 301)
+        #expect(back.transcript.historyCount == items.count)
+        expectWellFormed(back.transcript)
+    }
+
     @Test func aWarmChatKeepsReceivingItsEvents() async throws {
         let (connection, transport, server, _) = try await connect()
         let (first, bot) = try await openTwo(connection)

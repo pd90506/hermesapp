@@ -32,6 +32,8 @@ public struct PendingChat: Sendable, Equatable {
 ///   answering for another stored session, falls back to a resume of the stored key
 ///   into the same `ChatSession`, as a reconnect does (§7). A Bot Chat is looked up
 ///   by its name again first (§8.2) and reopened when its tip changed.
+/// - A chat whose runtime was reclaimed (`ChatSession.isRuntimeGone`) is resumed
+///   from its stored key at once: showing it again is the action that revives it.
 /// - Any other failure keeps the cached transcript (Desktop's "degraded warm cache").
 extension GatewayConnection {
     /// Chats kept warm, the active one included. Each holds at most the pages the
@@ -97,6 +99,23 @@ extension GatewayConnection {
                     return
                 }
             }
+            if session.isRuntimeGone, let running = session.revival {
+                // A revival already resumes it: one resume per chat.
+                _ = try? await running.value
+                if !session.isRuntimeGone { return }
+            }
+            if session.isRuntimeGone {
+                // Reclaimed (`session.reclaimed`): nothing to bind again; showing the
+                // chat is the action that resumes it.
+                guard isCurrent(client, gen) else { return }
+                do {
+                    try await reopen(session, target: session.storedSessionID ?? session.sessionID, client: client,
+                                     gen: gen)
+                } catch {
+                    if isCurrent(client, gen), Self.isSessionGone(error) { forget(session) }
+                }
+                return
+            }
             let snapshot = try await client.activateSession(sessionID: session.sessionID, omitMessages: true)
             guard isCurrent(client, gen) else { return }
             if let key = snapshot.storedKey, let stored = session.storedSessionID, key != stored {
@@ -114,14 +133,14 @@ extension GatewayConnection {
         } catch where Self.isSessionGone(error) {
             guard isCurrent(client, gen) else { return }
             if error is RestoreError {
-                drop(session)  // the bot has no Bot Chat any more
+                forget(session)  // the bot has no Bot Chat any more
                 return
             }
             let target = session.storedSessionID ?? session.sessionID
             do {
                 try await reopen(session, target: target, client: client, gen: gen)
             } catch {
-                if isCurrent(client, gen), Self.isSessionGone(error) { drop(session) }
+                if isCurrent(client, gen), Self.isSessionGone(error) { forget(session) }
             }
         } catch {
             // Offline or a transient error: the cached transcript stays as it is.
@@ -138,11 +157,12 @@ extension GatewayConnection {
         session.reset(to: resumed.snapshot, storedSessionID: target)
         session.loadHistory(prefetch: resumed.prefetch)
         if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
+        track(session)
         await client.redeliver(resumed.snapshot.openRequests ?? [])
     }
 
-    /// Forgets a chat that can no longer be shown.
-    private func drop(_ session: ChatSession) {
+    /// Forgets a chat that can no longer be shown (gone, or deleted).
+    func forget(_ session: ChatSession) {
         warmChats.removeAll { $0 === session }
         forgetComposer(of: session)
         if activeSession === session { clearActiveSession() }

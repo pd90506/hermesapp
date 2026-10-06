@@ -26,6 +26,20 @@ public struct TranscriptItem: Sendable, Hashable, Identifiable {
     public var toolCallID: String?
     /// User rows: the images sent with the prompt (`text` is then its caption).
     public var images: [TranscriptImage] = []
+    /// User rows: names of the files sent with the prompt (`file.attach`); the stored
+    /// row carries them as leading `@file:` lines (see `AttachmentRefs`).
+    public var attachments: [String] = []
+    /// User rows: `steer` for guidance injected into a running turn (`session.steer`;
+    /// stored rows carry `display_kind: "steer"`, `agent/prompt_builder.py:594-601`).
+    public var displayKind: String?
+    /// Assistant: commentary written beside tool calls (`message.interim`), not the
+    /// turn's final answer.
+    public var isInterim: Bool = false
+    /// Tool rows: everything known about the call.
+    public var tool: ToolActivity?
+    /// System rows: a `/btw` question or `/bg` task and its answer. Shown on this
+    /// device only; never stored.
+    public var sideQuestion: SideQuestion?
 
     public init(id: String, role: Role, text: String, isActive: Bool = false) {
         self.id = id
@@ -33,6 +47,67 @@ public struct TranscriptItem: Sendable, Hashable, Identifiable {
         self.text = text
         self.isActive = isActive
     }
+
+    /// A user row that steered a running turn rather than starting one.
+    public var isSteer: Bool { displayKind == "steer" }
+}
+
+/// One tool call (`tool.start` → `tool.complete`, `contracts/events.py:261-294`).
+/// The gateway has no separate output event: the output arrives with completion.
+public struct ToolActivity: Sendable, Hashable {
+    public enum Phase: Sendable, Hashable {
+        case running
+        case complete
+        /// `tool.complete` carried an `error` (not in the contract; the app's own reading).
+        case failed
+    }
+
+    public var toolID: String
+    public var name: String
+    public var phase: Phase
+    /// Short preview of the main argument (command, path, query).
+    public var context: String?
+    public var args: JSONValue?
+    public var summary: String?
+    /// The tool's output: `result_text`, else the JSON `result`, as text. Stored
+    /// rows keep it only for edit tools (`session_history.py:331`).
+    public var output: String?
+    /// Edit tools: a unified diff.
+    public var inlineDiff: String?
+    public var durationSeconds: Double?
+    public var error: String?
+
+    public init(toolID: String, name: String, phase: Phase = .running) {
+        self.toolID = toolID
+        self.name = name
+        self.phase = phase
+    }
+}
+
+/// A side agent's task and answer: a `/btw` question (`prompt.btw` →
+/// `btw.complete`), answered from a snapshot of the conversation, or a `/bg`
+/// task (`prompt.background` → `background.complete`) run on a fresh agent.
+/// Neither becomes part of the conversation.
+public struct SideQuestion: Sendable, Hashable {
+    public enum Kind: Sendable, Hashable { case btw, background }
+
+    public var taskID: String
+    /// The question (`/btw`) or the task prompt (`/bg`).
+    public var question: String?
+    /// `nil` while the answer is pending.
+    public var answer: String?
+    public var kind: Kind = .btw
+
+    public init(taskID: String, question: String? = nil, answer: String? = nil, kind: Kind = .btw) {
+        self.taskID = taskID
+        self.question = question
+        self.answer = answer
+        self.kind = kind
+    }
+
+    public var isPending: Bool { answer == nil }
+    /// The gateway reports failures as text starting with `error: ` (`methods_prompt.py:1282-1315`).
+    public var isError: Bool { answer?.hasPrefix("error:") == true }
 }
 
 /// Paging position of the stored part of a transcript.
@@ -77,15 +152,28 @@ public struct RereadTicket: Sendable, Hashable {
 /// drops the live items they now show. Until then some content can show twice (a
 /// turn that was already running at open, a prompt the history already holds);
 /// nothing is hidden.
+///
+/// **Local rows** (`appendNote`, `beginSideQuestion`: slash-command output, `/btw` and
+/// `/bg` answers) are never stored, so no re-read holds them. They join the history
+/// part once no unsettled live item is ahead of them, anchored to the stored row they
+/// follow, and keep that place when pages are installed or re-read. A local row added
+/// mid-turn moves below that turn's rows once they are stored. A rebuild
+/// (`init(snapshot:)`) has none.
 public struct Transcript: Sendable, Hashable {
     public private(set) var items: [TranscriptItem] = []
-    /// `items[..<historyCount]` came from stored pages.
+    /// `items[..<historyCount]` came from stored pages, or are local rows placed among them.
     public private(set) var historyCount = 0
     public private(set) var paging = HistoryPaging()
     /// A turn is running (between submit/`message.start` and `message.complete`).
     public private(set) var isRunning = false
     /// Latest `status.update` text while running.
     public private(set) var status: String?
+    /// An explained provider wait from `thinking.delta` ("⏳ still waiting on …"),
+    /// cleared by the next model output. Other `thinking.delta` frames are spinner
+    /// text and are dropped, as in Desktop (`gateway-event/message-stream.ts:195-205`).
+    public private(set) var providerWait: String?
+    /// The model is writing the arguments of a call to this tool (`tool.generating`).
+    public private(set) var generatingTool: String?
     /// Last session-level or turn error.
     public private(set) var lastError: String?
     /// Unanswered server→client requests for this session, oldest first.
@@ -123,6 +211,11 @@ public struct Transcript: Sendable, Hashable {
     private var starts = 0
     /// Appends go to the history part, not to a live turn.
     private var buildingHistory = false
+    /// Ids of local rows (see the type's note).
+    private var localIDs: Set<String> = []
+    /// For each local row in the history part: the id of the stored row it follows
+    /// (absent: it comes before every stored row).
+    private var localAnchors: [String: Int] = [:]
 
     private enum PromptState: Sendable, Hashable {
         /// `prompt.submit` not answered yet.
@@ -151,7 +244,9 @@ public struct Transcript: Sendable, Hashable {
         buildingHistory = true
         for message in snapshot.messages {
             switch message.role {
-            case "user": appendUser(message.plainText, rowID: message.rowID)
+            case "user":
+                let index = appendUser(message.plainText, rowID: message.rowID)
+                items[index].displayKind = message.displayKind
             case "assistant":
                 let text = message.plainText
                 if text.isEmpty && message.reasoning == nil { continue }
@@ -163,6 +258,14 @@ public struct Transcript: Sendable, Hashable {
                 item.detail = message.context
                 item.rowID = message.rowID
                 item.toolCallID = message.toolCallID
+                // `_history_to_messages` tool rows: name, context, args; content only
+                // for edit tools (`session_history.py:322-334`).
+                var tool = ToolActivity(toolID: message.toolCallID ?? item.id, name: message.name ?? "tool",
+                                        phase: .complete)
+                tool.context = message.context
+                tool.args = message.args
+                if case .string(let output)? = message.content { tool.output = output }
+                item.tool = tool
                 items.append(item)
             case "system": append(.system, message.plainText, rowID: message.rowID)
             default: continue
@@ -252,6 +355,7 @@ public struct Transcript: Sendable, Hashable {
             needsReread = true
         }
         rereadWhenLoaded = false
+        absorbLocalRows()
     }
 
     /// The first user row of `rows`, if compaction stamped it hidden.
@@ -335,7 +439,7 @@ public struct Transcript: Sendable, Hashable {
             return
         }
         guard turnActive else { return }
-        for index in items.indices where index >= historyCount { items[index].isActive = false }
+        endLiveActivity()
         removeLiveItems { $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil }
         completions += 1
         clock += 1
@@ -414,14 +518,54 @@ public struct Transcript: Sendable, Hashable {
     }
 
     /// Projects `rows` into the history from `start` on, replacing what was there.
+    /// Local rows in that range go back after the stored row they followed.
     private mutating func replaceHistory(from start: Int, with rows: [StoredMessage], startsSession: Bool) {
         var toolCalls: StoredMessageProjection.ToolCalls = [:]
         let stored = StoredMessageProjection.items(from: rows, toolCalls: &toolCalls, startsSession: startsSession)
+        let locals = items[start..<historyCount].filter { localIDs.contains($0.id) }
         items.removeSubrange(start..<historyCount)
         historyCount = start
         let unique = uniqued(stored)
         items.insert(contentsOf: unique, at: start)
         historyCount += unique.count
+        for local in locals { placeLocalRow(local) }
+    }
+
+    // MARK: - Local rows
+
+    /// Appends a row no stored page will ever hold (see the type's note).
+    private mutating func appendLocal(_ item: TranscriptItem) {
+        sealActiveAssistant()
+        items.append(item)
+        localIDs.insert(item.id)
+        absorbLocalRows()
+    }
+
+    /// Local rows with no unsettled live item ahead of them join the history part,
+    /// after the stored row shown last. Not before the newest page is in (a row
+    /// added while it loads follows it), nor while a turn runs (a row added during a
+    /// turn follows that turn's rows, which are not stored yet).
+    private mutating func absorbLocalRows() {
+        guard paging.isLoaded, !turnActive else { return }
+        while historyCount < items.count, localIDs.contains(items[historyCount].id) {
+            let id = items[historyCount].id
+            localAnchors[id] = items[..<historyCount].last { $0.rowID != nil }?.rowID
+            historyCount += 1
+        }
+    }
+
+    /// Puts a local row of the history part back after its anchor row (or the
+    /// newest stored row before it), behind local rows already there.
+    private mutating func placeLocalRow(_ item: TranscriptItem) {
+        var position = 0
+        if let anchor = localAnchors[item.id],
+            let row = items[..<historyCount].lastIndex(where: { $0.rowID.map { $0 <= anchor } == true })
+        {
+            position = row + 1
+        }
+        while position < historyCount, localIDs.contains(items[position].id) { position += 1 }
+        items.insert(item, at: position)
+        historyCount += 1
     }
 
     /// Item ids must stay unique for `ForEach`. Stored items are keyed by row
@@ -446,6 +590,7 @@ public struct Transcript: Sendable, Hashable {
         let live = items[historyCount...].filter { !shouldRemove($0) }
         items.removeSubrange(historyCount...)
         items.append(contentsOf: live)
+        absorbLocalRows()
     }
 
     private static func isAnswered(_ state: PromptState) -> Bool {
@@ -460,18 +605,68 @@ public struct Transcript: Sendable, Hashable {
     /// a turn runs works the same: the bubble shows until the stored rows show what
     /// Hermes made of it (a turn of its own, a steer, a redirect or a queued turn,
     /// `session_auto_continue.py:398-450`).
+    ///
+    /// The reply streaming so far is sealed: later deltas open a new bubble below the
+    /// prompt, as Desktop orders it (`appendAfterActiveReply`, `use-prompt-actions/index.ts:817-825`).
+    /// - Parameters:
+    ///   - images: the images sent with it (`text` is then the caption, possibly empty).
+    ///   - attachments: names of the files sent with it.
+    ///   - displayKind: `steer` for guidance injected with `session.steer`.
     @discardableResult
-    /// - Parameter images: the images sent with it (`text` is then the caption, possibly empty).
-    public mutating func appendUserPrompt(_ text: String, images: [TranscriptImage] = []) -> String {
+    public mutating func appendUserPrompt(_ text: String, images: [TranscriptImage] = [], attachments: [String] = [],
+                                          displayKind: String? = nil) -> String {
+        sealActiveAssistant()
         counter += 1
         var item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
         item.images = images
+        item.attachments = attachments
+        item.displayKind = displayKind
         items.append(item)
         prompts[item.id] = .sent
         promptSentAtStarts[item.id] = starts
         isRunning = true
         lastError = nil
         return item.id
+    }
+
+    /// Takes back a prompt bubble the gateway never took (a failed or rejected
+    /// `session.redirect`); the spinner stops unless a turn runs.
+    public mutating func withdrawPrompt(_ itemID: String) {
+        guard prompts.removeValue(forKey: itemID) != nil else { return }
+        promptSentAtStarts[itemID] = nil
+        removeLiveItems { $0.id == itemID }
+        if !turnActive, !prompts.values.contains(.sent) { isRunning = false }
+    }
+
+    /// Moves a prompt bubble to the end: a redirect the gateway queued as the next
+    /// turn (`use-prompt-actions/index.ts:854-860`).
+    public mutating func movePromptToEnd(_ itemID: String) {
+        guard prompts[itemID] != nil, let index = items.indices.last(where: { $0 >= historyCount && items[$0].id == itemID })
+        else { return }
+        items.append(items.remove(at: index))
+    }
+
+    /// A local system line (slash-command output, notices). Never stored.
+    public mutating func appendNote(_ text: String) {
+        appendLocal(TranscriptItem(id: nextID(), role: .system, text: text))
+    }
+
+    /// Shows a `/btw` question or `/bg` task until its answer arrives. The answer can
+    /// beat the RPC reply; then the row already exists and only gains its question.
+    /// The row is not `isActive`: `sideQuestion.isPending` says it still waits.
+    public mutating func beginSideQuestion(taskID: String, question: String, kind: SideQuestion.Kind = .btw) {
+        let id = Self.sideQuestionItemID(taskID, kind: kind)
+        if let index = items.lastIndex(where: { $0.id == id }) {
+            if items[index].sideQuestion?.question == nil { items[index].sideQuestion?.question = question }
+            return
+        }
+        var item = TranscriptItem(id: id, role: .system, text: "")
+        item.sideQuestion = SideQuestion(taskID: taskID, question: question, kind: kind)
+        appendLocal(item)
+    }
+
+    static func sideQuestionItemID(_ taskID: String, kind: SideQuestion.Kind = .btw) -> String {
+        (kind == .btw ? "btw-" : "bg-") + taskID
     }
 
     /// `prompt.submit` answered, whatever its `status`: Hermes stored the prompt
@@ -535,6 +730,7 @@ public struct Transcript: Sendable, Hashable {
     // MARK: - Events
 
     public mutating func apply(_ event: GatewayEvent) {
+        clearSupersededIndicators(event.type)
         switch event.kind {
         case .messageStart:
             startTurn()
@@ -554,58 +750,106 @@ public struct Transcript: Sendable, Hashable {
 
         case .reasoningAvailable(let delta):
             startTurn()
+            // A whole block from a non-streaming provider replaces what streamed,
+            // unless the reply text already started (`use-message-stream/index.ts:526-537`).
             let index = activeAssistantIndex ?? append(.assistant, "", active: true)
-            if items[index].reasoning.isEmpty { items[index].reasoning = delta.text }
+            if !delta.text.isEmpty, items[index].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                items[index].reasoning = delta.text
+            }
+
+        case .thinkingDelta(let delta):
+            // Mostly spinner rewrites: only an explained provider wait is kept, and
+            // any other frame clears it (`message-stream.ts:195-205`). Never reasoning.
+            providerWait = Self.providerWaitText(delta.text)
 
         case .messageInterim(let interim):
             startTurn()
-            // Commentary beside tool calls is sealed as its own segment.
-            if interim.alreadyStreamed == true, let index = activeAssistantIndex {
+            // Commentary beside tool calls. Desktop seals the streaming bubble in
+            // place with the authoritative interim text; the next deltas open a new
+            // one (`use-message-stream/index.ts:614-719`).
+            let text = interim.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty {
+                if interim.alreadyStreamed == true, let index = activeAssistantIndex { items[index].isActive = false }
+            } else if let index = activeAssistantIndex {
+                items[index].text = text
                 items[index].isActive = false
-            } else if !interim.text.isEmpty {
-                sealActiveAssistant()
-                append(.assistant, interim.text)
+                items[index].isInterim = true
+            } else if let index = liveAssistantSinceUser(withText: text) {
+                items[index].isInterim = true  // a duplicate delivery of the seal
+            } else {
+                let index = append(.assistant, text)
+                items[index].isInterim = true
             }
 
-        case .toolGenerating:
+        case .toolGenerating(let generating):
             startTurn()
             sealActiveAssistant()
+            generatingTool = generating.name
 
         case .toolStart(let start):
             startTurn()
             sealActiveAssistant()
+            generatingTool = nil
             // Call ids repeat across rounds and turns (`deterministic_call_id`,
             // `agent/message_sanitization.py:492-495`): only a start of a call still
             // running reuses its row.
-            if let index = runningToolIndex(start.toolID) {
+            let index: Int
+            if let running = runningToolIndex(start.toolID) {
+                index = running
                 items[index].isActive = true
             } else {
                 var item = TranscriptItem(id: Self.toolItemID(start.toolID), role: .tool, text: "", isActive: true)
-                item.toolName = start.name
-                item.detail = start.context ?? start.preview
                 item.toolCallID = start.toolID
                 appendLive(item)
+                index = items.count - 1
             }
+            var tool = items[index].tool ?? ToolActivity(toolID: start.toolID, name: start.name)
+            tool.phase = .running
+            tool.context = start.context ?? start.preview ?? tool.context
+            if let args = start.args { tool.args = args }
+            items[index].tool = tool
+            items[index].toolName = start.name
+            items[index].detail = tool.context
 
         case .toolComplete(let complete):
             startTurn()
-            if let index = runningToolIndex(complete.toolID) {
-                items[index].isActive = false
-                if let summary = complete.summary, !summary.isEmpty { items[index].detail = summary }
+            generatingTool = nil
+            let index: Int
+            if let running = runningToolIndex(complete.toolID) {
+                index = running
             } else {
                 // Started before this chat attached.
+                sealActiveAssistant()
                 var item = TranscriptItem(id: Self.toolItemID(complete.toolID), role: .tool, text: "")
-                item.toolName = complete.name
-                item.detail = complete.summary
                 item.toolCallID = complete.toolID
                 appendLive(item)
+                index = items.count - 1
             }
+            var tool = items[index].tool ?? ToolActivity(toolID: complete.toolID, name: complete.name)
+            let error = complete.error.flatMap { $0.isEmpty ? nil : $0 }
+            tool.phase = error == nil ? .complete : .failed
+            tool.error = error
+            if let args = complete.args { tool.args = args }
+            tool.summary = complete.summary
+            tool.output = complete.resultText ?? Self.text(of: complete.result) ?? tool.output
+            tool.inlineDiff = complete.inlineDiff
+            tool.durationSeconds = complete.durationS
+            items[index].tool = tool
+            items[index].isActive = false
+            items[index].toolName = complete.name
+            if let summary = complete.summary, !summary.isEmpty { items[index].detail = summary }
 
         case .messageComplete(let complete):
             finishTurn(complete)
 
         case .statusUpdate(let update):
             status = update.text.isEmpty ? nil : update.text
+
+        case .btwComplete(let answer):
+            completeSideAgent(answer, kind: .btw)
+
+        case .backgroundComplete(let answer):
+            completeSideAgent(answer, kind: .background)
 
         case .error(let payload):
             lastError = payload.message
@@ -621,20 +865,96 @@ public struct Transcript: Sendable, Hashable {
                 return false
             }
 
-        case .gatewayReady, .sessionTitle, .sessionInfo, .unknown:
+        case .gatewayReady, .sessionTitle, .sessionInfo, .sessionsChanged, .sessionReclaimed, .notificationShow,
+            .notificationClear, .unknown:
             break
         }
     }
 
     // MARK: - Helpers
 
-    /// A user row: its `@image:` lines become images, the rest its caption.
+    /// Fills in (or adds, when another client asked) a `/btw` or `/bg` answer row.
+    private mutating func completeSideAgent(_ answer: SideAgentComplete, kind: SideQuestion.Kind) {
+        let id = Self.sideQuestionItemID(answer.taskID, kind: kind)
+        if let index = items.lastIndex(where: { $0.id == id }) {
+            items[index].sideQuestion?.answer = answer.text
+            if let question = answer.question { items[index].sideQuestion?.question = question }
+            items[index].text = answer.text
+        } else {
+            var item = TranscriptItem(id: id, role: .system, text: answer.text)
+            item.sideQuestion = SideQuestion(taskID: answer.taskID, question: answer.question, answer: answer.text,
+                                             kind: kind)
+            appendLocal(item)
+        }
+    }
+
+    /// Desktop's `providerWaitText` (`apps/desktop/src/store/provider-wait.ts:43-53`):
+    /// the core's explained wait / reconnect frames, else `nil`.
+    static func providerWaitText(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pattern = #"^(?:⏳|⚠|↻|⚙)\s*(?:(?:still\s+)?waiting on|loading|processing prompt|no (?:output|response)|model returned|rate limited|provider (?:overloaded|temporarily unavailable))"#
+        guard value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+        return value
+    }
+
+    /// Events after which the wait line and the drafting-tool label are stale
+    /// (`PROVIDER_WAIT_SUPERSEDING_EVENT_TYPES` / `DRAFT_SUPERSEDING_EVENT_TYPES`,
+    /// `gateway-event/index.ts:41-78`).
+    private mutating func clearSupersededIndicators(_ type: String) {
+        if Self.providerWaitSuperseding.contains(type) { providerWait = nil }
+        if Self.draftSuperseding.contains(type) { generatingTool = nil }
+    }
+
+    private static let providerWaitSuperseding: Set<String> = [
+        "error", "message.complete", "message.delta", "message.interim", "message.start", "reasoning.available",
+        "reasoning.delta", "tool.complete", "tool.generating", "tool.start",
+    ]
+    private static let draftSuperseding: Set<String> = [
+        "error", "message.complete", "message.delta", "message.start", "reasoning.delta", "thinking.delta",
+        "tool.complete", "tool.start",
+    ]
+
+    /// A tool result as display text: strings as-is, other JSON serialised.
+    static func text(of value: JSONValue?) -> String? {
+        switch value {
+        case nil, .null?: return nil
+        case .string(let text)?: return text
+        case let value?:
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
+        }
+    }
+
+    /// The live assistant item of the current turn with `text`, looking back to the
+    /// prompt that started it (a steer is part of the running turn, not a new one).
+    private func liveAssistantSinceUser(withText text: String) -> Int? {
+        for index in items.indices.reversed() where index >= historyCount {
+            if items[index].role == .user, !items[index].isSteer { return nil }
+            if items[index].role == .assistant, items[index].text == text { return index }
+        }
+        return nil
+    }
+
+    /// A user row: its `@image:` lines become images, its leading `@file:` lines
+    /// attachments, the rest its caption.
     @discardableResult
     private mutating func appendUser(_ text: String, rowID: Int? = nil) -> Int {
         let (caption, paths) = ImageDirectives.split(text)
-        let index = append(.user, caption, rowID: rowID)
+        let (body, refs) = AttachmentRefs.splitLeading(caption)
+        let index = append(.user, body, rowID: rowID)
         items[index].images = TranscriptImage.stored(paths)
+        items[index].attachments = refs.map(AttachmentRefs.displayName)
         return index
+    }
+
+    /// The turn is over here: no live item streams or runs on.
+    private mutating func endLiveActivity() {
+        for index in items.indices where index >= historyCount {
+            items[index].isActive = false
+            if items[index].tool?.phase == .running { items[index].tool?.phase = .complete }
+        }
+        generatingTool = nil
     }
 
     /// A turn's first event starts it (`message.start`, or any streamed event of a
@@ -686,7 +1006,7 @@ public struct Transcript: Sendable, Hashable {
         }
         // Nothing keeps spinning once the turn is over, wherever its items are (a
         // prompt sent during the reply can follow its open bubble); empty bubbles go.
-        for index in items.indices where index >= historyCount { items[index].isActive = false }
+        endLiveActivity()
         removeLiveItems { $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil }
         if complete.status == "error" { lastError = complete.error ?? "The turn failed." }
         isRunning = false
@@ -715,9 +1035,21 @@ public struct Transcript: Sendable, Hashable {
         // That segment stays live; the turn's other live items wait for the re-read.
         completions += 1
         clock += 1
-        let unstored: String?
+        var unstored: String?
+        // `error`: the whole partial reply of the failing call is unstored, including
+        // segments a note, `/btw` or prompt sealed mid-reply; earlier calls ended at a
+        // tool row and were stored with it.
+        var unstoredSplit: Set<String> = []
         switch complete.status {
-        case "error": unstored = streaming
+        case "error":
+            unstored = streaming
+            let anchor = streaming ?? items.last { turnItemIDs.contains($0.id) && $0.role == .assistant }?.id
+            if let anchor, let start = items.lastIndex(where: { $0.id == anchor }) {
+                for index in stride(from: start, through: historyCount, by: -1) where turnItemIDs.contains(items[index].id) {
+                    if items[index].role == .tool { break }
+                    if items[index].role == .assistant, items[index].rowID == nil { unstoredSplit.insert(items[index].id) }
+                }
+            }
         case "interrupted":
             let sent = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
             let shown = streaming.flatMap { id in items.first { $0.id == id } }?.text
@@ -730,20 +1062,25 @@ public struct Transcript: Sendable, Hashable {
             unstored = sent == Self.repetitionLoopSentinel || sameReply ? nil : streaming
         default: unstored = nil
         }
-        for id in turnItemIDs where id != unstored { finishedItems[id] = completions }
+        for id in turnItemIDs where id != unstored && !unstoredSplit.contains(id) { finishedItems[id] = completions }
         turnItemIDs = []
         turnActive = false
         if paging.rereadable { needsReread = true }
     }
 
-    /// Whether the turn streaming now already shows `text` (a reply that streamed
-    /// into a sealed segment). Only its own live items count.
+    /// Whether the turn streaming now already shows `text`: a reply that streamed
+    /// into a sealed segment, or one split into segments by tools or a row added
+    /// mid-turn, whose segments joined end with it. Only its own live items count.
     private func turnShows(_ text: String) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return items.contains {
-            turnItemIDs.contains($0.id) && $0.role == .assistant
-                && $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == text
-        }
+        let own = items.filter { turnItemIDs.contains($0.id) && $0.role == .assistant }
+        if own.contains(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == text }) { return true }
+        func normalized(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        let target = normalized(text)
+        guard !target.isEmpty else { return false }
+        // Segments may split mid-word ("Shor" + "ter") or between words ("foo" + "bar").
+        let texts = own.map(\.text)
+        return normalized(texts.joined()).hasSuffix(target) || normalized(texts.joined(separator: " ")).hasSuffix(target)
     }
 
     private mutating func nextID() -> String {

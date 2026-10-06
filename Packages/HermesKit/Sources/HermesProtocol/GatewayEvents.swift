@@ -38,8 +38,8 @@ public struct GatewayEvent: Sendable, Hashable, Codable {
         case EventType.gatewayReady: return payload(GatewayReady.self).map(GatewayEventKind.gatewayReady) ?? .unknown
         case EventType.messageStart: return .messageStart
         case EventType.messageDelta: return payload(StreamDelta.self).map(GatewayEventKind.messageDelta) ?? .unknown
-        case EventType.reasoningDelta, EventType.thinkingDelta:
-            return payload(StreamDelta.self).map(GatewayEventKind.reasoningDelta) ?? .unknown
+        case EventType.reasoningDelta: return payload(StreamDelta.self).map(GatewayEventKind.reasoningDelta) ?? .unknown
+        case EventType.thinkingDelta: return payload(StreamDelta.self).map(GatewayEventKind.thinkingDelta) ?? .unknown
         case EventType.reasoningAvailable:
             return payload(StreamDelta.self).map(GatewayEventKind.reasoningAvailable) ?? .unknown
         case EventType.messageInterim:
@@ -57,6 +57,16 @@ public struct GatewayEvent: Sendable, Hashable, Codable {
         case EventType.requestCancel: return payload(RequestCancel.self).map(GatewayEventKind.requestCancel) ?? .unknown
         case EventType.approvalCancelled:
             return payload(ApprovalCancelled.self).map(GatewayEventKind.approvalCancelled) ?? .unknown
+        case EventType.btwComplete: return payload(SideAgentComplete.self).map(GatewayEventKind.btwComplete) ?? .unknown
+        case EventType.backgroundComplete:
+            return payload(SideAgentComplete.self).map(GatewayEventKind.backgroundComplete) ?? .unknown
+        case EventType.sessionsChanged: return .sessionsChanged
+        case EventType.sessionReclaimed:
+            return payload(SessionReclaimed.self).map(GatewayEventKind.sessionReclaimed) ?? .unknown
+        case EventType.notificationShow:
+            return payload(GatewayNotice.self).map(GatewayEventKind.notificationShow) ?? .unknown
+        case EventType.notificationClear:
+            return payload(NoticeClear.self).map(GatewayEventKind.notificationClear) ?? .unknown
         default: return .unknown
         }
     }
@@ -68,7 +78,9 @@ public enum EventType {
     public static let messageStart = "message.start"
     public static let messageDelta = "message.delta"
     public static let reasoningDelta = "reasoning.delta"
-    /// Legacy alias of reasoning.delta.
+    /// Spinner / provider-wait text, *not* model reasoning: Desktop shows it as
+    /// a status line only (`gateway-event/message-stream.ts:195-205`,
+    /// emitted by `agent_callbacks.py:117-123`).
     public static let thinkingDelta = "thinking.delta"
     public static let reasoningAvailable = "reasoning.available"
     public static let messageInterim = "message.interim"
@@ -83,6 +95,19 @@ public enum EventType {
     public static let error = "error"
     public static let requestCancel = "request.cancel"
     public static let approvalCancelled = "approval.cancelled"
+    /// Answer to `prompt.btw` (`contracts/events.py:443-452`).
+    public static let btwComplete = "btw.complete"
+    /// Answer to `prompt.background` (`contracts/events.py:451`).
+    public static let backgroundComplete = "background.complete"
+    /// Broadcast (empty `session_id`) when any served state.db moved: renames,
+    /// archives, deletes, new rows, turns. At most every 2 s
+    /// (`change_watcher.py:285-331`, `contracts/events.py:730`).
+    public static let sessionsChanged = "sessions.changed"
+    /// Broadcast: the backend reclaimed a live session (`contracts/events.py:391-399`).
+    public static let sessionReclaimed = "session.reclaimed"
+    /// Out-of-band notice (`contracts/events.py:332-349`).
+    public static let notificationShow = "notification.show"
+    public static let notificationClear = "notification.clear"
 }
 
 public enum GatewayEventKind: Sendable, Hashable {
@@ -90,6 +115,7 @@ public enum GatewayEventKind: Sendable, Hashable {
     case messageStart
     case messageDelta(StreamDelta)
     case reasoningDelta(StreamDelta)
+    case thinkingDelta(StreamDelta)
     case reasoningAvailable(StreamDelta)
     case messageInterim(MessageInterim)
     case messageComplete(MessageComplete)
@@ -102,6 +128,12 @@ public enum GatewayEventKind: Sendable, Hashable {
     case error(GatewayErrorPayload)
     case requestCancel(RequestCancel)
     case approvalCancelled(ApprovalCancelled)
+    case btwComplete(SideAgentComplete)
+    case backgroundComplete(SideAgentComplete)
+    case sessionsChanged
+    case sessionReclaimed(SessionReclaimed)
+    case notificationShow(GatewayNotice)
+    case notificationClear(NoticeClear)
     case unknown
 }
 
@@ -130,9 +162,12 @@ public struct GatewayReady: Sendable, Hashable, Codable {
     }
 }
 
-/// `message.delta` / `reasoning.delta` / `reasoning.available` (`StreamDeltaPayload`).
+/// `message.delta` / `reasoning.delta` / `reasoning.available` / `thinking.delta`
+/// (`StreamDeltaPayload`, `contracts/events.py:111-124`).
 public struct StreamDelta: Sendable, Hashable, Codable {
     public var text: String
+    /// Rendered markdown/ANSI, when the gateway has a streamer.
+    public var rendered: String?
     public var verbose: Bool?
 
     public init(text: String, verbose: Bool? = nil) {
@@ -211,35 +246,67 @@ public struct ToolGenerating: Sendable, Hashable, Codable {
     public var name: String
 }
 
-/// `tool.start` (`ToolStartPayload`).
+/// `tool.start` (`ToolStartPayload`, `contracts/events.py:261-275`).
 public struct ToolStart: Sendable, Hashable, Codable {
     public var toolID: String
     public var name: String
+    /// Short (80-char) preview of the main argument.
     public var context: String?
     public var preview: String?
     public var args: JSONValue?
+    /// Verbose mode only.
+    public var argsText: String?
 
     enum CodingKeys: String, CodingKey {
         case name, context, preview, args
         case toolID = "tool_id"
+        case argsText = "args_text"
     }
 }
 
-/// `tool.complete` (`ToolCompletePayload`).
+/// `tool.complete` (`ToolCompletePayload`, `contracts/events.py:278-294`).
+/// There is no separate tool-output event: the output is `result_text` / `result` here.
 public struct ToolComplete: Sendable, Hashable, Codable {
     public var toolID: String
     public var name: String
+    public var args: JSONValue?
     public var durationS: Double?
     public var summary: String?
     public var resultText: String?
-    /// JSON-parsed tool result when possible.
+    /// JSON-parsed tool result, or the raw string (`tool_progress.py:343-346`).
     public var result: JSONValue?
+    /// Edit tools: a unified diff.
+    public var inlineDiff: String?
+    /// Todo tools: the full todo list.
+    public var todos: JSONValue?
+    /// Not in the contract. Desktop reads it only for an error animation
+    /// (`gateway-event/tools.ts:109`); marking the tool failed is the app's choice.
+    public var error: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, summary, result
+        case name, args, summary, result, todos, error
         case toolID = "tool_id"
         case durationS = "duration_s"
         case resultText = "result_text"
+        case inlineDiff = "inline_diff"
+    }
+}
+
+extension ToolComplete {
+    /// `error` is outside the contract: a value of another shape is dropped instead
+    /// of demoting the whole `tool.complete` to `.unknown` (which would leave the row running).
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        toolID = try container.decode(String.self, forKey: .toolID)
+        name = try container.decode(String.self, forKey: .name)
+        args = try container.decodeIfPresent(JSONValue.self, forKey: .args)
+        durationS = try container.decodeIfPresent(Double.self, forKey: .durationS)
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
+        resultText = try container.decodeIfPresent(String.self, forKey: .resultText)
+        result = try container.decodeIfPresent(JSONValue.self, forKey: .result)
+        inlineDiff = try container.decodeIfPresent(String.self, forKey: .inlineDiff)
+        todos = try container.decodeIfPresent(JSONValue.self, forKey: .todos)
+        error = try? container.decodeIfPresent(String.self, forKey: .error)
     }
 }
 
@@ -283,4 +350,65 @@ public struct ApprovalCancelled: Sendable, Hashable, Codable {
         case reason
         case requestIDs = "request_ids"
     }
+}
+
+/// `btw.complete` (`SideAgentCompletePayload`, `contracts/events.py:443-452`).
+/// `text` starts with `error: ` when the side question failed (`methods_prompt.py:1282-1315`).
+public struct SideAgentComplete: Sendable, Hashable, Codable {
+    public var taskID: String
+    public var text: String
+    public var question: String?
+
+    enum CodingKeys: String, CodingKey {
+        case text, question
+        case taskID = "task_id"
+    }
+}
+
+/// `session.reclaimed` (`SessionReclaimedPayload`, `contracts/events.py:391-399`).
+public struct SessionReclaimed: Sendable, Hashable, Codable {
+    /// The runtime id that is gone.
+    public var sessionID: String
+    public var storedSessionID: String?
+    /// `idle_timeout` | `lru_evict` | `ws_orphan_reap`
+    public var reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case reason
+        case sessionID = "session_id"
+        case storedSessionID = "stored_session_id"
+    }
+}
+
+/// `notification.show` (`NotificationShowPayload`, `contracts/events.py:332-341`).
+public struct GatewayNotice: Sendable, Hashable, Codable {
+    public var text: String
+    /// `info` | `warn` | `error` | `success`
+    public var level: String?
+    /// `sticky` | `ttl` | `agent`
+    public var kind: String?
+    public var ttlMS: Int?
+    /// A notice with the same key replaces the previous one; `notification.clear` names it.
+    public var key: String?
+    public var id: String?
+
+    public init(text: String, level: String? = nil, kind: String? = nil, ttlMS: Int? = nil,
+                key: String? = nil, id: String? = nil) {
+        self.text = text
+        self.level = level
+        self.kind = kind
+        self.ttlMS = ttlMS
+        self.key = key
+        self.id = id
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text, level, kind, key, id
+        case ttlMS = "ttl_ms"
+    }
+}
+
+/// `notification.clear` (`NotificationClearPayload`, `contracts/events.py:344-345`).
+public struct NoticeClear: Sendable, Hashable, Codable {
+    public var key: String
 }

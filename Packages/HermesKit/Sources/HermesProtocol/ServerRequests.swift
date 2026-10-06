@@ -128,9 +128,83 @@ public struct ClarifyQuestion: Sendable, Hashable, Codable, Identifiable {
 
     public var id: String { qid }
 
+    public init(qid: String, question: String, choices: [String]? = nil, multiSelect: Bool? = nil) {
+        self.qid = qid
+        self.question = question
+        self.choices = choices
+        self.multiSelect = multiSelect
+    }
+
     enum CodingKeys: String, CodingKey {
         case qid, question, choices
         case multiSelect = "multi_select"
+    }
+
+    // Multi-select follows Desktop (`apps/desktop/src/store/clarify.ts:66-102`,
+    // `components/assistant-ui/clarify/pending.tsx:90-141`) and what the clarify
+    // tool decodes (`tools/clarify_tool.py:30-47`).
+
+    /// The choices to offer: blank ones and ones over `maxChoiceCharacters`
+    /// dropped (`normalizeChoices`, `store/clarify.ts:42-60`). Empty = open-ended question.
+    public var offeredChoices: [String] {
+        (choices ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && Self.bareChoice($0).count <= Self.maxChoiceCharacters }
+    }
+
+    /// `MAX_CHOICE_CHARS` (`store/clarify.ts:42`, `tools/clarify_tool.py:12`).
+    public static let maxChoiceCharacters = 8000
+
+    /// Render as a multi-select (checkboxes plus an optional free-text answer).
+    /// `multi_select` only counts when there are choices to pick from.
+    public var allowsMultipleChoices: Bool { multiSelect == true && !offeredChoices.isEmpty }
+
+    /// The label the tool expects back: a choice without its " (Recommended)" suffix.
+    public static func bareChoice(_ choice: String) -> String {
+        let trimmed = choice.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = "(Recommended)"
+        guard trimmed.lowercased().hasSuffix(label.lowercased()) else { return trimmed }
+        return String(trimmed.dropLast(label.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The wire answer for a selection, or `nil` (= skipped) when nothing is picked or typed.
+    /// - multi-select: a JSON array string of the bare choices, then the typed text;
+    /// - otherwise: the first picked choice, else the typed text.
+    public func answer(for selection: ClarifySelection) -> String? {
+        let other = selection.other.trimmingCharacters(in: .whitespacesAndNewlines)
+        if allowsMultipleChoices {
+            let values = selection.choices.map(Self.bareChoice) + (other.isEmpty ? [] : [other])
+            guard !values.isEmpty, let data = try? JSONEncoder().encode(values) else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
+        if let first = selection.choices.first { return Self.bareChoice(first) }
+        return other.isEmpty ? nil : other
+    }
+
+    /// Reads a locked answer (from a replayed request's `answers`) back into a selection.
+    public func selection(fromAnswer answer: String) -> ClarifySelection {
+        var values = [answer]
+        if allowsMultipleChoices, let data = answer.data(using: .utf8),
+            let parsed = try? JSONDecoder().decode([String].self, from: data)
+        {
+            values = parsed
+        }
+        let matched = offeredChoices.filter { values.contains(Self.bareChoice($0)) }
+        if matched.isEmpty { return ClarifySelection(other: answer) }
+        let bare = Set(matched.map(Self.bareChoice))
+        return ClarifySelection(choices: matched, other: values.filter { !bare.contains($0) }.joined(separator: ", "))
+    }
+}
+
+/// What the user picked for one clarify question.
+public struct ClarifySelection: Sendable, Hashable {
+    /// Picked choices, as offered (a "(Recommended)" suffix is stripped on encode).
+    public var choices: [String]
+    /// Free-text answer ("Other"); for a multi-select it is an additional value.
+    public var other: String
+
+    public init(choices: [String] = [], other: String = "") {
+        self.choices = choices
+        self.other = other
     }
 }
 
@@ -144,6 +218,21 @@ public struct ClarifyRequest: Sendable, Hashable, Codable {
     enum CodingKeys: String, CodingKey {
         case questions, answers
         case sessionID = "session_id"
+    }
+
+    /// The answer already locked for `question` on a replayed request, as a selection.
+    public func lockedSelection(for question: ClarifyQuestion) -> ClarifySelection? {
+        guard let locked = answers?[question.qid], let answer = locked else { return nil }
+        return question.selection(fromAnswer: answer)
+    }
+
+    /// The `{qid: answer}` map for an answer to the whole request; unanswered questions are `nil` (skipped).
+    public func answers(for selections: [String: ClarifySelection]) -> [String: String?] {
+        var result: [String: String?] = [:]
+        for question in questions where result[question.qid] == nil {
+            result[question.qid] = selections[question.qid].flatMap(question.answer(for:))
+        }
+        return result
     }
 }
 

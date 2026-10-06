@@ -2,14 +2,19 @@ import Foundation
 import HermesProtocol
 import Observation
 
-/// State behind one chat's composer: the draft, the attached images, and the
-/// session's model and reasoning-effort pickers. The view owns one per chat.
+/// State behind one chat's composer: the draft, the attached images and files,
+/// and the session's model and reasoning-effort pickers. The view owns one per chat.
 @MainActor
 @Observable
 public final class ChatComposer {
     public let session: ChatSession
     public var draft = ""
     public private(set) var attachments: [ComposerAttachment] = []
+    /// Files already staged on the gateway (`attachFile`); sent as `@file:`
+    /// references in front of the text.
+    public private(set) var files: [ComposerFile] = []
+    /// Files being uploaded by `attachFile`.
+    public private(set) var uploadingFiles = 0
     /// Images are uploading or the prompt is being submitted.
     public private(set) var isSubmitting = false
     /// A composer failure (attachment, model or effort change), shown in the
@@ -41,17 +46,18 @@ public final class ChatComposer {
     /// or stops the running reply, otherwise it is queued or steered
     /// (`tui_gateway/server.py:375-377`; docs/protocol.md §10.3).
     public var canSubmit: Bool {
-        guard !isSubmitting else { return false }
-        return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+        guard !isSubmitting, uploadingFiles == 0 else { return false }
+        return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || !files.isEmpty
     }
 
-    /// Sends the draft with the attached images. The draft clears at once.
-    /// When the send fails with images, the cards stay and the draft comes back
-    /// with them, so a retry sends the same message.
+    /// Sends the draft with the attached images and files. The draft clears at once.
+    /// When the send fails with images or files, the cards stay and the draft comes
+    /// back with them, so a retry sends the same message.
     public func submit() async {
         guard canSubmit else { return }
         let text = draft
         let images = attachments
+        let files = files
         draft = ""
         error = nil
         isSubmitting = true
@@ -60,21 +66,23 @@ public final class ChatComposer {
             submitTask = nil
         }
         let session = session
-        let sending = Task { try await session.send(text, images: images) }
+        let sending = Task { try await session.send(text, images: images, files: files) }
         submitTask = sending
         do {
             try await sending.value
             let sent = Set(images.map(\.id))
             attachments.removeAll { sent.contains($0.id) }
+            let sentFiles = Set(files.map(\.id))
+            self.files.removeAll { sentFiles.contains($0.id) }
         } catch is CancellationError {
             // Cancelled before the prompt went out: nothing to report, all kept.
             restoreText(text)
         } catch {
             let failure = error as? ComposerError
             // A `ComposerError` means nothing reached the transcript; with images
-            // the cards stay, so the text belongs with them. (A failed text-only
-            // `prompt.submit` is already on the transcript, via `submitFailed`.)
-            if failure != nil || !images.isEmpty { restoreText(text) }
+            // or files the cards stay, so the text belongs with them. (A failed
+            // text-only `prompt.submit` is already on the transcript, via `submitFailed`.)
+            if failure != nil || !images.isEmpty || !files.isEmpty { restoreText(text) }
             if let failure { self.error = failure.message }
         }
     }
@@ -126,6 +134,34 @@ public final class ChatComposer {
     public func removeAttachment(id: UUID) {
         guard !isSubmitting else { return }
         attachments.removeAll { $0.id == id }
+        files.removeAll { $0.id == id }
+    }
+
+    /// Attaches a file picked or dropped by the user. An image Hermes takes as it
+    /// is (`ImageAttachmentPolicy.canSendUnchanged`) becomes an image card, like
+    /// `attach(_:)`; anything else (PDFs included, as in Desktop) is uploaded now
+    /// with `file.attach` and becomes a file card. Returns false, with `error` set,
+    /// when it cannot be attached. Images in other formats should be converted by
+    /// the app first (`attach(_:)`); sent here they go as files.
+    @discardableResult
+    public func attachFile(_ data: Data, filename: String, mimeType: String? = nil) async -> Bool {
+        if ImageAttachmentPolicy.canSendUnchanged(filename: filename) {
+            return attach(ComposerAttachment(filename: filename, data: data))
+        }
+        error = nil
+        uploadingFiles += 1
+        defer { uploadingFiles -= 1 }
+        do {
+            files.append(try await session.attachFile(data, filename: filename, mimeType: mimeType))
+            return true
+        } catch is CancellationError {
+            return false
+        } catch let failure as ComposerError {
+            error = failure.message
+        } catch {
+            self.error = "Couldn't attach \(filename): \(GatewayConnection.describe(error))"
+        }
+        return false
     }
 
     // MARK: Model and reasoning effort

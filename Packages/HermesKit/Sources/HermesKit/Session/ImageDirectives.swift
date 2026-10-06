@@ -83,6 +83,11 @@ public enum ImageDirectives {
 
     /// The path of a line that is exactly one `@image:` directive.
     static func path(in line: Substring) -> String? {
+        value(in: line, prefix: prefix)
+    }
+
+    /// The value of a line that is exactly one `<prefix><value>` reference.
+    static func value(in line: Substring, prefix: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix(prefix) else { return nil }
         let value = trimmed.dropFirst(prefix.count)
@@ -93,5 +98,41 @@ public enum ImageDirectives {
             return inner.isEmpty || inner.contains(first) ? nil : String(inner)
         }
         return value.contains(where: \.isWhitespace) ? nil : String(value)
+    }
+}
+
+/// The `@file:` / `@folder:` lines a prompt with attached files starts with: the
+/// composer sends one per file (`file.attach`'s `ref_text`), then a blank line and
+/// the typed text (`ChatSession.send`). Like Desktop's `splitLeadingAttachmentRefs`
+/// (`apps/desktop/src/components/assistant-ui/reference-kinds.ts:177-197`), only the
+/// leading run is lifted off a stored row; a reference typed mid-prose stays text.
+public enum AttachmentRefs {
+    static let prefixes = ["@file:", "@folder:"]
+
+    /// The text without its leading reference lines (trimmed when any were lifted),
+    /// and their values (paths), in order.
+    public static func splitLeading(_ text: String) -> (text: String, refs: [String]) {
+        guard text.hasPrefix("@") else { return (text, []) }
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false)[...]
+        var refs: [String] = []
+        while let line = lines.first, let value = reference(in: line) {
+            refs.append(value)
+            lines = lines.dropFirst()
+        }
+        guard !refs.isEmpty else { return (text, []) }
+        return (lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), refs)
+    }
+
+    /// What a bubble shows for a reference: its file name.
+    public static func displayName(_ ref: String) -> String {
+        let name = (ref as NSString).lastPathComponent
+        return name.isEmpty ? ref : name
+    }
+
+    /// Desktop tests the line without its trailing whitespace only: it must start
+    /// with the reference.
+    private static func reference(in line: Substring) -> String? {
+        guard line.first == "@" else { return nil }
+        return prefixes.lazy.compactMap { ImageDirectives.value(in: line, prefix: $0) }.first
     }
 }

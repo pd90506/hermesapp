@@ -287,14 +287,18 @@ public struct SessionInterruptResult: Sendable, Hashable, Codable {
 public struct PromptSubmitParams: Sendable, Hashable, Codable {
     public var sessionID: String
     public var text: String
+    /// Queue behind a running turn instead of applying `display.busy_input_mode`
+    /// (`contracts/prompt_voice.py:35`, `methods_prompt.py:768-770`).
+    public var queued: Bool?
 
-    public init(sessionID: String, text: String) {
+    public init(sessionID: String, text: String, queued: Bool? = nil) {
         self.sessionID = sessionID
         self.text = text
+        self.queued = queued
     }
 
     enum CodingKeys: String, CodingKey {
-        case text
+        case text, queued
         case sessionID = "session_id"
     }
 }

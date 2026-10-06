@@ -28,11 +28,11 @@ public final class GatewayConnection {
     }
 
     public private(set) var state: State = .disconnected
-    public private(set) var sessions: [SessionSummary] = []
-    public private(set) var activeSession: ChatSession?
+    public internal(set) var sessions: [SessionSummary] = []
+    public internal(set) var activeSession: ChatSession?
     /// Server requests for sessions other than the active one (badge-worthy:
     /// the agent is blocked until someone answers).
-    public private(set) var otherSessionRequests: [ServerRequest] = []
+    public internal(set) var otherSessionRequests: [ServerRequest] = []
     /// Every profile as a bot, `default` first (`GatewayConnection+Bots.swift`).
     public internal(set) var bots: [Bot] = []
     /// Non-Bot-Chat sessions of every bot, newest first.
@@ -40,6 +40,15 @@ public final class GatewayConnection {
     /// A chat being opened for the first time: shown as a frame (title, loading)
     /// at once instead of the previous chat, until it is active or the open fails.
     public private(set) var opening: PendingChat?
+    /// Out-of-band notices pushed by the gateway (`notification.show`), oldest
+    /// first. Timed ones (`ttl_ms`) remove themselves; see `dismissNotification`.
+    public internal(set) var notifications: [GatewayNotification] = []
+
+    /// Least time between two list refreshes triggered by `sessions.changed`.
+    /// The gateway sends it at most every 2 s, including during every streaming
+    /// turn (`change_watcher.py:285-331`); Desktop's heavy refresh runs at most
+    /// every 10 s (`use-background-sync.ts:1302-1381`).
+    @ObservationIgnored public var pushedRefreshInterval: Duration = .seconds(10)
 
     /// Stop retrying after this many failed attempts (`nil` = retry forever).
     @ObservationIgnored public var maxReconnectAttempts: Int? = 20
@@ -72,6 +81,13 @@ public final class GatewayConnection {
     /// for background sessions can be attributed to a bot.
     @ObservationIgnored var sessionProfiles: [String: String] = [:]
     @ObservationIgnored var listsRefreshTask: Task<Void, Never>?
+    /// A refresh was asked for while one was running: run again when it ends.
+    @ObservationIgnored var listsRefreshQueued = false
+    @ObservationIgnored var pushedRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var lastPushedRefresh: ContinuousClock.Instant?
+    /// Runtime id of every session this connection opened, by `liveKey(profile:stored:)`:
+    /// such a session must be closed before it can be deleted (4023 while live).
+    @ObservationIgnored var liveRuntimeIDs: [String: String] = [:]
     /// Chats shown on this connection, most recent first, at most `warmChatLimit`
     /// (the active one included). Going back to one shows it at once; see
     /// `GatewayConnection+Revisit`.
@@ -144,7 +160,9 @@ public final class GatewayConnection {
         sessions = []
         bots = []
         history = []
+        notifications = []
         sessionProfiles = [:]
+        liveRuntimeIDs = [:]
         committedEpoch = nil
         state = .disconnected
     }
@@ -156,6 +174,10 @@ public final class GatewayConnection {
         reconnectTask = nil
         listsRefreshTask?.cancel()
         listsRefreshTask = nil
+        listsRefreshQueued = false
+        pushedRefreshTask?.cancel()
+        pushedRefreshTask = nil
+        lastPushedRefresh = nil
         botChatOpens = [:]
         return generation
     }
@@ -176,7 +198,17 @@ public final class GatewayConnection {
     /// connected and drops it from screen; retrying could never succeed. Other
     /// errors (4009 "disconnect interrupt settling", 5000, -32000, …) are
     /// transient and propagate, keeping the session for the next attempt.
+    ///
+    /// The chat's actions wait for the restore (`ChatSession.settleIdentity`): a
+    /// reclaimed chat must not be resumed by an action meanwhile as well.
     private func restoreOrDropActiveSession(ready: GatewayReady, gen: Int) async throws {
+        guard let session = activeSession else { return }
+        // This restore owns the chat now: a revival started on the old socket must not race it.
+        session.revival?.cancel()
+        let (gate, finished) = AsyncStream<Void>.makeStream()
+        let gateTask = Task { for await _ in gate {} }
+        session.identityGate = gateTask
+        defer { finished.finish() }
         do {
             try await restoreActiveSession(ready: ready, gen: gen)
         } catch where Self.isSessionGone(error) {
@@ -363,6 +395,7 @@ public final class GatewayConnection {
             throw CancellationError()
         }
         if let profile = opened.session.profile { sessionProfiles[opened.session.sessionID] = profile }
+        track(opened.session)
         if token == selectionToken, activeSession !== opened.session { activate(opened.session) }
         // On screen first; the stored transcript fills in as its newest page arrives.
         opened.session.loadHistory(prefetch: opened.prefetch)
@@ -379,6 +412,7 @@ public final class GatewayConnection {
         let warm = Set(warmChats.map { ObjectIdentifier($0) })
         composers = composers.filter { warm.contains($0.key) }
         if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
+        track(session)
         // Requests already queued for this session move into its transcript.
         let mine = otherSessionRequests.filter { $0.sessionID == session.sessionID }
         otherSessionRequests.removeAll { $0.sessionID == session.sessionID }
@@ -391,27 +425,17 @@ public final class GatewayConnection {
         guard source === client else { return }  // stale connection
         switch item {
         case .event(let event):
-            if case .sessionTitle(let change) = event.kind {
-                if let index = sessions.firstIndex(where: { $0.id == change.sessionID }) {
-                    sessions[index].title = change.title
-                }
-                // Stored ids are per profile db; the event's runtime sid says which profile.
-                let profile = sessionProfiles[event.sessionID ?? ""]
-                for index in history.indices where history[index].summary.id == change.sessionID
-                    && (profile == nil || history[index].profile == profile)
-                {
-                    history[index].summary.title = change.title
-                }
-            }
-            if case .requestCancel(let cancel) = event.kind {
-                otherSessionRequests.removeAll { $0.id == cancel.id }
-            }
+            // Sidebar rows, notices, reclaimed runtimes (`GatewayConnection+Live`).
+            handleConnectionEvent(event)
             // The active chat, and the warm ones behind it while this socket still
             // serves them: going back to one then shows what happened meanwhile.
             for session in eventTargets(event.sessionID ?? "") {
                 session.apply(event)
-                // A finished turn moved the bot's preview / the History rows.
-                if case .messageComplete = event.kind, session.profile != nil { refreshListsInBackground() }
+                // A finished turn moved the bot's preview / the History rows: at once,
+                // and the turn's own `sessions.changed` collapse behind it.
+                if case .messageComplete = event.kind, session.profile != nil {
+                    schedulePushedRefresh(immediately: true)
+                }
             }
 
         case .serverRequest(let request):
@@ -484,7 +508,10 @@ public final class GatewayConnection {
 
     private func restoreActiveSession(ready: GatewayReady, gen: Int) async throws {
         guard let session = activeSession, let client else { return }
-        if let committedEpoch, committedEpoch == ready.replayEpoch, let lastSeq = session.lastSeq {
+        // A reclaimed runtime has nothing to re-attach to.
+        if !session.isRuntimeGone, let committedEpoch, committedEpoch == ready.replayEpoch,
+            let lastSeq = session.lastSeq
+        {
             do {
                 let result = try await client.reattach(sessionID: session.sessionID, lastSeen: lastSeq)
                 guard gen == generation else { throw CancellationError() }
@@ -498,6 +525,11 @@ public final class GatewayConnection {
                 // 4001 not found / 4007 no longer live: the runtime session is gone; resume it.
             }
         }
+        try await coldRestore(session, client: client, gen: gen)
+    }
+
+    /// Resumes `session` from its stored key on `client` and rebuilds its transcript.
+    func coldRestore(_ session: ChatSession, client: GatewayClient, gen: Int) async throws {
         // A Bot Chat is found by its name again, never by the id it had before the
         // outage (see `botChatRestoreTarget`). Other sessions resume their stored key.
         let target: String
@@ -509,7 +541,7 @@ public final class GatewayConnection {
         }
         // A profile's session lives in that profile's state.db: resume it there.
         let resumed = try await resume(target, profile: session.profile, client: client)
-        guard gen == generation else {
+        guard gen == generation, client === self.client, !Task.isCancelled else {
             resumed.prefetch?.cancel()
             throw CancellationError()
         }
@@ -518,6 +550,7 @@ public final class GatewayConnection {
         session.reset(to: resumed.snapshot, storedSessionID: target)
         session.loadHistory(prefetch: resumed.prefetch)
         if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
+        track(session)
         await client.redeliver(resumed.snapshot.openRequests ?? [])
         // A disconnect() during that last hop must not be overwritten by the caller's `.connected`.
         guard gen == generation else { throw CancellationError() }
@@ -550,6 +583,12 @@ public final class GatewayConnection {
             return "This gateway's chat history cannot be read page by page. Updating Hermes fixes this."
         case HistoryReadError.tooLong(let rows):
             return "This chat has more than \(rows) messages, too many to load from this gateway. Updating Hermes fixes this."
+        case let composer as ComposerError: return composer.message
+        case SessionActionError.botChatProtected:
+            return "A bot's Bot Chat can't be renamed, archived or deleted."
+        case SessionActionError.reservedTitle: return "\"\(Bot.chatTitle)\" is reserved for the bot's own chat."
+        case SessionActionError.emptyTitle: return "Enter a title."
+        case SessionActionError.notOpen: return "Open the chat first, then rename it."
         case let urlError as URLError: return urlError.localizedDescription
         default: return String(describing: error)
         }

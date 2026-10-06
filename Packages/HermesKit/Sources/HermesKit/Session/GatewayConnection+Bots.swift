@@ -77,16 +77,27 @@ extension GatewayConnection {
             || row.resolvedID.map(bot.chatStoredIDs.contains) == true
     }
 
-    /// Refreshes the roster, then History, without blocking the caller.
-    /// Coalesces with a refresh already running.
-    public func refreshListsInBackground() {
-        guard listsRefreshTask == nil, client != nil else { return }
+    /// Refreshes the roster, then History (and with `includingSessions` the
+    /// launch profile's `sessions`), without blocking the caller. A call while
+    /// a refresh runs queues exactly one more, so a change that landed
+    /// mid-refresh is not lost.
+    public func refreshListsInBackground(includingSessions: Bool = false) {
+        guard client != nil else { return }
+        guard listsRefreshTask == nil else {
+            listsRefreshQueued = true
+            return
+        }
         let gen = generation
         listsRefreshTask = Task { [weak self] in
+            if includingSessions { try? await self?.refreshSessions() }
             try? await self?.refreshBots()
             try? await self?.refreshHistory()
             guard let self, gen == self.generation else { return }
             self.listsRefreshTask = nil
+            if self.listsRefreshQueued {
+                self.listsRefreshQueued = false
+                self.refreshListsInBackground(includingSessions: true)
+            }
         }
     }
 

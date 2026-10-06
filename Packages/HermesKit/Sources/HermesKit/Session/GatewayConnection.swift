@@ -33,6 +33,10 @@ public final class GatewayConnection {
     /// Server requests for sessions other than the active one (badge-worthy:
     /// the agent is blocked until someone answers).
     public private(set) var otherSessionRequests: [ServerRequest] = []
+    /// Every profile as a bot, `default` first (`GatewayConnection+Bots.swift`).
+    public internal(set) var bots: [Bot] = []
+    /// Non-Bot-Chat sessions of every bot, newest first.
+    public internal(set) var history: [HistoryEntry] = []
 
     /// Stop retrying after this many failed attempts (`nil` = retry forever).
     @ObservationIgnored public var maxReconnectAttempts: Int? = 20
@@ -48,7 +52,17 @@ public final class GatewayConnection {
     /// Bumped by every connect/disconnect; async work started under an older
     /// generation discards its result (and closes its socket) instead of
     /// overwriting newer state.
-    @ObservationIgnored private var generation = 0
+    @ObservationIgnored private(set) var generation = 0
+    /// Bumped by every user-initiated open; an open that finishes after a
+    /// newer one started does not take the screen.
+    @ObservationIgnored var selectionToken = 0
+    /// In-flight Bot Chat resolutions by profile: double-clicking a bot must not
+    /// create two chats (`canonical-chat.ts:38-40`).
+    @ObservationIgnored var botChatOpens: [String: Task<OpenedChat, any Error>] = [:]
+    /// Profile of every runtime session this connection opened, so requests
+    /// for background sessions can be attributed to a bot.
+    @ObservationIgnored var sessionProfiles: [String: String] = [:]
+    @ObservationIgnored var listsRefreshTask: Task<Void, Never>?
     @ObservationIgnored private let configuration: GatewayClient.Configuration
     @ObservationIgnored private let backoff: @Sendable (Int) -> Duration
 
@@ -70,7 +84,7 @@ public final class GatewayConnection {
 
     /// Connects (or reconnects after `.failed`) with `connector`. An existing
     /// `activeSession` is restored on the new socket; if the server reports it
-    /// gone (4001/4007) it is cleared, any other restore error fails the
+    /// gone (4001/4007/4064, or a Bot Chat no longer registered) it is cleared, any other restore error fails the
     /// connect and keeps the session for the next attempt. Call `disconnect()`
     /// first when switching servers.
     public func connect(using connector: any GatewayConnector) async throws {
@@ -83,15 +97,7 @@ public final class GatewayConnection {
         state = .connecting
         do {
             let ready = try await establish(gen)
-            do {
-                try await restoreActiveSession(ready: ready, gen: gen)
-            } catch let error as RPCError where Self.sessionGoneCodes.contains(error.code) {
-                // The server no longer knows the session (deleted, or reaped and gone):
-                // stay connected, drop it from screen. Other codes (4009 "disconnect
-                // interrupt settling", 5000, -32000, …) are transient: fail the connect below.
-                guard gen == generation else { throw CancellationError() }
-                activeSession = nil
-            }
+            try await restoreOrDropActiveSession(ready: ready, gen: gen)
             guard gen == generation else { throw CancellationError() }
             committedEpoch = ready.replayEpoch
             state = .connected
@@ -103,6 +109,7 @@ public final class GatewayConnection {
             throw error
         }
         try? await refreshSessions()
+        refreshListsInBackground()
     }
 
     /// Closes the connection and forgets all session state.
@@ -114,6 +121,9 @@ public final class GatewayConnection {
         activeSession = nil
         otherSessionRequests = []
         sessions = []
+        bots = []
+        history = []
+        sessionProfiles = [:]
         committedEpoch = nil
         state = .disconnected
     }
@@ -123,13 +133,36 @@ public final class GatewayConnection {
         generation += 1
         reconnectTask?.cancel()
         reconnectTask = nil
+        listsRefreshTask?.cancel()
+        listsRefreshTask = nil
+        botChatOpens = [:]
         return generation
     }
 
     /// Restore errors meaning the session no longer exists on the server:
     /// 4001 session not found (`server.py:1237`), 4007 no longer live / stored
-    /// session not found (`session_lifecycle.py:820`, `methods_session.py:833`).
-    static let sessionGoneCodes: Set<Int> = [4001, 4007]
+    /// session not found (`session_lifecycle.py:820`, `methods_session.py:833`),
+    /// 4064 the session's profile no longer exists (`server.py:561-577`,
+    /// `rpc_dispatch.py:35-36`).
+    static let sessionGoneCodes: Set<Int> = [4001, 4007, 4064]
+
+    static func isSessionGone(_ error: any Error) -> Bool {
+        if let rpc = error as? RPCError { return sessionGoneCodes.contains(rpc.code) }
+        return error is RestoreError
+    }
+
+    /// Restores the active session. When the server says it is gone, stays
+    /// connected and drops it from screen; retrying could never succeed. Other
+    /// errors (4009 "disconnect interrupt settling", 5000, -32000, …) are
+    /// transient and propagate, keeping the session for the next attempt.
+    private func restoreOrDropActiveSession(ready: GatewayReady, gen: Int) async throws {
+        do {
+            try await restoreActiveSession(ready: ready, gen: gen)
+        } catch where Self.isSessionGone(error) {
+            guard gen == generation else { throw CancellationError() }
+            activeSession = nil
+        }
+    }
 
     private func discardClient() async {
         inboundTask?.cancel()
@@ -175,30 +208,52 @@ public final class GatewayConnection {
     /// Creates a new live session and makes it active.
     @discardableResult
     public func newSession(title: String? = nil) async throws -> ChatSession {
+        let token = beginSelection()
         guard let client else { throw GatewayClientError.notConnected }
         let created = try await client.createSession(SessionCreateParams(title: title))
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: title, connection: self)
-        activate(session)
+        if token == selectionToken { activate(session) }
         return session
     }
 
-    /// Resumes a stored session and makes it active. Returns the current
-    /// session unchanged if it already is that stored session.
+    /// Resumes a stored session of the launch profile and makes it active.
+    /// Returns the current session unchanged if it already is that stored session.
     @discardableResult
     public func open(_ summary: SessionSummary) async throws -> ChatSession {
-        if let current = activeSession, current.storedSessionID == summary.id { return current }
+        let token = beginSelection()
+        if let current = activeSession, current.profile == nil, current.storedSessionID == summary.id { return current }
         guard let client else { throw GatewayClientError.notConnected }
         let snapshot = try await client.resumeSession(storedSessionID: summary.id)
         let session = ChatSession(snapshot: snapshot, storedSessionID: summary.id, title: summary.title,
                                   connection: self)
-        activate(session)
-        await client.redeliver(snapshot.openRequests ?? [])
+        try await show(OpenedChat(session: session, openRequests: snapshot.openRequests ?? []), token: token, client: client)
         return session
     }
 
-    private func activate(_ session: ChatSession) {
+    /// Starts a user-initiated open; see `selectionToken`.
+    func beginSelection() -> Int {
+        selectionToken += 1
+        return selectionToken
+    }
+
+    /// Activates an opened chat unless a newer open started meanwhile, then
+    /// re-delivers its open server requests. Throws `CancellationError` if the
+    /// socket was replaced meanwhile: the chat was opened on the old one.
+    ///
+    /// An open that lost the race still stays attached to this socket, so its
+    /// open requests are re-delivered too: they land in `otherSessionRequests`
+    /// and, through `sessionProfiles`, on the bot's row.
+    func show(_ opened: OpenedChat, token: Int, client: GatewayClient) async throws {
+        guard client === self.client else { throw CancellationError() }
+        if let profile = opened.session.profile { sessionProfiles[opened.session.sessionID] = profile }
+        if token == selectionToken, activeSession !== opened.session { activate(opened.session) }
+        await client.redeliver(opened.openRequests)
+    }
+
+    func activate(_ session: ChatSession) {
         activeSession = session
+        if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
         // Requests already queued for this session move into its transcript.
         let mine = otherSessionRequests.filter { $0.sessionID == session.sessionID }
         otherSessionRequests.removeAll { $0.sessionID == session.sessionID }
@@ -211,17 +266,28 @@ public final class GatewayConnection {
         guard source === client else { return }  // stale connection
         switch item {
         case .event(let event):
-            if case .sessionTitle(let change) = event.kind,
-                let index = sessions.firstIndex(where: { $0.id == change.sessionID })
-            {
-                sessions[index].title = change.title
+            if case .sessionTitle(let change) = event.kind {
+                if let index = sessions.firstIndex(where: { $0.id == change.sessionID }) {
+                    sessions[index].title = change.title
+                }
+                // Stored ids are per profile db; the event's runtime sid says which profile.
+                let profile = sessionProfiles[event.sessionID ?? ""]
+                for index in history.indices where history[index].summary.id == change.sessionID
+                    && (profile == nil || history[index].profile == profile)
+                {
+                    history[index].summary.title = change.title
+                }
             }
             if case .requestCancel(let cancel) = event.kind {
                 otherSessionRequests.removeAll { $0.id == cancel.id }
             }
             guard let session = activeSession else { return }
             let sid = event.sessionID ?? ""
-            if sid.isEmpty || sid == session.sessionID { session.apply(event) }
+            if sid.isEmpty || sid == session.sessionID {
+                session.apply(event)
+                // A finished turn moved the bot's preview / the History rows.
+                if case .messageComplete = event.kind, session.profile != nil { refreshListsInBackground() }
+            }
 
         case .serverRequest(let request):
             if let session = activeSession, request.sessionID == session.sessionID {
@@ -256,12 +322,13 @@ public final class GatewayConnection {
             guard gen == generation else { return }
             do {
                 let ready = try await establish(gen)
-                try await restoreActiveSession(ready: ready, gen: gen)
+                try await restoreOrDropActiveSession(ready: ready, gen: gen)
                 guard gen == generation else { return }
                 committedEpoch = ready.replayEpoch
                 state = .connected
                 reconnectTask = nil
                 try? await refreshSessions()
+                refreshListsInBackground()
                 return
             } catch {
                 guard gen == generation else { return }
@@ -305,9 +372,20 @@ public final class GatewayConnection {
                 // 4001 not found / 4007 no longer live: the runtime session is gone; resume it.
             }
         }
-        let snapshot = try await client.resumeSession(storedSessionID: session.storedSessionID ?? session.sessionID)
+        // A Bot Chat is found by its name again, never by the id it had before the
+        // outage (see `botChatRestoreTarget`). Other sessions resume their stored key.
+        let target: String
+        if session.kind == .botChat, let profile = session.profile {
+            target = try await botChatRestoreTarget(profile: profile, client: client)
+            guard gen == generation else { throw CancellationError() }
+        } else {
+            target = session.storedSessionID ?? session.sessionID
+        }
+        // A profile's session lives in that profile's state.db: resume it there.
+        let snapshot = try await client.resumeSession(storedSessionID: target, profile: session.profile)
         guard gen == generation else { throw CancellationError() }
-        session.reset(to: snapshot)
+        session.reset(to: snapshot, storedSessionID: target)
+        if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
         await client.redeliver(snapshot.openRequests ?? [])
         // A disconnect() during that last hop must not be overwritten by the caller's `.connected`.
         guard gen == generation else { throw CancellationError() }
@@ -320,6 +398,12 @@ public final class GatewayConnection {
     public nonisolated static func describe(_ error: any Error) -> String {
         switch error {
         case let rpc as RPCError: return rpc.message
+        case BotChatError.registryUnavailable(let profile, let detail):
+            return "Couldn't look up \(profile)'s Bot Chat (\(detail)). No new chat was started; try again."
+        case BotChatError.registryUnconfirmed(let profile):
+            return "Couldn't confirm \(profile)'s Bot Chat. No new chat was started; try again."
+        case BotChatError.notRegistered(let profile, let detail):
+            return "Couldn't save \(profile)'s new Bot Chat (\(detail)). Try again."
         case DashboardError.unauthenticated: return "Not signed in, or the session expired."
         case DashboardError.invalidCredentials: return "Username or password was rejected."
         case DashboardError.refreshRejected: return "The saved sign-in expired or was revoked. Sign in again."

@@ -182,14 +182,16 @@ other call takes the runtime id.
 
 | Method | Params (subset) | Result (subset) | Source |
 |---|---|---|---|
-| `session.list` | `{limit?, include_hidden?}` | `{sessions:[{id, title, preview, started_at, message_count, source}]}` | sessions.py:221-246 |
-| `session.create` | `{title?, cwd?, model?, provider?, source?, close_on_disconnect?=false}` | `{session_id, stored_session_id, message_count, messages, info}`. The DB row appears on the first prompt. | sessions.py:118-151 |
-| `session.resume` | `{session_id:<stored id or exact title>}` | `LiveSessionSnapshot`: `{session_id, message_count, messages:[TranscriptMessage], info, session_key, resumed?, running?, status?, inflight?, open_requests?, pending_approval?, …}` (see the note on stored keys below) | sessions.py:73-98,182-202; methods_session.py:898-914; server.py:3172-3186 |
+| `session.list` | `{limit?, include_hidden?, title?, profile?}` | `{sessions:[{id, title, preview, started_at, message_count, source}]}`. With `title`: an exact-title lookup (§8.2). | sessions.py:221-246 |
+| `session.create` | `{title?, cwd?, model?, provider?, source?, close_on_disconnect?=false, profile?, hidden?=false, follow_profile_config?=false}` | `{session_id, stored_session_id, message_count, messages, info}`. The DB row appears on the first prompt. | sessions.py:118-151 |
+| `session.resume` | `{session_id:<stored id or exact title>, profile?}` | `LiveSessionSnapshot`: `{session_id, message_count, messages:[TranscriptMessage], info, session_key, resumed?, running?, status?, inflight?, open_requests?, pending_approval?, …}` (see the note on stored keys below) | sessions.py:73-98,182-202; methods_session.py:898-914; server.py:3172-3186 |
 | `session.activate` | `{session_id:<runtime id>, omit_messages?}` | same snapshot. **Re-binds this socket to a live session and cancels its orphan reap**; 4001/4007 if it is gone. | methods_session.py:1160-1172 |
 | `session.history` | `{session_id}` | `{count, messages}` | sessions.py:484-494 |
 | `prompt.submit` | `{session_id, text}` | `{status:"streaming"\|"queued"\|"steered"\|"redirected", user_row_id?}`. For an idle session it returns immediately and the turn streams as events. A busy session queues, steers or redirects according to `display.busy_input_mode`. The Desktop allows 1800 s for the ack (`apps/desktop/src/api/client.ts:27`), and so does `GatewayClient`. It also re-binds a detached session (methods_prompt.py:741-747). | prompt_voice.py:26-77; methods_prompt.py:681-831 |
 | `session.interrupt` | `{session_id}` | `{status:"interrupted"\|"not_interrupted"}`. It also cancels the session's open server requests. | sessions.py:598-614 |
 | `session.close` | `{session_id}` | `{closed}`. The stored row stays resumable. | sessions.py:385-394 |
+| `session.title` | `{session_id, title}` | `{title, pending}`. Persists the row now if it has none yet; a title another row holds is 4022 (§8.2). | sessions.py:306-317; methods_session.py:1220-1250 |
+| `profiles.list` | `{include_sessions?=true}` | `{profiles:[ProfileRow], bot_mode_protocol, install_id}` (§8.1) | profiles_vault_complete_foreign_subagents.py:116-186; methods_profiles.py:281-302 |
 | `session.events.since` | `{session_id, last_seen}` | `{events:[event params], latest_seq, truncated, count, epoch, open_requests}` | sessions.py:717-731 |
 | `approval.respond` / `request.answer` / `clarify.lock` | see contract | alternatives to answering the server-request frame (§5) | prompt_voice.py:251-330 |
 
@@ -313,20 +315,162 @@ client's replay (`apps/shared/src/json-rpc-gateway.ts:504-670`), but adds the ex
    4. Trust the result only if `truncated` is false, `epoch` matches and `latest_seq >= last_seen`.
       Then deliver the replayed events, then the held-back ones (deduplicated by `seq`), and
       re-deliver `open_requests`.
-4. Otherwise, call `session.resume {session_id:<stored key>}` and rebuild the transcript from
+4. Otherwise, call `session.resume {session_id:<stored key>, profile?}` (the profile the session
+   was opened on, §8.1) and rebuild the transcript from
    `messages` + `inflight`; re-deliver `open_requests`. The held-back events are dropped; the
    snapshot supersedes them.
 5. A fresh `connect()` (e.g. the iOS app returning to the foreground) restores the active session
    the same way.
-   - The session is cleared only when restore fails with 4001/4007 (session gone). Resume of an
-     unknown stored id is 4007 (`methods_session.py:833`).
+   - The session is cleared, and the connection stays up, only when restore fails with
+     4001/4007 (session gone) or 4064 (its profile is gone, §8.1), or when a Bot Chat is no
+     longer registered (§8.2). Resume of an unknown stored id is 4007 (`methods_session.py:833`).
+   - The reconnect loop does the same: it does not retry a restore that can never succeed.
    - Any other error fails the connect and keeps the session for the next attempt: 4009
      "disconnect interrupt settling" (`session_lifecycle.py:821-822,953-955`), 5000, -32000, …
 
 `[unverified]` Events emitted between the re-bind and the resume snapshot on the step-4 fallback
 could be counted twice or missed. The window is small and not covered by the server's contract.
 
-## 8. HTTP API server (secondary option, not used by the MVP)
+## 8. Bots: profiles and the Bot Chat
+
+The sidebar lists every Hermes profile as a **bot** with one permanent chat. This is the
+contract of Hermes Desktop's Bot Mode (`apps/desktop/src/AGENTS.md` "Bot Mode",
+`apps/desktop/src/plugins/hermes-bots/canonical-chat.ts`). The app and Desktop therefore share
+the same conversation.
+
+### 8.1 Profiles and profile-scoped calls
+
+- **`profile` param.** Most methods accept `profile` (`ProfileParams` / `SessionParams.profile`,
+  `contracts/common.py:224-234`).
+  - The call then runs against that profile's `state.db` and `HERMES_HOME`
+    (`server.py:558-596`).
+  - If no profile of that name exists, the call fails with **4064** "Profile '…' does not
+    exist." (`server.py:561-577`, `rpc_dispatch.py:35-36`).
+  - Omitting `profile` means the gateway's launch profile.
+- **Profiles answer through one gateway.** A runtime session created or resumed with `profile`
+  remembers it, so later calls carrying only `session_id` stay scoped (`server.py:596-623`).
+  - A **cold** `session.resume` must send `profile` again. Without it the stored id is looked up
+    in the launch profile's database and fails with 4007.
+  - `[client choice]` `ChatSession.profile` holds the profile, and `GatewayConnection` passes it
+    on reconnect.
+- **`profiles.list`** returns one row per profile (`methods_profiles.py:281-302`):
+  ```json
+  {"name":"coder","path":"…","is_default":false,"model":"…","provider":"…","description":"","display_name":"",
+   "skill_count":3,"previous_names":[],"role":null,
+   "last_session":{…}|null,"worker_session":{…}|null,"canonical_session":{…}|null,
+   "ui_meta_revisions":{},"ui_meta":{…}?,"has_avatar":false}
+  ```
+  - **`canonical_session`** is the profile's Bot Chat, resolved by title on every listing:
+    `{id, resolved_id, root_title, title, preview, started_at, last_active, message_count,
+    live_message_count?}`.
+    - `id` is the registry row and `resolved_id` the compression-lineage tip.
+    - `preview` is the tip's newest user or assistant text: at most 80 characters, followed by
+      `...` when cut (`methods_profiles.py:108-122,161-195`).
+    - It is `null` when the profile has no Bot Chat yet.
+  - **`last_session`** is the newest human-facing session of any kind
+    (`methods_profiles.py:198-228`). It is **not** the bot's chat.
+  - **`worker_session`** is the newest kanban or tool worker row. Workers update `last_active`
+    at least every 60 s while running (`methods_profiles.py:199-206`).
+  - Times are Unix seconds.
+- **The row.** `[client choice]` Mirrors Desktop:
+  - **Order:** `default` first, then the server's order.
+  - **Name:** `ui_meta["hermes-bots"].title`, then `display_name`, then "Hermes" for `default`,
+    then the profile name in title case (`plugins/hermes-bots/labels.ts:45-75`).
+  - **Preview:** the `canonical_session` preview.
+  - **Activity:**
+    - *working*: a turn is running in this app, or `worker_session.last_active` is less than
+      150 s old;
+    - *active now*: `canonical_session.last_active` is less than 90 s old
+      (`row-helpers.ts:55-86`);
+    - *waiting for you*: a server request for a session of that profile that this app opened.
+  - **Refresh:** the roster is re-read after every connect, every finished turn of a profile's
+    session, and every 15 s while the sidebar is shown. Desktop polls every 5 s
+    (`methods_profiles.py:249-250`).
+  - **Side effect:** History lists every profile, so the gateway serves profiles other than its
+    launch profile from the first poll on. The first call scoped to such a profile switches it
+    into multi-profile hosting: launch-profile secrets are frozen, and unscoped secret reads
+    fail closed (`server.py:579-586`, `tui_gateway/launch_profile_policy.py`). Desktop's remote
+    mode does the same.
+
+### 8.2 Opening the Bot Chat
+
+The Bot Chat's only identity is **(profile, session titled exactly `Bot Chat`)**. The state
+DB's title uniqueness makes that a registry of at most one row per profile
+(`apps/desktop/src/AGENTS.md`, Bot Mode). **No session id is ever stored as the bot's chat or
+used as a fallback.** Every open of a bot (`GatewayConnection.openBotChat(profile:)`) looks the
+chat up again. The one exception: if that bot's Bot Chat is already on screen, the open returns
+it as it is.
+
+1. **Look up the chat by title:**
+   `session.list {profile, title:"Bot Chat", include_hidden:true, limit:200}`.
+   - This is an indexed, window-free exact-title lookup.
+   - Hidden rows are returned (Bot Chats are born hidden).
+   - Archived and denied-source rows are not.
+   - The single row carries `resolved_id`, the lineage tip (`methods_session.py:526-559`).
+2. **Row found:** `session.resume {session_id:<resolved_id or id>, profile}`.
+3. **Fail closed.** Neither of these may create a chat (`canonical-chat.ts:282-292,328-338`):
+   - The lookup errors → `BotChatError.registryUnavailable`.
+   - The lookup is empty but the roster's `canonical_session` says the chat exists →
+     `BotChatError.registryUnconfirmed`. A backend in the middle of a restart can answer an
+     empty list.
+4. **Confirmed absent:** create the chat.
+   - `session.create {profile, title:"Bot Chat", hidden:true, follow_profile_config:true}`, as
+     Desktop does (`canonical-chat.ts:468-488`).
+   - Then `session.title {session_id:<runtime>, title:"Bot Chat"}`. This persists the row under
+     its name immediately (`methods_session.py:1229-1241`, `canonical-chat.ts:493-511`).
+5. **Adopt before creating.** If that title is already taken, the write fails with 4022
+   "Title 'Bot Chat' is already in use by session …" (`hermes_state_titles.py:154`,
+   `methods_session.py:1242-1243`).
+   - That means another client created the chat after our lookup. Look it up again and open the
+     winner (`canonical-chat.ts:513-535`).
+   - The stray lazy session has no row and is left for the gateway to prune.
+6. **Only a saved, named chat becomes the Bot Chat.** Any other `session.title` failure fails
+   closed with `BotChatError.notRegistered`, and so does a `pending: true` answer, which means the
+   row was not written. The failures are 4021, other 4022s and 5007
+   (`methods_session.py:1226-1245`).
+   - The lazy session is never used. It is hidden and untitled, so the next open would create
+     another chat, and anything typed into it could not be reached from any list.
+   - `[client choice]` Desktop instead sends an intro prompt to make such a session permanent
+     (`canonical-chat.ts:536-560`). The app sends nothing on the user's behalf and asks the
+     user to try again.
+
+**Reconnect.** A cold restore of a Bot Chat (§7 step 4) also looks the chat up by title first,
+then resumes the tip the lookup returns. The id the chat had before the outage is not reused:
+- Desktop may have retired and replaced the chat in the meantime.
+- Resuming a server-minted key can re-create a missing row (`methods_session.py:782-808`).
+
+If the lookup finds no Bot Chat, the session is dropped from screen and nothing is created.
+The same-backend fast path (§7 step 3) re-attaches the still-live runtime session and needs no
+lookup.
+
+Concurrent opens of one bot share a single resolution (`canonical-chat.ts:38-40`).
+`[client choice]` When opens overlap, the one started last takes the screen. An earlier one
+still finishes and is returned to its caller, but is not shown. Its runtime session stays
+attached to the socket, so its `open_requests` are still re-delivered and show on the bot's
+row.
+
+### 8.3 Side chats and History
+
+- **Side chat.** A side chat ("New chat with this agent" in Desktop) is a plain
+  `session.create {profile}`: no title, not hidden. It is never the bot row's target.
+- **History** lists each bot's sessions: `session.list {profile, limit:20}` per profile.
+  - **Order:** grouped by bot in roster order, keeping the server's order within each bot. The
+    server orders by most recent activity (`methods_session.py:149-152`).
+  - **No cross-bot merge:** listing rows carry no activity time (`methods_session.py:118-126`),
+    so different bots' rows can't be merged by it.
+  - **What is left out:** Bot Chat rows. A Bot Chat row has `root_title` (when the gateway sends
+    it) or `title` equal to `Bot Chat`, or its id is the roster's `canonical_session.id` /
+    `resolved_id`.
+    - Bot Chats are normally hidden anyway: Desktop creates them with `hidden:true` and its sweep
+      re-hides them (`plugins/hermes-bots/hide-bot-chats.test.ts:1-16`).
+    - A *visible* row titled `Bot Chat` is left out too. The title lookup doesn't filter on
+      `hidden` (`methods_session.py:526-550`), so that row is what the bot row opens.
+    - Hermes uses `hidden` only to decide whether such a row may be renamed
+      (`hermes_state_titles.py:100-110`).
+  - `[client choice]` The app does not run that sweep. It never writes `hidden`.
+- **Opening a History row:** `session.resume {session_id, profile}`.
+
+## 9. HTTP API server (secondary option, not used by the MVP)
 
 This is the OpenAI-compatible server in `gateway/platforms/api_server.py`, described in
 `website/docs/developer-guide/programmatic-integration.md:126-198`.

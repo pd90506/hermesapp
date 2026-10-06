@@ -9,8 +9,9 @@ remote gateway. See [`docs/protocol.md`](docs/protocol.md).
 
 Status: foundation only.
 - The shared package is real and tested on Linux.
-- The app UIs are minimal shells: connection settings, session list, a placeholder chat with
-  approval/clarify cards.
+- The app UIs are minimal shells: connection settings, a bot sidebar (every Hermes profile as a
+  bot with its one permanent "Bot Chat", shared with Hermes Desktop's Bot Mode, plus a History
+  area for side chats), a placeholder chat with approval/clarify cards.
 - The UI code has **not yet been compiled**; it was written on a Linux host without Xcode. The
   first job on the Mac is to build it and fix whatever Xcode flags.
 
@@ -132,7 +133,10 @@ target). The real check is `xcodegen generate` on the Mac.
   takes an access token only, which can't be refreshed. `basic` access tokens last 12 h, so
   re-enter the token after that.
 - Clarify `multi_select` is shown as a single choice.
-- Requests for sessions other than the open one show only as a badge.
+- Requests for sessions other than the open one show only as a badge (and on the bot's row when
+  this app opened that session).
+- The app only lists bots and opens or creates their Bot Chats. It does not create, rename or
+  delete profiles, and it does not run Desktop's sweep that re-hides Bot Chats.
 - A `-32601` from this app can beat a Desktop window's answer to `vault.*` prompts when both are
   attached to the same session (see `docs/protocol.md` §6).
 

@@ -11,9 +11,11 @@ Status: foundation only.
 - The shared package is real and tested on Linux.
 - The app UIs are minimal shells: connection settings, a bot sidebar (every Hermes profile as a
   bot with its one permanent "Bot Chat", shared with Hermes Desktop's Bot Mode, plus a History
-  area for side chats), a placeholder chat with approval/clarify cards.
-- The UI code has **not yet been compiled**; it was written on a Linux host without Xcode. The
-  first job on the Mac is to build it and fix whatever Xcode flags.
+  area for side chats), and a chat with approval/clarify cards.
+- Assistant replies (and reasoning) render as Markdown: headings, lists, quotes, code blocks,
+  GFM tables and LaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`), typeset natively with SwiftMath.
+  User messages and tool rows stay plain text.
+- Both apps build on the Mac with Xcode.
 
 ## Layout
 
@@ -24,9 +26,11 @@ Packages/HermesKit/        Swift package — all non-UI logic. Builds and tests 
   Sources/HermesKit/         Transport (URLSession WebSocket), GatewayClient (id correlation,
                              event/request dispatch, heartbeat, replay), dashboard auth
                              (ticket, password login, PKCE), Transcript reducer, ChatSession and
-                             GatewayConnection (@Observable, reconnect + resume).
+                             GatewayConnection (@Observable, reconnect + resume), Markdown/LaTeX
+                             parsing for chat rendering (Markdown/).
   Tests/                     Swift Testing suites driven by a fake transport and a fake HTTP client.
-Apps/Shared/               SwiftUI code compiled into both apps (AppModel, views, Keychain).
+Apps/Shared/               SwiftUI code compiled into both apps (AppModel, views, Keychain,
+                           Markdown and math views; math uses SwiftMath, see AGENTS.md).
 Apps/macOS/, Apps/iOS/     Per-platform @main entry points.
 project.yml                XcodeGen spec: the source of truth for the Xcode project.
 Config/                    xcconfigs (signing placeholders); Generated/ is written by XcodeGen.
@@ -83,8 +87,9 @@ between the NUC and the Mac.
 
 XcodeGen can't be run on the NUC. Linux support is not something this repo relies on, and this
 environment has no network to fetch it. So `scripts/check-project-spec.py` checks the spec
-statically (YAML parses, paths exist, package products exist, every app Swift file belongs to a
-target). The real check is `xcodegen generate` on the Mac.
+statically (YAML parses, paths exist, local package products exist, remote packages use https and
+pin a version, every app Swift file belongs to a target). The real check is `xcodegen generate`
+on the Mac.
 
 ## Signing
 
@@ -137,6 +142,19 @@ target). The real check is `xcodegen generate` on the Mac.
   this app opened that session).
 - The app only lists bots and opens or creates their Bot Chats. It does not create, rename or
   delete profiles, and it does not run Desktop's sweep that re-hides Bot Chats.
+- Math the SwiftMath parser can't handle, even after rewriting (e.g. `\cancel`, `\&`,
+  `\mathop`), shows as LaTeX source. Some rewrites are approximations: `\boxed` drops the box,
+  `\underbrace`/`\overbrace` become under/overlines, `\overset` becomes a superscript. `\color`
+  is ignored because math takes the text color.
+- Prose selection works within one paragraph, list item or cell, not across blocks. Math images
+  aren't selectable; use "Copy LaTeX" from the context menu.
+- Markdown edge cases, by design: a display-math opener with no closer is plain text once the
+  reply finishes (while streaming it shows as source); quotes and lists nest at most 16 deep and
+  emphasis 32 deep, deeper markers stay text; a `$…$` span in a table cell keeps its pipes, so
+  `| $a | b$ |` is one cell; `$` + capitals + `/` or `:` (`$HOME/`) is read as a shell variable.
+- Rendering: every streamed delta re-parses the reply and re-evaluates its block views; the math
+  image cache is bounded by count (500), not bytes; math in the reasoning pane is sized for body
+  text although reasoning uses the callout font.
 - A `-32601` from this app can beat a Desktop window's answer to `vault.*` prompts when both are
   attached to the same session (see `docs/protocol.md` §6).
 

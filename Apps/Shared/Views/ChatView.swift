@@ -84,6 +84,7 @@ private struct MessageRow: View {
     var body: some View {
         switch item.role {
         case .user:
+            // Shown verbatim: what the user typed, not a reinterpretation of it.
             HStack {
                 Spacer(minLength: 40)
                 Text(item.text)
@@ -94,17 +95,22 @@ private struct MessageRow: View {
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {
                 if !item.reasoning.isEmpty {
+                    // Model-written like the reply, so rendered the same way; the
+                    // content is only built while expanded.
                     DisclosureGroup("Reasoning") {
-                        Text(item.reasoning)
+                        MarkdownView(text: item.reasoning, isStreaming: item.isActive)
+                            .equatable()
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
                     }
                     .font(.caption)
                 }
-                // Markdown rendering is a follow-up; plain text keeps streaming cheap.
-                Text(item.text.isEmpty && item.isActive ? "…" : item.text)
-                    .textSelection(.enabled)
+                if item.text.isEmpty && item.isActive {
+                    Text("…")
+                } else {
+                    MarkdownView(text: item.text, isStreaming: item.isActive)
+                        .equatable()
+                }
                 if item.outcome == "interrupted" {
                     Text("Interrupted").font(.caption).foregroundStyle(.secondary)
                 }

@@ -14,7 +14,10 @@ struct RootView: View {
         NavigationSplitView {
             BotSidebarView(selection: $selection)
         } detail: {
-            if let session = model.connection.activeSession {
+            if let opening = model.connection.opening {
+                // A first open: the chat's frame at once, not the previous chat.
+                OpeningChatView(title: title(of: opening))
+            } else if let session = model.connection.activeSession {
                 ChatView(session: session, title: title(of: session))
                     .id(session.id)  // a fresh composer per chat
             } else {
@@ -85,6 +88,17 @@ struct RootView: View {
         }
     }
 
+    private func title(of opening: PendingChat) -> String {
+        let botName = model.connection.bots.first { $0.name == opening.profile }?.displayName ?? opening.profile
+        switch opening.kind {
+        case .botChat: return botName ?? "Hermes"
+        case .sideChat:
+            let title = opening.title?.isEmpty == false ? opening.title! : "Side chat"
+            return botName.map { "\(title) · \($0)" } ?? title
+        case .session: return opening.title?.isEmpty == false ? opening.title! : "Chat"
+        }
+    }
+
     private func title(of session: ChatSession) -> String? {
         let botName = model.connection.bots.first { $0.name == session.profile }?.displayName ?? session.profile
         switch session.kind {
@@ -94,5 +108,21 @@ struct RootView: View {
             return botName.map { "\(title) · \($0)" } ?? title
         case .session: return nil
         }
+    }
+}
+
+/// The frame of a chat being opened: its title and a spinner where the transcript goes.
+private struct OpeningChatView: View {
+    let title: String
+
+    var body: some View {
+        ProgressView()
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .accessibilityLabel("Opening \(title)")
     }
 }

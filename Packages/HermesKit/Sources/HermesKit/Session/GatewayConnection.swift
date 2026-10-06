@@ -37,6 +37,9 @@ public final class GatewayConnection {
     public internal(set) var bots: [Bot] = []
     /// Non-Bot-Chat sessions of every bot, newest first.
     public internal(set) var history: [HistoryEntry] = []
+    /// A chat being opened for the first time: shown as a frame (title, loading)
+    /// at once instead of the previous chat, until it is active or the open fails.
+    public private(set) var opening: PendingChat?
 
     /// Stop retrying after this many failed attempts (`nil` = retry forever).
     @ObservationIgnored public var maxReconnectAttempts: Int? = 20
@@ -69,6 +72,14 @@ public final class GatewayConnection {
     /// for background sessions can be attributed to a bot.
     @ObservationIgnored var sessionProfiles: [String: String] = [:]
     @ObservationIgnored var listsRefreshTask: Task<Void, Never>?
+    /// Chats shown on this connection, most recent first, at most `warmChatLimit`
+    /// (the active one included). Going back to one shows it at once; see
+    /// `GatewayConnection+Revisit`.
+    @ObservationIgnored var warmChats: [ChatSession] = []
+    /// The composer of each warm chat (`composer(for:)`).
+    @ObservationIgnored private var composers: [ObjectIdentifier: ChatComposer] = [:]
+    /// The open that `opening` belongs to.
+    @ObservationIgnored private var openingToken = 0
     @ObservationIgnored private let configuration: GatewayClient.Configuration
     @ObservationIgnored private let backoff: @Sendable (Int) -> Duration
 
@@ -126,6 +137,9 @@ public final class GatewayConnection {
         guard gen == generation else { return }  // a newer connect() superseded this call
         connector = nil
         activeSession = nil
+        opening = nil
+        warmChats = []
+        composers = [:]
         otherSessionRequests = []
         sessions = []
         bots = []
@@ -229,8 +243,15 @@ public final class GatewayConnection {
     @discardableResult
     public func open(_ summary: SessionSummary) async throws -> ChatSession {
         let token = beginSelection()
-        if let current = activeSession, current.profile == nil, current.storedSessionID == summary.id { return current }
+        if let current = activeSession, current.profile == nil, current.storedSessionID == summary.id {
+            return keepShowing(current)
+        }
         guard let client else { throw GatewayClientError.notConnected }
+        if let warm = warmChat(where: { $0.profile == nil && $0.kind == .session && $0.storedSessionID == summary.id }) {
+            return revisit(warm, token: token, client: client)
+        }
+        beginOpening(PendingChat(profile: nil, kind: .session, title: summary.title), token: token)
+        defer { endOpening(token) }
         let resumed = try await resume(summary.id, profile: nil, client: client)
         let session = ChatSession(snapshot: resumed.snapshot, storedSessionID: summary.id, title: summary.title,
                                   connection: self)
@@ -249,11 +270,11 @@ public final class GatewayConnection {
     /// ack says the runtime session is still hydrating: no turn has run on it yet
     /// (`server.py:1066-1074`). Otherwise the page is read again after the ack;
     /// from then on every turn reaches this socket.
-    func resume(_ key: String, profile: String?, client: GatewayClient) async throws -> ResumedChat {
-        let prefetch = messagesSource.map { source in
-            let query = SessionMessagesQuery(sessionID: key, profile: profile, limit: ChatSession.pageSize)
-            return Task { try await ChatSession.fetchLatest(query, from: source) }
-        }
+    /// - Parameter started: a read of the same page already started (a Bot Chat's
+    ///   page, read while its registry lookup ran).
+    func resume(_ key: String, profile: String?, client: GatewayClient,
+                prefetch started: Task<LatestHistory, any Error>? = nil) async throws -> ResumedChat {
+        let prefetch = started ?? latestPageRead(key, profile: profile)
         do {
             let snapshot = try await client.resumeSession(storedSessionID: key, profile: profile)
             if snapshot.hydrating == true, (snapshot.storedKey ?? key) == key { return ResumedChat(snapshot: snapshot, prefetch: prefetch) }
@@ -263,6 +284,64 @@ public final class GatewayConnection {
             prefetch?.cancel()
             throw error
         }
+    }
+
+    /// The bytes of an image stored on the gateway (an `@image:` path, or the path an
+    /// upload answered), read for `profile` (see `DashboardConnector.imageData`).
+    /// Throws `GatewayClientError.notConnected` when this connection has no REST access.
+    public func imageData(path: String, profile: String?) async throws -> Data {
+        guard let source = connector?.mediaSource else { throw GatewayClientError.notConnected }
+        return try await source.imageData(path: path, profile: profile)
+    }
+
+    /// A read of a stored transcript's newest page, started now.
+    func latestPageRead(_ key: String, profile: String?) -> Task<LatestHistory, any Error>? {
+        messagesSource.map { source in
+            let query = SessionMessagesQuery(sessionID: key, profile: profile, limit: ChatSession.pageSize)
+            return Task { try await ChatSession.fetchLatest(query, from: source) }
+        }
+    }
+
+    /// The chat's composer: draft, attached images, model and effort pickers. It
+    /// lives with the chat, not with its view, so nothing typed or attached is lost
+    /// when another chat is shown or being opened (whether that open succeeds, fails
+    /// or is cancelled), and a warm chat comes back with its draft. It goes when the
+    /// chat leaves the warm cache (`warmChatLimit`) or on `disconnect()`.
+    public func composer(for session: ChatSession) -> ChatComposer {
+        let key = ObjectIdentifier(session)
+        if let existing = composers[key] { return existing }
+        let made = ChatComposer(session: session)
+        composers[key] = made
+        return made
+    }
+
+    /// A chat that can no longer be shown takes its composer with it.
+    func forgetComposer(of session: ChatSession) {
+        composers[ObjectIdentifier(session)] = nil
+    }
+
+    /// No chat on screen (the one shown can no longer be).
+    func clearActiveSession() {
+        activeSession = nil
+    }
+
+    /// The user picked the chat already on screen: it stays, and an open still in
+    /// flight for another chat no longer hides it (that open, superseded by the new
+    /// selection, will not take the screen either).
+    func keepShowing(_ current: ChatSession) -> ChatSession {
+        opening = nil
+        return current
+    }
+
+    /// Shows `chat` as opening, on behalf of the open holding `token`.
+    func beginOpening(_ chat: PendingChat, token: Int) {
+        opening = chat
+        openingToken = token
+    }
+
+    /// The open holding `token` ended (shown, failed or superseded by itself).
+    func endOpening(_ token: Int) {
+        if openingToken == token { opening = nil }
     }
 
     /// Starts a user-initiated open; see `selectionToken`.
@@ -292,6 +371,13 @@ public final class GatewayConnection {
 
     func activate(_ session: ChatSession) {
         activeSession = session
+        opening = nil
+        warmChats.removeAll { $0 === session }
+        warmChats.insert(session, at: 0)
+        if warmChats.count > Self.warmChatLimit { warmChats.removeLast(warmChats.count - Self.warmChatLimit) }
+        // A chat that left the cache takes its draft with it.
+        let warm = Set(warmChats.map { ObjectIdentifier($0) })
+        composers = composers.filter { warm.contains($0.key) }
         if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
         // Requests already queued for this session move into its transcript.
         let mine = otherSessionRequests.filter { $0.sessionID == session.sessionID }
@@ -320,9 +406,9 @@ public final class GatewayConnection {
             if case .requestCancel(let cancel) = event.kind {
                 otherSessionRequests.removeAll { $0.id == cancel.id }
             }
-            guard let session = activeSession else { return }
-            let sid = event.sessionID ?? ""
-            if sid.isEmpty || sid == session.sessionID {
+            // The active chat, and the warm ones behind it while this socket still
+            // serves them: going back to one then shows what happened meanwhile.
+            for session in eventTargets(event.sessionID ?? "") {
                 session.apply(event)
                 // A finished turn moved the bot's preview / the History rows.
                 if case .messageComplete = event.kind, session.profile != nil { refreshListsInBackground() }

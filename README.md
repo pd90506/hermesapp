@@ -16,9 +16,12 @@ Status: foundation only.
   up, as in Hermes Desktop.
 - Assistant replies (and reasoning) render as Markdown: headings, lists, quotes, code blocks,
   GFM tables and LaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`), typeset natively with SwiftMath.
-  User messages and tool rows stay plain text.
+  User messages and tool rows stay plain text; images sent with a message show as image cards.
+- Switching back to a chat opened earlier shows it at once and catches up in the background; a
+  first open shows the chat's title right away (`docs/protocol.md` §4.2).
 - The composer follows Hermes Desktop's: a text area that grows with its text, image attachments
-  shown as cards (`+`, paste, drag and drop), and per-chat model and reasoning-effort pickers.
+  shown as cards (`+`, paste or Command-V anywhere in the chat window, drag and drop), and
+  per-chat model and reasoning-effort pickers.
   On macOS, Return sends and Shift-Return inserts a newline. On iOS, Return inserts a newline and
   the Send button (or Command-Return) sends. While a reply runs, Send sits beside Stop as soon as
   there is something to send. A message with images is queued as the next turn. Text alone
@@ -45,6 +48,8 @@ Apps/Shared/               SwiftUI code compiled into both apps (AppModel, views
                            Markdown and math views; math uses SwiftMath, see AGENTS.md; the
                            composer's text view, image loading and pickers in Composer/).
 Apps/macOS/, Apps/iOS/     Per-platform @main entry points.
+Apps/Tests/macOS/          AppKit tests of the composer's text view and clipboard handling
+                           (`xcodebuild test -scheme HermesMacTests -destination platform=macOS`).
 project.yml                XcodeGen spec: the source of truth for the Xcode project.
 Config/                    xcconfigs (signing placeholders); Generated/ is written by XcodeGen.
 backend/                   Reserved for NUC-side helpers (e.g. a push relay). Empty on purpose.

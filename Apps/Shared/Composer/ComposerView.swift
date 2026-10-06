@@ -14,6 +14,7 @@ struct ComposerView: View {
 
     @State private var textHeight: CGFloat = 0
     @State private var thumbnails: [UUID: CGImage] = [:]
+    @Environment(AppModel.self) private var model
     @State private var focusRequest = 0
     @State private var isImportingFile = false
     @State private var isDropTargeted = false
@@ -124,7 +125,10 @@ struct ComposerView: View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
                 ForEach(composer.attachments) { attachment in
-                    AttachmentCardView(attachment: attachment, thumbnail: thumbnails[attachment.id],
+                    // The draft outlives this view (`GatewayConnection.composer(for:)`); its thumbnails
+                    // are also in the shared store, for when the chat is shown again.
+                    AttachmentCardView(attachment: attachment,
+                                       thumbnail: thumbnails[attachment.id] ?? model.thumbnails.local(attachment.id),
                                        isSending: composer.isSubmitting) {
                         composer.removeAttachment(id: attachment.id)
                     }
@@ -139,7 +143,7 @@ struct ComposerView: View {
     private var textArea: some View {
         @Bindable var composer = composer
         return ComposerTextView(
-            text: $composer.draft, contentHeight: $textHeight, focusRequest: focusRequest,
+            text: $composer.draft, contentHeight: $textHeight, maxHeight: maxTextHeight, focusRequest: focusRequest,
             onSubmit: submit,
             onImages: { sources in Task { await attach(sources) } },
             onImageProviders: { providers in Task { await attach(await ImageLoader.sources(from: providers)) } }
@@ -372,6 +376,8 @@ struct ComposerView: View {
                 let loaded = try await ImageLoader.load(source)
                 if composer.attach(loaded.attachment) {
                     thumbnails[loaded.attachment.id] = loaded.thumbnail
+                    // The sent bubble shows the same thumbnail (`TranscriptImageCard`).
+                    if let thumbnail = loaded.thumbnail { model.thumbnails.storeLocal(thumbnail, for: loaded.attachment.id) }
                 }
             } catch {
                 composer.error = error.localizedDescription

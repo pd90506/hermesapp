@@ -70,6 +70,30 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
     scheme: {}
 
+  # AppKit tests of the composer's text view and clipboard handling, with synthetic
+  # NSPasteboards. Not hosted in the app (which connects on launch): it compiles the
+  # two files it tests. Run: xcodebuild test -scheme HermesMacTests -destination platform=macOS
+  HermesMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Apps/Tests/macOS
+      - path: Apps/Shared/Composer/ComposerTextView.swift
+      - path: Apps/Shared/Composer/ImageLoader.swift
+    dependencies:
+      - package: HermesKit
+        product: HermesKit
+      - package: HermesKit
+        product: HermesProtocol
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).mac.tests
+        GENERATE_INFOPLIST_FILE: YES
+    scheme:
+      testTargets:
+        - HermesMacTests
+
   HermesiOS:
     type: application
     platform: iOS

@@ -24,6 +24,8 @@ public struct TranscriptItem: Sendable, Hashable, Identifiable {
     public var rowID: Int?
     /// Tool rows: the call id (`tool_call_id`, `tool.start.tool_id`).
     public var toolCallID: String?
+    /// User rows: the images sent with the prompt (`text` is then its caption).
+    public var images: [TranscriptImage] = []
 
     public init(id: String, role: Role, text: String, isActive: Bool = false) {
         self.id = id
@@ -110,6 +112,8 @@ public struct Transcript: Sendable, Hashable {
     private var quietOnce: Set<String> = []
     /// `starts` when each prompt sent here was shown.
     private var promptSentAtStarts: [String: Int] = [:]
+    /// `requestReread` came before the newest page: read again once it is in.
+    private var rereadWhenLoaded = false
     /// Prompts answered `streaming` without `user_row_id` whose turn has not started
     /// yet: no row exists until that turn runs (see `promptAnswered`).
     private var awaitingTurn: Set<String> = []
@@ -138,11 +142,16 @@ public struct Transcript: Sendable, Hashable {
     /// A resume with `omit_messages` carries no messages; the history then
     /// arrives with `installLatestPage`. A payload with messages (`session.create`,
     /// or a gateway that ignored `omit_messages`) is the whole history.
-    public init(snapshot: LiveSessionSnapshot) {
+    ///
+    /// - Parameter localIDsAfter: a rebuild (`ChatSession.reset`) numbers its live items
+    ///   above every id the transcript it replaces used, so an id a send still holds
+    ///   for its old bubble never names an item of this one.
+    public init(snapshot: LiveSessionSnapshot, localIDsAfter floor: Int = 0) {
+        counter = floor
         buildingHistory = true
         for message in snapshot.messages {
             switch message.role {
-            case "user": append(.user, message.plainText, rowID: message.rowID)
+            case "user": appendUser(message.plainText, rowID: message.rowID)
             case "assistant":
                 let text = message.plainText
                 if text.isEmpty && message.reasoning == nil { continue }
@@ -182,7 +191,7 @@ public struct Transcript: Sendable, Hashable {
             {
                 // The prompt is stored at submit (`methods_prompt.py:817-820`): until the
                 // turn's re-read it shows twice.
-                echo = items[append(.user, user)].id
+                echo = items[appendUser(user)].id
             }
             let assistant = inflight.assistant ?? ""
             if inflight.isFailed {
@@ -239,9 +248,10 @@ public struct Transcript: Sendable, Hashable {
         hiddenOpening = hasOlder ? Self.hiddenFirstPrompt(rows) : nil
         // Live items that are not the streaming turn's may or may not be in this page
         // (it may have been read before they were stored): settle them by a re-read.
-        if rereadable, !finishedItems.isEmpty || prompts.values.contains(where: Self.isAnswered) {
+        if rereadable, rereadWhenLoaded || !finishedItems.isEmpty || prompts.values.contains(where: Self.isAnswered) {
             needsReread = true
         }
+        rereadWhenLoaded = false
     }
 
     /// The first user row of `rows`, if compaction stamped it hidden.
@@ -280,7 +290,61 @@ public struct Transcript: Sendable, Hashable {
         }
     }
 
+    // MARK: - Rebuilds
+
+    /// The highest `local-n` number used (`init(snapshot:localIDsAfter:)`).
+    var lastLocalID: Int { counter }
+
+    /// Whether `itemID` is a prompt sent here that this transcript still shows. After a
+    /// rebuild it is not: the send settles without its bubble (`ChatSession.send`).
+    public func holdsPrompt(_ itemID: String) -> Bool { prompts[itemID] != nil }
+
+    /// Prompts sent here whose submit failed: only their bubble holds them. A rebuild
+    /// shows none of them; their text goes back to the composer (`ChatSession.reset`).
+    public var failedPrompts: [TranscriptItem] {
+        items[historyCount...].filter { prompts[$0.id] == .failed }
+    }
+
+    /// Keeps a failure on screen when its bubble is gone (a rebuild, or a send whose
+    /// bubble a rebuild replaced).
+    public mutating func keepError(_ message: String) {
+        lastError = message
+    }
+
     // MARK: - Re-reading the newest rows
+
+    /// Asks for a re-read of the newest rows (a chat shown again: rows may have been
+    /// stored while its events went to another socket).
+    /// Before the newest page is in, the request waits for it.
+    public mutating func requestReread() {
+        if paging.isLoaded {
+            if paging.rereadable { needsReread = true }
+        } else {
+            rereadWhenLoaded = true
+        }
+    }
+
+    /// A chat shown again reports whether a turn runs now (`session.activate`).
+    /// - Running: the spinner shows; the turn's events reach this socket from now on.
+    /// - Not running while a turn is still open here: its `message.complete` went to
+    ///   another socket. The turn ends here as it would have; its live items wait for
+    ///   the re-read, which holds what it stored (`finishedItems`).
+    public mutating func reconcileRunning(_ running: Bool) {
+        if running {
+            isRunning = true
+            return
+        }
+        guard turnActive else { return }
+        for index in items.indices where index >= historyCount { items[index].isActive = false }
+        removeLiveItems { $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil }
+        completions += 1
+        clock += 1
+        for id in turnItemIDs { finishedItems[id] = completions }
+        turnItemIDs = []
+        turnActive = false
+        isRunning = prompts.values.contains(.sent)
+        status = nil
+    }
 
     /// Starts a re-read of the newest rows: it may settle everything up to now.
     public mutating func beginReread() -> RereadTicket {
@@ -397,9 +461,11 @@ public struct Transcript: Sendable, Hashable {
     /// Hermes made of it (a turn of its own, a steer, a redirect or a queued turn,
     /// `session_auto_continue.py:398-450`).
     @discardableResult
-    public mutating func appendUserPrompt(_ text: String) -> String {
+    /// - Parameter images: the images sent with it (`text` is then the caption, possibly empty).
+    public mutating func appendUserPrompt(_ text: String, images: [TranscriptImage] = []) -> String {
         counter += 1
-        let item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
+        var item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
+        item.images = images
         items.append(item)
         prompts[item.id] = .sent
         promptSentAtStarts[item.id] = starts
@@ -561,6 +627,15 @@ public struct Transcript: Sendable, Hashable {
     }
 
     // MARK: - Helpers
+
+    /// A user row: its `@image:` lines become images, the rest its caption.
+    @discardableResult
+    private mutating func appendUser(_ text: String, rowID: Int? = nil) -> Int {
+        let (caption, paths) = ImageDirectives.split(text)
+        let index = append(.user, caption, rowID: rowID)
+        items[index].images = TranscriptImage.stored(paths)
+        return index
+    }
 
     /// A turn's first event starts it (`message.start`, or any streamed event of a
     /// turn this chat saw no start of).

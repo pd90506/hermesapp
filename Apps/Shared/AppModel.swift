@@ -77,6 +77,8 @@ final class AppModel {
     private var connectedEndpoint: GatewayEndpoint?
 
     let connection = GatewayConnection()
+    /// Thumbnails of the images in transcripts and the composer (`TranscriptImages.swift`).
+    let thumbnails = ThumbnailStore()
 
     private static let secretAccount = "gateway-secret"
 

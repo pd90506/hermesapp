@@ -37,9 +37,12 @@ enum StoredMessageProjection {
             switch row.role {
             case "user":
                 if text.trimmingCharacters(in: .whitespaces).hasPrefix("[System:") { continue }
-                let shown = userDisplayText(text)
-                guard !shown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                items.append(item(row, role: .user, text: shown))
+                // `@image:` lines are the images sent with it (`session_history.py:51-60`).
+                let (caption, paths) = ImageDirectives.split(userDisplayText(text))
+                guard !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !paths.isEmpty else { continue }
+                var user = item(row, role: .user, text: caption)
+                user.images = TranscriptImage.stored(paths)
+                items.append(user)
             case "assistant":
                 for call in row.toolCalls?.arrayValue ?? [] {
                     guard let id = call["id"]?.stringValue, !id.isEmpty,

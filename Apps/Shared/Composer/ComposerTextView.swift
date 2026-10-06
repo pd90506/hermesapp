@@ -1,7 +1,9 @@
+import HermesKit
 import SwiftUI
 
 /// The composer's multi-line text area. It reports the height its text needs
-/// (`contentHeight`); the caller caps it, and the view scrolls past the cap.
+/// (`contentHeight`); the caller caps it at `maxHeight`, and the view scrolls past
+/// the cap. Below the cap no scroller is ever shown, not even for one frame.
 ///
 /// Keys:
 /// - macOS: Return sends, Shift-Return or Option-Return inserts a newline (as in
@@ -10,11 +12,15 @@ import SwiftUI
 /// - iOS: Return inserts a newline; the Send button (or Command-Return on a hardware
 ///   keyboard) sends, as in Messages.
 ///
-/// Pasting an image (with no text on the pasteboard) attaches it instead of
-/// inserting anything; dropping image files onto the text attaches them.
+/// Pasting an image attaches it instead of inserting anything (`ClipboardPolicy`
+/// decides what counts as an image); dropping image files onto the text attaches them.
+/// On macOS, Command-V with an image on the clipboard attaches it whenever the chat's
+/// window is focused and no other editable text has the keyboard.
 struct ComposerTextView {
     @Binding var text: String
     @Binding var contentHeight: CGFloat
+    /// The tallest the text area gets; past it, the text scrolls.
+    var maxHeight: CGFloat
     /// Bumped by the caller to move keyboard focus here.
     var focusRequest: Int
     var onSubmit: () -> Void
@@ -32,15 +38,22 @@ extension ComposerTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
+        Self.makeScrollView(coordinator: context.coordinator, text: text)
+    }
+
+    /// The scroll view and its text view, wired to `coordinator` (separate from
+    /// `makeNSView` so tests can build it without SwiftUI).
+    @MainActor
+    static func makeScrollView(coordinator: Coordinator, text: String) -> ComposerScrollView {
         let textView = ComposerNSTextView()
-        textView.delegate = context.coordinator
+        textView.delegate = coordinator
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.font = .preferredFont(forTextStyle: .body)
         textView.textColor = .labelColor
-        textView.textContainerInset = NSSize(width: 0, height: Self.verticalInset)
+        textView.textContainerInset = NSSize(width: 0, height: verticalInset)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
         textView.isVerticallyResizable = true
@@ -57,11 +70,16 @@ extension ComposerTextView: NSViewRepresentable {
         let scrollView = ComposerScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
+        // Off until the text is taller than `maxHeight` (`Coordinator.measure`). An
+        // auto-hiding scroller that is merely enabled flashes on every new line: the
+        // text view grows a frame before the SwiftUI frame catches up.
+        scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.documentView = textView
-        context.coordinator.textView = textView
-        context.coordinator.bind(textView)
+        coordinator.textView = textView
+        coordinator.scrollView = scrollView
+        coordinator.known = text
+        coordinator.bind(textView)
         return scrollView
     }
 
@@ -70,22 +88,24 @@ extension ComposerTextView: NSViewRepresentable {
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
         coordinator.bind(textView)
-        // Never overwrite text an input method is still composing.
-        if textView.string != text, !textView.hasMarkedText() {
-            textView.string = text
-            coordinator.measure()
-        }
+        coordinator.showDraft()
         if coordinator.focusRequest != focusRequest {
             coordinator.focusRequest = focusRequest
             DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
         }
     }
 
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        coordinator.stopPasteMonitor()
+    }
+
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerTextView
         weak var textView: ComposerNSTextView?
+        weak var scrollView: NSScrollView?
         var focusRequest: Int
+        private var pasteMonitor: Any?
 
         init(_ parent: ComposerTextView) {
             self.parent = parent
@@ -94,14 +114,66 @@ extension ComposerTextView: NSViewRepresentable {
 
         func bind(_ textView: ComposerNSTextView) {
             textView.onImages = { [weak self] in self?.parent.onImages($0) }
-            textView.onResize = { [weak self] in self?.measure() }
+            textView.onResize = { [weak self] in self?.measure(during: .layout) }
+            textView.onWindow = { [weak self] window in
+                if window == nil { self?.stopPasteMonitor() } else { self?.startPasteMonitor() }
+            }
         }
+
+        /// The draft as this view last left it: shown, or reported after an edit.
+        var known = ""
+        /// A draft changed outside the view while an input method composed, and the
+        /// draft it replaced: shown once the composition ends (`DraftMerge`).
+        private var held: (base: String, draft: String)?
 
         func textDidChange(_ notification: Notification) {
             guard let textView else { return }
-            parent.text = textView.string
-            measure()
+            if let held {
+                // The draft keeps the app's text while the input method composes.
+                guard !textView.hasMarkedText() else { return measure(during: .edit) }
+                self.held = nil
+                let merged = DraftMerge.merge(base: held.base, theirs: held.draft, mine: textView.string)
+                show(merged.text, caret: merged.caret)
+            }
+            known = textView.string
+            parent.text = known
+            measure(during: .edit)
         }
+
+        /// Shows the draft when it changed outside the text view: cleared after a send,
+        /// or a failed prompt's text given back (`ChatSession`). An input method's
+        /// composition is never touched (committing it in code turned the letters into
+        /// Latin, and its own edit report overwrote the draft during the SwiftUI
+        /// update): the change waits for the composition to end. Whether the draft
+        /// saw the marked letters doesn't matter (AppKit reports some marked-text
+        /// edits and not others), as the change is told by the draft, not the view.
+        func showDraft() {
+            let draft = parent.text
+            guard let textView, draft != known else { return }
+            if textView.hasMarkedText() {
+                held = (held?.base ?? known, draft)
+            } else {
+                held = nil
+                show(draft, caret: (draft as NSString).length)
+                measure(during: .viewUpdate)
+            }
+            known = draft
+        }
+
+        /// Text set in code. Undo steps recorded before it point into the old text,
+        /// so they are dropped.
+        private func show(_ text: String, caret: Int) {
+            guard let textView else { return }
+            textView.string = text
+            textView.setSelectedRange(NSRange(location: caret, length: 0))
+            undo.removeAllActions()
+        }
+
+        /// The composer's own undo history (AppKit registers typing with an internal
+        /// target, so it can only be cleared as a whole; the window's is shared).
+        private let undo = UndoManager()
+
+        func undoManager(for view: NSTextView) -> UndoManager? { undo }
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             guard selector == #selector(NSResponder.insertNewline(_:))
@@ -118,8 +190,18 @@ extension ComposerTextView: NSViewRepresentable {
             return true
         }
 
-        /// The height the text needs, at the current width.
-        func measure() {
+        enum Moment {
+            /// The user typed or pasted: outside any SwiftUI update.
+            case edit
+            /// Inside a SwiftUI update or an AppKit layout pass.
+            case viewUpdate, layout
+        }
+
+        /// The height the text needs at the current width. The scroller is decided
+        /// first, so a line that still fits never shows one. After an edit the height
+        /// goes to SwiftUI at once, so the frame grows in the same pass as the text;
+        /// during a view update or layout it is deferred, as SwiftUI requires.
+        func measure(during moment: Moment) {
             guard let textView, let container = textView.textContainer,
                 let layoutManager = textView.layoutManager
             else { return }
@@ -127,10 +209,46 @@ extension ComposerTextView: NSViewRepresentable {
             let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? .preferredFont(forTextStyle: .body))
             let used = max(layoutManager.usedRect(for: container).height, lineHeight)
             let height = ceil(used + 2 * ComposerTextView.verticalInset)
-            if abs(parent.contentHeight - height) > 0.5 {
+            let overflows = height > parent.maxHeight + 0.5
+            if scrollView?.hasVerticalScroller != overflows { scrollView?.hasVerticalScroller = overflows }
+            guard abs(parent.contentHeight - height) > 0.5 else { return }
+            if moment == .edit {
+                parent.contentHeight = height
+            } else {
                 let binding = parent.$contentHeight
                 DispatchQueue.main.async { binding.wrappedValue = height }
             }
+        }
+
+        // MARK: Command-V anywhere in the chat window
+
+        /// Command-V with an image on the clipboard attaches it even when the
+        /// keyboard is elsewhere in this window (the transcript, the toolbar), as in
+        /// Desktop. Editable text that has the keyboard keeps its own paste.
+        private func startPasteMonitor() {
+            guard pasteMonitor == nil else { return }
+            pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.handlesPaste(event) else { return event }
+                return nil
+            }
+        }
+
+        func stopPasteMonitor() {
+            if let pasteMonitor { NSEvent.removeMonitor(pasteMonitor) }
+            pasteMonitor = nil
+        }
+
+        private func handlesPaste(_ event: NSEvent) -> Bool {
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                event.charactersIgnoringModifiers == "v",
+                let textView, let window = textView.window, event.window === window
+            else { return false }
+            if let editing = window.firstResponder as? NSTextView, editing.isEditable { return false }
+            let images = ImageLoader.sources(from: textView.pasteboard)
+            guard !images.isEmpty else { return false }
+            window.makeFirstResponder(textView)
+            parent.onImages(images)
+            return true
         }
     }
 }
@@ -149,10 +267,35 @@ final class ComposerScrollView: NSScrollView {
 final class ComposerNSTextView: NSTextView {
     var onImages: (([ImageSource]) -> Void)?
     var onResize: (() -> Void)?
+    /// Joined (or left, `nil`) a window.
+    var onWindow: ((NSWindow?) -> Void)?
+    /// The clipboard (tests use their own).
+    var pasteboard: NSPasteboard = .general
 
     override func paste(_ sender: Any?) {
-        let images = ImageLoader.sources(from: NSPasteboard.general)
+        let images = ImageLoader.sources(from: pasteboard)
         if images.isEmpty { super.paste(sender) } else { onImages?(images) }
+    }
+
+    /// A plain-text view enables Paste only for text it can read, so with just an
+    /// image on the clipboard (a screenshot, Preview's Copy) Command-V never reached
+    /// `paste(_:)`. Enable it for images too. Only the pasteboard's types are read
+    /// here, never its contents: validation is not a paste.
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)) { return canPaste(from: pasteboard) }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    /// AppKit's own rule (a type this text view can read: `preferredPasteboardType`,
+    /// which is nil for PNG or TIFF alone), widened to images.
+    func canPaste(from board: NSPasteboard) -> Bool {
+        guard isEditable else { return false }
+        return Self.mayHoldImages(board) || preferredPasteboardType(from: board.types ?? [], restrictedToTypesFrom: nil) != nil
+    }
+
+    static func mayHoldImages(_ pasteboard: NSPasteboard) -> Bool {
+        let types = Set(pasteboard.types?.map(\.rawValue) ?? [])
+        return !types.isDisjoint(with: ClipboardPolicy.imageDataTypes) || types.contains(NSPasteboard.PasteboardType.fileURL.rawValue)
     }
 
     /// Whether the current drag carries images, decided once per drag (the
@@ -182,6 +325,11 @@ final class ComposerNSTextView: NSTextView {
         return true
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindow?(window)
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = newSize.width != frame.width
         super.setFrameSize(newSize)
@@ -204,8 +352,11 @@ extension ComposerTextView: UIViewRepresentable {
         textView.textContainerInset = UIEdgeInsets(top: Self.verticalInset, left: 0, bottom: Self.verticalInset, right: 0)
         textView.textContainer.lineFragmentPadding = 0
         textView.isScrollEnabled = true
+        // Shown only once the text is taller than the cap (`Coordinator.measure`).
+        textView.showsVerticalScrollIndicator = false
         textView.accessibilityLabel = "Message"
         textView.text = text
+        context.coordinator.known = text
         // Image drops go to the composer's own drop target (it attaches them);
         // the text view's drop interaction would only insert text.
         textView.interactions.removeAll { $0 is UIDropInteraction }
@@ -218,10 +369,7 @@ extension ComposerTextView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
         coordinator.bind(textView)
-        if textView.text != text, textView.markedTextRange == nil {
-            textView.text = text
-            coordinator.measure(textView)
-        }
+        coordinator.showDraft(in: textView)
         if coordinator.focusRequest != focusRequest {
             coordinator.focusRequest = focusRequest
             // Only on explicit requests: popping the keyboard on every chat open is intrusive on a phone.
@@ -244,22 +392,60 @@ extension ComposerTextView: UIViewRepresentable {
         func bind(_ textView: ComposerUITextView) {
             textView.onImageProviders = { [weak self] in self?.parent.onImageProviders($0) }
             textView.onLayout = { [weak self, weak textView] in
-                if let textView { self?.measure(textView) }
+                if let textView { self?.measure(textView, deferred: true) }
             }
         }
 
+        /// The draft as this view last left it, and a draft changed outside it while
+        /// an input method composed: as on macOS (`showDraft`).
+        var known = ""
+        private var held: (base: String, draft: String)?
+
         func textViewDidChange(_ textView: UITextView) {
-            parent.text = textView.text
-            measure(textView)
+            if let held {
+                guard textView.markedTextRange == nil else { return measure(textView, deferred: false) }
+                self.held = nil
+                let merged = DraftMerge.merge(base: held.base, theirs: held.draft, mine: textView.text)
+                show(merged.text, caret: merged.caret, in: textView)
+            }
+            known = textView.text
+            parent.text = known
+            measure(textView, deferred: false)
         }
 
-        func measure(_ textView: UITextView) {
+        /// Shows the draft when it changed outside the text view; a composition is
+        /// left to the input method, and the change waits for it to end.
+        func showDraft(in textView: UITextView) {
+            let draft = parent.text
+            guard draft != known else { return }
+            if textView.markedTextRange != nil {
+                held = (held?.base ?? known, draft)
+            } else {
+                held = nil
+                show(draft, caret: (draft as NSString).length, in: textView)
+                measure(textView, deferred: true)
+            }
+            known = draft
+        }
+
+        /// Text set in code; undo steps recorded before it point into the old text.
+        private func show(_ text: String, caret: Int, in textView: UITextView) {
+            textView.text = text
+            textView.selectedRange = NSRange(location: caret, length: 0)
+            textView.undoManager?.removeAllActions()
+        }
+
+        func measure(_ textView: UITextView, deferred: Bool) {
             let width = textView.bounds.width
             guard width > 0 else { return }
             let height = ceil(textView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height)
-            if abs(parent.contentHeight - height) > 0.5 {
+            textView.showsVerticalScrollIndicator = height > parent.maxHeight + 0.5
+            guard abs(parent.contentHeight - height) > 0.5 else { return }
+            if deferred {
                 let binding = parent.$contentHeight
                 DispatchQueue.main.async { binding.wrappedValue = height }
+            } else {
+                parent.contentHeight = height
             }
         }
     }
@@ -272,13 +458,10 @@ final class ComposerUITextView: UITextView {
     private var lastWidth: CGFloat = 0
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        // Metadata only (`hasImages` / `hasStrings`): reading the contents here
-        // would raise the "Allow Paste" prompt each time the edit menu is
-        // validated. The contents are read in `paste(_:)`, after the user picked Paste.
-        if action == #selector(paste(_:)) {
-            let pasteboard = UIPasteboard.general
-            if pasteboard.hasImages, !pasteboard.hasStrings { return true }
-        }
+        // Metadata only (`hasImages`): reading the contents here would raise the
+        // "Allow Paste" prompt each time the edit menu is validated. The contents
+        // are read in `paste(_:)`, after the user picked Paste.
+        if action == #selector(paste(_:)), UIPasteboard.general.hasImages { return true }
         return super.canPerformAction(action, withSender: sender)
     }
 

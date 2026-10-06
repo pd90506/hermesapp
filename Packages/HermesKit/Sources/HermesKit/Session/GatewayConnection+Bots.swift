@@ -110,8 +110,17 @@ extension GatewayConnection {
     @discardableResult
     public func openBotChat(profile: String) async throws -> ChatSession {
         let token = beginSelection()
-        if let current = activeSession, current.kind == .botChat, current.profile == profile { return current }
+        if let current = activeSession, current.kind == .botChat, current.profile == profile {
+            return keepShowing(current)
+        }
         guard let client else { throw GatewayClientError.notConnected }
+        // Shown before: at once, then looked up by name again in the background
+        // (`GatewayConnection+Revisit`), so the identity rule of §8.2 still holds.
+        if let warm = warmChat(where: { $0.kind == .botChat && $0.profile == profile }) {
+            return revisit(warm, token: token, client: client)
+        }
+        beginOpening(PendingChat(profile: profile, kind: .botChat, title: nil), token: token)
+        defer { endOpening(token) }
         let gen = generation
         let task: Task<OpenedChat, any Error>
         if let inflight = botChatOpens[profile] {
@@ -138,9 +147,26 @@ extension GatewayConnection {
     }
 
     private func resolveBotChat(profile: String, client: GatewayClient) async throws -> OpenedChat {
-        if let row = try await lookUpBotChat(profile: profile, client: client) {
-            return try await resumeBotChat(row, profile: profile, client: client)
+        // The roster already names the chat's tip (`canonical_session`), so its newest
+        // page is read now, alongside the registry lookup, not after it. It is used
+        // only if the lookup names the same tip; the lookup stays the identity (§8.2).
+        let guess = bots.first { $0.name == profile }?.profile.canonicalSession
+            .flatMap { canonical in canonical.resolvedID.flatMap { $0.isEmpty ? nil : $0 } ?? canonical.id }
+        let early = guess.flatMap { latestPageRead($0, profile: profile) }
+        let row: SessionSummary?
+        do {
+            row = try await lookUpBotChat(profile: profile, client: client)
+        } catch {
+            early?.cancel()
+            throw error
         }
+        if let row {
+            let target = row.resolvedID.flatMap { $0.isEmpty ? nil : $0 } ?? row.id
+            let prefetch = target == guess ? early : nil
+            if prefetch == nil { early?.cancel() }
+            return try await resumeBotChat(row, profile: profile, client: client, prefetch: prefetch)
+        }
+        early?.cancel()
         // An empty answer is not proof: a backend mid-restart can list nothing.
         // The roster saw a Bot Chat, so this absence is unconfirmed (`canonical-chat.ts:328-338`).
         if bots.first(where: { $0.name == profile })?.hasChat == true {
@@ -210,10 +236,10 @@ extension GatewayConnection {
     }
 
     /// Opens the lineage tip; the registry row stays the identity.
-    private func resumeBotChat(_ row: SessionSummary, profile: String,
-                               client: GatewayClient) async throws -> OpenedChat {
+    private func resumeBotChat(_ row: SessionSummary, profile: String, client: GatewayClient,
+                               prefetch: Task<LatestHistory, any Error>? = nil) async throws -> OpenedChat {
         let target = row.resolvedID.flatMap { $0.isEmpty ? nil : $0 } ?? row.id
-        let resumed = try await resume(target, profile: profile, client: client)
+        let resumed = try await resume(target, profile: profile, client: client, prefetch: prefetch)
         let session = ChatSession(snapshot: resumed.snapshot, storedSessionID: target, title: Bot.chatTitle,
                                   profile: profile, kind: .botChat, connection: self)
         return OpenedChat(session: session, resumed: resumed)
@@ -242,9 +268,16 @@ extension GatewayConnection {
         if let current = activeSession, current.profile == entry.profile, current.kind == .sideChat,
             current.storedSessionID == entry.summary.id
         {
-            return current
+            return keepShowing(current)
         }
         guard let client else { throw GatewayClientError.notConnected }
+        if let warm = warmChat(where: {
+            $0.profile == entry.profile && $0.kind == .sideChat && $0.storedSessionID == entry.summary.id
+        }) {
+            return revisit(warm, token: token, client: client)
+        }
+        beginOpening(PendingChat(profile: entry.profile, kind: .sideChat, title: entry.summary.title), token: token)
+        defer { endOpening(token) }
         let resumed = try await resume(entry.summary.id, profile: entry.profile, client: client)
         let session = ChatSession(snapshot: resumed.snapshot, storedSessionID: entry.summary.id,
                                   title: entry.summary.title, profile: entry.profile, kind: .sideChat, connection: self)

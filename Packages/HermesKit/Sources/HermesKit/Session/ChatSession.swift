@@ -70,6 +70,30 @@ public final class ChatSession: Identifiable {
     @ObservationIgnored private var historyPrefetch: Task<LatestHistory, any Error>?
     /// The re-read of the newest rows in flight (`rereadIfNeeded`).
     @ObservationIgnored private(set) var rereadTask: Task<Void, Never>?
+    /// The background reconcile of the last time this chat was shown again
+    /// (`GatewayConnection.revisit`).
+    @ObservationIgnored var revisitTask: Task<Void, Never>?
+    /// That reconcile is still running, on `reconcileClient`'s socket.
+    @ObservationIgnored var isReconciling = false
+    @ObservationIgnored weak var reconcileClient: GatewayClient?
+    /// Tells the latest reconcile from one it replaced.
+    @ObservationIgnored var revisitToken = 0
+
+    /// Waits until the chat knows which runtime session it is (`GatewayConnection.revisit`
+    /// may still be binding it again, resuming it, or following a Bot Chat to a new
+    /// tip). A send made meanwhile would go to a runtime session the chat is about to
+    /// leave, and its bubble would be dropped with the old transcript. Throws
+    /// `CancellationError` when the caller is cancelled while waiting.
+    /// A reconcile replaced meanwhile (one on an older socket) ends first; the wait goes
+    /// on until no reconcile is in progress.
+    func settleIdentity() async throws {
+        while isReconciling, let task = revisitTask {
+            try await waitUnlessCancelled(task)
+            // Still reconciling under the same task would mean it ended without
+            // clearing the flag; never spin on it.
+            if task == revisitTask { break }
+        }
+    }
 
     public nonisolated var id: ObjectIdentifier { ObjectIdentifier(self) }
 
@@ -97,13 +121,37 @@ public final class ChatSession: Identifiable {
             self.info = info
             if let title = info.title, !title.isEmpty { self.title = title }
         }
-        transcript = Transcript(snapshot: snapshot)
+        // Built from the snapshot and stored rows only: no bubble is carried over.
+        let old = transcript
+        transcript = Transcript(snapshot: snapshot, localIDsAfter: old.lastLocalID)
+        returnFailedPrompts(of: old)
         lastSeq = nil
         // Pages read for the old transcript, including older ones, are dropped;
         // a read still in flight for it is cancelled.
         historyGeneration += 1
         cancelHistoryReads()
         historyLoad = .idle
+    }
+
+    /// A rebuilt transcript shows no bubbles of the old one. A failed prompt's text
+    /// goes back to the composer, ahead of anything already there, and its error stays
+    /// on screen. An image send's failure already put its text and cards back
+    /// (`ChatComposer.submit`), so only text-only prompts are returned here.
+    /// Unanswered sends settle themselves (`send`); row-less `streaming` prompts are
+    /// stored by their turn and show with its re-read.
+    private func returnFailedPrompts(of old: Transcript) {
+        let failed = old.failedPrompts
+        guard !failed.isEmpty else { return }
+        // The snapshot's own failure (a retained failed turn) is the newer news.
+        if transcript.lastError == nil, let message = old.lastError { transcript.keepError(message) }
+        // In the order they were sent, ahead of the draft, in one go.
+        let texts = failed.filter(\.images.isEmpty).map(\.text)
+        if !texts.isEmpty { returnToDraft(texts.joined(separator: "\n")) }
+    }
+
+    /// Text only a vanished bubble held goes back to the composer.
+    private func returnToDraft(_ text: String) {
+        connection?.composer(for: self).restoreText(text)
     }
 
     private func cancelHistoryReads() {
@@ -261,6 +309,21 @@ public final class ChatSession: Identifiable {
         if let info = snapshot.info { self.info = info }
     }
 
+    /// Shown again after a while and bound to this socket again
+    /// (`GatewayConnection.revisit`): turns another client ran meanwhile reached
+    /// another socket, so read the newest rows again, or the newest page if none
+    /// was read yet.
+    func reconcileAfterRevisit(running: Bool) {
+        transcript.reconcileRunning(running)
+        if transcript.paging.isLoaded {
+            transcript.requestReread()
+            rereadIfNeeded()
+        } else if historyLoad != .loadingLatest {
+            historyLoad = .idle
+            loadHistory()
+        }
+    }
+
     /// Drops pending requests the server no longer lists as open.
     func retainRequests(ids: Set<String>) {
         for request in transcript.pendingRequests where !ids.contains(request.id) {
@@ -340,6 +403,7 @@ public final class ChatSession: Identifiable {
     public func send(_ text: String) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        try await settleIdentity()
         if let client = connection?.client {
             try await clearStrandedImages(using: client)
         }
@@ -349,7 +413,14 @@ public final class ChatSession: Identifiable {
             let result = try await Self.submitUncancellably(client, sessionID: sessionID, text: trimmed)
             promptAnswered(itemID: itemID, result)
         } catch {
-            transcript.submitFailed(GatewayConnection.describe(error), itemID: itemID)
+            let message = GatewayConnection.describe(error)
+            if transcript.holdsPrompt(itemID) {
+                transcript.submitFailed(message, itemID: itemID)
+            } else {
+                // A rebuild replaced the bubble meanwhile: its text goes back to the draft.
+                transcript.keepError(message)
+                returnToDraft(trimmed)
+            }
             throw error
         }
     }
@@ -376,6 +447,7 @@ public final class ChatSession: Identifiable {
     public func send(_ text: String, images: [ComposerAttachment]) async throws {
         guard !images.isEmpty else { return try await send(text) }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await settleIdentity()
         let sid = sessionID
         let client: GatewayClient
         do {
@@ -403,20 +475,30 @@ public final class ChatSession: Identifiable {
             await detach(queued, using: client, sessionID: sid)
             throw CancellationError()
         }
-        let names = images.map { "[Image: \($0.filename)]" }.joined(separator: "\n")
-        let itemID = transcript.appendUserPrompt(trimmed.isEmpty ? names : "\(trimmed)\n\(names)")
+        // The bubble shows the caption and the images themselves: each keeps its local
+        // id (its thumbnail is on this device) and its gateway path, which the stored
+        // row's `@image:` line will name, so the row shows the same image.
+        let shown = zip(images, queued).enumerated().map { position, pair in
+            TranscriptImage(name: pair.0.filename, path: pair.1, localID: pair.0.id, position: position)
+        }
+        let itemID = transcript.appendUserPrompt(trimmed, images: shown)
         do {
             let result = try await Self.submitUncancellably(client, sessionID: sid, text: trimmed)
-            // Its stored row carries `@image:` refs, not the bubble's text
-            // (`tui_gateway/session_history.py:51-60`); the bubble settles by the
-            // same quiet re-reads as any prompt, never by matching text.
+            // The bubble settles like any prompt (and like a row-less `streaming`
+            // one when the caption is empty), never by matching text or images.
             promptAnswered(itemID: itemID, result)
         } catch {
             // Ambiguous when the socket dropped: Hermes may have accepted the
             // submit (and taken the images) before the answer was lost. Then the
             // detach below settles as `detached: false`, and a retry runs the
             // message again; the client cannot tell the two cases apart.
-            transcript.submitFailed(GatewayConnection.describe(error), itemID: itemID)
+            // Bubble gone (a rebuild): the composer takes back the text and cards.
+            let message = GatewayConnection.describe(error)
+            if transcript.holdsPrompt(itemID) {
+                transcript.submitFailed(message, itemID: itemID)
+            } else {
+                transcript.keepError(message)
+            }
             await detach(queued, using: client, sessionID: sid)
             throw error
         }
@@ -426,8 +508,14 @@ public final class ChatSession: Identifiable {
     /// session's steer, redirect or queue, `session_auto_continue.py:398-450`), the
     /// stored rows show the outcome once the session is quiet; the bubble shows
     /// until then.
+    /// When a rebuild replaced the bubble meanwhile, the stored row shows with a
+    /// re-read of the newest rows instead.
     private func promptAnswered(itemID: String, _ result: PromptSubmitResult) {
-        transcript.promptAnswered(itemID: itemID, status: result.status, userRowID: result.userRowID)
+        if transcript.holdsPrompt(itemID) {
+            transcript.promptAnswered(itemID: itemID, status: result.status, userRowID: result.userRowID)
+        } else {
+            transcript.requestReread()
+        }
         rereadIfNeeded()
     }
 

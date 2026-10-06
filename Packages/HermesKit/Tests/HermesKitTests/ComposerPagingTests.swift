@@ -20,6 +20,14 @@ private func occurrences(_ transcript: Transcript, _ segment: String) -> Int {
     transcript.items.reduce(0) { $0 + $1.text.components(separatedBy: segment).count - 1 }
 }
 
+/// How many times an image named `name` shows (a bubble's local upload, or a stored
+/// row's `@image:` file).
+private func pictures(_ transcript: Transcript, _ name: String) -> Int {
+    transcript.items.reduce(0) { $0 + $1.images.filter { $0.name == name }.count }
+}
+
+private let storedUpload = "upload_20261006_120000_2.png"
+
 private let idleRows = (1...300).map { storedRow(id: $0) }
 
 private let runningRows = (1...289).map { storedRow(id: $0) } + [user(290, "查一下"), assistant(291, "我先看一下文件")]
@@ -94,7 +102,7 @@ struct ComposerPagingTests {
         let methods = log.all.compactMap { $0["method"]?.stringValue }.filter { $0 == "image.attach_bytes" || $0 == "prompt.submit" }
         #expect(methods == ["image.attach_bytes", "prompt.submit"])
         #expect(composer.attachments.isEmpty && composer.error == nil)
-        #expect(occurrences(session.transcript, "[Image: a.png]") == 1)
+        #expect(pictures(session.transcript, "a.png") == 1)
 
         // Accept-time row, then the running reply ends.
         let stored = "看这张图\n@image:/home/u/.hermes/images/upload_20261006_120000_2.png"
@@ -120,7 +128,9 @@ struct ComposerPagingTests {
         event("message.complete", completePayload("图里是一只猫", rows: [294, 295]))
 
         #expect(await eventually { settled(session) })
-        #expect(occurrences(session.transcript, "[Image: a.png]") == 0)  // the bubble went
+        #expect(pictures(session.transcript, "a.png") == 0)  // the bubble went
+        #expect(pictures(session.transcript, storedUpload) == 1)  // the stored row's image
+        #expect(occurrences(session.transcript, "@image:") == 0)
         for text in ["查一下", "结果显示4", "看这张图", "图里是一只猫"] {
             #expect(occurrences(session.transcript, text) == 1, "\(text): \(session.transcript.items.suffix(6).map(\.text))")
         }
@@ -145,7 +155,7 @@ struct ComposerPagingTests {
         // Every re-read the answer could set off has landed; the turn has not started.
         await settle(session)
         #expect(await eventually { session.rereadTask == nil && !session.transcript.needsReread })
-        #expect(occurrences(session.transcript, "[Image: a.png]") == 1)
+        #expect(pictures(session.transcript, "a.png") == 1)
 
         var seq = 0
         func event(_ type: String, _ payload: JSONValue? = nil) {
@@ -157,12 +167,13 @@ struct ComposerPagingTests {
                              assistant(302, "一只猫")])
         event("message.delta", ["text": "一只猫"])
         #expect(await eventually { occurrences(session.transcript, "一只猫") == 1 })
-        #expect(occurrences(session.transcript, "[Image: a.png]") == 1)
+        #expect(pictures(session.transcript, "a.png") == 1)
         event("message.complete", completePayload("一只猫", rows: [301, 302]))
 
         #expect(await eventually { settled(session) })
-        #expect(occurrences(session.transcript, "[Image: a.png]") == 0)
-        #expect(occurrences(session.transcript, "@image:") == 1)
+        #expect(pictures(session.transcript, "a.png") == 0)
+        #expect(pictures(session.transcript, storedUpload) == 1)
+        #expect(occurrences(session.transcript, "@image:") == 0)
         #expect(occurrences(session.transcript, "一只猫") == 1)
         expectWellFormed(session.transcript)
         withExtendedLifetime(connection) {}
@@ -184,7 +195,7 @@ struct ComposerPagingTests {
         transport.respondError(to: try #require(log.requests("prompt.submit").last), code: 4090, message: limit)
         await sending.value
 
-        #expect(occurrences(session.transcript, "看图\n[Image: a.png]") == 1)
+        #expect(session.transcript.items.contains { $0.text == "看图" && $0.images.map(\.name) == ["a.png"] })
         #expect(!session.transcript.isRunning)
         #expect(session.transcript.lastError == limit)
         #expect(composer.draft == "看图")
@@ -198,7 +209,7 @@ struct ComposerPagingTests {
         await settle(session)
         #expect(await eventually { session.rereadTask == nil && !session.transcript.needsReread })
         #expect(occurrences(session.transcript, "再试一次") == 1)
-        #expect(occurrences(session.transcript, "[Image: a.png]") == 1)  // the failed bubble stays
+        #expect(pictures(session.transcript, "a.png") == 1)  // the failed bubble stays
         expectWellFormed(session.transcript)
         withExtendedLifetime(connection) {}
     }

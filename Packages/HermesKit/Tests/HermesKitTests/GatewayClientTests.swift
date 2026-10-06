@@ -80,7 +80,7 @@ struct GatewayClientTests {
         let result = Task { try await client.resumeSession(storedSessionID: "missing") }
         let frame = await transport.nextSent()
         #expect(frame["method"] == "session.resume")
-        #expect(frame["params"] == ["session_id": "missing"])
+        #expect(frame["params"] == ["session_id": "missing", "omit_messages": true, "defer_history": true])
         transport.respondError(to: frame, code: 4001, message: "session not found")
         await #expect(throws: RPCError(code: 4001, message: "session not found")) { try await result.value }
     }

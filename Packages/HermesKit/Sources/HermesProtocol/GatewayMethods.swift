@@ -145,18 +145,32 @@ public struct SessionResumeParams: Sendable, Hashable, Codable {
     public var closeOnDisconnect: Bool?
     /// Resume from this profile's state.db (`methods_session.py:634-636`).
     public var profile: String?
+    /// Send no transcript: `messages` is empty and `message_count` is the stored
+    /// size (`methods_session.py:638-639,689-691,903-909`). The transcript is read
+    /// over REST in pages instead.
+    public var omitMessages: Bool?
+    /// Answer with a bounded ack and load the model history in the background
+    /// (`methods_session.py:949-967`, `server.py:2968-3025`); the first turn waits
+    /// for it (`server.py:1066-1074`). The resume size guard then checks the tip
+    /// segment only (`methods_session.py:854-869`).
+    public var deferHistory: Bool?
 
-    public init(sessionID: String, source: String? = nil, closeOnDisconnect: Bool? = nil, profile: String? = nil) {
+    public init(sessionID: String, source: String? = nil, closeOnDisconnect: Bool? = nil, profile: String? = nil,
+                omitMessages: Bool? = nil, deferHistory: Bool? = nil) {
         self.sessionID = sessionID
         self.source = source
         self.closeOnDisconnect = closeOnDisconnect
         self.profile = profile
+        self.omitMessages = omitMessages
+        self.deferHistory = deferHistory
     }
 
     enum CodingKeys: String, CodingKey {
         case source, profile
         case sessionID = "session_id"
         case closeOnDisconnect = "close_on_disconnect"
+        case omitMessages = "omit_messages"
+        case deferHistory = "defer_history"
     }
 }
 

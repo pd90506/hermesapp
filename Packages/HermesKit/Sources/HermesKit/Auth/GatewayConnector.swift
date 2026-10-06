@@ -1,4 +1,5 @@
 import Foundation
+import HermesProtocol
 
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -7,6 +8,19 @@ import FoundationNetworking
 /// Produces a fresh, authenticated transport for each connection attempt.
 public protocol GatewayConnector: Sendable {
     func makeTransport() async throws -> any MessageTransport
+    /// Reads stored transcripts page by page over the dashboard's REST API, with
+    /// the same credential. `nil`: this connector has no REST access, so opened
+    /// chats show only what streams live and report their history unavailable.
+    var messagesSource: (any SessionMessagesSource)? { get }
+}
+
+extension GatewayConnector {
+    public var messagesSource: (any SessionMessagesSource)? { nil }
+}
+
+/// Bounded pages of a stored transcript (`GET /api/sessions/{id}/messages`).
+public protocol SessionMessagesSource: Sendable {
+    func messagesPage(_ query: SessionMessagesQuery) async throws -> SessionMessagesPage
 }
 
 /// How the app authenticates to the dashboard WebSocket
@@ -88,6 +102,8 @@ public struct DashboardConnector: GatewayConnector {
         return request
     }
 
+    public var messagesSource: (any SessionMessagesSource)? { self }
+
     /// At most one refresh per connect: proactively when the token is known
     /// to be expired, otherwise after the server rejects it (401
     /// `session_expired`, `middleware.py:65-79,163-175`). A second 401 is final.
@@ -98,6 +114,38 @@ public struct DashboardConnector: GatewayConnector {
         } catch DashboardError.unauthenticated where !refreshed {
             let fresh = try await session.refresh(replacing: accessToken, using: dashboard)
             return try await dashboard.mintWebSocketTicket(bearer: fresh)
+        }
+    }
+}
+
+extension DashboardConnector: SessionMessagesSource {
+    /// Authenticates like the ticket mint, so REST and the socket share one sign-in:
+    /// - a token (`.bearer`, `.sessionToken`) goes in `Authorization: Bearer`. The
+    ///   gated dashboard verifies it as an access token (`dashboard_auth/middleware.py:163-175`);
+    ///   an un-gated loopback one takes its session token there too
+    ///   (`hermes_cli/web_server.py:452-463`);
+    /// - `.native` refreshes at most once, before the call when the token is known
+    ///   to be expired, otherwise after a 401;
+    /// - `.password` uses the cookie session and logs in again after a 401.
+    public func messagesPage(_ query: SessionMessagesQuery) async throws -> SessionMessagesPage {
+        switch credential {
+        case .sessionToken(let token), .bearer(let token):
+            return try await dashboard.sessionMessages(query, bearer: token)
+        case .native(let session):
+            let (accessToken, refreshed) = try await session.accessToken(using: dashboard)
+            do {
+                return try await dashboard.sessionMessages(query, bearer: accessToken)
+            } catch DashboardError.unauthenticated where !refreshed {
+                let fresh = try await session.refresh(replacing: accessToken, using: dashboard)
+                return try await dashboard.sessionMessages(query, bearer: fresh)
+            }
+        case .password(let provider, let username, let password):
+            do {
+                return try await dashboard.sessionMessages(query)
+            } catch DashboardError.unauthenticated {
+                try await dashboard.passwordLogin(provider: provider, username: username, password: password)
+                return try await dashboard.sessionMessages(query)
+            }
         }
     }
 }

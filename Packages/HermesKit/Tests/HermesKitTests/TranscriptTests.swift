@@ -27,6 +27,7 @@ import Testing
         #expect(transcript.items.count == 2)
         #expect(!transcript.items[1].isActive)
         #expect(transcript.items[1].outcome == "complete")
+        expectWellFormed(transcript)
     }
 
     @Test func toolCallsSplitAssistantSegments() {
@@ -47,6 +48,7 @@ import Testing
         #expect(transcript.items[2].detail == "3 files")
         #expect(!transcript.items[2].isActive)
         #expect(transcript.items[3].text == "Done.")
+        expectWellFormed(transcript)
     }
 
     @Test func completeWithoutDeltasStillShowsReply() {
@@ -55,6 +57,7 @@ import Testing
         transcript.apply(event("message.complete", ["text": "Answer", "status": "complete"]))
         #expect(transcript.items.last?.text == "Answer")
         #expect(transcript.items.last?.role == .assistant)
+        expectWellFormed(transcript)
     }
 
     @Test func errorTurnSetsLastError() {
@@ -63,6 +66,7 @@ import Testing
         transcript.apply(event("message.complete", ["text": "", "status": "error", "error": "provider down"]))
         #expect(!transcript.isRunning)
         #expect(transcript.lastError == "provider down")
+        expectWellFormed(transcript)
     }
 
     @Test func interimAlreadyStreamedSealsSegment() {
@@ -71,6 +75,7 @@ import Testing
         transcript.apply(event("message.interim", ["text": "Checking", "already_streamed": true]))
         transcript.apply(event("message.delta", ["text": "Result"]))
         #expect(transcript.items.map(\.text) == ["Checking", "Result"])
+        expectWellFormed(transcript)
     }
 
     @Test func rebuildsFromSnapshotWithInflightTurn() {
@@ -88,6 +93,7 @@ import Testing
 
         transcript.apply(event("message.delta", ["text": " more"]))
         #expect(transcript.items.last?.text == "partial more")
+        expectWellFormed(transcript)
     }
 
     /// S5: a retained failed turn (`inflight.error`, `streaming:false`) is over.
@@ -106,6 +112,7 @@ import Testing
         #expect(transcript.items.map(\.text) == ["do it", "partial"])
         #expect(transcript.items.last?.isActive == false)
         #expect(transcript.items.last?.outcome == "error")
+        expectWellFormed(transcript)
     }
 
     /// S6: `message.complete.text` is `str | JsonValue`; a non-string must not
@@ -126,17 +133,26 @@ import Testing
                                                                               ["type": "text", "text": "b"]]])
         guard case .messageComplete(let fromParts) = parts.kind else { Issue.record("parts"); return }
         #expect(fromParts.textValue == "ab")
+        expectWellFormed(transcript)
     }
 
-    @Test func resumedRunningToolIsNotDuplicatedByLiveEvents() {
+    /// A stored tool row is a finished call (only results are stored,
+    /// `session_history.py:322-334`), so a later `tool.start` with the same id is a
+    /// new call: providers can number calls per response. It gets its own row, and
+    /// the stored one keeps its state. (This test used to expect the stored row to
+    /// be reused, which hid the new call.)
+    @Test func aStartReusingAStoredCallIDGetsItsOwnRow() {
         var message = TranscriptMessage(role: "tool")
         message.toolCallID = "call-1"
         message.name = "terminal"
+        message.context = "ls"
         var transcript = Transcript(snapshot: LiveSessionSnapshot(sessionID: "sid-1", messages: [message], running: true))
         transcript.apply(event("tool.start", ["tool_id": "call-1", "name": "terminal"]))
         transcript.apply(event("tool.complete", ["tool_id": "call-1", "name": "terminal", "summary": "ok"]))
-        #expect(transcript.items.filter { $0.role == .tool }.count == 1)
-        #expect(transcript.items.last?.detail == "ok")
+        let tools = transcript.items.filter { $0.role == .tool }
+        #expect(tools.map(\.detail) == ["ls", "ok"])
+        #expect(tools.allSatisfy { !$0.isActive })
+        expectWellFormed(transcript)
     }
 
     @Test func requestsAreAddedOnceAndCancelled() {
@@ -156,5 +172,6 @@ import Testing
                                                 "reason": "interrupted", "cancelled_count": 1,
                                                 "request_ids": ["ap-1"]]))
         #expect(transcript.pendingRequests.isEmpty)
+        expectWellFormed(transcript)
     }
 }

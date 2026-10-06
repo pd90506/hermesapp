@@ -174,6 +174,13 @@ public struct LiveSessionSnapshot: Sendable, Hashable, Codable {
     public var status: String?
     public var inflight: InflightTurn?
     public var openRequests: [OpenRequestEntry]?
+    /// `defer_history` resumes: the model history is still loading in the
+    /// background (`methods_session.py:889-891,966-967`). No turn can have run
+    /// on this runtime session yet: a turn waits for it (`server.py:1066-1074`).
+    public var hydrating: Bool?
+    /// `omit_messages` was honoured: `messages` is empty on purpose and
+    /// `message_count` is the stored size (`methods_session.py:903-909`).
+    public var messagesOmitted: Bool?
 
     public init(sessionID: String, messages: [TranscriptMessage] = [], info: SessionLiveInfo? = nil,
                 storedSessionID: String? = nil, sessionKey: String? = nil, running: Bool? = nil,
@@ -190,7 +197,8 @@ public struct LiveSessionSnapshot: Sendable, Hashable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case messages, info, running, status, inflight, resumed
+        case messages, info, running, status, inflight, resumed, hydrating
+        case messagesOmitted = "messages_omitted"
         case sessionID = "session_id"
         case messageCount = "message_count"
         case storedSessionID = "stored_session_id"

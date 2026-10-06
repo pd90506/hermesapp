@@ -131,7 +131,8 @@ struct GatewayConnectionBotTests {
         #expect(log.requests("session.list").filter(isBotChatLookup).first?["params"] ==
                 ["profile": "coder", "title": "Bot Chat", "include_hidden": true, "limit": 200])
         // The lineage tip is opened, on the bot's profile.
-        #expect(log.requests("session.resume").first?["params"] == ["session_id": "coder-chat-tip", "profile": "coder"])
+        #expect(log.requests("session.resume").first?["params"] == ["session_id": "coder-chat-tip", "profile": "coder",
+                                                                       "omit_messages": true, "defer_history": true])
         #expect(log.requests("session.create").isEmpty)
         #expect(connection.activeSession === session)
         #expect(session.kind == .botChat && session.profile == "coder")
@@ -225,7 +226,8 @@ struct GatewayConnectionBotTests {
 
         let session = try await open.value
         #expect(session.storedSessionID == "fin-desktop")
-        #expect(log.requests("session.resume").first?["params"] == ["session_id": "fin-desktop", "profile": "finance"])
+        #expect(log.requests("session.resume").first?["params"] == ["session_id": "fin-desktop", "profile": "finance",
+                                                                       "omit_messages": true, "defer_history": true])
         #expect(log.requests("session.create").count == 1)
         #expect(log.requests("prompt.submit").isEmpty)
     }
@@ -334,7 +336,8 @@ struct GatewayConnectionBotTests {
         #expect(log.requests("session.list").contains { $0["params"] == ["profile": "finance", "limit": 20] })
 
         let opened = try await connection.open(try #require(connection.history.last))
-        #expect(log.requests("session.resume").last?["params"] == ["session_id": "coder-side", "profile": "coder"])
+        #expect(log.requests("session.resume").last?["params"] == ["session_id": "coder-side", "profile": "coder",
+                                                                      "omit_messages": true, "defer_history": true])
         #expect(opened.kind == .sideChat && opened.profile == "coder")
     }
 
@@ -387,7 +390,8 @@ struct GatewayConnectionBotTests {
         #expect(await eventually { connection.state == .connected && !secondLog.requests("session.resume").isEmpty })
         // Looked up by name on the new socket first, then resumed.
         #expect(secondLog.requests("session.list").contains(where: isBotChatLookup))
-        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "coder-chat", "profile": "coder"])
+        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "coder-chat", "profile": "coder",
+                                                                             "omit_messages": true, "defer_history": true])
         #expect(connection.activeSession === session)
     }
 
@@ -404,7 +408,8 @@ struct GatewayConnectionBotTests {
         first.serverDrops()
 
         #expect(await eventually { connection.state == .connected && !secondLog.requests("session.resume").isEmpty })
-        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "coder-chat-v2", "profile": "coder"])
+        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "coder-chat-v2", "profile": "coder",
+                                                                             "omit_messages": true, "defer_history": true])
         #expect(connection.activeSession === session && session.storedSessionID == "coder-chat-v2")
     }
 

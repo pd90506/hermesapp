@@ -224,11 +224,38 @@ public final class GatewayConnection {
         let token = beginSelection()
         if let current = activeSession, current.profile == nil, current.storedSessionID == summary.id { return current }
         guard let client else { throw GatewayClientError.notConnected }
-        let snapshot = try await client.resumeSession(storedSessionID: summary.id)
-        let session = ChatSession(snapshot: snapshot, storedSessionID: summary.id, title: summary.title,
+        let resumed = try await resume(summary.id, profile: nil, client: client)
+        let session = ChatSession(snapshot: resumed.snapshot, storedSessionID: summary.id, title: summary.title,
                                   connection: self)
-        try await show(OpenedChat(session: session, openRequests: snapshot.openRequests ?? []), token: token, client: client)
+        try await show(OpenedChat(session: session, resumed: resumed), token: token, client: client)
         return session
+    }
+
+    /// REST reads of stored transcripts, with this connection's credential.
+    var messagesSource: (any SessionMessagesSource)? { connector?.messagesSource }
+
+    /// `session.resume` with a bounded ack, and the newest transcript page read
+    /// alongside it, as Desktop opens chats (`use-session-actions/index.ts:2169-2194`).
+    ///
+    /// The concurrent read can predate a turn that finished before this socket
+    /// was attached, whose events this socket never saw. It is kept only when the
+    /// ack says the runtime session is still hydrating: no turn has run on it yet
+    /// (`server.py:1066-1074`). Otherwise the page is read again after the ack;
+    /// from then on every turn reaches this socket.
+    func resume(_ key: String, profile: String?, client: GatewayClient) async throws -> ResumedChat {
+        let prefetch = messagesSource.map { source in
+            let query = SessionMessagesQuery(sessionID: key, profile: profile, limit: ChatSession.pageSize)
+            return Task { try await ChatSession.fetchLatest(query, from: source) }
+        }
+        do {
+            let snapshot = try await client.resumeSession(storedSessionID: key, profile: profile)
+            if snapshot.hydrating == true, (snapshot.storedKey ?? key) == key { return ResumedChat(snapshot: snapshot, prefetch: prefetch) }
+            prefetch?.cancel()
+            return ResumedChat(snapshot: snapshot, prefetch: nil)
+        } catch {
+            prefetch?.cancel()
+            throw error
+        }
     }
 
     /// Starts a user-initiated open; see `selectionToken`.
@@ -245,9 +272,14 @@ public final class GatewayConnection {
     /// open requests are re-delivered too: they land in `otherSessionRequests`
     /// and, through `sessionProfiles`, on the bot's row.
     func show(_ opened: OpenedChat, token: Int, client: GatewayClient) async throws {
-        guard client === self.client else { throw CancellationError() }
+        guard client === self.client else {
+            opened.prefetch?.cancel()
+            throw CancellationError()
+        }
         if let profile = opened.session.profile { sessionProfiles[opened.session.sessionID] = profile }
         if token == selectionToken, activeSession !== opened.session { activate(opened.session) }
+        // On screen first; the stored transcript fills in as its newest page arrives.
+        opened.session.loadHistory(prefetch: opened.prefetch)
         await client.redeliver(opened.openRequests)
     }
 
@@ -382,11 +414,17 @@ public final class GatewayConnection {
             target = session.storedSessionID ?? session.sessionID
         }
         // A profile's session lives in that profile's state.db: resume it there.
-        let snapshot = try await client.resumeSession(storedSessionID: target, profile: session.profile)
-        guard gen == generation else { throw CancellationError() }
-        session.reset(to: snapshot, storedSessionID: target)
+        let resumed = try await resume(target, profile: session.profile, client: client)
+        guard gen == generation else {
+            resumed.prefetch?.cancel()
+            throw CancellationError()
+        }
+        // The snapshot supersedes the old transcript, older pages included; the
+        // newest page is read again and pages in flight for the old one are dropped.
+        session.reset(to: resumed.snapshot, storedSessionID: target)
+        session.loadHistory(prefetch: resumed.prefetch)
         if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
-        await client.redeliver(snapshot.openRequests ?? [])
+        await client.redeliver(resumed.snapshot.openRequests ?? [])
         // A disconnect() during that last hop must not be overwritten by the caller's `.connected`.
         guard gen == generation else { throw CancellationError() }
     }
@@ -414,6 +452,10 @@ public final class GatewayConnection {
             // before accepting, which surfaces as a bare HTTP 403 on the upgrade.
             return "The gateway refused the WebSocket (expired ticket/token or host check): \(detail)"
         case GatewayClientError.readyTimeout: return "The gateway did not respond."
+        case HistoryReadError.noProgress:
+            return "This gateway's chat history cannot be read page by page. Updating Hermes fixes this."
+        case HistoryReadError.tooLong(let rows):
+            return "This chat has more than \(rows) messages, too many to load from this gateway. Updating Hermes fixes this."
         case let urlError as URLError: return urlError.localizedDescription
         default: return String(describing: error)
         }

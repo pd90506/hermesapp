@@ -199,7 +199,7 @@ struct GatewayConnectionTests {
         second.respondError(to: try #require(secondLog.requests("session.activate").first),
                             code: 4007, message: "session no longer live; retry resume")
         #expect(await eventually { connection.state == .connected && session.sessionID == "sid-9" })
-        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "stored-1"])
+        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "stored-1", "omit_messages": true, "defer_history": true])
     }
 
     // MARK: - B2/S1: backend restart
@@ -232,7 +232,7 @@ struct GatewayConnectionTests {
         #expect(await eventually { connection.state == .connected && session.sessionID == "sid-2" })
         #expect(secondLog.requests("session.events.since").isEmpty)
         #expect(secondLog.requests("session.activate").isEmpty)
-        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "stored-1"])
+        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "stored-1", "omit_messages": true, "defer_history": true])
         #expect(session.transcript.items.map(\.text) == ["hi", "hello", "again"])
         #expect(await eventually { session.transcript.pendingRequests.map(\.id) == ["srq-9"] })
     }
@@ -267,7 +267,7 @@ struct GatewayConnectionTests {
 
         #expect(await eventually { connection.state == .connected && session.sessionID == "sid-3" })
         #expect(thirdLog.requests("session.events.since").isEmpty)
-        #expect(thirdLog.requests("session.resume").first?["params"] == ["session_id": "stored-1"])
+        #expect(thirdLog.requests("session.resume").first?["params"] == ["session_id": "stored-1", "omit_messages": true, "defer_history": true])
     }
 
     // MARK: - S2: re-entrancy and leaks
@@ -343,7 +343,7 @@ struct GatewayConnectionTests {
         try await connection.connect(using: FakeConnector([second]))
         #expect(connection.activeSession === session)
         #expect(session.sessionID == "sid-5")
-        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "stored-1"])
+        #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "stored-1", "omit_messages": true, "defer_history": true])
     }
 
     @Test func freshConnectDropsASessionTheServerNoLongerHas() async throws {

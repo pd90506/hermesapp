@@ -13,6 +13,7 @@ struct ChatView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
+                HistoryHeader(session: session)
                 ForEach(session.transcript.items) { item in
                     MessageRow(item: item)
                 }
@@ -32,6 +33,8 @@ struct ChatView: View {
             }
             .padding()
         }
+        // Bottom-anchored for size changes too: an older page prepended above
+        // keeps the rows on screen where they are.
         .defaultScrollAnchor(.bottom)
         .safeAreaInset(edge: .bottom) {
             composer
@@ -74,6 +77,70 @@ struct ChatView: View {
         error = nil
         Task {
             do { try await session.send(text) } catch { self.error = GatewayConnection.describe(error) }
+        }
+    }
+}
+
+/// Top of the transcript: loads the next older page while it is on screen,
+/// offers a retry when a page failed, and marks the beginning of the chat.
+private struct HistoryHeader: View {
+    let session: ChatSession
+    @State private var isVisible = false
+
+    /// Re-runs the load when a page lands and the header is still on screen.
+    private struct Trigger: Equatable {
+        var isVisible: Bool
+        var offset: Int
+    }
+
+    var body: some View {
+        HStack {
+            Spacer()
+            content
+            Spacer()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .onScrollVisibilityChange(threshold: 0.2) { isVisible = $0 }
+        .task(id: Trigger(isVisible: isVisible, offset: session.transcript.nextOlderOffset)) {
+            guard isVisible else { return }
+            // A page that just landed pushes this header off screen; wait for the
+            // layout so opening a chat does not read a second page right away.
+            // Leaving the screen changes the trigger and cancels this task.
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, isVisible else { return }
+            await session.loadOlderMessages()
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch session.historyLoad {
+        case .loadingLatest, .loadingOlder:
+            ProgressView().controlSize(.small)
+        case .latestFailed(let message):
+            retry("Couldn't load messages: \(message)")
+        case .olderFailed(let message):
+            retry("Couldn't load earlier messages: \(message)")
+        case .unavailable(let message):
+            Label(message, systemImage: "exclamationmark.triangle")
+                .multilineTextAlignment(.center)
+        case .idle:
+            if session.transcript.paging.hasOlder {
+                ProgressView().controlSize(.small)
+            } else if session.reachedBeginning, !session.transcript.items.isEmpty {
+                Text("Beginning of conversation")
+            }
+        }
+    }
+
+    private func retry(_ message: String) -> some View {
+        VStack(spacing: 6) {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .multilineTextAlignment(.center)
+            Button("Retry") {
+                Task { await session.retryHistory() }
+            }
+            .controlSize(.small)
         }
     }
 }

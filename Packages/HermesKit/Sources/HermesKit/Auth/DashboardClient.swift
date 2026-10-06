@@ -152,10 +152,33 @@ public struct DashboardClient: Sendable {
         }
     }
 
+    // MARK: Sessions
+
+    /// `GET /api/sessions/{id}/messages`: one bounded page of a stored transcript
+    /// (`hermes_cli/web_routers/sessions.py:685-729`). Authenticated by `bearer`
+    /// when given, otherwise by the session cookie from `passwordLogin`.
+    /// `include_compacted=true` keeps the turns in-place compaction archived;
+    /// `inline_images=false` sends `[image]` instead of data URIs, which the
+    /// apps do not show (`:636-646`).
+    public func sessionMessages(_ query: SessionMessagesQuery, bearer: String? = nil) async throws -> SessionMessagesPage {
+        var items = [
+            URLQueryItem(name: "order", value: query.order.rawValue),
+            URLQueryItem(name: "limit", value: String(query.limit)),
+            URLQueryItem(name: "offset", value: String(query.offset)),
+            URLQueryItem(name: "include_compacted", value: "true"),
+            URLQueryItem(name: "inline_images", value: "false"),
+        ]
+        if let profile = query.profile { items.insert(URLQueryItem(name: "profile", value: profile), at: 0) }
+        var request = request(path: "/api/sessions/\(query.sessionID)/messages", method: "GET", query: items)
+        if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
+        return try await send(request)
+    }
+
     // MARK: Plumbing
 
-    private func request(path: String, method: String, json: JSONValue? = nil) -> URLRequest {
-        var request = URLRequest(url: endpoint.url(path: path))
+    private func request(path: String, method: String, json: JSONValue? = nil,
+                         query: [URLQueryItem] = []) -> URLRequest {
+        var request = URLRequest(url: endpoint.url(path: path, query: query))
         request.httpMethod = method
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Accept")

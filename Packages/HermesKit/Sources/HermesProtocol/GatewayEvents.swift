@@ -174,6 +174,24 @@ public struct MessageComplete: Sendable, Hashable, Codable {
         self.error = error
     }
 
+    enum CodingKeys: String, CodingKey {
+        case text, status, reasoning, error, warning, recoverable, partial, usage
+    }
+
+    /// Lenient: this is the terminal frame of every turn, so an optional field of
+    /// an unexpected shape must not demote it to `.unknown`.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try? container.decodeIfPresent(JSONValue.self, forKey: .text)
+        status = try? container.decodeIfPresent(String.self, forKey: .status)
+        reasoning = try? container.decodeIfPresent(String.self, forKey: .reasoning)
+        error = try? container.decodeIfPresent(String.self, forKey: .error)
+        warning = try? container.decodeIfPresent(String.self, forKey: .warning)
+        recoverable = try? container.decodeIfPresent(Bool.self, forKey: .recoverable)
+        partial = try? container.decodeIfPresent(Bool.self, forKey: .partial)
+        usage = try? container.decodeIfPresent(JSONValue.self, forKey: .usage)
+    }
+
     /// `text` as display text: strings as-is, text parts joined, other JSON serialised.
     public var textValue: String {
         switch text {

@@ -28,7 +28,7 @@ overview and `docs/protocol.md` for the protocol.
    - No SwiftUI, Combine, CryptoKit, Security or Network.framework.
    - Apple-only helpers (Keychain, loopback listener for PKCE) go in `Apps/Shared/`.
 4. **No third-party dependencies in the package** without an explicit decision recorded in this
-   file.
+   file. App-target dependencies also need a recorded decision; see [Dependencies](#dependencies).
 5. **Don't patch Hermes or add a Hermes gateway platform.**
    - The apps are clients of Hermes's public interfaces.
    - NUC-side helpers go in `backend/` (see its README).
@@ -47,6 +47,23 @@ overview and `docs/protocol.md` for the protocol.
    - No `@unchecked Sendable` without a comment explaining why it is safe.
 9. **Tools versions.** Keep `swift-tools-version` at or below what the Mac's Xcode ships (6.2
    for Xcode 26). CI tests both 6.2 and the NUC toolchain.
+
+## Dependencies
+
+Every third-party dependency, its license, pin and reason. Add a row here before adding one.
+
+- **SwiftMath** (https://github.com/mgriebling/SwiftMath), MIT, pinned to **exactly 1.7.3**
+  in `project.yml`.
+  - Used by: the **app targets only** (HermesMac, HermesiOS), to typeset LaTeX in assistant
+    messages natively. `Packages/HermesKit` stays dependency-free and Linux-clean.
+  - Decided by the user (2026-10). The alternative, WKWebView + KaTeX, was rejected: a web view
+    per message is too heavy in a long, streaming, lazily scrolled transcript.
+  - Division of work: HermesKit parses Markdown and rewrites LaTeX into the subset SwiftMath
+    1.7.3 accepts (`Sources/HermesKit/Markdown/`, see `LaTeXNormalizer`). The apps only typeset
+    and lay out (`Apps/Shared/Views/Markdown/`). If SwiftMath still rejects a formula, the app
+    shows the LaTeX source.
+  - Before bumping the pin: re-probe the parser (`MTMathListBuilder.build(fromString:error:)`)
+    against the normalizer's outputs. The rewrite tables assume 1.7.3's command set.
 
 ## Protocol work
 

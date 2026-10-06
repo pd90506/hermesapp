@@ -28,6 +28,11 @@ settings:
 packages:
   HermesKit:
     path: Packages/HermesKit
+  # Native LaTeX rendering for the apps only (MIT). Pinned exactly; see AGENTS.md
+  # "Dependencies" before changing. HermesKit itself stays dependency-free.
+  SwiftMath:
+    url: https://github.com/mgriebling/SwiftMath
+    exactVersion: 1.7.3
 
 targets:
   HermesMac:
@@ -42,6 +47,7 @@ targets:
         product: HermesKit
       - package: HermesKit
         product: HermesProtocol
+      - package: SwiftMath
     info:
       path: Config/Generated/HermesMac-Info.plist
       properties:
@@ -74,6 +80,7 @@ targets:
         product: HermesKit
       - package: HermesKit
         product: HermesProtocol
+      - package: SwiftMath
     info:
       path: Config/Generated/HermesiOS-Info.plist
       properties:

@@ -3,15 +3,17 @@
 
 Checks that the spec parses as YAML, that every source path, config file and
 local package it references exists, that package products named in target
-dependencies are declared in the package manifest, and that no Swift file
-under Apps/ is left out of every target. It does NOT replace running
-`xcodegen generate` on the Mac.
+dependencies are declared in the local package manifest, that remote packages
+(`url:`) use https and pin a version requirement (their products can't be
+checked offline), and that no Swift file under Apps/ is left out of every
+target. It does NOT replace running `xcodegen generate` on the Mac.
 
 Usage: python3 scripts/check-project-spec.py   (needs PyYAML)
 """
 import pathlib
 import re
 import sys
+from typing import Optional
 
 try:
     import yaml
@@ -39,11 +41,26 @@ for key in ("name", "targets", "packages"):
 for config, path in (spec.get("configFiles") or {}).items():
     need(path, f"configFiles.{config}")
 
-products: dict[str, set[str]] = {}
+# XcodeGen version requirement keys for remote packages.
+VERSION_KEYS = ("exactVersion", "version", "from", "majorVersion", "upToNextMajorVersion",
+                "minorVersion", "upToNextMinorVersion", "minVersion", "branch", "revision")
+
+# Local packages map to their declared library products; remote packages to
+# None, since their manifest isn't available offline (any product is accepted).
+products: dict[str, Optional[set[str]]] = {}
 for name, package in (spec.get("packages") or {}).items():
-    manifest = need(f"{package['path']}/Package.swift", f"package {name} manifest")
-    if manifest.exists():
-        products[name] = set(re.findall(r'\.library\(name:\s*"([^"]+)"', manifest.read_text()))
+    if "path" in package:
+        manifest = need(f"{package['path']}/Package.swift", f"package {name} manifest")
+        if manifest.exists():
+            products[name] = set(re.findall(r'\.library\(name:\s*"([^"]+)"', manifest.read_text()))
+    elif "url" in package:
+        if not str(package["url"]).startswith("https://"):
+            errors.append(f"package {name}: url must be https: {package['url']}")
+        if not any(key in package for key in VERSION_KEYS):
+            errors.append(f"package {name}: remote package needs a version requirement ({', '.join(VERSION_KEYS)})")
+        products[name] = None
+    else:
+        errors.append(f"package {name}: needs either path (local) or url (remote)")
 
 covered: set[pathlib.Path] = set()
 for target_name, target in spec["targets"].items():
@@ -59,7 +76,7 @@ for target_name, target in spec["targets"].items():
             pkg, product = dep["package"], dep.get("product", dep["package"])
             if pkg not in products:
                 errors.append(f"target {target_name}: unknown package {pkg}")
-            elif product not in products[pkg]:
+            elif products[pkg] is not None and product not in products[pkg]:
                 errors.append(f"target {target_name}: package {pkg} has no product {product}")
     if "PRODUCT_BUNDLE_IDENTIFIER" not in target.get("settings", {}).get("base", {}):
         errors.append(f"target {target_name}: no PRODUCT_BUNDLE_IDENTIFIER")

@@ -276,6 +276,10 @@ public final class GatewayConnection {
                     state = .failed(Self.describe(error))
                     break
                 }
+                if case DashboardError.refreshRejected = error {
+                    state = .failed(Self.describe(error))
+                    break
+                }
                 if let max = maxReconnectAttempts, attempt >= max {
                     state = .failed(Self.describe(error))
                     break
@@ -318,6 +322,7 @@ public final class GatewayConnection {
         case let rpc as RPCError: return rpc.message
         case DashboardError.unauthenticated: return "Not signed in, or the session expired."
         case DashboardError.invalidCredentials: return "Username or password was rejected."
+        case DashboardError.refreshRejected: return "The saved sign-in expired or was revoked. Sign in again."
         case DashboardError.rateLimited: return "Too many login attempts; wait a minute."
         case DashboardError.http(let status, _): return "The dashboard answered HTTP \(status)."
         case TransportError.handshakeFailed(let detail):

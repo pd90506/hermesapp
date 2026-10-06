@@ -127,8 +127,10 @@ target). The real check is `xcodegen generate` on the Mac.
 
 ## Known limitations
 
-- The access token is never refreshed through `/auth/native/refresh`. `basic` access tokens last
-  12 h, so re-enter the token after that.
+- The package refreshes native token pairs through `/auth/native/refresh`
+  (`GatewayCredential.native`), but the apps don't use it yet. The "Access token (ticket)" mode
+  takes an access token only, which can't be refreshed. `basic` access tokens last 12 h, so
+  re-enter the token after that.
 - Clarify `multi_select` is shown as a single choice.
 - Requests for sessions other than the open one show only as a badge.
 - A `-32601` from this app can beat a Desktop window's answer to `vault.*` prompts when both are

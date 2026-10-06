@@ -36,6 +36,8 @@ overview and `docs/protocol.md` for the protocol.
 6. **The Xcode project is generated.**
    - Edit `project.yml`, never a `.xcodeproj`, and never commit one.
    - After changing `project.yml` or adding app files, run `python3 scripts/check-project-spec.py`.
+     It needs PyYAML (`python3 -m pip install --user pyyaml`, or `apt install python3-yaml`);
+     without it the script exits non-zero with that hint.
 7. **No secrets or personal hosts in the repo.**
    - Use `hermes.example.ts.net`-style names only in docs and examples.
    - Signing team ids go in the git-ignored `Config/Local.xcconfig`.

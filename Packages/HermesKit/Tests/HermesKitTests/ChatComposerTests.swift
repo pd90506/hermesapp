@@ -406,8 +406,9 @@ struct ChatComposerTests {
 
     @Test func aSendWaitsUntilStrandedImagesAreGone() async throws {
         let secondLog = FrameLog()
-        // On the new socket every image.detach goes unanswered (times out).
-        let (composer, _) = try await strandAnImage(secondLog: secondLog, requestTimeout: .milliseconds(200)) {
+        // On the new socket every image.detach goes unanswered (times out). The timeout
+        // covers every request, the setup's too: 200 ms let a loaded run time out `session.create`.
+        let (composer, _) = try await strandAnImage(secondLog: secondLog, requestTimeout: .seconds(1)) {
             $0 == "image.detach"
         }
         composer.draft = "look again"

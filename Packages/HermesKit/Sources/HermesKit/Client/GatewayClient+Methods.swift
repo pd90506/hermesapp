@@ -63,13 +63,104 @@ extension GatewayClient {
 
     /// Sends a user turn. Returns immediately (`status == "streaming"` for an
     /// idle session); the reply arrives as events ending in `message.complete`.
+    /// `queued: true` holds the prompt behind a running turn instead of letting
+    /// the gateway's busy mode steer or redirect with it.
     @discardableResult
-    public func submitPrompt(sessionID: String, text: String) async throws -> PromptSubmitResult {
+    public func submitPrompt(sessionID: String, text: String, queued: Bool? = nil) async throws -> PromptSubmitResult {
         // The ack can lag behind a busy session; Desktop allows the full agent-turn
         // ceiling (`apps/desktop/src/api/client.ts:27`, 1 800 s) so the ack timeout
         // never reports a failure for a turn the server is still running.
-        try await call(GatewayMethod.promptSubmit, params: PromptSubmitParams(sessionID: sessionID, text: text),
+        try await call(GatewayMethod.promptSubmit,
+                       params: PromptSubmitParams(sessionID: sessionID, text: text, queued: queued),
                        timeout: Self.promptSubmitTimeout)
+    }
+
+    // MARK: Slash commands
+
+    public func commandsCatalog(sessionID: String?, profile: String? = nil) async throws -> CommandsCatalogResult {
+        try await call(GatewayMethod.commandsCatalog, params: SlashScopeParams(sessionID: sessionID, profile: profile))
+    }
+
+    public func completeSlash(text: String, sessionID: String?, profile: String? = nil) async throws -> CompleteSlashResult {
+        try await call(GatewayMethod.completeSlash,
+                       params: SlashScopeParams(sessionID: sessionID, profile: profile, text: text))
+    }
+
+    /// `command` is the command line without its leading `/`.
+    public func slashExec(sessionID: String, command: String) async throws -> SlashCommandResult {
+        try await call(GatewayMethod.slashExec, params: SlashExecParams(sessionID: sessionID, command: command))
+    }
+
+    public func commandDispatch(name: String, arg: String?, sessionID: String?) async throws -> SlashCommandResult {
+        try await call(GatewayMethod.commandDispatch,
+                       params: CommandDispatchParams(name: name, arg: arg, sessionID: sessionID))
+    }
+
+    // MARK: Steering
+
+    /// Injects `text` into the running turn's next tool result.
+    public func steer(sessionID: String, text: String) async throws -> SessionCorrectionResult {
+        try await call(GatewayMethod.sessionSteer, params: SessionTextParams(sessionID: sessionID, text: text))
+    }
+
+    /// Stops the active model request and resumes the turn with `text`.
+    public func redirect(sessionID: String, text: String) async throws -> SessionCorrectionResult {
+        try await call(GatewayMethod.sessionRedirect, params: SessionTextParams(sessionID: sessionID, text: text))
+    }
+
+    /// Side question over a snapshot of the conversation; answered by `btw.complete`.
+    public func askBTW(sessionID: String, text: String) async throws -> String {
+        try await call(GatewayMethod.promptBtw, params: SessionTextParams(sessionID: sessionID, text: text),
+                       as: TaskIDResult.self).taskID
+    }
+
+    /// Runs `text` on a fresh agent in the background; answered by `background.complete`.
+    public func startBackgroundTask(sessionID: String, text: String) async throws -> String {
+        try await call(GatewayMethod.promptBackground, params: SessionTextParams(sessionID: sessionID, text: text),
+                       as: TaskIDResult.self).taskID
+    }
+
+    /// Manual compression of an idle session. LLM-slow: Desktop allows 660 s
+    /// (`SESSION_COMPRESS_TIMEOUT_MS`, `use-prompt-actions/slash.ts:89`).
+    public func compress(sessionID: String, focusTopic: String? = nil) async throws -> SessionCompressResult {
+        try await call(GatewayMethod.sessionCompress,
+                       params: SessionCompressParams(sessionID: sessionID, focusTopic: focusTopic),
+                       timeout: .seconds(660))
+    }
+
+    public func save(sessionID: String) async throws -> SessionSaveResult {
+        try await call(GatewayMethod.sessionSave, params: SessionIDParams(sessionID: sessionID))
+    }
+
+    public func status(sessionID: String) async throws -> SessionStatusResult {
+        try await call(GatewayMethod.sessionStatus, params: SessionIDParams(sessionID: sessionID))
+    }
+
+    /// Kills every background process of the gateway (`/stop`); answers how many.
+    @discardableResult
+    public func stopProcesses() async throws -> ProcessStopResult {
+        let value = try await call(GatewayMethod.processStop, params: .object([:]))
+        do {
+            return try value.decode(ProcessStopResult.self)
+        } catch {
+            throw GatewayClientError.decoding(method: GatewayMethod.processStop, String(describing: error))
+        }
+    }
+
+    // MARK: Session management
+
+    /// `sessionID`: a runtime id, or a stored id in `profile`'s db.
+    @discardableResult
+    public func setArchived(sessionID: String, archived: Bool, profile: String?) async throws -> SessionArchiveResult {
+        try await call(GatewayMethod.sessionArchive,
+                       params: SessionArchiveParams(sessionID: sessionID, archived: archived, profile: profile))
+    }
+
+    /// Deletes a stored session. Fails with 4023 while it is live in the gateway.
+    @discardableResult
+    public func deleteSession(storedSessionID: String, profile: String?) async throws -> SessionDeleteResult {
+        try await call(GatewayMethod.sessionDelete,
+                       params: SessionDeleteParams(sessionID: storedSessionID, profile: profile))
     }
 
     /// `PROMPT_SUBMIT_REQUEST_TIMEOUT_MS` in the Desktop app.

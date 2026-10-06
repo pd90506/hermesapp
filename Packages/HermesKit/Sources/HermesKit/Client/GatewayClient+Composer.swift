@@ -53,7 +53,19 @@ extension GatewayClient {
         try await call(GatewayMethod.imageDetach, params: ImageDetachParams(sessionID: sessionID, profile: profile, path: path))
     }
 
-    /// Up to 25 MB of base64 over the socket (`prompt_attachments.py:16`).
+    /// Uploads a non-image file (a PDF, a text file, anything) into the session's
+    /// attachments folder; the result's `refText` goes into the prompt.
+    public func attachFile(sessionID: String, data: Data, name: String, mimeType: String?) async throws
+        -> FileAttachResult
+    {
+        let dataURL = "data:\(mimeType ?? "application/octet-stream");base64,\(data.base64EncodedString())"
+        return try await call(GatewayMethod.fileAttach,
+                              params: FileAttachParams(sessionID: sessionID, name: name, dataURL: dataURL),
+                              timeout: Self.imageUploadTimeout)
+    }
+
+    /// Up to 25 MB of base64 over the socket (`prompt_attachments.py:16`); files
+    /// (`file.attach`) get the same time.
     public static let imageUploadTimeout: Duration = .seconds(300)
 }
 

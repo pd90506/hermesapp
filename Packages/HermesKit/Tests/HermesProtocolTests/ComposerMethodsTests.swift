@@ -20,6 +20,27 @@ import Testing
         #expect(result.model == "m")
     }
 
+    /// `error` is outside `ToolCompletePayload` (`contracts/events.py:278-291`): an odd
+    /// value must not demote the event to `.unknown`, which would leave the row running.
+    @Test func toolCompleteToleratesAnOddError() throws {
+        let event = GatewayEvent(type: "tool.complete", sessionID: "s",
+                                 payload: ["tool_id": "t1", "name": "terminal", "result_text": "ok",
+                                           "error": ["code": 1]])
+        guard case .toolComplete(let complete) = event.kind else {
+            Issue.record("decoded as \(event.kind)")
+            return
+        }
+        #expect(complete.toolID == "t1")
+        #expect(complete.resultText == "ok")
+        #expect(complete.error == nil)
+        let failed = try decode(ToolComplete.self, #"{"tool_id":"t2","name":"x","error":"boom"}"#)
+        #expect(failed.error == "boom")
+    }
+
+    @Test func processStopAnswerDecodes() throws {
+        #expect(try decode(ProcessStopResult.self, #"{"killed":3}"#).killed == 3)
+    }
+
     @Test func modelSwitchAnswersDecode() throws {
         let confirm = try decode(ConfigSetResult.self, """
             {"key":"model","value":"claude-opus-5-5","warning":"pricey","confirm_required":true,

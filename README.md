@@ -29,6 +29,18 @@ Status: foundation only.
   Voice input is not available yet
   (`docs/protocol.md` §10.4).
 - Both apps build on the Mac with Xcode.
+- The package's session layer goes further than the UI uses so far. `ChatComposer`,
+  `ChatSession` and `GatewayConnection` also expose:
+  - file and PDF attachments (`file.attach`);
+  - slash commands (catalog, completion, run, with skills sent as prompts);
+  - a transcript with tool activity, interim messages, steers and provider waits;
+  - steer / redirect / `/btw` / `/bg`;
+  - side-chat rename, archive and delete, with Bot Chats protected;
+  - a live sidebar driven by server pushes, gateway notices, and reclaimed chats that resume
+    on their next action;
+  - clarify multi-select.
+
+  See `docs/protocol.md` §5, §10.5-10.9 and §11.
 
 ## Layout
 
@@ -41,8 +53,9 @@ Packages/HermesKit/        Swift package — all non-UI logic. Builds and tests 
                              (ticket, password login, PKCE), REST transcript pages, Transcript
                              reducer (paging; stored rows are the source of truth), ChatSession and
                              GatewayConnection (@Observable, reconnect + resume), Markdown/LaTeX
-                             parsing for chat rendering (Markdown/), composer state: attachments,
-                             model and effort pickers (Composer/).
+                             parsing for chat rendering (Markdown/), composer state: image and
+                             file attachments, model and effort pickers (Composer/), slash
+                             commands, steering, side-chat management, live sidebar (Session/).
   Tests/                     Swift Testing suites driven by a fake transport and a fake HTTP client.
 Apps/Shared/               SwiftUI code compiled into both apps (AppModel, views, Keychain,
                            Markdown and math views; math uses SwiftMath, see AGENTS.md; the
@@ -155,11 +168,51 @@ on the Mac.
   (`GatewayCredential.native`), but the apps don't use it yet. The "Access token (ticket)" mode
   takes an access token only, which can't be refreshed. `basic` access tokens last 12 h, so
   re-enter the token after that.
-- Clarify `multi_select` is shown as a single choice.
+- **Package-only features.** The app's views don't use these session-layer APIs yet: file
+  attachments, slash commands, steering and `/btw` / `/bg`, tool details (`ToolActivity`),
+  interim and steer markers, provider waits, side-chat rename/archive/delete, notifications and
+  multi-select clarify. In the UI, clarify `multi_select` is still shown as a single choice,
+  although the package models it (`ClarifySelection`), and a draft starting with `/` is sent as a
+  prompt (`ChatSession.runSlash` is not called yet).
+- **Slash commands.** Desktop's client-side slash actions that need UI (`/new` in a side chat,
+  `/model`, `/resume`, `/branch`, `/help`, `/skin`, …) come back from `ChatSession.runSlash` as
+  `.clientAction` and are not implemented yet. They are never sent to the gateway. The package
+  runs `/compress`, `/bg`, `/save`, `/status`, `/btw`, `/title` and `/stop` itself (`/stop`, like
+  Desktop, interrupts the turn and stops every background process). In a Bot Chat, `/new`,
+  `/reset` and `/clear` compress instead. `ChatComposer.submit` never routes slash commands: the
+  app checks the draft with `SlashCommand.isCommand` and calls `ChatSession.runSlash` instead.
+- **Local rows.** Slash-command output, notices and `/btw` / `/bg` answers exist on this device
+  only (Hermes never stores them; Desktop loses them on reload too). They keep their place while
+  the stored transcript is re-read, but a cold resume (reconnect to a restarted backend, a
+  reclaimed chat) drops them, and a row added mid-turn moves below that turn.
+- **Reasoning.** Only `reasoning.delta` and `reasoning.available` fill a reply's reasoning, as in
+  Desktop; `thinking.delta` frames are spinner text (an explained provider wait shows as
+  `Transcript.providerWait`). A prompt, steer, note or `/btw` row added while a reply streams
+  splits the reply into two bubbles around it (Desktop's `appendAfterActiveReply`).
+- **Rename.** Only a chat open in the app (on screen or recently shown) can be renamed: the
+  package uses `session.title`, which needs a live session. Desktop renames other rows over the
+  dashboard REST API, which the package doesn't use.
+- **Archive.** Archived chats can't be listed (`session.list` has no archived filter), so unarchive
+  is only an undo for a row the app still holds.
+- **Deleting a chat open elsewhere.** A chat open in another client (e.g. a Desktop window) can't
+  be deleted: the gateway answers 4023 until that client closes it.
+- **Stored tool rows** show no output, except for `write_file`, `patch` and `skill_manage`, as in
+  the gateway's own history projection; live tool rows carry their output.
+- **Files.** A file is uploaded when it is attached; removing its card does not delete it from the
+  gateway (there is no call for that). Files travel inside one WebSocket frame as base64, about a
+  third larger than the file, and the app refuses files over 50 MB (Hermes' PDF cap). The gateway
+  itself takes frames up to 384 MiB (16 MiB on gateways older than desktop contract v5), and
+  Desktop allows 256 MiB per file; see `docs/protocol.md` §10.5.
+- **Reclaimed chats.** When the backend reclaims an idle chat, the chat stays on screen and is
+  resumed by its next action or when it is shown again; until then nothing streams into it.
+- **Live updates.** `sessions.changed` refreshes the lists at most every 10 s, and the roster also
+  keeps its 15 s poll: Hermes has no roster-change event.
 - Requests for sessions other than the open one show only as a badge (and on the bot's row when
   this app opened that session).
-- The app only lists bots and opens or creates their Bot Chats. It does not create, rename or
-  delete profiles, and it does not run Desktop's sweep that re-hides Bot Chats.
+- **Profiles.** The app only lists bots and opens or creates their Bot Chats. It does not create,
+  rename or delete profiles, and it does not run Desktop's sweep that re-hides Bot Chats. Bot
+  Chats can't be renamed, archived or deleted from the app; the server itself only refuses the
+  rename.
 - Math the SwiftMath parser can't handle, even after rewriting (e.g. `\cancel`, `\&`,
   `\mathop`), shows as LaTeX source. Some rewrites are approximations: `\boxed` drops the box,
   `\underbrace`/`\overbrace` become under/overlines, `\overset` becomes a superscript. `\color`

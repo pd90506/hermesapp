@@ -37,11 +37,17 @@ enum StoredMessageProjection {
             switch row.role {
             case "user":
                 if text.trimmingCharacters(in: .whitespaces).hasPrefix("[System:") { continue }
-                // `@image:` lines are the images sent with it (`session_history.py:51-60`).
+                // `@image:` lines are the images sent with it (`session_history.py:51-60`),
+                // leading `@file:` lines the files (`AttachmentRefs`).
                 let (caption, paths) = ImageDirectives.split(userDisplayText(text))
-                guard !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !paths.isEmpty else { continue }
-                var user = item(row, role: .user, text: caption)
+                let (body, refs) = AttachmentRefs.splitLeading(caption)
+                guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !paths.isEmpty || !refs.isEmpty
+                else { continue }
+                var user = item(row, role: .user, text: body)
                 user.images = TranscriptImage.stored(paths)
+                user.attachments = refs.map(AttachmentRefs.displayName)
+                // `steer` rows show the steer text (`display_content`, `web_routers/sessions.py:663-667`).
+                user.displayKind = row.displayKind
                 items.append(user)
             case "assistant":
                 for call in row.toolCalls?.arrayValue ?? [] {
@@ -62,8 +68,16 @@ enum StoredMessageProjection {
                 var tool = TranscriptItem(id: rowItemID(row), role: .tool, text: "")
                 tool.rowID = row.id
                 tool.toolCallID = row.toolCallID
-                tool.toolName = call?.name ?? row.toolName ?? "tool"
+                let name = call?.name ?? row.toolName ?? "tool"
+                tool.toolName = name
                 tool.detail = call.flatMap { preview($0.args) }
+                // A stored tool row is a finished call. Its output is kept for edit
+                // tools only, as `_history_to_messages` does (`session_history.py:331`).
+                var activity = ToolActivity(toolID: row.toolCallID ?? tool.id, name: name, phase: .complete)
+                activity.context = tool.detail
+                if let args = call?.args, !args.isEmpty { activity.args = .object(args) }
+                if Self.toolsKeepingOutput.contains(name) { activity.output = Self.text(of: row.content) }
+                tool.tool = activity
                 items.append(tool)
             case "system":
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
@@ -74,6 +88,9 @@ enum StoredMessageProjection {
         }
         return items
     }
+
+    /// Edit cards need the original result (`session_history.py:329-331`).
+    static let toolsKeepingOutput: Set<String> = ["write_file", "patch", "skill_manage"]
 
     static func rowItemID(_ row: StoredMessage) -> String {
         row.id.map { "row-\($0)" } ?? "row-\(UUID().uuidString)"

@@ -146,6 +146,65 @@ extension ImageAttachmentPolicy {
     }
 }
 
+/// A non-image file (a PDF, a text file, anything) waiting in the composer. Unlike
+/// an image it is uploaded when it is attached (`file.attach`, like Desktop's
+/// drop-time eager upload, `use-prompt-actions/index.ts:176,324-327`): the gateway
+/// stores it in the session's attachments folder and answers the `@file:` reference
+/// the prompt carries in front of its text (`submit.ts:224-234`).
+public struct ComposerFile: Identifiable, Sendable, Hashable {
+    public let id: UUID
+    /// The name the gateway stored it under (`file.attach`'s `name`).
+    public var name: String
+    public var byteCount: Int
+    /// `@file:<ref_path>`, quoted when needed; sent in front of the prompt text.
+    public var refText: String
+
+    public init(id: UUID = UUID(), name: String, byteCount: Int, refText: String) {
+        self.id = id
+        self.name = name
+        self.byteCount = byteCount
+        self.refText = refText
+    }
+
+    /// The card's second line, e.g. `2.4 MB`.
+    public var detail: String { ComposerAttachment.formatBytes(byteCount) }
+}
+
+/// What the composer uploads with `file.attach`.
+public enum FileAttachmentPolicy {
+    /// `[client choice]` `file.attach` has no cap of its own (`prompt_attachments.py:187-248`);
+    /// the bytes travel base64 in one WebSocket frame. Hermes' own PDF cap
+    /// (`_PDF_ATTACH_MAX_BYTES`, `prompt_attachments.py:17`) bounds it here too. The real
+    /// limits are higher: frames up to 384 MiB (`hermes_cli/web_server.py:437-439`; 16 MiB
+    /// below desktop contract v5, `tui_gateway/server.py:2269`), and Desktop reads up to
+    /// 256 MiB per file (`use-prompt-actions/utils.ts:443-446`). See `docs/protocol.md` §10.5.
+    public static let maxBytes = 50 * 1024 * 1024
+
+    /// Why a file of this size cannot be attached, or `nil` when it can.
+    public static func rejection(byteCount: Int) -> String? {
+        if byteCount == 0 { return "the file is empty" }
+        if byteCount > maxBytes {
+            return "it is too large (\(ComposerAttachment.formatBytes(byteCount)); the limit is \(maxBytes / 1024 / 1024) MB)"
+        }
+        return nil
+    }
+}
+
+/// What `ChatSession.steer` / `redirect` did.
+public enum SteerOutcome: Sendable, Hashable {
+    /// Injected into the running turn.
+    case steered
+    /// The running turn was redirected with the text.
+    case redirected
+    /// A redirect the gateway queued as the next turn (the turn was still being
+    /// set up, or compression was running).
+    case queuedForNextTurn
+    /// No turn was running (`rejected`), so the text went out as a normal prompt.
+    case sentAsPrompt
+    /// Empty text; nothing was sent.
+    case ignored
+}
+
 /// Why a composer action failed before anything reached the gateway.
 public enum ComposerError: Error, Sendable, Equatable {
     /// An upload failed; earlier uploads of the same send were detached again.
@@ -157,6 +216,8 @@ public enum ComposerError: Error, Sendable, Equatable {
     /// Images an earlier failed send left queued could not be detached, so this
     /// send did not go out: they would have ridden with it.
     case strandedImages
+    /// `answer(_:selections:)` was given a request that is not a clarify request.
+    case notAClarifyRequest
 
     public var message: String {
         switch self {
@@ -166,6 +227,11 @@ public enum ComposerError: Error, Sendable, Equatable {
         case .strandedImages:
             "Images from an earlier failed send are still queued on Hermes and couldn't be removed, "
                 + "so nothing was sent (they would have gone with it). Try again."
+        case .notAClarifyRequest: "That request is not a question to answer."
         }
     }
+}
+
+extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }

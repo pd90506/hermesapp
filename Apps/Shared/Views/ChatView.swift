@@ -7,8 +7,15 @@ struct ChatView: View {
     let session: ChatSession
     /// Overrides the session title (a Bot Chat is titled "Bot Chat"; show the bot instead).
     var title: String?
-    @State private var draft = ""
-    @State private var error: String?
+    @Environment(AppModel.self) private var model
+    /// One per chat: `RootView` gives every chat a fresh `ChatView` (`.id`).
+    @State private var composer: ChatComposer
+
+    init(session: ChatSession, title: String? = nil) {
+        self.session = session
+        self.title = title
+        _composer = State(initialValue: ChatComposer(session: session))
+    }
 
     var body: some View {
         ScrollView {
@@ -25,7 +32,7 @@ struct ChatView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let lastError = session.transcript.lastError ?? error {
+                if let lastError = session.transcript.lastError {
                     Label(lastError, systemImage: "exclamationmark.triangle")
                         .font(.callout)
                         .foregroundStyle(.red)
@@ -37,47 +44,15 @@ struct ChatView: View {
         // keeps the rows on screen where they are.
         .defaultScrollAnchor(.bottom)
         .safeAreaInset(edge: .bottom) {
-            composer
+            ComposerView(composer: composer, isConnected: model.isConnected)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.bar)
         }
         .navigationTitle(title ?? session.title ?? "New Chat")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-    }
-
-    private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message Hermes", text: $draft, axis: .vertical)
-                .lineLimit(1...8)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(send)
-            if session.transcript.isRunning {
-                Button("Stop", systemImage: "stop.circle.fill") {
-                    Task {
-                        do { try await session.interrupt() } catch { self.error = GatewayConnection.describe(error) }
-                    }
-                }
-                .labelStyle(.iconOnly)
-                .font(.title2)
-            } else {
-                Button("Send", systemImage: "arrow.up.circle.fill", action: send)
-                    .labelStyle(.iconOnly)
-                    .font(.title2)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .keyboardShortcut(.return, modifiers: .command)
-            }
-        }
-        .padding()
-        .background(.bar)
-    }
-
-    private func send() {
-        let text = draft
-        draft = ""
-        error = nil
-        Task {
-            do { try await session.send(text) } catch { self.error = GatewayConnection.describe(error) }
-        }
     }
 }
 

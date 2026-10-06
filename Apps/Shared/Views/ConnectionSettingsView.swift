@@ -4,6 +4,8 @@ import SwiftUI
 /// Server URL + credentials. Shown as a sheet on first launch and from the
 /// toolbar; also the macOS Settings window.
 struct ConnectionSettingsView: View {
+    /// Shown as a sheet (not the macOS Settings window, which has its own close button).
+    var isSheet = false
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var isWorking = false
@@ -100,7 +102,27 @@ struct ConnectionSettingsView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }
             }
+            #else
+            if isSheet {
+                ToolbarItem(placement: .confirmationAction) {
+                    // Esc closes it too (`.cancelAction`), as before.
+                    Button("Done") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+            }
             #endif
         }
+        #if os(macOS)
+        .background {
+            if isSheet {
+                // A sheet blocks the window's File ▸ Close, so Command-W gets its own key here.
+                Button("Close") { dismiss() }
+                    .keyboardShortcut("w", modifiers: .command)
+                    .opacity(0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        #endif
     }
 }

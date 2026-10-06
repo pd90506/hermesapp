@@ -25,7 +25,7 @@ struct RootView: View {
         }
         .sheet(isPresented: $model.isShowingSettings) {
             NavigationStack {
-                ConnectionSettingsView()
+                ConnectionSettingsView(isSheet: true)
             }
             #if os(macOS)
             .frame(minWidth: 460, minHeight: 420)

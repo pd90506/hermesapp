@@ -111,7 +111,9 @@ struct UnstoredInterruptTests {
         var transcript = try idle()
         let prompt = transcript.appendUserPrompt("你好")
         transcript.promptAnswered(itemID: prompt, status: "streaming")
-        #expect(transcript.needsReread)
+        // No re-read can hold its row before its turn runs, so none is asked for
+        // (`Transcript.promptAnswered`); one that happens anyway must not drop it.
+        #expect(!transcript.needsReread)
         transcript.installRereadPage(plain(181...300), ticket: transcript.beginReread(), reachesStart: false)
         #expect(transcript.items.contains { $0.id == prompt })
 

@@ -17,6 +17,14 @@ Status: foundation only.
 - Assistant replies (and reasoning) render as Markdown: headings, lists, quotes, code blocks,
   GFM tables and LaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`), typeset natively with SwiftMath.
   User messages and tool rows stay plain text.
+- The composer follows Hermes Desktop's: a text area that grows with its text, image attachments
+  shown as cards (`+`, paste, drag and drop), and per-chat model and reasoning-effort pickers.
+  On macOS, Return sends and Shift-Return inserts a newline. On iOS, Return inserts a newline and
+  the Send button (or Command-Return) sends. While a reply runs, Send sits beside Stop as soon as
+  there is something to send. A message with images is queued as the next turn. Text alone
+  follows Hermes's busy-input setting, which by default redirects or stops the running reply.
+  Voice input is not available yet
+  (`docs/protocol.md` §10.4).
 - Both apps build on the Mac with Xcode.
 
 ## Layout
@@ -30,10 +38,12 @@ Packages/HermesKit/        Swift package — all non-UI logic. Builds and tests 
                              (ticket, password login, PKCE), REST transcript pages, Transcript
                              reducer (paging; stored rows are the source of truth), ChatSession and
                              GatewayConnection (@Observable, reconnect + resume), Markdown/LaTeX
-                             parsing for chat rendering (Markdown/).
+                             parsing for chat rendering (Markdown/), composer state: attachments,
+                             model and effort pickers (Composer/).
   Tests/                     Swift Testing suites driven by a fake transport and a fake HTTP client.
 Apps/Shared/               SwiftUI code compiled into both apps (AppModel, views, Keychain,
-                           Markdown and math views; math uses SwiftMath, see AGENTS.md).
+                           Markdown and math views; math uses SwiftMath, see AGENTS.md; the
+                           composer's text view, image loading and pickers in Composer/).
 Apps/macOS/, Apps/iOS/     Per-platform @main entry points.
 project.yml                XcodeGen spec: the source of truth for the Xcode project.
 Config/                    xcconfigs (signing placeholders); Generated/ is written by XcodeGen.

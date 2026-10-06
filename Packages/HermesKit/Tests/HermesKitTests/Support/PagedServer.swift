@@ -47,6 +47,8 @@ final class PagedServer: Sendable {
     /// `steered`, with no `user_row_id` and no row written by the submit itself
     /// (`tui_gateway/session_auto_continue.py:259,450`).
     let busyStatus = Mutex<String?>(nil)
+    /// When set, `prompt.submit` gets no answer; the test fails it with `respondError`.
+    let holdSubmits = Mutex(false)
     private let counter = Mutex(0)
 
     init(store: FakeMessageStore) { self.store = store }
@@ -72,11 +74,28 @@ final class PagedServer: Sendable {
             }
             return deferredAck(sid: "rt-\(n)", key: key, count: ackCount.withLock { $0 } ?? store.rows.count)
         case "prompt.submit":
+            if holdSubmits.withLock({ $0 }) { return nil }
             if let status = busyStatus.withLock({ $0 }) { return ["status": .string(status)] }
+            // No text (an image-only prompt): `_write_submit_user_row` returns early
+            // (`tui_gateway/session_workdir.py:621`), so no row and no `user_row_id`
+            // (`methods_prompt.py:815-820`); the turn stores the `@image:` row when it runs.
+            if (params["text"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return ["status": "streaming"]
+            }
             // The prompt's row is written at submit (`methods_prompt.py:817-820`).
             let id = (store.rows.last?.id ?? 0) + 1
             store.append([storedRow(id: id, role: "user", text: params["text"]?.stringValue)])
             return ["status": "streaming", "user_row_id": .number(Double(id))]
+        case "image.attach_bytes":
+            // `_attached_image_result` (`methods_prompt.py:886-914,1222-1226`).
+            let n = counter.withLock { $0 += 1; return $0 }
+            let ext = ((params["filename"]?.stringValue ?? "x.png") as NSString).pathExtension
+            let path = "/home/u/.hermes/images/upload_20261006_120000_\(n).\(ext)"
+            return ["attached": true, "path": .string(path), "count": 1, "remainder": "",
+                    "text": .string("[User attached image: \((path as NSString).lastPathComponent)]"),
+                    "bytes": 4, "name": .string((path as NSString).lastPathComponent)]
+        case "image.detach":
+            return ["detached": true, "count": 0]  // `methods_prompt.py:998-1010`
         default:
             return nil
         }

@@ -238,6 +238,11 @@ private struct ConnectionStatusBar: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        // The list scrolls under this inset; without a bar behind it, rows
+        // showed through the status text.
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+        .accessibilityElement(children: .combine)
     }
 
     private var text: String {

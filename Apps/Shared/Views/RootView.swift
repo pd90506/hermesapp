@@ -2,7 +2,7 @@ import HermesKit
 import HermesProtocol
 import SwiftUI
 
-/// Sidebar (bots + History) + detail (chat). Used by both apps; on iPhone the
+/// Sidebar (Bots / Sessions) + detail (chat). Used by both apps; on iPhone the
 /// split view collapses into a navigation stack automatically.
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -12,7 +12,12 @@ struct RootView: View {
         @Bindable var model = model
 
         NavigationSplitView {
-            BotSidebarView(selection: $selection)
+            BotSidebarView(selection: Binding(
+                get: { selection },
+                set: { item in
+                    selection = item
+                    if let item { Task { await open(item) } }
+                }))
         } detail: {
             if let opening = model.connection.opening {
                 // A first open: the chat's frame at once, not the previous chat.
@@ -23,7 +28,7 @@ struct RootView: View {
             } else {
                 ContentUnavailableView(
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
-                    description: Text(model.isConnected ? "Pick a bot to chat with." : "Connect to your Hermes gateway."))
+                    description: Text(model.isConnected ? "Pick a bot or session to chat with." : "Connect to your Hermes gateway."))
             }
         }
         .sheet(isPresented: $model.isShowingSettings) {
@@ -33,10 +38,6 @@ struct RootView: View {
             #if os(macOS)
             .frame(minWidth: 460, minHeight: 420)
             #endif
-        }
-        .onChange(of: selection) { _, newValue in
-            guard let newValue else { return }
-            Task { await open(newValue) }
         }
         .onChange(of: model.connection.activeSession?.id) { _, _ in
             // The chat on screen can change without a click: dropped on reconnect,

@@ -14,7 +14,7 @@ public struct GatewayNotification: Sendable, Hashable, Identifiable {
 
 /// Server pushes that keep the sidebar live (`docs/protocol.md` §11):
 /// - `sessions.changed` (broadcast whenever a served state.db moved) refreshes
-///   the session list, the bot roster and History, throttled;
+///   the session list, the bot roster and the visible Sessions list, throttled;
 /// - `session.title` / `session.info` rename rows in place;
 /// - `session.reclaimed` marks the chats on that runtime (active or warm) as gone;
 ///   they resume on their next action;

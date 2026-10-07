@@ -484,7 +484,7 @@ Where the time goes when a chat opens:
   - **Then `session.resume`.** It is pool-dispatched (`server.py:179-191`), so it can wait behind
     other slow handlers. The deferred ack itself is cheap: it mints the runtime record and only
     schedules the history read (`methods_session.py:949-967`).
-  - **Then the REST page** (§4.1). For a History or launch-profile chat it is read alongside the
+  - **Then the REST page** (§4.1). For a Sessions or launch-profile chat it is read alongside the
     resume. For a Bot Chat it could only start once the lookup had named the chat.
 - **Before this change:**
   - The previous chat stayed on screen until the ack arrived. Going back to a chat paid the whole
@@ -778,11 +778,9 @@ the same conversation.
     session and every `sessions.changed` (both throttled, §11), and every 15 s while the sidebar
     is shown. Desktop polls every 5 s
     (`methods_profiles.py:249-250`).
-  - **Side effect:** History lists every profile, so the gateway serves profiles other than its
-    launch profile from the first poll on. The first call scoped to such a profile switches it
-    into multi-profile hosting: launch-profile secrets are frozen, and unscoped secret reads
-    fail closed (`server.py:579-586`, `tui_gateway/launch_profile_policy.py`). Desktop's remote
-    mode does the same.
+  - **Profile scope:** Sessions lists only the selected profile. Opening a bot or listing
+    a non-launch profile may enable multi-profile hosting (`server.py:579-586`,
+    `tui_gateway/launch_profile_policy.py`).
 
 ### 8.2 Opening the Bot Chat
 
@@ -843,15 +841,25 @@ still finishes and is returned to its caller, but is not shown. Its runtime sess
 attached to the socket, so its `open_requests` are still re-delivered and show on the bot's
 row.
 
-### 8.3 Side chats and History
+### 8.3 Side chats and the Sessions page
 
 - **Side chat.** A side chat ("New chat with this agent" in Desktop) is a plain
   `session.create {profile}`: no title, not hidden. It is never the bot row's target.
-- **History** lists each bot's sessions: `session.list {profile, limit:20}` per profile.
-  - **Order:** grouped by bot in roster order, keeping the server's order within each bot. The
-    server orders by most recent activity (`methods_session.py:149-152`).
-  - **No cross-bot merge:** listing rows carry no activity time (`methods_session.py:118-126`),
-    so different bots' rows can't be merged by it.
+- **Sessions page** has a roster profile picker, defaulting to the default profile (or the
+  first roster entry). Bots shows permanent Bot Chats only. Navigation changes do not open chats.
+  - Server: `session.list` has `limit` but no offset and no clamp
+    (`contracts/sessions.py:221-224`). It reads the `max(2*limit, 200)` most recent
+    non-hidden, non-archived rows, drops the internal sources `kanban`/`tool`/`oneshot`, then
+    cuts to `limit` (`methods_session.py:563-577`, `_listing_rows` :149-152,
+    `hermes_state_sessions.py:199`). A short response is therefore either the end of the list
+    or a window crowded by internal rows.
+  - `[client choice]` Only the selected profile is listed: `session.list {profile, limit:200}`,
+    re-read with a doubled limit while the response is full or still growing. Two reads in a
+    row with the same short count settle the list; that limit is remembered per profile, so a
+    later refresh is one read (re-laddering only if it comes back full). A run of more than
+    `2*limit` consecutive internal rows below the visible ones would still end the list early.
+    Hidden, archived and internal rows stay server-filtered; this listing never asks for them.
+  - **Order:** the server's most recent activity order (`methods_session.py:149-152`).
   - **What is left out:** Bot Chat rows. A Bot Chat row has `root_title` (when the gateway sends
     it) or `title` equal to `Bot Chat`, or its id is the roster's `canonical_session.id` /
     `resolved_id`.
@@ -862,7 +870,7 @@ row.
     - Hermes uses `hidden` only to decide whether such a row may be renamed
       (`hermes_state_titles.py:100-110`).
   - `[client choice]` The app does not run that sweep. It never writes `hidden`.
-- **Opening a History row:** `session.resume {session_id, profile, omit_messages:true,
+- **Opening a Sessions row:** `session.resume {session_id, profile, omit_messages:true,
   defer_history:true}`, then the newest REST page (§4.1).
 
 ## 9. HTTP API server (secondary option, not used by the MVP)
@@ -1376,7 +1384,7 @@ These arrive in the same `event` notification envelope (§2). Broadcasts carry a
   of every served profile db every 0.5 s. It broadcasts at most every 2 s, trailing edge included
   (`change_watcher.py:285-331`). Any rename, archive, delete, new row or turn from any client
   triggers it, including every streaming turn.
-- `[client choice]` The app refreshes `sessions`, the roster and History, at most once per
+- `[client choice]` The app refreshes `sessions`, the roster and the visible selected profile’s sessions, at most once per
   `pushedRefreshInterval` (10 s, Desktop's heavy-pass interval, `use-background-sync.ts:1302-1381`),
   with one trailing refresh after a burst. The first change after a quiet period refreshes at once.
   A profile chat's `message.complete` refreshes at once too, so the bot's preview follows the

@@ -6,19 +6,36 @@ import SwiftUI
 enum SidebarItem: Hashable {
     /// A bot, by profile name. Selecting it opens its one Bot Chat.
     case bot(String)
-    /// A History row, by `HistoryEntry.id`.
+    /// A Sessions row, by `HistoryEntry.id`.
     case history(String)
 }
 
-/// Sidebar: every profile as a bot (`default` first), then History (side
-/// chats and other sessions of the bots). Bot Chats never appear in History.
+/// Native page switch, bot roster and profile-scoped session browser.
 struct BotSidebarView: View {
     @Environment(AppModel.self) private var model
     @Binding var selection: SidebarItem?
-    @State private var isHistoryExpanded = true
 
     var body: some View {
+        @Bindable var connection = model.connection
         List(selection: $selection) {
+            Section {
+                Picker("Page", selection: $connection.navigationPage) {
+                    Text("Bots").tag(GatewayConnection.NavigationPage.bots)
+                    Text("Sessions").tag(GatewayConnection.NavigationPage.sessions)
+                }
+                .pickerStyle(.segmented)
+                if connection.navigationPage == .sessions {
+                    Picker("Profile", selection: Binding(
+                        get: { connection.listProfile ?? "" },
+                        set: { connection.selectListProfile($0) })) {
+                        ForEach(connection.bots) { bot in
+                            Text(bot.displayName).tag(bot.name)
+                        }
+                    }
+                    .disabled(connection.bots.isEmpty)
+                }
+            }
+
             if let error = model.actionError {
                 Section {
                     HStack(alignment: .top) {
@@ -39,46 +56,73 @@ struct BotSidebarView: View {
                         .foregroundStyle(.orange)
                 }
             }
-            Section("Bots") {
-                ForEach(model.connection.bots) { bot in
-                    BotRow(bot: bot, activity: model.connection.activity(for: bot))
-                        .tag(SidebarItem.bot(bot.name))
-                        .contextMenu {
-                            Button("New Side Chat", systemImage: "plus.bubble") { startSideChat(with: bot) }
-                        }
+            if connection.navigationPage == .bots {
+                Section("Bots") {
+                    ForEach(model.connection.bots) { bot in
+                        BotRow(bot: bot, activity: model.connection.activity(for: bot))
+                            .tag(SidebarItem.bot(bot.name))
+                            .contextMenu {
+                                Button("New Side Chat", systemImage: "plus.bubble") { startSideChat(with: bot) }
+                            }
+                    }
                 }
-            }
-            Section("History", isExpanded: $isHistoryExpanded) {
-                if model.connection.history.isEmpty {
-                    Text("No other chats yet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(model.connection.history) { entry in
-                    HistoryRow(entry: entry, botName: displayName(of: entry.profile))
-                        .tag(SidebarItem.history(entry.id))
+            } else {
+                Section("Sessions") {
+                    // Only before the first rows: background refreshes keep the list still.
+                    if connection.sessionListLoading && connection.history.isEmpty {
+                        ProgressView("Loading sessions…")
+                    }
+                    if let error = connection.sessionListError {
+                        Text(error).foregroundStyle(.red)
+                        Button("Retry") { Task { await connection.refreshSessionList() } }
+                    }
+                    if connection.bots.isEmpty {
+                        Text(model.isConnected ? "No profiles available" : "Connect to browse sessions")
+                            .foregroundStyle(.secondary)
+                    } else if connection.history.isEmpty && !connection.sessionListLoading
+                                && connection.sessionListError == nil {
+                        Text("No sessions yet")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(connection.history) { entry in
+                        HistoryRow(entry: entry, botName: displayName(of: entry.profile))
+                            .tag(SidebarItem.history(entry.id))
+                    }
                 }
             }
         }
-        .navigationTitle("Hermes")
+        .navigationTitle(connection.navigationPage == .bots ? "Bots" : "Sessions")
         .refreshable { await model.refreshLists() }
         .safeAreaInset(edge: .bottom) {
             ConnectionStatusBar()
         }
         .toolbar {
             ToolbarItem {
-                Menu("New Side Chat", systemImage: "square.and.pencil") {
-                    ForEach(model.connection.bots) { bot in
-                        Button(bot.displayName) { startSideChat(with: bot) }
+                if connection.navigationPage == .sessions {
+                    Button("New Chat", systemImage: "square.and.pencil") {
+                        if let bot = connection.bots.first(where: { $0.name == connection.listProfile }) {
+                            startSideChat(with: bot)
+                        }
                     }
+                    .disabled(!model.isConnected || connection.listProfile == nil)
+                } else {
+                    Menu("New Side Chat", systemImage: "square.and.pencil") {
+                        ForEach(model.connection.bots) { bot in
+                            Button(bot.displayName) { startSideChat(with: bot) }
+                        }
+                    }
+                    .disabled(!model.isConnected || model.connection.bots.isEmpty)
                 }
-                .disabled(!model.isConnected || model.connection.bots.isEmpty)
             }
             ToolbarItem {
                 Button("Connection", systemImage: "gearshape") {
                     model.isShowingSettings = true
                 }
             }
+        }
+        .task(id: "\(connection.navigationPage.rawValue):\(connection.listProfile ?? ""):\(model.isConnected)") {
+            await connection.refreshSessionListIfVisible()
         }
         .task(id: model.isConnected) {
             // Keeps previews and activity dots current (Desktop re-reads the roster every 5 s).

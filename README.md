@@ -10,8 +10,8 @@ remote gateway. See [`docs/protocol.md`](docs/protocol.md).
 Status: foundation only.
 - The shared package is real and tested on Linux.
 - The app UIs are minimal shells: connection settings, a bot sidebar (every Hermes profile as a
-  bot with its one permanent "Bot Chat", shared with Hermes Desktop's Bot Mode, plus a History
-  area for side chats), and a chat with approval/clarify cards.
+  bot with its one permanent "Bot Chat", shared with Hermes Desktop's Bot Mode, plus a Sessions
+  page with a profile picker for ordinary chats), and a chat with approval/clarify cards.
 - Opening a chat loads only its newest 120 messages; older ones load page by page as you scroll
   up, as in Hermes Desktop.
 - Assistant replies (and reasoning) render as Markdown: headings, lists, quotes, code blocks,

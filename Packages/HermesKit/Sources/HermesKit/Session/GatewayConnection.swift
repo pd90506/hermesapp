@@ -35,7 +35,16 @@ public final class GatewayConnection {
     public internal(set) var otherSessionRequests: [ServerRequest] = []
     /// Every profile as a bot, `default` first (`GatewayConnection+Bots.swift`).
     public internal(set) var bots: [Bot] = []
-    /// Non-Bot-Chat sessions of every bot, newest first.
+    public enum NavigationPage: String, CaseIterable, Sendable { case bots, sessions }
+    public var navigationPage: NavigationPage = .bots
+    public internal(set) var listProfile: String?
+    public internal(set) var sessionListLoading = false
+    public internal(set) var sessionListError: String?
+    @ObservationIgnored var sessionListToken = 0
+    /// Per profile, the `session.list` limit the last full read settled on.
+    @ObservationIgnored var sessionListLimits: [String: Int] = [:]
+
+    /// Ordinary sessions for the selected list profile, in server order.
     public internal(set) var history: [HistoryEntry] = []
     /// A chat being opened for the first time: shown as a frame (title, loading)
     /// at once instead of the previous chat, until it is active or the open fails.
@@ -160,6 +169,11 @@ public final class GatewayConnection {
         sessions = []
         bots = []
         history = []
+        listProfile = nil
+        sessionListToken += 1
+        sessionListLimits = [:]
+        sessionListLoading = false
+        sessionListError = nil
         notifications = []
         sessionProfiles = [:]
         liveRuntimeIDs = [:]

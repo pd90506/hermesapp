@@ -336,12 +336,13 @@ struct ChatComposerTests {
         let secondLog = FrameLog()
         // The flush right after the reattach gets no answer (times out), so the
         // image is still stranded when the chat is reopened: only the reopened
-        // chat's own send can detach it.
+        // chat's own send can detach it. The timeout covers every request, the
+        // setup's too: 200 ms let a loaded run time out `session.create`.
         let detaches = Mutex(0)
-        let (_, connection) = try await strandAnImage(secondLog: secondLog, requestTimeout: .milliseconds(200)) {
+        let (_, connection) = try await strandAnImage(secondLog: secondLog, requestTimeout: .seconds(2)) {
             $0 == "image.detach" && detaches.withLock { $0 += 1; return $0 } == 1
         }
-        #expect(await eventually {
+        #expect(await eventually(seconds: 10) {
             secondLog.requests("image.detach").count == 1
                 && connection.strandedImagePaths(sessionID: "sid-1") == [Self.strandedPath]
         })
@@ -359,8 +360,9 @@ struct ChatComposerTests {
 
     @Test func aSendDoesNotWaitForAnotherSessionsStrandedImages() async throws {
         let log = FrameLog()
-        // sid-2's detach gets no answer on this live socket; it would time out after 3 s.
-        let (composer, _) = try await makeComposer(log: log, requestTimeout: .seconds(3)) { method, params in
+        // sid-2's detach gets no answer on this live socket; it times out only
+        // after the test.
+        let (composer, _) = try await makeComposer(log: log, requestTimeout: .seconds(50)) { method, params in
             method == "image.detach" && params["path"] == "/p/other-session.png"
         }
         let connection = try #require(connections.all.last)
@@ -369,18 +371,26 @@ struct ChatComposerTests {
             StrandedImage(sessionID: "sid-1", profile: "coder", path: "/p/this-session.png"),
         ])
         connection.flushStrandedImagesInBackground()
+        // Establish that the other session really is awaiting an unanswered detach.
+        #expect(await eventually { log.requests("image.detach").contains {
+            $0["params"]?["path"] == "/p/other-session.png"
+        } })
 
-        let started = ContinuousClock.now
         try await composer.session.send("hi")
-        #expect(ContinuousClock.now - started < .seconds(1))
+        // Sent while sid-2's flush still waits for its answer: a flush takes the
+        // paths out and puts back the unanswered ones only when it ends.
+        #expect(connection.strandedImagePaths(sessionID: "sid-2").isEmpty)
+        #expect(connection.strandedImageFlushes["sid-2"] != nil)
         #expect(log.requests("prompt.submit").count == 1)
         #expect(log.requests("image.detach").contains { $0["params"]?["path"] == "/p/this-session.png" })
         #expect(composer.session.strandedImagePaths.isEmpty)
+        await connection.disconnect()
     }
 
     @Test func aSendWaitingOnStrandedImagesCanBeCancelled() async throws {
         let log = FrameLog()
-        let (composer, _) = try await makeComposer(log: log, requestTimeout: .seconds(10)) { method, _ in
+        // The detach gets no answer; it times out only after the test.
+        let (composer, _) = try await makeComposer(log: log, requestTimeout: .seconds(50)) { method, _ in
             method == "image.detach"
         }
         let connection = try #require(connections.all.last)
@@ -390,11 +400,12 @@ struct ChatComposerTests {
 
         let sending = Task { await composer.submit() }
         #expect(await eventually { composer.isSubmitting && !log.requests("image.detach").isEmpty })
-        let started = ContinuousClock.now
         composer.cancelSubmit()
         await sending.value
 
-        #expect(ContinuousClock.now - started < .seconds(2))
+        // Returned while the flush still waits for its answer (it puts the path back when it ends).
+        #expect(connection.strandedImagePaths(sessionID: "sid-1").isEmpty)
+        #expect(connection.strandedImageFlushes["sid-1"] != nil)
         #expect(!composer.isSubmitting)
         #expect(composer.draft == "hi")
         #expect(composer.attachments.map(\.filename) == ["a.png"])
@@ -402,13 +413,14 @@ struct ChatComposerTests {
         #expect(log.requests("image.attach_bytes").isEmpty)
         #expect(log.requests("prompt.submit").isEmpty)
         #expect(composer.session.transcript.items.isEmpty)
+        await connection.disconnect()
     }
 
     @Test func aSendWaitsUntilStrandedImagesAreGone() async throws {
         let secondLog = FrameLog()
         // On the new socket every image.detach goes unanswered (times out). The timeout
         // covers every request, the setup's too: 200 ms let a loaded run time out `session.create`.
-        let (composer, _) = try await strandAnImage(secondLog: secondLog, requestTimeout: .seconds(1)) {
+        let (composer, _) = try await strandAnImage(secondLog: secondLog, requestTimeout: .seconds(2)) {
             $0 == "image.detach"
         }
         composer.draft = "look again"

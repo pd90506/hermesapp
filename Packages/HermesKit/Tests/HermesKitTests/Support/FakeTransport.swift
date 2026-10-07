@@ -2,15 +2,20 @@ import Foundation
 import HermesKit
 import HermesProtocol
 import Synchronization
+import Testing
 
 /// In-memory `MessageTransport`: tests push server frames with `serverSends`
 /// and await client frames with `nextSent()`.
+// Mutable state is mutex protected; the stream continuation is Sendable.
 final class FakeTransport: MessageTransport, @unchecked Sendable {
     private struct State {
         var sent: [String] = []
-        var waiters: [CheckedContinuation<String, Never>] = []
+        var waiters: [(id: UUID, continuation: CheckedContinuation<String?, Never>)] = []
         var connected = false
+        /// The client closed the transport.
         var closed = false
+        /// Closed or dropped: no frame will follow those already sent.
+        var finished = false
     }
 
     private let state = Mutex(State())
@@ -37,8 +42,8 @@ final class FakeTransport: MessageTransport, @unchecked Sendable {
     }
 
     func send(_ text: String) async throws {
-        let waiter = state.withLock { state -> CheckedContinuation<String, Never>? in
-            if !state.waiters.isEmpty { return state.waiters.removeFirst() }
+        let waiter = state.withLock { state -> CheckedContinuation<String?, Never>? in
+            if !state.waiters.isEmpty { return state.waiters.removeFirst().continuation }
             state.sent.append(text)
             return nil
         }
@@ -47,6 +52,7 @@ final class FakeTransport: MessageTransport, @unchecked Sendable {
 
     func close() async {
         state.withLock { $0.closed = true }
+        finishReaders()
         pair.continuation.finish()
     }
 
@@ -66,23 +72,58 @@ final class FakeTransport: MessageTransport, @unchecked Sendable {
         serverSends(String(decoding: try! JSONEncoder().encode(value), as: UTF8.self))
     }
 
+    private func finishReaders() {
+        let waiters = state.withLock { state in
+            state.finished = true
+            defer { state.waiters.removeAll() }
+            return state.waiters
+        }
+        for waiter in waiters { waiter.continuation.resume(returning: nil) }
+    }
+
     /// Simulates the server dropping the connection.
     func serverDrops(code: Int = 1006) {
+        finishReaders()
         pair.continuation.finish(throwing: TransportError.closed(code: code, reason: "dropped"))
     }
 
-    /// Next frame written by the client, parsed.
-    func nextSent() async -> JSONValue {
-        let text: String = await withCheckedContinuation { continuation in
-            let ready = state.withLock { state -> String? in
-                if !state.sent.isEmpty { return state.sent.removeFirst() }
-                state.waiters.append(continuation)
-                return nil
-            }
-            if let ready { continuation.resume(returning: ready) }
+    /// Assertion-facing read: a missing frame records the caller's location.
+    func nextSent(sourceLocation: SourceLocation = #_sourceLocation) async -> JSONValue {
+        guard let frame = await readSent() else {
+            Issue.record("transport closed or task cancelled while waiting for a client frame",
+                         sourceLocation: sourceLocation)
+            return .null
         }
-        return try! JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+        return frame
     }
+
+    /// Server-loop read. Shutdown/cancellation is normal here, not a test issue.
+    /// Registration, cancellation and send/close all remove a waiter under the
+    /// same mutex; the winner resumes it once, outside the lock.
+    func readSent() async -> JSONValue? {
+        let id = UUID()
+        let text: String? = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let ready = state.withLock { state -> String?? in
+                    if Task.isCancelled { return .some(nil) }
+                    if !state.sent.isEmpty { return .some(state.sent.removeFirst()) }
+                    if state.finished { return .some(nil) }
+                    state.waiters.append((id, continuation))
+                    return nil
+                }
+                if let ready { continuation.resume(returning: ready) }
+            }
+        } onCancel: {
+            let waiter = state.withLock { state in
+                state.waiters.firstIndex { $0.id == id }.map { state.waiters.remove(at: $0).continuation }
+            }
+            waiter?.resume(returning: nil)
+        }
+        return text.map { try! JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
+    }
+
+    /// Test synchronization: lets cancellation tests wait for registration.
+    var pendingReaders: Int { state.withLock { $0.waiters.count } }
 
     // MARK: Canned server frames
 
@@ -115,7 +156,10 @@ final class FakeTransport: MessageTransport, @unchecked Sendable {
     func completeHandshake(epoch: String = "epoch-1", heartbeat: Bool = false) async {
         sendReady(epoch: epoch, heartbeat: heartbeat)
         let capabilities = await nextSent()
-        precondition(capabilities["method"]?.stringValue == "client.capabilities")
+        guard capabilities["method"]?.stringValue == "client.capabilities" else {
+            Issue.record("expected client.capabilities, got \(capabilities)")
+            return
+        }
         respond(to: capabilities, result: ["server_requests": ["approval", "clarify", "sudo", "secret"],
                                            "declines_not_shown": true])
     }
@@ -130,7 +174,7 @@ extension FakeTransport {
         sendReady(epoch: epoch)
         Task {
             while !self.isClosed {
-                let frame = await self.nextSent()
+                guard let frame = await self.readSent() else { break }
                 log.append(frame)
                 guard let method = frame["method"]?.stringValue, frame["id"] != nil else { continue }
                 if method == "client.capabilities" {
@@ -172,12 +216,15 @@ final class FakeConnector: GatewayConnector, @unchecked Sendable {
     }
 }
 
-/// Polls `condition` on the main actor until it holds or ~3 s pass.
+/// Polls main-actor state until it holds, every 10 ms, `seconds * 100` times.
+/// Counts polls rather than wall time: on a starved runner each poll takes longer,
+/// so the budget stretches with the load instead of running out before the awaited
+/// work could run. Cancellation (a test's time limit) stops polling.
 @MainActor
-func eventually(_ condition: @MainActor () -> Bool) async -> Bool {
-    for _ in 0..<300 {
+func eventually(seconds: Int = 3, _ condition: @MainActor () -> Bool) async -> Bool {
+    for _ in 0..<(seconds * 100) {
         if condition() { return true }
-        try? await Task.sleep(for: .milliseconds(10))
+        do { try await Task.sleep(for: .milliseconds(10)) } catch { break }
     }
     return condition()
 }

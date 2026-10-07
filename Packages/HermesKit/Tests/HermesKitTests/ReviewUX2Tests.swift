@@ -43,20 +43,25 @@ struct ImageReadLimitsTests {
 
     @Test func theLimiterRunsAFewAtATime() async {
         let limiter = AsyncLimiter(limit: 3)
-        let state = Mutex((now: 0, peak: 0))
+        // A class, not a local `Mutex`: Swift 6.2 rejects a task-group closure that
+        // captures a local noncopyable value by reference.
+        final class Gauge: Sendable {
+            let state = Mutex((now: 0, peak: 0))
+        }
+        let gauge = Gauge()
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<12 {
                 group.addTask {
                     await limiter.run {
-                        state.withLock { $0.now += 1; $0.peak = max($0.peak, $0.now) }
+                        gauge.state.withLock { $0.now += 1; $0.peak = max($0.peak, $0.now) }
                         try? await Task.sleep(for: .milliseconds(10))
-                        state.withLock { $0.now -= 1 }
+                        gauge.state.withLock { $0.now -= 1 }
                     }
                 }
             }
         }
-        #expect(state.withLock { $0.peak } == 3)
-        #expect(state.withLock { $0.now } == 0)
+        #expect(gauge.state.withLock { $0.peak } == 3)
+        #expect(gauge.state.withLock { $0.now } == 0)
     }
 }
 

@@ -8,10 +8,12 @@ on:
     paths:
       - "Packages/**"
       - ".github/workflows/package-tests.yml"
+      - "scripts/test-package-ci.sh"
   pull_request:
     paths:
       - "Packages/**"
       - ".github/workflows/package-tests.yml"
+      - "scripts/test-package-ci.sh"
   workflow_dispatch:
 
 concurrency:
@@ -31,7 +33,22 @@ jobs:
     container: swift:${{ matrix.swift }}-noble
     steps:
       - uses: actions/checkout@v4
+      # Tests too, so the Test step's deadline bounds running them, not compiling.
       - name: Build
-        run: swift build --package-path Packages/HermesKit
+        run: swift build --package-path Packages/HermesKit --build-tests
+      # Cooperative waits fail at their suite time limit; the wrapper also
+      # bounds non-cooperative hangs and lists tests missing completion lines.
       - name: Test
-        run: swift test --package-path Packages/HermesKit
+        timeout-minutes: 5
+        shell: bash
+        # Workspace-relative: in a container job `runner.temp` names the host's
+        # path, which the upload step (run inside the container) cannot see. Not a
+        # dot directory: upload-artifact skips hidden files.
+        run: bash scripts/test-package-ci.sh ci-logs/package-tests.log
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-tests-${{ matrix.swift }}
+          path: ci-logs/package-tests.log
+          if-no-files-found: ignore

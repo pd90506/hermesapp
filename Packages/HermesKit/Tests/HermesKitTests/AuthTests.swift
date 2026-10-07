@@ -35,7 +35,7 @@ final class FakeHTTP: HTTPClient, @unchecked Sendable {
     }
 }
 
-@Suite struct AuthTests {
+@Suite(.timeLimit(.minutes(1))) struct AuthTests {
     @Test(arguments: [
         ("hermes.example.ts.net:9119", "http://hermes.example.ts.net:9119"),
         ("https://hermes.example.ts.net/", "https://hermes.example.ts.net"),

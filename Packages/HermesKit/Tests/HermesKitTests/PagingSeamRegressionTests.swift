@@ -69,7 +69,7 @@ private func occurrences(_ transcript: Transcript, _ segment: String) -> Int {
 
 private func toolCount(_ transcript: Transcript) -> Int { transcript.items.filter { $0.role == .tool }.count }
 
-@Suite struct PagingSeamRegressionTests {
+@Suite(.timeLimit(.minutes(1))) struct PagingSeamRegressionTests {
     // MARK: Finding 1: a turn read mid-turn
 
     // MARK: Finding 2: offset drift

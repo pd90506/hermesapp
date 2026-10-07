@@ -317,7 +317,10 @@ struct GatewayClientTests {
         let transport = FakeTransport()
         var configuration = GatewayClient.Configuration()
         configuration.heartbeatInterval = .milliseconds(20)
-        configuration.heartbeatTimeout = .milliseconds(200)
+        // Silence is measured from the last inbound frame, and a tick that finds the
+        // timeout passed drops the connection without pinging. A short timeout made a
+        // starved heartbeat task skip the ping on a loaded runner.
+        configuration.heartbeatTimeout = .seconds(2)
         let client = GatewayClient(transport: transport, configuration: configuration)
         let recorder = InboundRecorder(await client.inbound())
         async let ready = client.connect()

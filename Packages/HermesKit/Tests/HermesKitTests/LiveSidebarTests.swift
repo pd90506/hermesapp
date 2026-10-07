@@ -48,12 +48,14 @@ struct LiveSidebarTests {
     {
         let connection = try await gateway.connect()
         connection.pushedRefreshInterval = interval
+        // Settle connect's background roster before changing navigation/list tokens.
+        try #require(await eventually { connection.listsRefreshTask == nil && !connection.listsRefreshQueued })
         try await connection.refreshBots()
         connection.navigationPage = .sessions
         connection.selectListProfile("coder")
         await connection.refreshSessionList()
         // Let the refresh `connect()` started settle, so counts below are the pushes' own.
-        _ = await eventually { connection.listsRefreshTask == nil }
+        try #require(await eventually { connection.listsRefreshTask == nil && !connection.listsRefreshQueued })
         return connection
     }
 
@@ -76,20 +78,74 @@ struct LiveSidebarTests {
         #expect(gateway.params("session.list").contains { $0 == ["limit": 50] })  // the launch profile's list too
     }
 
-    @Test func aBurstOfChangesIsThrottled() async throws {
+    /// Real frame delivery: a burst of `sessions.changed` refreshes once and leaves one
+    /// trailing refresh pending. The window is long so a starved runner cannot spread
+    /// the burst over two windows; the trailing refresh itself is the next test's.
+    @Test func aBurstOfChangeFramesCollapsesBehindOneRefresh() async throws {
         let gateway = liveGateway(listing: Listing())
-        let connection = try await connect(gateway, interval: .milliseconds(300))
+        let connection = try await connect(gateway, interval: .seconds(30))
         let before = historyListings(gateway)
 
         for _ in 0..<6 { broadcast(gateway, "sessions.changed") }
+        // Events are handled in order, so once this notice shows, the burst has been handled.
+        broadcast(gateway, "notification.show", ["text": "barrier", "kind": "sticky", "key": "barrier"])
+        try #require(await eventually { connection.notifications.contains { $0.id == "barrier" } })
+        let trailing = try #require(connection.pushedRefreshTask)
 
-        // One refresh right away, one trailing refresh after the interval.
-        #expect(await eventually { historyListings(gateway) == before + 2 })
-        // Nothing pending or queued: no refresh can follow without a new event.
-        #expect(await eventually {
+        try #require(await eventually(seconds: 10) {
+            connection.listsRefreshTask == nil && !connection.listsRefreshQueued
+        })
+        #expect(historyListings(gateway) == before + 1)
+        #expect(connection.pushedRefreshTask == trailing)
+        await connection.disconnect()
+    }
+
+    @Test func aBurstOfChangesIsThrottled() async throws {
+        let gateway = liveGateway(listing: Listing())
+        let connection = try await connect(gateway, interval: .seconds(1))
+        let before = historyListings(gateway)
+
+        // Exercise the scheduling primitive here; the test above covers actual
+        // sessions.changed delivery of a burst. Sending a burst into a fake stream does not
+        // guarantee it is handled within one window on a starved runner, and an
+        // idle task snapshot does not mean the stream's queued events are drained.
+        connection.schedulePushedRefresh()
+        try #require(await eventually {
+            historyListings(gateway) == before + 1 && connection.listsRefreshTask == nil && !connection.listsRefreshQueued
+        })
+        // Start a known window after the leading refresh settles. Test execution
+        // can be suspended for an entire interval while waiting for that refresh.
+        connection.lastPushedRefresh = .now
+        connection.schedulePushedRefresh()
+        let trailing = try #require(connection.pushedRefreshTask)
+        // No awaits: all changes are observed in this same main-actor turn.
+        for _ in 0..<4 {
+            connection.schedulePushedRefresh()
+            #expect(connection.pushedRefreshTask == trailing)
+        }
+        #expect(connection.listsRefreshTask == nil && !connection.listsRefreshQueued)
+        #expect(historyListings(gateway) == before + 1)
+
+        try #require(await eventually(seconds: 10) {
             connection.pushedRefreshTask == nil && connection.listsRefreshTask == nil && !connection.listsRefreshQueued
         })
         #expect(historyListings(gateway) == before + 2)
+        await connection.disconnect()
+    }
+
+    @Test func aChangeObservedAfterTheWindowRefreshesImmediately() async throws {
+        let gateway = liveGateway(listing: Listing())
+        let connection = try await connect(gateway, interval: .seconds(30))
+        let before = historyListings(gateway)
+        // Advance the stored timestamp instead of relying on a wall-clock sleep.
+        connection.lastPushedRefresh = .now - connection.pushedRefreshInterval
+        connection.schedulePushedRefresh()
+        #expect(connection.pushedRefreshTask == nil)
+        try #require(await eventually {
+            connection.listsRefreshTask == nil && !connection.listsRefreshQueued
+                && historyListings(gateway) == before + 1
+        })
+        await connection.disconnect()
     }
 
     /// A finished turn refreshes the bot's preview at once, even right after a

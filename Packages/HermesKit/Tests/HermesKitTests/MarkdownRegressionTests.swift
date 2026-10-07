@@ -1,10 +1,17 @@
 import Foundation
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
 import Testing
 
 @testable import HermesKit
 
 /// Regressions from the review of the Markdown/math renderer. Each test names the finding it covers.
-@Suite struct MarkdownRegressionTests {
+/// Serialized: the timing tests keep a thread busy for seconds, and the suites that
+/// wait on timers (heartbeats, request timeouts) share the few threads a CI runner has.
+@Suite(.serialized, .timeLimit(.minutes(1))) struct MarkdownRegressionTests {
     private func parse(_ text: String, streaming: Bool = false) -> [MarkdownBlock] {
         MarkdownDocument(parsing: text, streaming: streaming).blocks
     }
@@ -63,56 +70,90 @@ import Testing
         }.max() ?? 0
     }
 
-    /// Wall time of `body`; generous bounds keep this stable on slow CI while
-    /// still failing for the quadratic versions (seconds to minutes at these sizes).
-    private func seconds(_ body: () -> Void) -> Double {
-        let elapsed = ContinuousClock().measure(body)
-        return Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+    /// How much more time per character `work` takes on `large` than on `small`:
+    /// about 1 for linear code, and the size ratio (4 in most tests) for quadratic
+    /// code. Tests allow up to 2.5: with four CI-sized test runs competing for one
+    /// host, the linear code here measured 1.0 typically and 1.9 at worst.
+    ///
+    /// A ratio, not an absolute bound: a loaded runner stretches every run by an
+    /// unknown factor (CPU time too, through contention), but both sizes alike.
+    /// Each size runs five times, interleaved, and the fastest run counts, so a
+    /// stall lands in a run that is dropped. Yields between runs to hand the thread
+    /// to other tests.
+    private func slowdown(_ small: String, _ large: String, _ work: (String) -> Void) async -> Double {
+        var best = (small: Double.infinity, large: Double.infinity)
+        for _ in 0..<5 {
+            best.small = min(best.small, cpuSeconds { work(small) })
+            await Task.yield()
+            best.large = min(best.large, cpuSeconds { work(large) })
+            await Task.yield()
+        }
+        return (best.large / best.small) / (Double(large.utf8.count) / Double(small.utf8.count))
     }
+
+    /// CPU time of this thread in `body`; `body` is synchronous, so it never leaves the thread.
+    private func cpuSeconds(_ body: () -> Void) -> Double {
+        func now() -> Double {
+            var time = timespec()
+            clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time)
+            return Double(time.tv_sec) + Double(time.tv_nsec) / 1e9
+        }
+        let start = now()
+        body()
+        return now() - start
+    }
+
+    private let maxSlowdown = 2.5
 
     @Test func deeplyNestedQuotesAreCappedNotRecursedForever() {
         let blocks = parse(String(repeating: "> ", count: 16_000) + "x")
         #expect(nestingDepth(blocks) <= blockCap)
     }
 
-    @Test func deeplyNestedListsAreCappedAndFast() {
-        var blocks: [MarkdownBlock] = []
-        let time = seconds { blocks = parse(String(repeating: "1. ", count: 8_000) + "x") }
-        #expect(nestingDepth(blocks) <= blockCap)
-        #expect(time < 1.0)
-        let indented = (0..<300).map { String(repeating: "  ", count: $0) + "- item" }.joined(separator: "\n")
-        #expect(seconds { blocks = parse(indented) } < 2.0)
-        #expect(nestingDepth(blocks) <= blockCap)
-    }
-
-    @Test func unmatchedInlineOpenersScanLinearly() {
-        for opener in ["\\(", "\\[", "[", "<", "`", "$", "$$", "![", "*a ", "[a](", "&#", "<http://", "a**", "(http://x"] {
-            let text = "x " + String(repeating: opener, count: 64_000 / opener.count)
-            #expect(seconds { _ = InlineParser.parse(text) } < 1.0, "opener \(opener)")
+    @Test func deeplyNestedListsAreCappedAndFast() async {
+        func markers(_ count: Int) -> String { String(repeating: "1. ", count: count) + "x" }
+        #expect(nestingDepth(parse(markers(8_000))) <= blockCap)
+        #expect(await slowdown(markers(2_000), markers(8_000)) { _ = parse($0) } < maxSlowdown)
+        // 4x the lines, each indented further: 16x the text.
+        func indented(_ lines: Int) -> String {
+            (0..<lines).map { String(repeating: "  ", count: $0) + "- item" }.joined(separator: "\n")
         }
-        let unbalancedURL = "see https://e.com/a" + String(repeating: ")", count: 32_000)
-        #expect(seconds { _ = InlineParser.parse(unbalancedURL) } < 1.0)
+        #expect(nestingDepth(parse(indented(300))) <= blockCap)
+        #expect(await slowdown(indented(75), indented(300)) { _ = parse($0) } < maxSlowdown)
     }
 
-    @Test func deeplyNestedEmphasisIsCapped() {
-        let text = String(repeating: "*a ", count: 5_000) + "b" + String(repeating: " a*", count: 5_000)
-        var inlines: [MarkdownInline] = []
-        #expect(seconds { inlines = InlineParser.parse(text) } < 1.0)
+    @Test func unmatchedInlineOpenersScanLinearly() async {
+        for opener in ["\\(", "\\[", "[", "<", "`", "$", "$$", "![", "*a ", "[a](", "&#", "<http://", "a**", "(http://x"] {
+            func text(_ length: Int) -> String { "x " + String(repeating: opener, count: length / opener.count) }
+            #expect(await slowdown(text(16_000), text(64_000)) { _ = InlineParser.parse($0) } < maxSlowdown, "opener \(opener)")
+        }
+        func unbalancedURL(_ count: Int) -> String { "see https://e.com/a" + String(repeating: ")", count: count) }
+        #expect(await slowdown(unbalancedURL(8_000), unbalancedURL(32_000)) { _ = InlineParser.parse($0) } < maxSlowdown)
+    }
+
+    @Test func deeplyNestedEmphasisIsCapped() async {
+        func text(_ count: Int) -> String {
+            String(repeating: "*a ", count: count) + "b" + String(repeating: " a*", count: count)
+        }
+        #expect(await slowdown(text(1_250), text(5_000)) { _ = InlineParser.parse($0) } < maxSlowdown)
+        let inlines = InlineParser.parse(text(5_000))
         #expect(inlineDepth(inlines) <= inlineCap)
         #expect(inlines.plainText.filter { $0 == "a" }.count == 10_000)
     }
 
-    @Test func pathologicalLaTeXIsBoundedAndLinear() {
-        let cases = [
-            String(repeating: #"\dfrac{"#, count: 8_000) + "x",
-            String(repeating: #"\dfrac{a}{"#, count: 4_000) + "x" + String(repeating: "}", count: 4_000),
-            String(repeating: "{", count: 32_000),
-            String(repeating: #"\begin{aligned}"#, count: 4_000),
-            String(repeating: #"\\["#, count: 16_000),
-            String(repeating: #"\operatorname{"#, count: 8_000),
+    @Test func pathologicalLaTeXIsBoundedAndLinear() async {
+        // The full-size inputs at `n` = 4_000; `n / 4` for the small run.
+        let cases: [(Int) -> String] = [
+            { String(repeating: #"\dfrac{"#, count: 2 * $0) + "x" },
+            { String(repeating: #"\dfrac{a}{"#, count: $0) + "x" + String(repeating: "}", count: $0) },
+            { String(repeating: "{", count: 8 * $0) },
+            { String(repeating: #"\begin{aligned}"#, count: $0) },
+            { String(repeating: #"\\["#, count: 4 * $0) },
+            { String(repeating: #"\operatorname{"#, count: 2 * $0) },
         ]
         for latex in cases {
-            #expect(seconds { _ = LaTeXNormalizer.normalize(latex) } < 1.0, "\(latex.prefix(20))")
+            #expect(await slowdown(latex(1_000), latex(4_000)) { _ = LaTeXNormalizer.normalize($0) } < maxSlowdown,
+                    "\(latex(1).prefix(20))")
         }
     }
 

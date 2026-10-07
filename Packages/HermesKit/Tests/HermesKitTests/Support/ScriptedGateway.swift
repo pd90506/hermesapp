@@ -33,7 +33,7 @@ final class ScriptedGateway: Sendable {
         transport.sendReady(epoch: epoch)
         Task {
             while !self.transport.isClosed {
-                let frame = await self.transport.nextSent()
+                guard let frame = await self.transport.readSent() else { break }
                 self.log.append(frame)
                 guard let method = frame["method"]?.stringValue, frame["id"] != nil else { continue }
                 if method == "client.capabilities" {

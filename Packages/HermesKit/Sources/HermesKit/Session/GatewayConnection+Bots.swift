@@ -25,7 +25,7 @@ struct OpenedChat: Sendable {
     }
 }
 
-/// Bot sidebar: the roster, each bot's one permanent Bot Chat, side chats and History.
+/// Bot roster, permanent Bot Chats and profile-scoped ordinary sessions.
 ///
 /// The Bot Chat contract is Hermes Desktop's (`apps/desktop/src/AGENTS.md`, "Bot Mode";
 /// `plugins/hermes-bots/canonical-chat.ts`):
@@ -45,8 +45,12 @@ extension GatewayConnection {
         let profiles = try await client.listProfiles()
         guard gen == generation else { return }
         bots = Bot.roster(profiles)
+        if !bots.contains(where: { $0.name == listProfile }) {
+            selectListProfile(bots.first(where: \.isDefault)?.name ?? bots.first?.name)
+        }
     }
 
+    /// Explicit legacy aggregate lookup; navigation uses `refreshSessionList` instead.
     /// Reloads `history`: each bot's sessions except its Bot Chat, grouped by
     /// bot in roster order. Within a bot, the server's order is kept: most recent
     /// activity first (`methods_session.py:149-152`). Listing rows carry no
@@ -77,7 +81,7 @@ extension GatewayConnection {
             || row.resolvedID.map(bot.chatStoredIDs.contains) == true
     }
 
-    /// Refreshes the roster, then History (and with `includingSessions` the
+    /// Refreshes the roster, then the visible selected profile (and with `includingSessions` the
     /// launch profile's `sessions`), without blocking the caller. A call while
     /// a refresh runs queues exactly one more, so a change that landed
     /// mid-refresh is not lost.
@@ -91,7 +95,7 @@ extension GatewayConnection {
         listsRefreshTask = Task { [weak self] in
             if includingSessions { try? await self?.refreshSessions() }
             try? await self?.refreshBots()
-            try? await self?.refreshHistory()
+            await self?.refreshSessionListIfVisible()
             guard let self, gen == self.generation else { return }
             self.listsRefreshTask = nil
             if self.listsRefreshQueued {
@@ -269,6 +273,7 @@ extension GatewayConnection {
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: nil, profile: profile, kind: .sideChat, connection: self)
         try await show(OpenedChat(session: session, openRequests: []), token: token, client: client)
+        refreshListsInBackground()
         return session
     }
 
@@ -296,3 +301,66 @@ extension GatewayConnection {
         return session
     }
 }
+
+// Navigation changes only list state; chat selection and composers are untouched.
+extension GatewayConnection {
+    public func selectListProfile(_ profile: String?) {
+        guard listProfile != profile else { return }
+        listProfile = profile
+        sessionListToken += 1
+        history = []
+        sessionListLoading = false
+        sessionListError = nil
+    }
+
+    public func refreshSessionListIfVisible() async {
+        guard navigationPage == .sessions else { return }
+        await refreshSessionList()
+    }
+
+    public func refreshSessionList() async {
+        guard let client, let profile = listProfile else { return }
+        sessionListToken += 1
+        let token = sessionListToken
+        let gen = generation
+        sessionListLoading = true
+        sessionListError = nil
+        defer {
+            // Token only: a reconnect bumps `generation` without starting a new read.
+            if token == sessionListToken { sessionListLoading = false }
+        }
+        do {
+            // No offset and no server clamp (`contracts/sessions.py:221-224`). The server reads
+            // `max(2*limit, 200)` rows, drops internal sources, then cuts to `limit`
+            // (`methods_session.py:570-571`, `_listing_rows` :149-152), so a short response
+            // is either the end or a window crowded by internal rows. Re-read a doubled
+            // prefix until a short response stops growing; later refreshes start at the
+            // limit that settled, so they cost one read.
+            var limit = sessionListLimits[profile] ?? 200
+            var settledBefore = sessionListLimits[profile] != nil
+            var previousCount = -1
+            while true {
+                let rows = try await client.listSessions(SessionListParams(limit: limit, profile: profile))
+                guard token == sessionListToken && gen == generation else { return }
+                if rows.count < limit && (settledBefore || rows.count <= previousCount) {
+                    sessionListLimits[profile] = limit
+                    let bot = bots.first { $0.name == profile }
+                    history = rows.filter { row in
+                        if let bot { return !Self.isBotChat(row, of: bot) }
+                        return !Bot.isChatRow(row)
+                    }.map { HistoryEntry(profile: profile, summary: $0) }
+                    return
+                }
+                guard limit <= Int.max / 2 else { throw SessionListError.tooLarge }
+                settledBefore = false
+                previousCount = rows.count
+                limit *= 2
+            }
+        } catch {
+            guard token == sessionListToken && gen == generation else { return }
+            sessionListError = Self.describe(error)
+        }
+    }
+}
+
+private enum SessionListError: Error { case tooLarge }

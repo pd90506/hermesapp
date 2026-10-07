@@ -49,14 +49,16 @@ struct LiveSidebarTests {
         let connection = try await gateway.connect()
         connection.pushedRefreshInterval = interval
         try await connection.refreshBots()
-        try await connection.refreshHistory()
+        connection.navigationPage = .sessions
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
         // Let the refresh `connect()` started settle, so counts below are the pushes' own.
         _ = await eventually { connection.listsRefreshTask == nil }
         return connection
     }
 
     private func historyListings(_ gateway: ScriptedGateway) -> Int {
-        gateway.params("session.list").filter { $0 == ["profile": "coder", "limit": 20] }.count
+        gateway.params("session.list").filter { $0["profile"] == "coder" && $0["title"] == nil }.count
     }
 
     /// `sessions.changed` (`change_watcher.py:285-331`) replaces waiting for the poll.

@@ -126,11 +126,11 @@ final class AppModel {
         actionError = nil
     }
 
-    /// Pull-to-refresh: the bot roster, then History.
+    /// Pull-to-refresh: the roster and the visible profile’s sessions.
     func refreshLists() async {
         do {
             try await connection.refreshBots()
-            try await connection.refreshHistory()
+            await connection.refreshSessionListIfVisible()
         } catch {
             actionError = GatewayConnection.describe(error)
         }

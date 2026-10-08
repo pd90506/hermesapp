@@ -48,6 +48,14 @@ public struct SlashCommand: Sendable, Hashable, Identifiable {
         return !token.contains("/")
     }
 
+    /// The popover only follows a slash at the beginning of the draft. A slash
+    /// inside the command token is a path, not a command (`shared/src/slash.ts`).
+    public static func isCompletionCandidate(_ text: String) -> Bool {
+        guard text.hasPrefix("/"), !text.contains("\n") else { return false }
+        let token = text.prefix { !$0.isWhitespace }
+        return !token.dropFirst().contains("/")
+    }
+
     /// Splits `/Name  some args` into (`name`, `some args`): the name is
     /// lower-cased and loses its leading slashes; the argument keeps interior
     /// whitespace (`parseSlashCommand`, `apps/shared/src/slash.ts:35-39`).
@@ -75,13 +83,21 @@ public struct SlashCommand: Sendable, Hashable, Identifiable {
     static let localSubcommands: [String: [String]] = ["/skills": ["pending", "approve", "reject", "diff", "approval"]]
 
     /// Catalog `desktop` values meaning "not available in a GUI client"
-    /// (`desktop-slash-commands.ts:440-483`).
-    static let unavailableDispositions: [String: String] = [
-        "terminal": "only works in the terminal",
-        "messaging": "only works on a messaging platform",
-        "settings": "is managed in settings",
-        "advanced": "is not available in this app",
-        "composer-voice": "needs voice input",
+    /// (`desktop-slash-commands.ts:440-483`), with Desktop's `UNAVAILABLE_MESSAGE`
+    /// for the canonical `/name` (:505-513). Where Desktop points at its own UI
+    /// (its sidebar, its microphone button), the sentence says where that lives.
+    static let unavailableMessages: [String: @Sendable (String) -> String] = [
+        "terminal": { "\($0) is only available in the terminal interface." },
+        "messaging": { "\($0) is only used from messaging platforms." },
+        "settings": { "\($0) is managed from the Hermes Desktop sidebar." },
+        "advanced": {
+            "\($0) is not shown in the slash palette. Use the relevant Hermes Desktop control or the terminal "
+                + "interface instead."
+        },
+        "composer-voice": { _ in
+            "Voice chat isn't available in this app yet: Hermes's gateway voice methods record on the server's "
+                + "own microphone."
+        },
     ]
 }
 
@@ -118,7 +134,7 @@ public struct SlashCatalog: Sendable, Hashable {
         let entry = meta[canonical]
         let allowed = entry?.desktopSubcommands ?? SlashCommand.localSubcommands[canonical]
         let first = argument.split(whereSeparator: \.isWhitespace).first.map { $0.lowercased() } ?? ""
-        if let reason = Self.unavailableReason(display, meta: entry),
+        if let reason = Self.unavailableReason(canonical, meta: entry),
             allowed?.contains(where: { $0.lowercased() == first }) != true
         {
             return reason
@@ -177,10 +193,10 @@ public struct SlashCatalog: Sendable, Hashable {
     }
 
     static func unavailableReason(_ name: String, meta: CommandsCatalogResult.Meta?) -> String? {
-        guard let disposition = meta?.desktop, let reason = SlashCommand.unavailableDispositions[disposition] else {
+        guard let disposition = meta?.desktop, let message = SlashCommand.unavailableMessages[disposition] else {
             return nil
         }
-        return "\(name) \(reason)."
+        return message(name)
     }
 }
 
@@ -207,6 +223,140 @@ public struct SlashCompletions: Sendable, Hashable {
     }
 }
 
+/// A row presented by the native composer.
+public struct SlashSuggestion: Sendable, Hashable, Identifiable {
+    public var item: SlashCompletionItem
+    public var category: String
+    /// The composer text once this row is accepted: the `/command`, or the command
+    /// with this argument (`SlashCompletions.applying`, from `replace_from`).
+    public var text: String
+    public var id: String { text }
+
+    public init(item: SlashCompletionItem, category: String, text: String? = nil) {
+        self.item = item
+        self.category = category
+        self.text = text ?? item.text
+    }
+
+    /// Which row Return takes when the user has not pressed Tab
+    /// (`implicitSlashAcceptIndex`, `composer-utils.ts:128-163`): a row the user
+    /// arrowed to; else a row that is exactly the typed text; else the highlight if
+    /// it extends the typed text; else the only row that does. `nil`: none, so
+    /// Return sends. `texts` may be for older text whose answer is still pending,
+    /// so a typed `/stop` never becomes a leftover `/save`.
+    static func implicitAcceptIndex(typed draft: String, texts: [String], active: Int, explicit: Bool) -> Int? {
+        if explicit, texts.indices.contains(active) { return active }
+        // `slashCompletionToken`: one leading slash off, trailing whitespace off, lower-cased.
+        func token(_ value: String) -> String {
+            var body = value.hasPrefix("/") ? value.dropFirst() : Substring(value)
+            while body.last?.isWhitespace == true { body = body.dropLast() }
+            return body.lowercased()
+        }
+        let typed = token(draft)
+        guard !typed.isEmpty else { return nil }
+        let tokens = texts.map(token)
+        if let exact = tokens.firstIndex(of: typed) { return exact }
+        if tokens.indices.contains(active), tokens[active].hasPrefix(typed) { return active }
+        let hits = tokens.indices.filter { tokens[$0].hasPrefix(typed) }
+        return hits.count == 1 ? hits[0] : nil
+    }
+}
+
+extension SlashCatalog {
+    /// Local `/help` output: the commands the popover offers, in the catalog's
+    /// order (Desktop renders its filtered catalog, `desktop-slash-commands.ts:883-897`).
+    public var helpText: String {
+        var lines = ["Available commands:"]
+        var category: String?
+        for command in commands where isBrowsable(command) {
+            if command.category != category {
+                category = command.category
+                lines.append("\n\(command.category)")
+            }
+            lines.append("\(command.name) — \(command.description)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The command's `argument_mode`, for an alias too (`desktopSlashCommandArgumentMode`).
+    public func argumentMode(for name: String) -> String? {
+        meta[canonicalName(name)]?.argumentMode ?? command(named: name)?.argumentMode
+    }
+
+    /// Whether the text past the command name still gets a list. Only `options`
+    /// and `mixed` commands keep it; prose after any other command gets no list
+    /// and no `complete.slash` request (`use-composer-trigger.ts:173-184`).
+    func listsArguments(_ text: String) -> Bool {
+        let token = text.prefix { !$0.isWhitespace }
+        guard token.count < text.count else { return true }
+        let mode = argumentMode(for: String(token))
+        return mode == "options" || mode == "mixed"
+    }
+
+    /// Whether a free-text argument is being typed (`slashFreeTextArgStage`):
+    /// Return then sends unless the user arrowed to a row (`composer-utils.ts:187-205`).
+    func isFreeTextArgument(_ text: String) -> Bool {
+        let token = text.prefix { !$0.isWhitespace }
+        guard token.count < text.count else { return false }
+        let mode = argumentMode(for: String(token))
+        return mode == "text" || mode == "mixed"
+    }
+
+    /// Offered while browsing (`isDesktopSlashSuggestionWithOptions`,
+    /// `desktop-slash-commands.ts:734-754`): runnable from a GUI, not narrowed to no
+    /// subcommands, and not an alias. Refused commands are left out rather than
+    /// shown disabled; sending one typed in full still gives Desktop's reason.
+    func isBrowsable(_ command: SlashCommand) -> Bool {
+        let key = command.name.lowercased()
+        return command.isAvailable && meta[key]?.desktopSubcommands?.isEmpty != true && canonicalName(key) == key
+    }
+
+    /// Bare `/` keeps the registry sections. A query follows the server's ranking,
+    /// keeping what Desktop keeps: browsable commands, an alias only when typed
+    /// exactly (`use-slash-completions.ts:239-257`), and arguments the
+    /// `desktop_subcommands` gate allows (`filterDesktopSubcommandCompletions`).
+    public func suggestions(for text: String, completions: SlashCompletions? = nil) -> [SlashSuggestion] {
+        guard SlashCommand.isCompletionCandidate(text) else { return [] }
+        if text == "/" {
+            return commands.filter(isBrowsable).map {
+                SlashSuggestion(item: SlashCompletionItem(text: $0.name, display: $0.name, meta: $0.description),
+                                category: $0.category)
+            }
+        }
+        guard let completions else { return [] }
+        guard completions.replaceFrom <= 1 else {
+            return allowedArguments(completions.items, for: text).map {
+                SlashSuggestion(item: $0, category: "Options", text: completions.applying($0))
+            }
+        }
+        let typed = text.lowercased()
+        return completions.items.compactMap { item in
+            let name = item.text.lowercased()
+            guard let listed = command(named: name) else { return nil }
+            let isAlias = canonicalName(name) != name
+            guard isAlias ? name == typed && listed.isAvailable : isBrowsable(listed) else { return nil }
+            return SlashSuggestion(item: item, category: listed.category)
+        }
+    }
+
+    /// Argument rows the exec gate would not refuse (`desktop-slash-commands.ts:595-636`).
+    private func allowedArguments(_ items: [SlashCompletionItem], for text: String) -> [SlashCompletionItem] {
+        let canonical = canonicalName(String(text.prefix { !$0.isWhitespace }))
+        guard let allowed = (meta[canonical]?.desktopSubcommands ?? SlashCommand.localSubcommands[canonical])?
+            .map({ $0.lowercased() })
+        else { return items }
+        let argument = text.drop { !$0.isWhitespace }.drop(while: \.isWhitespace)
+        if let end = argument.firstIndex(where: \.isWhitespace) {
+            // Past an allowed subcommand, the backend owns its value completions.
+            return allowed.contains(argument[..<end].lowercased()) ? items : []
+        }
+        return items.filter { item in
+            let first = item.text.split(whereSeparator: \.isWhitespace).first.map { $0.lowercased() } ?? ""
+            return allowed.contains(first)
+        }
+    }
+}
+
 /// What running a slash command did.
 public enum SlashOutcome: Sendable, Hashable {
     /// Text output, also appended to the transcript as a system row.
@@ -218,8 +368,8 @@ public enum SlashOutcome: Sendable, Hashable {
     case prefill(String)
     /// Handled by the package (`/btw`, `/title`, `/stop`); the transcript shows the effect.
     case handled
-    /// A Desktop client-side action or picker (`/new`, `/model`, …): the app
-    /// decides what to do; nothing was sent to the gateway. `name` is the
+    /// A Desktop client-side action or picker (`/new`, `/model`, …), which
+    /// `ChatComposer.submitSlash` carries out; nothing was sent to the gateway. `name` is the
     /// command's canonical name (no slash) when the loaded catalog maps the typed
     /// alias to one, else the name as typed.
     case clientAction(name: String, argument: String)

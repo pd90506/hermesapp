@@ -41,7 +41,7 @@ private let catalogPayload: JSONValue = [
         #expect(catalog.command(named: "/standup")?.category == "Skills")
         #expect(catalog.command(named: "/compress")?.argumentMode == "text")
         // A GUI can't run it: shown, but marked unavailable (`desktop-slash-commands.ts:440-483`).
-        #expect(catalog.command(named: "/voice")?.unavailableReason == "/voice needs voice input.")
+        #expect(catalog.command(named: "/voice")?.unavailableReason == "Voice chat isn't available in this app yet: Hermes's gateway voice methods record on the server's own microphone.")
         #expect(catalog.command(named: "/model") == nil)  // `hidden`
         #expect(catalog.warning == nil)
     }
@@ -65,6 +65,21 @@ private let catalogPayload: JSONValue = [
                                         text: "/personality ali")
         #expect(argument.applying(argument.items[0]) == "/personality alice")
     }
+
+    @Test func nativePopoverKeepsCatalogOrderAndGatesRows() throws {
+        let catalog = SlashCatalog(try catalogPayload.decode(CommandsCatalogResult.self))
+        #expect(SlashCommand.isCompletionCandidate("/"))
+        #expect(SlashCommand.isCompletionCandidate("/compress more"))
+        #expect(!SlashCommand.isCompletionCandidate("/usr/bin something"))
+        #expect(!SlashCommand.isCompletionCandidate("hello /compress"))
+        // A GUI-refused command is left out, as on Desktop (`desktop-slash-commands.ts:749`).
+        #expect(catalog.suggestions(for: "/").map(\.item.text) == ["/compress", "/usage", "/deploy", "/standup"])
+
+        let completion = SlashCompletions(CompleteSlashResult(items: [
+            SlashCompletionItem(text: "/model"), SlashCompletionItem(text: "/compress"),
+        ]), text: "/co")
+        #expect(catalog.suggestions(for: "/co", completions: completion).map(\.item.text) == ["/compress"])
+    }
 }
 
 @MainActor
@@ -77,6 +92,40 @@ struct SlashRunTests {
         let connection = try await gateway.withDefaults().connect()
         connections.keep(connection)
         return try await connection.newSession()
+    }
+
+    @Test func composerOpensFiltersAndAcceptsWithoutTimers() async throws {
+        let gateway = ScriptedGateway()
+        gateway.on("commands.catalog", result: catalogPayload)
+        gateway.on("complete.slash", result: ["items": [["text": "/compress"]], "replace_from": 1])
+        let composer = ChatComposer(session: try await openChat(gateway))
+        await composer.loadSlashCommands()
+        composer.draft = "/"
+        await composer.updateSlashSuggestions()
+        #expect(composer.slashIsOpen)
+        #expect(composer.slashSuggestions.first?.item.text == "/compress")
+        composer.draft = "/comp"
+        await composer.updateSlashSuggestions()
+        #expect(composer.slashSuggestions.map(\.item.text) == ["/compress"])
+        composer.acceptSlashSuggestion()
+        #expect(composer.draft == "/compress ")
+        #expect(!composer.slashIsOpen)
+        #expect(gateway.params("prompt.submit").isEmpty)
+    }
+
+    @Test func failedCatalogNeverTurnsSlashIntoPrompt() async throws {
+        let gateway = ScriptedGateway()
+        gateway.on("commands.catalog") { _ in .error(code: 5000, message: "catalog unavailable") }
+        let session = try await openChat(gateway)
+        let composer = ChatComposer(session: session)
+        await composer.loadSlashCommands()
+        composer.draft = "/x"
+        await composer.updateSlashSuggestions()
+        #expect(!composer.slashIsOpen)
+        let outcome = await composer.submitSlash()
+        guard case .unavailable = outcome else { Issue.record("Expected unavailable"); return }
+        #expect(session.transcript.items.last?.role == .system)
+        #expect(gateway.params("prompt.submit").isEmpty)
     }
 
     @Test func loadsTheSessionsCatalogAndCompletes() async throws {
@@ -171,7 +220,7 @@ struct SlashRunTests {
 
         #expect(try await session.runSlash("/new") == .clientAction(name: "new", argument: ""))
         #expect(try await session.runSlash("/model gpt-5") == .clientAction(name: "model", argument: "gpt-5"))
-        #expect(try await session.runSlash("/voice on") == .unavailable("/voice needs voice input."))
+        #expect(try await session.runSlash("/voice on") == .unavailable("Voice chat isn't available in this app yet: Hermes's gateway voice methods record on the server's own microphone."))
         #expect(gateway.params("slash.exec").isEmpty && gateway.params("command.dispatch").isEmpty)
     }
 
@@ -209,7 +258,7 @@ struct SlashRunTests {
         ])
         let session = try await openChat(gateway)
 
-        #expect(try await session.runSlash("/talk on") == .unavailable("/talk needs voice input."))
+        #expect(try await session.runSlash("/talk on") == .unavailable("Voice chat isn't available in this app yet: Hermes's gateway voice methods record on the server's own microphone."))
         #expect(gateway.params("slash.exec").isEmpty)
     }
 

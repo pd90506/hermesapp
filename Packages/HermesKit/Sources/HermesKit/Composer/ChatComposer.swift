@@ -20,6 +20,29 @@ public final class ChatComposer {
     /// A composer failure (attachment, model or effort change), shown in the
     /// composer. A failed `prompt.submit` shows in the transcript instead.
     public var error: String?
+    public private(set) var slashSuggestions: [SlashSuggestion] = []
+    public private(set) var slashSelection = 0
+    public private(set) var slashIsOpen = false
+    /// `/model` without a model: the view opens its model picker (Desktop's
+    /// picker overlay, `use-prompt-actions/slash.ts:1284-1295`).
+    public var isModelPickerRequested = false
+    private var slashCatalog: SlashCatalog?
+    private var slashRequest = 0
+    private var slashLoadRequest = 0
+    /// The draft the user arrowed through the list at: only for that text is the
+    /// highlight their pick (Desktop's `triggerActiveExplicit`, reset per query).
+    private var slashExplicitText: String?
+    private var suppressedSlashText: String?
+    /// `complete.slash` answers by lower-cased text, for this catalog (Desktop
+    /// caches per query, `use-slash-completions.ts:218`).
+    private var slashCompletionCache: [String: SlashCompletions] = [:]
+    /// The text whose `complete.slash` failed: no answer is coming for it.
+    private var slashFailedText: String?
+    /// A `/compress` (or a Bot Chat `/new`) is running, for the composer's status
+    /// row: Desktop shows a notice only for a compaction (`slash.ts:703-709`). Slash
+    /// commands never block the composer; Desktop sends one without waiting for it
+    /// (`use-composer-submit.ts:133-144`), busy or not (:291-315).
+    public private(set) var isCompressing = false
     public private(set) var catalog: ModelCatalog?
     /// A model switch the gateway refused until the user confirms it
     /// (`confirm_required`, e.g. an expensive model).
@@ -35,6 +58,271 @@ public final class ChatComposer {
 
     public init(session: ChatSession) {
         self.session = session
+    }
+
+    // MARK: Slash commands
+
+    /// Loads the slash catalog and the model options side by side, on opening a
+    /// chat and after a reconnect: a slow catalog (a skills scan) must not hold up
+    /// the model and effort pickers.
+    public func loadCommandsAndOptions() async {
+        async let commands: Void = loadSlashCommands()
+        async let options: Void = loadOptions()
+        _ = await (commands, options)
+    }
+
+    /// Reload on chat/profile changes and after a reconnect. A failed catalog
+    /// disables discovery; submission still reports the failure in the transcript.
+    public func loadSlashCommands() async {
+        slashRequest += 1
+        slashLoadRequest += 1
+        let request = slashLoadRequest
+        slashCatalog = nil
+        slashCompletionCache = [:]
+        slashFailedText = nil
+        closeSlashList()
+        do {
+            let catalog = try await session.loadSlashCommands()
+            guard request == slashLoadRequest else { return }
+            slashCatalog = catalog
+            await updateSlashSuggestions()
+        } catch {
+            // Keep the draft intact. A later send gives an explicit local note.
+        }
+    }
+
+    /// Recomputes the list for the draft. Until a `complete.slash` answer lands,
+    /// the list shown is for the older text (as on Desktop); the keys allow for that.
+    public func updateSlashSuggestions() async {
+        slashRequest += 1
+        let request = slashRequest
+        let text = draft
+        guard let slashCatalog, SlashCommand.isCompletionCandidate(text), text != suppressedSlashText,
+            slashCatalog.listsArguments(text)
+        else {
+            closeSlashList()
+            return
+        }
+        var completions: SlashCompletions?
+        let load = slashLoadRequest
+        if text != "/" {
+            if let cached = slashCompletionCache[text.lowercased()] {
+                completions = cached
+                completions?.text = text
+            } else {
+                do {
+                    let result = try await session.completeSlash(text)
+                    // An answer to a request made before a catalog reload stays out of the new cache.
+                    if load == slashLoadRequest { slashCompletionCache[text.lowercased()] = result }
+                    completions = result
+                } catch is CancellationError {
+                    // The view cancels this on the next keystroke, and the next update
+                    // follows; the rows shown stay up meanwhile, as on Desktop.
+                    return
+                } catch {
+                    if load == slashLoadRequest { slashFailedText = text }
+                    guard request == slashRequest else { return }
+                    closeSlashList()
+                    return
+                }
+            }
+        }
+        guard request == slashRequest, draft == text else { return }
+        // A row the user arrowed to for this text keeps the highlight when the answer
+        // lands (Desktop keeps the pick, `use-composer-trigger.ts:254-256`). If the row
+        // is gone, nothing counts as picked.
+        let picked = slashExplicitText == text && slashSuggestions.indices.contains(slashSelection)
+            ? slashSuggestions[slashSelection].text : nil
+        slashSuggestions = slashCatalog.suggestions(for: text, completions: completions)
+        if let picked, let index = slashSuggestions.firstIndex(where: { $0.text == picked }) {
+            slashSelection = index
+        } else {
+            slashSelection = 0
+            slashExplicitText = nil
+        }
+        slashIsOpen = !slashSuggestions.isEmpty
+    }
+
+    /// Whether `updateSlashSuggestions()` would ask the gateway for this draft,
+    /// rather than answer from the catalog or the cache. The view debounces only these.
+    public var slashUpdateNeedsRequest: Bool {
+        guard let slashCatalog, SlashCommand.isCompletionCandidate(draft), draft != "/",
+            draft != suppressedSlashText, slashCatalog.listsArguments(draft)
+        else { return false }
+        return slashCompletionCache[draft.lowercased()] == nil
+    }
+
+    /// Tab with no rows while the answer for this draft is still coming. The view
+    /// swallows it, as Desktop does (`index.tsx:800-809`), so it neither types a tab
+    /// nor moves focus.
+    public var swallowsSlashTab: Bool {
+        !slashIsOpen && slashUpdateNeedsRequest && draft != slashFailedText
+    }
+
+    public func dismissSlashSuggestions() {
+        suppressedSlashText = draft
+        closeSlashList()
+    }
+
+    public func moveSlashSelection(_ offset: Int) {
+        guard slashIsOpen, !slashSuggestions.isEmpty else { return }
+        slashSelection = (slashSelection + offset + slashSuggestions.count) % slashSuggestions.count
+        slashExplicitText = draft
+    }
+
+    /// Return or Tab while the list shows, after Desktop (`index.tsx:829-869`,
+    /// `composer-utils.ts:128-205`). Tab takes the highlight. Return takes the row
+    /// `SlashSuggestion.implicitAcceptIndex` picks, and in a free-text argument
+    /// (`/goal s`) only a row the user arrowed to. Returns false when Return should
+    /// send the draft as typed instead.
+    public func acceptSlashSuggestionFromKey(isTab: Bool) -> Bool {
+        // A draft that is no longer a slash candidate (the slash was deleted, a
+        // newline typed) sends as typed, even before the view closes the list.
+        guard slashIsOpen, !slashSuggestions.isEmpty, SlashCommand.isCompletionCandidate(draft) else { return false }
+        let explicit = slashExplicitText == draft
+        if isTab {
+            acceptSlashSuggestion(at: slashSelection)
+            return true
+        }
+        if slashCatalog?.isFreeTextArgument(draft) == true, !explicit { return false }
+        guard let index = SlashSuggestion.implicitAcceptIndex(typed: draft, texts: slashSuggestions.map(\.text),
+                                                              active: slashSelection, explicit: explicit)
+        else { return false }
+        acceptSlashSuggestion(at: index)
+        return true
+    }
+
+    /// Puts the row into the draft. A command gets Desktop's trailing space
+    /// (`use-composer-trigger.ts:375`): an `options` or `mixed` command then lists
+    /// its arguments, any other leaves the list closed. An argument row is the whole
+    /// `/command argument`; the list stays closed until the next edit.
+    public func acceptSlashSuggestion(at index: Int? = nil) {
+        let index = index ?? slashSelection
+        guard slashIsOpen, slashSuggestions.indices.contains(index) else { return }
+        let text = slashSuggestions[index].text
+        if text.contains(where: \.isWhitespace) {
+            draft = text
+            suppressedSlashText = text
+        } else {
+            draft = text + " "
+        }
+        closeSlashList()
+    }
+
+    private func closeSlashList() {
+        slashSuggestions = []
+        slashSelection = 0
+        slashIsOpen = false
+    }
+
+    /// Runs the draft as a slash command; the outcome shows in the transcript.
+    /// Client actions (`/new`, `/model`, …) run here too (`runClientAction`). The
+    /// draft clears at once, like `submit()`, and what is typed meanwhile stays.
+    /// A slow command (`/compress`, a skill) does not hold up the composer: as on
+    /// Desktop, the next message or command (`/stop`) goes out while it runs.
+    /// A compaction shows in `isCompressing`, and a second one while it runs is
+    /// dropped (Desktop: `use-prompt-actions/slash.ts:696-709`).
+    /// No catalog is needed up front: `runSlash` runs its own commands without one
+    /// and loads one for the rest (a failed load throws, and nothing is sent).
+    public func submitSlash() async -> SlashOutcome? {
+        guard canSubmit, SlashCommand.isCommand(draft) else { return nil }
+        let text = draft
+        closeSlashList()
+        suppressedSlashText = nil
+        if !attachments.isEmpty || !files.isEmpty {
+            session.appendLocalNote("Send attachments separately from slash commands.")
+            return .unavailable("Send attachments separately from slash commands.")
+        }
+        draft = ""
+        let compresses = compacts(SlashCommand.parse(text).name)
+        if compresses {
+            if isCompressing { return .handled }
+            isCompressing = true
+        }
+        defer { if compresses { isCompressing = false } }
+        do {
+            let outcome = try await session.runSlash(text)
+            switch outcome {
+            case .unavailable(let reason): session.appendLocalNote(reason)
+            case .prefill(let value): restoreText(value)
+            case .clientAction(let name, let argument): await runClientAction(name, argument: argument)
+            case .output, .submitted, .handled: break
+            }
+            return outcome
+        } catch {
+            // The command comes back only into an empty draft. In front of what was
+            // typed since, the next Return would run it with that prose as its
+            // argument; the note names the command and the error.
+            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { draft = text }
+            session.appendLocalNote("/\(SlashCommand.parse(text).name): \(GatewayConnection.describe(error))")
+            return .unavailable(GatewayConnection.describe(error))
+        }
+    }
+
+    /// Whether `/name` runs a compaction: `/compress` or an alias, and in a Bot
+    /// Chat `/new`, `/reset` and `/clear`, which `runSlash` compacts instead
+    /// (Desktop rewrites them to `/compact`, `plugins/hermes-bots/plugin.tsx:771-797`).
+    private func compacts(_ name: String) -> Bool {
+        let canonical = session.slashCatalog.map { String($0.canonicalName(name).dropFirst()) } ?? name
+        let names: Set<String> = session.kind == .botChat
+            ? ["compress", "compact", "new", "reset", "clear"] : ["compress", "compact"]
+        return names.contains(name) || names.contains(canonical)
+    }
+
+    /// Desktop's client-side actions (`use-prompt-actions/slash.ts:518-1135`) that
+    /// this app has a feature for; the rest get a local note. Nothing is sent as a prompt.
+    func runClientAction(_ name: String, argument: String) async {
+        do {
+            switch name {
+            case "new", "reset", "clear":
+                // A Bot Chat never gets here: `runSlash` compacts it instead.
+                guard let connection = session.connection else { throw GatewayClientError.notConnected }
+                if session.kind == .sideChat, let profile = session.profile {
+                    try await connection.newSideChat(profile: profile)
+                } else {
+                    try await connection.newSession()
+                }
+            case "help", "commands":
+                // The catalog may still be loading (or have failed): load it here.
+                let commands: SlashCatalog
+                if let loaded = session.slashCatalog { commands = loaded } else {
+                    commands = try await session.loadSlashCommands()
+                }
+                session.appendLocalNote(commands.helpText)
+            case "model":
+                if argument.isEmpty {
+                    isModelPickerRequested = true
+                } else if let provider = catalog?.providers.first(where: { $0.models.contains(argument) }) {
+                    await selectModel(ModelChoice(provider: provider.slug, model: argument))
+                } else {
+                    session.appendLocalNote("Model \(argument) is not available in this chat.")
+                }
+            case "profile":
+                session.appendLocalNote("/profile is not available in this app yet. Choose a bot in the sidebar; "
+                    + "new chats cannot change profile here.")
+            case "reasoning":
+                if argument.isEmpty {
+                    session.appendLocalNote("Reasoning effort: \(ReasoningEffort.label(currentEffort))")
+                } else if effortChoices.contains(argument) {
+                    await selectEffort(argument)
+                } else {
+                    session.appendLocalNote("Reasoning option \(argument) is not available in this chat.")
+                }
+            case "resume", "sessions", "switch":
+                if let connection = session.connection,
+                    let entry = connection.history.first(where: { $0.summary.id == argument })
+                {
+                    try await connection.open(entry)
+                } else {
+                    session.appendLocalNote("Choose a chat from History. "
+                        + "This app cannot search sessions by slash command yet.")
+                }
+            default:
+                session.appendLocalNote("/\(name) is not available in this app yet.")
+            }
+        } catch {
+            session.appendLocalNote("/\(name): \(GatewayConnection.describe(error))")
+        }
     }
 
     // MARK: Sending
@@ -59,6 +347,7 @@ public final class ChatComposer {
         let images = attachments
         let files = files
         draft = ""
+        suppressedSlashText = nil
         error = nil
         isSubmitting = true
         defer {

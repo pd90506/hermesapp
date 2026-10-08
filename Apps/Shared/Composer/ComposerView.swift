@@ -13,6 +13,8 @@ struct ComposerView: View {
     var isConnected: Bool
 
     @State private var textHeight: CGFloat = 0
+    /// An input method's marked text shows in the field (`ComposerTextView.onComposingChange`).
+    @State private var isComposing = false
     @State private var thumbnails: [UUID: CGImage] = [:]
     @Environment(AppModel.self) private var model
     @State private var focusRequest = 0
@@ -146,11 +148,12 @@ struct ComposerView: View {
             text: $composer.draft, contentHeight: $textHeight, maxHeight: maxTextHeight, focusRequest: focusRequest,
             onSubmit: submit,
             onImages: { sources in Task { await attach(sources) } },
-            onImageProviders: { providers in Task { await attach(await ImageLoader.sources(from: providers)) } }
+            onImageProviders: { providers in Task { await attach(await ImageLoader.sources(from: providers)) } },
+            onComposingChange: { isComposing = $0 }
         )
         .frame(height: min(max(textHeight, 28), maxTextHeight))
         .overlay(alignment: .topLeading) {
-            if composer.draft.isEmpty {
+            if ComposerTextView.showsPlaceholder(draft: composer.draft, composing: isComposing) {
                 Text("Message Hermes")
                     .foregroundStyle(.tertiary)
                     .padding(.top, ComposerTextView.verticalInset)

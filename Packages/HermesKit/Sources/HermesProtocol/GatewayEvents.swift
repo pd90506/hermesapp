@@ -202,6 +202,11 @@ public struct MessageComplete: Sendable, Hashable, Codable {
     public var recoverable: Bool?
     public var partial: Bool?
     public var usage: JSONValue?
+    /// `persisted_turn.user_row_id` (`prompt_turn.py:873-918,939-941`): the stored row of
+    /// this turn's prompt, when Hermes committed it.
+    public var persistedUserRowID: Int?
+    /// `persisted_turn.row_ids`: every row this turn committed, prompt first.
+    public var persistedRowIDs: [Int]?
 
     public init(text: String? = nil, status: String? = nil, error: String? = nil) {
         self.text = text.map(JSONValue.string)
@@ -211,6 +216,16 @@ public struct MessageComplete: Sendable, Hashable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case text, status, reasoning, error, warning, recoverable, partial, usage
+    }
+
+    /// Read only: the receipt is not re-encoded.
+    private enum ReceiptKeys: String, CodingKey {
+        case persistedTurn = "persisted_turn"
+    }
+
+    private enum PersistedTurnKeys: String, CodingKey {
+        case userRowID = "user_row_id"
+        case rowIDs = "row_ids"
     }
 
     /// Lenient: this is the terminal frame of every turn, so an optional field of
@@ -225,6 +240,11 @@ public struct MessageComplete: Sendable, Hashable, Codable {
         recoverable = try? container.decodeIfPresent(Bool.self, forKey: .recoverable)
         partial = try? container.decodeIfPresent(Bool.self, forKey: .partial)
         usage = try? container.decodeIfPresent(JSONValue.self, forKey: .usage)
+        if let receipt = try? decoder.container(keyedBy: ReceiptKeys.self)
+            .nestedContainer(keyedBy: PersistedTurnKeys.self, forKey: .persistedTurn) {
+            persistedUserRowID = try? receipt.decodeIfPresent(Int.self, forKey: .userRowID)
+            persistedRowIDs = try? receipt.decodeIfPresent([Int].self, forKey: .rowIDs)
+        }
     }
 
     /// `text` as display text: strings as-is, text parts joined, other JSON serialised.

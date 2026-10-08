@@ -155,7 +155,8 @@ public struct RereadTicket: Sendable, Hashable {
 ///
 /// **Running and waiting** (`isRunning`, `waiting`; the state table is `docs/protocol.md` §5)
 /// follow three server facts, never a chain of guesses:
-/// - a turn is open here (`message.start` or any streamed event, until `message.complete`);
+/// - a turn is open here (`message.start` or any streamed event of the turn: text, reasoning,
+///   `thinking.delta`, an interim or tool event; until `message.complete`);
 /// - a `message.start` is still to come for a prompt sent here (`expectedStarts`): sent and
 ///   not answered yet, or answered `streaming` / `queued`. `steered` and `redirected` go
 ///   into the running turn and expect none. Any `message.start` settles them all;
@@ -226,6 +227,9 @@ public struct Transcript: Sendable, Hashable {
     /// Those of `expectedStarts` answered `queued`: their turn follows the running one, so
     /// the closing `running: false` between the two does not end them.
     private var queuedStarts: Set<String> = []
+    /// Prompts unanswered when a Stop that cleared Hermes's queue was sent
+    /// (`serverClearedQueue`): a `queued` answer for one expects no start.
+    private var queueClearedBeforeAnswer: Set<String> = []
     /// The server said a turn runs (`reconcileRunning(true)`, a chat shown again) and
     /// none is open here yet; the next `message.start` or `message.complete` takes over.
     private var serverBusy = false
@@ -528,10 +532,21 @@ public struct Transcript: Sendable, Hashable {
     /// `message.start` comes for a prompt answered `queued`. Its row, stored when it was
     /// accepted (`_persist_queued_user_row`, `session_auto_continue.py:441`), still
     /// shows after the re-read; its bubble settles as before.
-    public mutating func serverClearedQueue() {
+    ///
+    /// - Parameter sentBeforeStop: prompts still unanswered when the Stop was sent
+    ///   (`unansweredPrompts`). Hermes handled their submit before the Stop (both inline, in
+    ///   arrival order, `rpc_dispatch.py:62`), so one answered `queued` after this was in the
+    ///   queue the Stop cleared: its answer expects no start.
+    public mutating func serverClearedQueue(sentBeforeStop: Set<String> = []) {
         expectedStarts.subtract(queuedStarts)
         queuedStarts = []
+        queueClearedBeforeAnswer.formUnion(sentBeforeStop.filter { prompts[$0] == .sent })
         refreshRunning()
+    }
+
+    /// Prompts sent here whose submit is not answered yet.
+    public var unansweredPrompts: Set<String> {
+        Set(prompts.compactMap { $0.value == .sent ? $0.key : nil })
     }
 
     /// The open turn's live reply holds reasoning.
@@ -785,6 +800,7 @@ public struct Transcript: Sendable, Hashable {
         promptSentAtStarts[itemID] = nil
         expectedStarts.remove(itemID)
         queuedStarts.remove(itemID)
+        queueClearedBeforeAnswer.remove(itemID)
         removeLiveItems { $0.id == itemID }
         refreshRunning()
     }
@@ -841,6 +857,7 @@ public struct Transcript: Sendable, Hashable {
     public mutating func promptAnswered(itemID: String, status: String? = nil, userRowID: Int? = nil) {
         guard prompts[itemID] != nil else { return }
         defer { refreshRunning() }
+        let queueCleared = queueClearedBeforeAnswer.remove(itemID) != nil
         switch status {
         case "steered", "redirected":
             // Into the running turn, as guidance or a correction (`interrupt_control.py:265-281`,
@@ -850,7 +867,12 @@ public struct Transcript: Sendable, Hashable {
             expectedStarts.remove(itemID)
             queuedStarts.remove(itemID)
         case "queued":
-            if expectedStarts.contains(itemID) { queuedStarts.insert(itemID) }
+            // Queued before a Stop that cleared the queue (its answer came after the Stop's).
+            if queueCleared {
+                expectedStarts.remove(itemID)
+            } else if expectedStarts.contains(itemID) {
+                queuedStarts.insert(itemID)
+            }
         case "streaming":
             // The open turn is this prompt's if it started after the send: its row anchors
             // the turn's "Interrupted" mark.
@@ -887,6 +909,7 @@ public struct Transcript: Sendable, Hashable {
             promptSentAtStarts[itemID] = nil
             expectedStarts.remove(itemID)
             queuedStarts.remove(itemID)
+            queueClearedBeforeAnswer.remove(itemID)
         }
         refreshRunning()
     }
@@ -930,6 +953,11 @@ public struct Transcript: Sendable, Hashable {
             }
 
         case .thinkingDelta(let delta):
+            // A streamed event of the agent at work (`_STREAMING_EVENT_TYPES`, `ws.py:82`): only
+            // the session's agent sends it, from its API-call loop (`agent_callbacks.py:123`,
+            // `turn_iteration_prep.py:319-324`), so a turn runs. It reopens one an `error` at
+            // its start closed, within the first API call.
+            startTurn()
             // Mostly spinner rewrites: only an explained provider wait is kept, and
             // any other frame clears it (`message-stream.ts:195-205`). Never reasoning.
             providerWait = Self.providerWaitText(delta.text)
@@ -1037,8 +1065,10 @@ public struct Transcript: Sendable, Hashable {
             // a follow-up refused after its `message.start` sends only this
             // (`_dispatch_followup_turn`, `prompt_turn.py:421-436`, then `:123-134`). A failed
             // pending model switch also sends it at turn start and its turn goes on
-            // (`session_compression.py:197-211`, `prompt_turn.py:685`): that turn's next streamed
-            // event opens it again (the timer then counts from there).
+            // (`session_compression.py:197-211`, `model_switch.py:495`, `prompt_turn.py:685`):
+            // that turn's next streamed event, at the latest the first API call's
+            // `thinking.delta`, opens it again (the timer then counts from there). A refused
+            // follow-up never reaches the agent, so nothing reopens it.
             if turnActive, !outputSinceWait, !turnShowsReasoning { closeTurnHere() }
             // With no turn open, no start is coming, except for a submit still unanswered.
             if !turnActive {

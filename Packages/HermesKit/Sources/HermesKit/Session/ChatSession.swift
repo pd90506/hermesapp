@@ -188,6 +188,7 @@ public final class ChatSession: Identifiable {
         historyPrefetch = nil
         rereadTask?.cancel()
         rereadTask = nil
+        cancelRereadRetry()
     }
 
     // MARK: - Stored transcript
@@ -409,6 +410,9 @@ public final class ChatSession: Identifiable {
         else { return }
         let ticket = transcript.beginReread()
         let generation = historyGeneration
+        // A read asked for by anything but a retry (a turn's end, a revisit, a reconnect)
+        // starts a new streak: it gets every retry again, also after a long outage.
+        if !rereadIsRetry { rereadFailures = 0 }
         let transcriptNow = transcript
         let profile = profile
         rereadTask = Task { [weak self] in
@@ -436,10 +440,12 @@ public final class ChatSession: Identifiable {
     }
 
     /// Delays before trying a failed re-read again; a streak longer than this gives up
-    /// until the next turn, revisit or reconnect asks for one.
+    /// until the next turn, revisit or reconnect asks for one, which starts a new streak.
     @ObservationIgnored var rereadRetryDelays: [Duration] = [.seconds(2), .seconds(8), .seconds(30)]
     @ObservationIgnored private var rereadFailures = 0
-    @ObservationIgnored private var rereadRetry: Task<Void, Never>?
+    /// Set only while a retry starts its re-read: that one continues the streak.
+    @ObservationIgnored private var rereadIsRetry = false
+    @ObservationIgnored private(set) var rereadRetry: Task<Void, Never>?
 
     private func retryReread(generation: Int) {
         guard rereadFailures < rereadRetryDelays.count else { return }
@@ -449,9 +455,19 @@ public final class ChatSession: Identifiable {
         rereadRetry = Task { [weak self] in
             do { try await Task.sleep(for: delay) } catch { return }
             guard let self, generation == self.historyGeneration else { return }
+            self.rereadRetry = nil
             self.transcript.requestReread()
+            self.rereadIsRetry = true
             self.rereadIfNeeded()
+            self.rereadIsRetry = false
         }
+    }
+
+    /// No re-read is tried again any more: the chat was rebuilt or forgotten.
+    func cancelRereadRetry() {
+        rereadRetry?.cancel()
+        rereadRetry = nil
+        rereadFailures = 0
     }
 
     /// Most pages one re-read reads. If they reach no row shown yet, they replace the
@@ -755,10 +771,14 @@ public final class ChatSession: Identifiable {
     /// Stops the running turn. A reclaimed runtime has nothing running.
     public func interrupt() async throws {
         guard !isRuntimeGone else { return }
-        let result = try await currentClient().interrupt(sessionID: sessionID)
+        let client = try currentClient()
+        // Their submits reach Hermes before the Stop: one answered `queued` was cleared by it,
+        // even when its answer arrives after the Stop's.
+        let sentBeforeStop = transcript.unansweredPrompts
+        let result = try await client.interrupt(sessionID: sessionID)
         // Hermes cleared its queue with the Stop (`session_lifecycle.py:708-712`). Only a
         // hosted-task check answers `not_interrupted`, before touching it.
-        if result.status != "not_interrupted" { transcript.serverClearedQueue() }
+        if result.status != "not_interrupted" { transcript.serverClearedQueue(sentBeforeStop: sentBeforeStop) }
     }
 
     // MARK: - Steering a running turn

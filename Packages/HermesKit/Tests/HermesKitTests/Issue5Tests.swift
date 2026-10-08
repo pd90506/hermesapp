@@ -312,8 +312,9 @@ private func complete(_ text: String, status: String, rows: [Int]) -> JSONValue 
     /// A failed pending model switch sends `error` at turn start and the turn goes on
     /// (`session_compression.py:197-211`, `prompt_turn.py:685`). The `error` closes the
     /// turn while it has shown nothing (R3); its next streamed event opens it again, and
-    /// nothing of its reply is lost.
-    @Test(arguments: ["message.delta", "reasoning.delta"])
+    /// nothing of its reply is lost. With show-reasoning off the first is the API call's
+    /// `thinking.delta` spinner frame (round 5, S1).
+    @Test(arguments: ["message.delta", "reasoning.delta", "thinking.delta"])
     func anErrorAtTurnStartDoesNotLoseTheTurn(next: String) throws {
         var transcript = idle()
         let prompt = transcript.appendUserPrompt("hello", sentAt: sent)

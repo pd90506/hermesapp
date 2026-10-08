@@ -163,6 +163,7 @@ extension GatewayConnection {
 
     /// Forgets a chat that can no longer be shown (gone, or deleted).
     func forget(_ session: ChatSession) {
+        session.cancelRereadRetry()
         warmChats.removeAll { $0 === session }
         forgetComposer(of: session)
         if activeSession === session { clearActiveSession() }

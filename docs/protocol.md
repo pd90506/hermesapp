@@ -686,7 +686,14 @@ does (`components/assistant-ui/thread/status.tsx:243-268`):
 **Running state** (`Transcript.isRunning`: the Stop button, the waiting row's lifetime). It is
 derived from three server facts and nothing else:
 - **(T)** a turn is open: from `message.start`, or any streamed event of a turn this chat saw no
-  start of, until `message.complete`;
+  start of, until `message.complete`. A *streamed event* is one of the turn's own: `message.delta`,
+  `reasoning.delta`, `reasoning.available`, `thinking.delta`, `message.interim`, `tool.generating`,
+  `tool.start` or `tool.complete`. `thinking.delta` counts (Hermes streams it with the deltas,
+  `_STREAMING_EVENT_TYPES`, `tui_gateway/ws.py:82`): only the session's agent sends it, from its
+  API-call loop (`agent_callbacks.py:123`, `agent/turn_iteration_prep.py:319-324`), with
+  show-reasoning on or off. `status.update` and `notification.show` do not count: Hermes also
+  sends them between turns (heartbeats, background-process notices,
+  `session_notifications.py:178,254,442`);
 - **(E)** a `message.start` is still to come for a prompt sent here: one not answered yet, or
   answered `streaming` or `queued` (`expectedStarts`);
 - **(B)** the server said a turn runs (`running: true` on reactivation) and none is open here yet.
@@ -703,9 +710,9 @@ each answer and event does to them. "—" means unchanged.
 | answer `steered` | — | E −= prompt | quiet re-reads settle it | into the running turn (`agent/interrupt_control.py:265-275`); a steer left over at turn end is queued and gets its own `message.start` (`prompt_turn.py:441-447`, `agent/turn_finalizer.py:744-746`) |
 | answer `redirected` | — | E −= prompt | quiet re-reads settle it | a correction inside the running turn, no new turn (`agent/interrupt_control.py:277-281`, `agent/turn_iteration_prep.py:370-375`); the default `busy_input_mode` is `interrupt`, so every text send during a reply gets this (`server.py:378-380`, `session_auto_continue.py:420-428`) |
 | submit failed, prompt withdrawn | — | E −= prompt | bubble stays (failed) or goes (withdrawn) | — |
-| Stop: `session.interrupt` answered | — (the turn's `message.complete` follows) | E −= every queued prompt | bubble stays; its row, stored at accept, shows after the re-read | Hermes clears its queue and bumps the queue generation with no event (`session_lifecycle.py:708-712`, `_persist_queued_user_row`, `session_auto_continue.py:441`) |
+| Stop: `session.interrupt` answered | — (the turn's `message.complete` follows) | E −= every queued prompt, and a `queued` answer arriving later for a prompt unanswered when Stop was sent expects no start | bubble stays; its row, stored at accept, shows after the re-read | Hermes clears its queue and bumps the queue generation with no event (`session_lifecycle.py:708-712`, `_persist_queued_user_row`, `session_auto_continue.py:441`); it handles `prompt.submit` and `session.interrupt` inline in arrival order (`rpc_dispatch.py:62`), so a submit sent before the Stop was queued before the clear |
 | `error`, no turn open | — | E := unanswered only; B := false | bubble stays | the turn will not start: Stop during the agent build (`methods_prompt.py:625-635`), an ownership refusal (`prompt_turn.py:123-134`), a queued prompt that failed to dispatch (`session_auto_continue.py:505-513`); a failed build is followed by `message.complete(error)` (`methods_prompt.py:617-623`) |
-| `error`, turn open | closes it only if it has shown nothing (as for `running: false`) | then as with no turn open | — | a follow-up turn refused after its `message.start` sends only this (`_dispatch_followup_turn`, `prompt_turn.py:421-436`, then `:123-134`); a failed pending model switch sends it at turn start and the turn goes on (`session_compression.py:197-211`, `prompt_turn.py:685`): its next streamed event opens T again |
+| `error`, turn open | closes it only if it has shown nothing (as for `running: false`) | then as with no turn open | — | a follow-up turn refused after its `message.start` sends only this (`_dispatch_followup_turn`, `prompt_turn.py:421-436`, then `:123-134`); a failed pending model switch or configured-model adopt sends it at turn start and the turn goes on (`session_compression.py:197-211`, `model_switch.py:495`, `prompt_turn.py:685`): its next streamed event opens T again, at the latest the first API call's `thinking.delta`, milliseconds later; a refused follow-up never reaches the agent and sends none |
 | `message.start` (or a first streamed event) | opens | E := ∅; B := false | — | every turn, also follow-ups (`prompt_turn.py:426,1154`) |
 | `message.complete` `complete` | closes | — | its re-read settles the turn's live items | `prompt_turn.py:1183` |
 | `message.complete` `interrupted` | closes | — | a reply with no text stays as a local row showing "Interrupted" and any reasoning, after the turn's last committed row (`persisted_turn.row_ids`; without a receipt, its prompt row) | Hermes stores no row for an empty partial (`agent/turn_api_call.py:204-210`); receipt `prompt_turn.py:897-903,940-941` |
@@ -724,11 +731,15 @@ Invariants:
   no turn open, `running: false` (all but queued and unanswered ones), or Stop (queued ones). B
   ends with `message.start`, `message.complete`, `running: false` or an `error`.
 - **Any streamed event means running again** (it opens T). A stale `running: false` or a
-  non-terminal `error` that closed an empty turn is undone by that turn's next event.
+  non-terminal `error` that closed an empty turn, or cleared B in a chat shown again, is undone by
+  that turn's next streamed event; the agent's first API call sends `thinking.delta`, so that is
+  within milliseconds, whether or not show-reasoning is on.
 - **A failed re-read is never the only way out.** Stopping needs no re-read. A failed re-read is
   tried again after 2 s, 8 s and 30 s (`ChatSession.rereadRetryDelays`), so bubbles, and a queued
-  prompt Hermes dropped without a word (below), settle once reads work again. After the last retry,
-  the next turn, revisit or reconnect asks for one.
+  prompt Hermes dropped without a word (below), settle once reads work again. After the last retry
+  nothing is tried until the next turn, revisit or reconnect asks for a re-read; that one starts a
+  new streak with all three retries, however long the outage was. A rebuild (`reset(to:)`), a new
+  history load and a forgotten chat cancel a pending retry.
 
 Paths where Hermes sends nothing, and what ends them:
 - **A queued prompt dropped silently**: its drained turn finds the queue generation changed

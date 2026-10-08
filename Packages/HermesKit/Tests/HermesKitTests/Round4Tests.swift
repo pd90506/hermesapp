@@ -39,16 +39,23 @@ struct RereadRetryTests {
         await settle(session)
         session.rereadRetryDelays = [.milliseconds(20), .milliseconds(20), .milliseconds(20)]
         try await session.send("hello")  // row 3
+        await settle(session)  // the answer's own read, served before the outage
+        // Every read waits in the store until the test serves it: no step races the retry timer.
         server.store.setMode(.offline)
+        server.store.hold()
         transport.sendEvent("message.start", sessionID: session.sessionID, seq: 1)
         transport.sendEvent("message.delta", sessionID: session.sessionID, seq: 2, payload: ["text": "hi"])
         server.store.append([storedRow(id: 4, text: "hi")])
         transport.sendEvent("message.complete", sessionID: session.sessionID, seq: 3,
                             payload: completePayload("hi", rows: [3, 4]))
-        #expect(await eventually { server.store.queries.count >= 2 && session.rereadTask == nil })
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 })
+        server.store.releaseOldest()  // the turn-end read fails
+        // Its retry fires and waits, unserved.
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 && session.rereadRetry == nil })
         #expect(session.transcript.historyCount < session.transcript.items.count, "the failed read settled nothing")
         server.store.setMode(.paged)
-        #expect(await eventually { session.transcript.historyCount == session.transcript.items.count },
+        server.store.release()
+        #expect(await eventually(seconds: 20) { session.transcript.historyCount == session.transcript.items.count },
                 "the retry settled the turn")
         #expect(session.transcript.items.filter { $0.text == "hello" }.count == 1)
         withExtendedLifetime(connection) {}

@@ -115,31 +115,30 @@ struct StopBeforeTheQueuedAnswerSessionTests {
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct RereadRetryStreakTests {
-    /// One turn whose re-read the gateway answers or fails: `text` sent, replied to.
-    private func turn(_ session: ChatSession, _ server: PagedServer, _ transport: FakeTransport,
-                      _ text: String, seq: inout Int) async throws {
-        try await session.send(text)
-        let prompt = try #require(server.store.rows.last?.id)
+    /// The rest of a turn whose prompt `prompt` was just sent: it starts, replies, stores the
+    /// reply as `prompt + 1` and ends.
+    private func reply(_ session: ChatSession, _ server: PagedServer, _ transport: FakeTransport,
+                       to prompt: Int, seq: inout Int) {
+        let text = "re: \(prompt)"
         transport.sendEvent("message.start", sessionID: session.sessionID, seq: seq)
-        transport.sendEvent("message.delta", sessionID: session.sessionID, seq: seq + 1, payload: ["text": .string("re: " + text)])
-        server.store.append([storedRow(id: prompt + 1, text: "re: " + text)])
+        transport.sendEvent("message.delta", sessionID: session.sessionID, seq: seq + 1, payload: ["text": .string(text)])
+        server.store.append([storedRow(id: prompt + 1, text: text)])
         transport.sendEvent("message.complete", sessionID: session.sessionID, seq: seq + 2,
-                            payload: completePayload("re: " + text, rows: [prompt, prompt + 1]))
+                            payload: completePayload(text, rows: [prompt, prompt + 1]))
         seq += 3
     }
 
-    /// Waits until no re-read runs and none is tried again for a while.
-    private func quiet(_ session: ChatSession, _ server: PagedServer) async {
-        var count = -1
-        while count != server.store.queries.count {
-            count = server.store.queries.count
-            _ = await eventually { session.rereadTask == nil }
-            try? await Task.sleep(for: .milliseconds(150))
-        }
+    /// Serves the read waiting in the store (it fails while offline).
+    private func serveOne(_ server: PagedServer) async {
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 })
+        server.store.releaseOldest()
     }
 
     /// The review's P-C: a long outage spends one turn's retries; the next turn's failed
     /// re-read gets its own, and settles once the gateway is back.
+    ///
+    /// No step races a retry timer: the store holds every read (`hold()`) and the test serves
+    /// each one itself, so the retries' order is fixed whatever the runner's speed.
     @Test func aNewTurnsFailedRereadIsTriedAgainAfterALongOutage() async throws {
         let server = PagedServer(store: FakeMessageStore(rows: [storedRow(id: 1), storedRow(id: 2)]))
         let (connection, transport) = try await server.connect(log: FrameLog())
@@ -147,16 +146,29 @@ struct RereadRetryStreakTests {
         await settle(session)
         var seq = 1
         session.rereadRetryDelays = [.milliseconds(20), .milliseconds(20), .milliseconds(20)]
-        server.store.setMode(.offline)
-        try await turn(session, server, transport, "one", seq: &seq)
-        await quiet(session, server)  // its re-read and all three retries failed
 
-        session.rereadRetryDelays = [.milliseconds(400), .milliseconds(400), .milliseconds(400)]
-        let before = server.store.queries.count
-        try await turn(session, server, transport, "two", seq: &seq)
-        #expect(await eventually { server.store.queries.count > before && session.rereadTask == nil })
+        // Turn one: its prompt is answered before the outage; then every read fails.
+        try await session.send("one")  // row 3
+        await settle(session)
+        server.store.setMode(.offline)
+        server.store.hold()
+        reply(session, server, transport, to: 3, seq: &seq)
+        for _ in 0..<4 { await serveOne(server) }  // its turn-end read, then its three retries
+        #expect(await eventually(seconds: 20) { session.rereadTask == nil && session.rereadRetry == nil },
+                "turn one's retries are spent")
+
+        // Turn two, still offline: the read its answer asks for, then its turn-end read, fail.
+        try await session.send("two")  // row 5
+        reply(session, server, transport, to: 5, seq: &seq)
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 && !session.transcript.isRunning })
+        server.store.releaseOldest()
+        await serveOne(server)
+        // A new streak: its retry fires and waits, unserved.
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 && session.rereadRetry == nil },
+                "turn two's failed read is never tried again")
         server.store.setMode(.paged)
-        #expect(await eventually { session.transcript.historyCount == session.transcript.items.count },
+        server.store.release()
+        #expect(await eventually(seconds: 20) { session.transcript.historyCount == session.transcript.items.count },
                 "the second turn never settles")
         #expect(session.transcript.items.filter { $0.text == "two" }.count == 1)
         withExtendedLifetime(connection) {}

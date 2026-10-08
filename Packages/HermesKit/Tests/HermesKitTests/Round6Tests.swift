@@ -230,26 +230,36 @@ private func pathA(_ transcript: inout Transcript, leadingBreak: Bool = true, ge
 struct MidTurnRetryTests {
     /// Path B through the session: a retry left over from a failed turn-end read fires
     /// in the middle of the next turn, after it stored a round.
+    ///
+    /// No step races a timer: the store holds every read (`hold()`), and the test serves each
+    /// one itself (`releaseOldest()`). A read returns the rows stored when it is served, so the
+    /// retry's page holds the next turn's round however early its timer fired.
     @Test func aRetryFiringMidTurnShowsNothingTwice() async throws {
         let server = PagedServer(store: FakeMessageStore(rows: [storedRow(id: 1), storedRow(id: 2)]))
         let (connection, transport) = try await server.connect(log: FrameLog())
         let session = try await connection.open(SessionSummary(id: "stored-1"))
         await settle(session)
-        session.rereadRetryDelays = [.milliseconds(600)]
+        session.rereadRetryDelays = [.milliseconds(20)]
         let sid = session.sessionID
 
-        server.store.setMode(.offline)
         try await session.send("one")  // row 3
+        await settle(session)  // the answer's own read, served before the outage
+        server.store.setMode(.offline)
+        server.store.hold()
         transport.sendEvent("message.start", sessionID: sid, seq: 1)
         transport.sendEvent("message.delta", sessionID: sid, seq: 2, payload: ["text": "first reply"])
         server.store.append([storedRow(id: 4, text: "first reply")])
         transport.sendEvent("message.complete", sessionID: sid, seq: 3, payload: completePayload("first reply", rows: [3, 4]))
-        #expect(await eventually { session.rereadRetry != nil && session.rereadTask == nil })
+        // The turn-end read fails; its retry fires and waits in the store, unserved.
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 })
+        server.store.releaseOldest()
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 && session.rereadRetry == nil })
+        #expect(!session.transcript.items.contains { $0.rowID == 4 }, "nothing settled turn 1 yet")
         server.store.setMode(.paged)
 
-        // The next turn starts at once and stores a round before the retry fires.
+        // The next turn starts and stores a round while the retry's read is still unserved.
+        // The answer's read waits for the one in flight (`rereadIfNeeded`).
         try await session.send("two")  // row 5, written at submit
-        await settle(session)  // the answer's own read, before the turn starts
         transport.sendEvent("message.start", sessionID: sid, seq: 4)
         transport.sendEvent("tool.start", sessionID: sid, seq: 5, payload: ["tool_id": "c1", "name": "web_search"])
         transport.sendEvent("tool.complete", sessionID: sid, seq: 6, payload: ["tool_id": "c1", "name": "web_search"])
@@ -263,14 +273,25 @@ struct MidTurnRetryTests {
                             payload: ["text": "Looking further.", "already_streamed": true])
         transport.sendEvent("tool.start", sessionID: sid, seq: 10, payload: ["tool_id": "c2", "name": "web_search"])
         #expect(await eventually { toolRows(session.transcript, call: "c2") == 1 })
+        #expect(server.store.heldCount == 1, "only the retry's read is in flight")
 
-        let before = server.store.queries.count
-        #expect(await eventually(seconds: 5) { server.store.queries.count > before && session.rereadTask == nil
-            && session.rereadRetry == nil })
+        // The retry's page lands mid-turn, holding rows 1...8.
+        server.store.releaseOldest()
+        #expect(await eventually(seconds: 20) { session.transcript.items.contains { $0.rowID == 4 } },
+                "the retry settled the first turn")
         #expect(session.transcript.isRunning)
         #expect(copies(session.transcript, "Looking further.") == 1)
         #expect(toolRows(session.transcript, call: "c1") == 1)
-        #expect(session.transcript.items.contains { $0.rowID == 4 }, "the retry settled the first turn")
+        #expect(copies(session.transcript, "first reply") == 1)
+        #expect(session.transcript.items.filter { $0.text == "two" }.count == 1)
+
+        // The answer's read follows, also mid-turn: still one of each.
+        #expect(await eventually(seconds: 20) { server.store.heldCount == 1 })
+        server.store.release()
+        #expect(await eventually(seconds: 20) { session.rereadTask == nil && server.store.heldCount == 0 })
+        #expect(session.transcript.isRunning)
+        #expect(copies(session.transcript, "Looking further.") == 1)
+        #expect(toolRows(session.transcript, call: "c1") == 1)
         #expect(copies(session.transcript, "first reply") == 1)
         withExtendedLifetime(connection) {}
     }

@@ -90,12 +90,12 @@ import Testing
         transcript.appendUserPrompt("write the report")
         transcript.apply(event("message.start"))
         transcript.apply(event("message.delta", ["text": "Draft one."]))
-        transcript.appendUserPrompt("make it shorter", displayKind: "steer")
+        let steer = transcript.appendUserPrompt("make it shorter", displayKind: "steer")
         transcript.apply(event("message.delta", ["text": "Shorter."]))
         transcript.beginSideQuestion(taskID: "btw_1", question: "which file?")
         transcript.appendNote("Tokens: 12")
         transcript.apply(event("message.delta", ["text": " Done."]))
-        transcript.appendUserPrompt("/plan next")  // a queued skill kickoff
+        let plan = transcript.appendUserPrompt("/plan next")  // a queued skill kickoff
         transcript.apply(event("message.complete", ["text": "Shorter. Done.", "status": "complete"]))
 
         #expect(transcript.items.map(\.text) == ["write the report", "Draft one.", "make it shorter", "Shorter.", "",
@@ -104,6 +104,14 @@ import Testing
         #expect(transcript.items.filter(\.isActive).isEmpty)
         // The side question still waits for its answer, without spinning.
         #expect(transcript.items[4].sideQuestion?.isPending == true)
+        // The prompts sent during the turn are not answered yet: they still wait (the
+        // queued kickoff has a turn of its own to come), so the session is not idle.
+        #expect(transcript.isRunning)
+        transcript.promptAnswered(itemID: steer, status: "steered")
+        transcript.promptAnswered(itemID: plan, status: "queued")
+        #expect(transcript.isRunning, "the queued kickoff's turn has not started")
+        transcript.apply(event("message.start"))
+        transcript.apply(event("message.complete", ["text": "", "status": "complete"]))
         #expect(!transcript.isRunning)
         expectWellFormed(transcript)
     }

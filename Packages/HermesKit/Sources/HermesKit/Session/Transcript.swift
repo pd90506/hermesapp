@@ -153,6 +153,21 @@ public struct RereadTicket: Sendable, Hashable {
 /// turn that was already running at open, a prompt the history already holds);
 /// nothing is hidden.
 ///
+/// **Running and waiting** (`isRunning`, `waiting`; the state table is `docs/protocol.md` §5)
+/// follow three server facts, never a chain of guesses:
+/// - a turn is open here (`message.start` or any streamed event of the turn: text, reasoning,
+///   `thinking.delta`, an interim or tool event; until `message.complete`);
+/// - a `message.start` is still to come for a prompt sent here (`expectedStarts`): sent and
+///   not answered yet, or answered `streaming` / `queued`. `steered` and `redirected` go
+///   into the running turn and expect none. Any `message.start` settles them all;
+/// - the server said a turn runs (a chat shown again) and none is open here yet.
+///
+/// `isRunning` is exactly "any of these" (`refreshRunning`). The waiting row is `isRunning`
+/// with no visible output since the latest send or turn start. What ends each fact:
+/// `message.complete`; for expectations, `message.start`, a failed submit, an in-turn answer,
+/// an `error` before any turn starts, and the server reporting the session idle (which ends
+/// `streaming` ones: Hermes marks the session running before it answers `streaming`).
+///
 /// **Local rows** (`appendNote`, `beginSideQuestion`: slash-command output, `/btw` and
 /// `/bg` answers) are never stored, so no re-read holds them. They join the history
 /// part once no unsettled live item is ahead of them, anchored to the stored row they
@@ -174,6 +189,9 @@ public struct Transcript: Sendable, Hashable {
     public private(set) var providerWait: String?
     /// The model is writing the arguments of a call to this tool (`tool.generating`).
     public private(set) var generatingTool: String?
+    /// The slow agent-build notice for this session (`notification.show` with key
+    /// `agent-build-slow`, `tui_gateway/server.py:989-996`), until it is cleared.
+    public private(set) var buildNotice: String?
     /// Last session-level or turn error.
     public private(set) var lastError: String?
     /// Unanswered server→client requests for this session, oldest first.
@@ -194,12 +212,46 @@ public struct Transcript: Sendable, Hashable {
     /// Live items of finished turns, with the completion they finished at. A re-read
     /// requested after that completion holds what the turn stored, and drops them.
     private var finishedItems: [String: Int] = [:]
+    /// The newest row of each finished turn's receipt (`persisted_turn`), by the completion
+    /// it finished at; none for a turn that sent no receipt or ended without its
+    /// `message.complete` (`closeTurnHere`).
+    private var receiptRowByCompletion: [Int: Int] = [:]
+    /// Live items an `error` end left as unstored (the failing round), with the rows that turn's
+    /// receipt says it stored. Hermes may have stored them after all; a re-read that shows one
+    /// of those rows with the item's text settles it (`settleByReceipt`).
+    private var unstoredByReceipt: [String: Set<Int>] = [:]
     /// Prompts sent here, and how far they got.
     private var prompts: [String: PromptState] = [:]
     /// Answered prompts one quiet re-read has seen settled; the next one drops them.
     private var quietOnce: Set<String> = []
     /// `starts` when each prompt sent here was shown.
     private var promptSentAtStarts: [String: Int] = [:]
+    /// When the latest prompt was sent here, while its reply is pending: the waiting
+    /// row counts from it (see `waiting`). Cleared when no turn runs any more.
+    private var lastSentAt: Date?
+    /// Prompts sent here for which a `message.start` is still to come (see the type's
+    /// note on running). Any `message.start` empties it.
+    private var expectedStarts: Set<String> = []
+    /// Those of `expectedStarts` answered `queued`: their turn follows the running one, so
+    /// the closing `running: false` between the two does not end them.
+    private var queuedStarts: Set<String> = []
+    /// Prompts unanswered when a Stop that cleared Hermes's queue was sent
+    /// (`serverClearedQueue`): a `queued` answer for one expects no start.
+    private var queueClearedBeforeAnswer: Set<String> = []
+    /// The newest row id of a turn this chat saw end (`persisted_turn`, the receipt).
+    private var newestReceiptRow = 0
+    /// Rows up to this id belong to what came before the open turn: the newest row the
+    /// history held, or a finished turn's receipt named, when the turn opened here.
+    private var openTurnRowFloor = 0
+    /// The server said a turn runs (`reconcileRunning(true)`, a chat shown again) and
+    /// none is open here yet; the next `message.start` or `message.complete` takes over.
+    private var serverBusy = false
+    /// The stored row of the open turn's prompt, when known: its "Interrupted" mark goes
+    /// after it.
+    private var turnPromptRow: Int?
+    /// Visible output (assistant text, a tool row) arrived since the latest send or
+    /// the latest turn start: the waiting row is over (see `waiting`).
+    private var outputSinceWait = false
     /// `requestReread` came before the newest page: read again once it is in.
     private var rereadWhenLoaded = false
     /// Prompts answered `streaming` without `user_row_id` whose turn has not started
@@ -221,9 +273,11 @@ public struct Transcript: Sendable, Hashable {
         /// `prompt.submit` not answered yet.
         case sent
         /// Hermes took it (at `clock`): it is stored, or will be by the time the
-        /// session is quiet again. `storedAtSubmit`: answered `streaming` with its
-        /// row's id, so the row was written before the answer (`methods_prompt.py:815-819`).
-        case answered(Int, storedAtSubmit: Bool)
+        /// session is quiet again. `storedRow`: answered `streaming` with its row's id
+        /// (`user_row_id`), so that row was written before the answer
+        /// (`methods_prompt.py:815-819`); once a shown stored row has that id, the
+        /// bubble goes (`dropPromptsShownByRows`).
+        case answered(Int, storedRow: Int?)
         /// The submit failed: only this bubble holds the text.
         case failed
     }
@@ -307,16 +361,16 @@ public struct Transcript: Sendable, Hashable {
                 lastError = inflight.error
                 turnItemIDs = []
                 if let echo { finishedItems[echo] = completions }
-                isRunning = snapshot.running == true
+                serverBusy = snapshot.running == true
             } else {
                 let streaming = inflight.streaming ?? (snapshot.running == true)
                 append(.assistant, assistant, active: streaming)
-                isRunning = streaming || snapshot.running == true
             }
         } else if snapshot.running == true {
             startTurn()
-            isRunning = true
         }
+        refreshRunning()
+        outputSinceWait = items[historyCount...].contains(where: Self.isVisibleOutput)
     }
 
     static func toolItemID(_ toolID: String) -> String { "tool-" + toolID }
@@ -392,6 +446,10 @@ public struct Transcript: Sendable, Hashable {
             items.insert(contentsOf: shown, at: position)
             historyCount += shown.count
         }
+        // An `error` end's receipt rows can be on this older page: newer rows from elsewhere
+        // pushed them off the latest one.
+        let storedAfterAll = settleByReceipt()
+        if !storedAfterAll.isEmpty { removeLiveItems { storedAfterAll.contains($0.id) } }
     }
 
     // MARK: - Rebuilds
@@ -433,12 +491,25 @@ public struct Transcript: Sendable, Hashable {
     /// - Not running while a turn is still open here: its `message.complete` went to
     ///   another socket. The turn ends here as it would have; its live items wait for
     ///   the re-read, which holds what it stored (`finishedItems`).
+    /// - Not running, also before any `message.start` arrived here: no turn runs and none
+    ///   is coming, except for a submit still unanswered (its answer decides).
     public mutating func reconcileRunning(_ running: Bool) {
         if running {
-            isRunning = true
+            if !turnActive { serverBusy = true }
+            refreshRunning()
             return
         }
-        guard turnActive else { return }
+        if turnActive { closeTurnHere() }
+        serverBusy = false
+        expectedStarts = expectedStarts.filter { prompts[$0] == .sent }
+        queuedStarts.formIntersection(expectedStarts)
+        refreshRunning()
+    }
+
+    /// The open turn ends here without its `message.complete`: it went to another socket,
+    /// or Hermes sent none (`serverReportsIdle`). Its live items wait for the re-read,
+    /// which holds what it stored (`finishedItems`); only empty reply bubbles go.
+    private mutating func closeTurnHere() {
         endLiveActivity()
         removeLiveItems { $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil }
         completions += 1
@@ -446,8 +517,69 @@ public struct Transcript: Sendable, Hashable {
         for id in turnItemIDs { finishedItems[id] = completions }
         turnItemIDs = []
         turnActive = false
-        isRunning = prompts.values.contains(.sent)
+        turnPromptRow = nil
         status = nil
+    }
+
+    /// `session.info` with `running: false` (`tui_gateway/server.py:2400`): every turn
+    /// body ends with it (`prompt_turn.py:1196-1225`, `_emit_settled_session_info`),
+    /// also one that sent no `message.complete`, such as a refused `@` context
+    /// (`prompt_turn.py:715-718`: `message.start`, `error`, then this).
+    ///
+    /// - An open turn that has shown nothing (no text, tool row or reasoning) ends: Hermes
+    ///   sent no `message.complete` for it. One that has shown something ends with its own
+    ///   `message.complete`, so a stale report cannot hide what it streamed.
+    /// - With no turn open, a `streaming` answer expects no start any more: Hermes marks
+    ///   the session running before it answers `streaming` (`_lock_in_submit_turn`,
+    ///   `methods_prompt.py:668`).
+    ///   A `queued` one does (its turn follows this report, `prompt_turn.py:438-448`), and
+    ///   so does a submit still unanswered.
+    public mutating func serverReportsIdle() {
+        serverBusy = false
+        if turnActive, !outputSinceWait, !turnShowsReasoning { closeTurnHere() }
+        if !turnActive {
+            expectedStarts = expectedStarts.filter { prompts[$0] == .sent || queuedStarts.contains($0) }
+            queuedStarts.formIntersection(expectedStarts)
+        }
+        refreshRunning()
+    }
+
+    /// `session.interrupt` succeeded: Hermes cleared its queue (`queued_prompt = None`,
+    /// generation bumped, `session_lifecycle.py:708-712`) and sends no event for it, so no
+    /// `message.start` comes for a prompt answered `queued`. Its row, stored when it was
+    /// accepted (`_persist_queued_user_row`, `session_auto_continue.py:441`), still
+    /// shows after the re-read; its bubble settles as before.
+    ///
+    /// - Parameter sentBeforeStop: prompts still unanswered when the Stop was sent
+    ///   (`unansweredPrompts`). Hermes handled their submit before the Stop (both inline, in
+    ///   arrival order, `rpc_dispatch.py:62`), so one answered `queued` after this was in the
+    ///   queue the Stop cleared: its answer expects no start.
+    public mutating func serverClearedQueue(sentBeforeStop: Set<String> = []) {
+        expectedStarts.subtract(queuedStarts)
+        queuedStarts = []
+        queueClearedBeforeAnswer.formUnion(sentBeforeStop.filter { prompts[$0] == .sent })
+        refreshRunning()
+    }
+
+    /// Prompts sent here whose submit is not answered yet.
+    public var unansweredPrompts: Set<String> {
+        Set(prompts.compactMap { $0.value == .sent ? $0.key : nil })
+    }
+
+    /// The open turn's live reply holds reasoning.
+    private var turnShowsReasoning: Bool {
+        items[historyCount...].contains { turnItemIDs.contains($0.id) && !$0.reasoning.isEmpty }
+    }
+
+    /// `isRunning` from the three facts (see the type's note). Everything that changes
+    /// one of them calls this; nothing else sets `isRunning`.
+    private mutating func refreshRunning() {
+        isRunning = turnActive || !expectedStarts.isEmpty || serverBusy
+        if !isRunning {
+            lastSentAt = nil
+            buildNotice = nil
+            status = nil
+        }
     }
 
     /// Starts a re-read of the newest rows: it may settle everything up to now.
@@ -459,6 +591,42 @@ public struct Transcript: Sendable, Hashable {
     /// Whether any of `rows` is one the history already holds.
     func holdsAny(of rows: [StoredMessage]) -> Bool {
         rows.contains { $0.id.map(heldRowIDs.contains) == true }
+    }
+
+    /// `rows` up to the first one the open turn shows live: a tool row, or an assistant
+    /// row, of a call the turn shows, or an assistant row with the text of one of its
+    /// live segments (whitespace aside). Those rows and every newer one stay out of the
+    /// history until the turn's own re-read: they are newer than something the turn
+    /// streamed here, so the turn shows them live. Never cut:
+    /// - a row up to `openTurnRowFloor`, or up to the open turn's own prompt row when known
+    ///   (`turnPromptRow`: its `streaming` answer's `user_row_id`, before or after its
+    ///   start). Such a row came before the turn: a call id or a phrase can repeat across
+    ///   turns, `deterministic_call_id`, `agent/message_sanitization.py:505-508`;
+    /// - a row the history shows already, or one before it.
+    /// A finished turn whose rows may sit past the cut keeps its live items (see
+    /// `installRereadPage`).
+    private func rowsBeforeOpenTurn(_ rows: [StoredMessage]) -> [StoredMessage] {
+        let floor = max(openTurnRowFloor, turnPromptRow ?? 0)
+        let live = items[historyCount...].filter { turnItemIDs.contains($0.id) }
+        let calls = Set(live.compactMap { $0.role == .tool ? $0.toolCallID : nil })
+        let texts = Set(live.compactMap { $0.role == .assistant ? Self.normalizedText($0.text) : nil }.filter { !$0.isEmpty })
+        guard !calls.isEmpty || !texts.isEmpty else { return rows }
+        func shownLive(_ row: StoredMessage) -> Bool {
+            guard let id = row.id, id > floor, !heldRowIDs.contains(id) else { return false }
+            switch row.role {
+            case "tool":
+                return row.toolCallID.map(calls.contains) == true
+            case "assistant":
+                let rowCalls = (row.toolCalls?.arrayValue ?? []).compactMap { $0["id"]?.stringValue }
+                return rowCalls.contains(where: calls.contains)
+                    || texts.contains(Self.normalizedText(StoredMessageProjection.displayText(row)))
+            default:
+                return false
+            }
+        }
+        guard var cut = rows.firstIndex(where: shownLive) else { return rows }
+        if let held = rows.lastIndex(where: { $0.id.map(heldRowIDs.contains) == true }), held >= cut { cut = held + 1 }
+        return Array(rows[..<cut])
     }
 
     /// Installs a re-read of the newest rows (`order=latest`, chronological), then
@@ -480,8 +648,20 @@ public struct Transcript: Sendable, Hashable {
     ///   before it stores its prompt (`prompt_turn.py:421-427`); until it finishes,
     ///   the bubble stays. It takes two quiet re-reads in a row (see `quietOnce`).
     ///
+    /// - A page that lands while a turn is open (a retry, the submit answer's read, a
+    ///   chat shown again) also holds that turn's rows stored so far, which the turn shows
+    ///   live: only the rows before the first of them go in (`rowsBeforeOpenTurn`). The
+    ///   turn's own re-read, once it ends, brings the rest. A finished turn's live items
+    ///   then go only if its rows went in: the open turn's own prompt row went in (every
+    ///   earlier turn is below it), or its receipt's rows did. Any other (no receipt, ended
+    ///   without `message.complete`) waits for a read that is not cut: shown twice for a
+    ///   while rather than not at all.
+    ///
     /// - Parameter reachesStart: the re-read reached the session's first row.
     public mutating func installRereadPage(_ rows: [StoredMessage], ticket: RereadTicket, reachesStart: Bool) {
+        let page = turnActive ? rowsBeforeOpenTurn(rows) : rows
+        let cut = page.count < rows.count
+        let rows = page
         guard paging.rereadable, !rows.isEmpty else { return }
         let rereadIDs = Set(rows.compactMap(\.id))
         if let start = items[..<historyCount].firstIndex(where: { $0.rowID.map(rereadIDs.contains) == true }) {
@@ -495,14 +675,24 @@ public struct Transcript: Sendable, Hashable {
             paging.hasOlder = !reachesStart
             hiddenOpening = reachesStart ? nil : Self.hiddenFirstPrompt(rows)
         }
-        let settled = Set(finishedItems.filter { $0.value <= ticket.completions }.keys)
+        // Rows of a turn that finished before the open turn's prompt row are below it: a
+        // prompt answered `streaming` was stored at submit, with no turn running
+        // (`methods_prompt.py:668,815-821`).
+        let installedUpTo = rows.compactMap(\.id).max() ?? 0
+        let promptRowIn = turnPromptRow.map { $0 <= installedUpTo } == true
+        let settled = Set(finishedItems.filter { _, completion in
+            completion <= ticket.completions
+                && (!cut || promptRowIn || receiptRowByCompletion[completion].map { $0 <= installedUpTo } == true)
+        }.keys)
         finishedItems = finishedItems.filter { !settled.contains($0.key) }
+        let unsettled = Set(finishedItems.values)
+        receiptRowByCompletion = receiptRowByCompletion.filter { unsettled.contains($0.key) }
         let quiet = !turnActive && starts == ticket.starts && !prompts.values.contains(.sent)
         var eligible: Set<String> = [], storedAtSubmit: Set<String> = []
         for (id, state) in prompts where quiet {
-            guard case .answered(let at, let stored) = state, at <= ticket.clock else { continue }
+            guard case .answered(let at, let storedRow) = state, at <= ticket.clock else { continue }
             eligible.insert(id)
-            if stored { storedAtSubmit.insert(id) }
+            if storedRow != nil { storedAtSubmit.insert(id) }
         }
         // A prompt answered `streaming` was stored before its answer: this read holds it.
         // Any other prompt can still be ahead of its row: a follow-up's `message.start`
@@ -514,7 +704,36 @@ public struct Transcript: Sendable, Hashable {
         quietOnce = eligible.subtracting(dropped)
         if !quietOnce.isEmpty { needsReread = true }
         prompts = prompts.filter { !dropped.contains($0.key) }
-        removeLiveItems { settled.contains($0.id) || dropped.contains($0.id) }
+        let storedAfterAll = settleByReceipt()
+        removeLiveItems { settled.contains($0.id) || dropped.contains($0.id) || storedAfterAll.contains($0.id) }
+        // A queued prompt the quiet re-reads settled had no turn of its own start in
+        // all that time: Hermes merged or dropped it (a superseded queue entry sends
+        // nothing, `prompt_turn.py:135-146`). It expects no start any more.
+        let unstarted = dropped.intersection(queuedStarts)
+        if !unstarted.isEmpty {
+            expectedStarts.subtract(unstarted)
+            queuedStarts.subtract(unstarted)
+            refreshRunning()
+        }
+        // Quiet or not: a prompt whose stored row this read shows is settled by that row.
+        dropPromptsShownByRows()
+    }
+
+    /// Drops prompt bubbles whose own stored row (`user_row_id`, see `PromptState`)
+    /// the history now shows: the row is the prompt, as in Desktop, which ties its
+    /// optimistic message to that id (`use-prompt-actions/submit.ts:969-986`). This
+    /// needs no quiet session: the id proves this row is this prompt, whatever ran
+    /// since. A prompt without that proof keeps its bubble (the quiet rules above).
+    private mutating func dropPromptsShownByRows() {
+        let shown = Set(items[..<historyCount].compactMap(\.rowID))
+        let proven = Set(prompts.compactMap { id, state -> String? in
+            guard case .answered(_, let row?) = state, shown.contains(row) else { return nil }
+            return id
+        })
+        guard !proven.isEmpty else { return }
+        prompts = prompts.filter { !proven.contains($0.key) }
+        quietOnce.subtract(proven)
+        removeLiveItems { proven.contains($0.id) }
     }
 
     /// Projects `rows` into the history from `start` on, replacing what was there.
@@ -546,12 +765,29 @@ public struct Transcript: Sendable, Hashable {
     /// added while it loads follows it), nor while a turn runs (a row added during a
     /// turn follows that turn's rows, which are not stored yet).
     private mutating func absorbLocalRows() {
+        placeAnchoredLocalRows()
         guard paging.isLoaded, !turnActive else { return }
         while historyCount < items.count, localIDs.contains(items[historyCount].id) {
             let id = items[historyCount].id
             localAnchors[id] = items[..<historyCount].last { $0.rowID != nil }?.rowID
             historyCount += 1
         }
+    }
+
+    /// Live local rows whose anchor was fixed when they were made (a stopped turn's
+    /// "Interrupted" mark, after that turn's prompt row) join the history after that row
+    /// as soon as it shows, whatever is live meanwhile: the next turn cannot take them.
+    private mutating func placeAnchoredLocalRows() {
+        let shown = Set(items[..<historyCount].compactMap(\.rowID))
+        let ready = items[historyCount...].filter { item in
+            localIDs.contains(item.id) && localAnchors[item.id].map(shown.contains) == true
+        }
+        guard !ready.isEmpty else { return }
+        let ids = Set(ready.map(\.id))
+        let live = items[historyCount...].filter { !ids.contains($0.id) }
+        items.removeSubrange(historyCount...)
+        items.append(contentsOf: live)
+        for item in ready { placeLocalRow(item) }
     }
 
     /// Puts a local row of the history part back after its anchor row (or the
@@ -612,9 +848,10 @@ public struct Transcript: Sendable, Hashable {
     ///   - images: the images sent with it (`text` is then the caption, possibly empty).
     ///   - attachments: names of the files sent with it.
     ///   - displayKind: `steer` for guidance injected with `session.steer`.
+    ///   - sentAt: when it was sent; the waiting row counts from it.
     @discardableResult
     public mutating func appendUserPrompt(_ text: String, images: [TranscriptImage] = [], attachments: [String] = [],
-                                          displayKind: String? = nil) -> String {
+                                          displayKind: String? = nil, sentAt: Date = Date()) -> String {
         sealActiveAssistant()
         counter += 1
         var item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
@@ -624,8 +861,11 @@ public struct Transcript: Sendable, Hashable {
         items.append(item)
         prompts[item.id] = .sent
         promptSentAtStarts[item.id] = starts
-        isRunning = true
+        expectedStarts.insert(item.id)
+        lastSentAt = sentAt
+        outputSinceWait = false
         lastError = nil
+        refreshRunning()
         return item.id
     }
 
@@ -634,8 +874,11 @@ public struct Transcript: Sendable, Hashable {
     public mutating func withdrawPrompt(_ itemID: String) {
         guard prompts.removeValue(forKey: itemID) != nil else { return }
         promptSentAtStarts[itemID] = nil
+        expectedStarts.remove(itemID)
+        queuedStarts.remove(itemID)
+        queueClearedBeforeAnswer.remove(itemID)
         removeLiveItems { $0.id == itemID }
-        if !turnActive, !prompts.values.contains(.sent) { isRunning = false }
+        refreshRunning()
     }
 
     /// Moves a prompt bubble to the end: a redirect the gateway queued as the next
@@ -689,6 +932,30 @@ public struct Transcript: Sendable, Hashable {
     /// finished (`finishedItems`). If no turn ever starts, it stays: no row holds it.
     public mutating func promptAnswered(itemID: String, status: String? = nil, userRowID: Int? = nil) {
         guard prompts[itemID] != nil else { return }
+        defer { refreshRunning() }
+        let queueCleared = queueClearedBeforeAnswer.remove(itemID) != nil
+        switch status {
+        case "steered", "redirected":
+            // Into the running turn, as guidance or a correction (`interrupt_control.py:265-281`,
+            // `turn_iteration_prep.py:370-375`): no `message.start` of its own. Answered after
+            // that turn ended, nothing runs any more. A steer the turn left over is queued and
+            // starts its own turn with `message.start` (`prompt_turn.py:441-447`).
+            expectedStarts.remove(itemID)
+            queuedStarts.remove(itemID)
+        case "queued":
+            // Queued before a Stop that cleared the queue (its answer came after the Stop's).
+            if queueCleared {
+                expectedStarts.remove(itemID)
+            } else if expectedStarts.contains(itemID) {
+                queuedStarts.insert(itemID)
+            }
+        case "streaming":
+            // The open turn is this prompt's if it started after the send: its row anchors
+            // the turn's "Interrupted" mark.
+            if turnActive, !expectedStarts.contains(itemID), let userRowID { turnPromptRow = userRowID }
+        default:
+            break
+        }
         if status == "streaming", userRowID == nil {
             prompts[itemID] = nil
             let sentAt = promptSentAtStarts.removeValue(forKey: itemID) ?? starts
@@ -701,7 +968,9 @@ public struct Transcript: Sendable, Hashable {
         }
         promptSentAtStarts[itemID] = nil
         clock += 1
-        prompts[itemID] = .answered(clock, storedAtSubmit: status == "streaming" && userRowID != nil)
+        prompts[itemID] = .answered(clock, storedRow: status == "streaming" ? userRowID : nil)
+        // A re-read can land before the answer (a fast reply): its row may already show.
+        dropPromptsShownByRows()
         // No turn will finish to settle it if none runs (Hermes may have dropped or
         // merged it, or its turn has not started): read the newest rows again.
         if !turnActive, paging.rereadable { needsReread = true }
@@ -714,8 +983,11 @@ public struct Transcript: Sendable, Hashable {
         if let itemID, prompts[itemID] != nil {
             prompts[itemID] = .failed
             promptSentAtStarts[itemID] = nil
+            expectedStarts.remove(itemID)
+            queuedStarts.remove(itemID)
+            queueClearedBeforeAnswer.remove(itemID)
         }
-        if !turnActive { isRunning = false }
+        refreshRunning()
     }
 
     public mutating func addRequest(_ request: ServerRequest) {
@@ -734,14 +1006,13 @@ public struct Transcript: Sendable, Hashable {
         switch event.kind {
         case .messageStart:
             startTurn()
-            isRunning = true
             if activeAssistantIndex == nil { append(.assistant, "", active: true) }
 
         case .messageDelta(let delta):
             startTurn()
-            isRunning = true
             let index = activeAssistantIndex ?? append(.assistant, "", active: true)
             items[index].text += delta.text
+            if Self.isVisibleOutput(items[index]) { outputSinceWait = true }
 
         case .reasoningDelta(let delta):
             startTurn()
@@ -750,35 +1021,40 @@ public struct Transcript: Sendable, Hashable {
 
         case .reasoningAvailable(let delta):
             startTurn()
-            // A whole block from a non-streaming provider replaces what streamed,
-            // unless the reply text already started (`use-message-stream/index.ts:526-537`).
+            // Hermes's one emitter relays the round's model-call *content* once the response
+            // ended (`_relay_thinking`, `agent/turn_response_intake.py:103-117,157-158`, with
+            // show-reasoning on, `tool_progress.py:383-386`). If the round shows text, the frame
+            // is that text: dropped, whichever bubble is open (Desktop drops it once reply text
+            // arrived, `use-message-stream/index.ts:526-537`), so it never replaces reasoning
+            // there. Otherwise (no text streamed) it is the block, as Desktop shows it.
+            if roundShowsText { break }
             let index = activeAssistantIndex ?? append(.assistant, "", active: true)
             if !delta.text.isEmpty, items[index].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 items[index].reasoning = delta.text
             }
 
         case .thinkingDelta(let delta):
+            // A streamed event of the agent at work (`_STREAMING_EVENT_TYPES`, `ws.py:82`): only
+            // the session's agent sends it, from its API-call loop (`agent_callbacks.py:123`,
+            // `turn_iteration_prep.py:319-324`), so a turn runs. It reopens one an `error` at
+            // its start closed, at the first API call (after any turn-start compression, which
+            // sends none). Hermes sends none after the turn's `message.complete`; this relies on it.
+            startTurn()
             // Mostly spinner rewrites: only an explained provider wait is kept, and
             // any other frame clears it (`message-stream.ts:195-205`). Never reasoning.
             providerWait = Self.providerWaitText(delta.text)
 
         case .messageInterim(let interim):
             startTurn()
-            // Commentary beside tool calls. Desktop seals the streaming bubble in
-            // place with the authoritative interim text; the next deltas open a new
-            // one (`use-message-stream/index.ts:614-719`).
+            // The visible text of the round's model call, stripped (`stream_delivery.py:211`):
+            // it seals that round's text (`sealRound`). The next deltas open a new bubble, as
+            // in Desktop (`use-message-stream/index.ts:614-719`).
             let text = interim.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { outputSinceWait = true }
             if text.isEmpty {
                 if interim.alreadyStreamed == true, let index = activeAssistantIndex { items[index].isActive = false }
-            } else if let index = activeAssistantIndex {
-                items[index].text = text
-                items[index].isActive = false
-                items[index].isInterim = true
-            } else if let index = liveAssistantSinceUser(withText: text) {
-                items[index].isInterim = true  // a duplicate delivery of the seal
             } else {
-                let index = append(.assistant, text)
-                items[index].isInterim = true
+                sealRound(with: text)
             }
 
         case .toolGenerating(let generating):
@@ -810,6 +1086,7 @@ public struct Transcript: Sendable, Hashable {
             items[index].tool = tool
             items[index].toolName = start.name
             items[index].detail = tool.context
+            outputSinceWait = true
 
         case .toolComplete(let complete):
             startTurn()
@@ -838,6 +1115,7 @@ public struct Transcript: Sendable, Hashable {
             items[index].isActive = false
             items[index].toolName = complete.name
             if let summary = complete.summary, !summary.isEmpty { items[index].detail = summary }
+            outputSinceWait = true
 
         case .messageComplete(let complete):
             finishTurn(complete)
@@ -853,6 +1131,28 @@ public struct Transcript: Sendable, Hashable {
 
         case .error(let payload):
             lastError = payload.message
+            // Before any turn starts, an `error` is the end of what was sent: Hermes
+            // cancelled or refused it and sends nothing more (Stop during the agent build,
+            // `methods_prompt.py:625-635`; an ownership refusal, `prompt_turn.py:123-134`;
+            // a queued prompt that failed to dispatch, `session_auto_continue.py:505-513`),
+            // or a `message.complete` follows (a failed build, `methods_prompt.py:617-623`).
+            // An open turn that has shown nothing ends too, by the rule `running: false` uses:
+            // a follow-up refused after its `message.start` sends only this
+            // (`_dispatch_followup_turn`, `prompt_turn.py:421-436`, then `:123-134`). A failed
+            // pending model switch also sends it at turn start and its turn goes on
+            // (`session_compression.py:197-211`, `model_switch.py:495`, `prompt_turn.py:685`):
+            // that turn's next streamed event, at the latest the `thinking.delta` of its first
+            // API call (after any turn-start compression), opens it again (the timer then counts
+            // from there). A refused
+            // follow-up never reaches the agent, so nothing reopens it.
+            if turnActive, !outputSinceWait, !turnShowsReasoning { closeTurnHere() }
+            // With no turn open, no start is coming, except for a submit still unanswered.
+            if !turnActive {
+                serverBusy = false
+                expectedStarts = expectedStarts.filter { prompts[$0] == .sent }
+                queuedStarts.formIntersection(expectedStarts)
+                refreshRunning()
+            }
 
         case .requestCancel(let cancel):
             removeRequest(id: cancel.id)
@@ -865,10 +1165,78 @@ public struct Transcript: Sendable, Hashable {
                 return false
             }
 
-        case .gatewayReady, .sessionTitle, .sessionInfo, .sessionsChanged, .sessionReclaimed, .notificationShow,
-            .notificationClear, .unknown:
+        case .notificationShow(let notice):
+            if notice.key == Self.buildNoticeKey { buildNotice = notice.text }
+
+        case .notificationClear(let clear):
+            if clear.key == Self.buildNoticeKey { buildNotice = nil }
+
+        case .gatewayReady, .sessionTitle, .sessionInfo, .sessionsChanged, .sessionReclaimed, .unknown:
             break
         }
+    }
+
+    /// `_AGENT_BUILD_SLOW_NOTICE_KEY` (`tui_gateway/server.py:945`).
+    static let buildNoticeKey = "agent-build-slow"
+
+    // MARK: - Waiting for the reply
+
+    /// The waiting row: from a send until the reply shows text or a tool row.
+    public struct Waiting: Sendable, Hashable {
+        /// When the prompt was sent here; `nil` for a turn this chat did not start
+        /// (it was running at open, or started elsewhere).
+        public var since: Date?
+        /// What the wait is about, when Hermes says (see `Transcript.waiting`).
+        public var hint: String?
+
+        public init(since: Date?, hint: String?) {
+            self.since = since
+            self.hint = hint
+        }
+
+        /// The label: the hint, else "Thinking…". Never a bare ellipsis.
+        public var label: String { hint ?? "Thinking…" }
+
+        /// Elapsed time as the row shows it: `4s`, `1m 05s`, `1h 02m`.
+        public static func elapsedText(from start: Date, to now: Date) -> String {
+            func twoDigits(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
+            let seconds = max(0, Int(now.timeIntervalSince(start)))
+            if seconds < 60 { return "\(seconds)s" }
+            let minutes = seconds / 60
+            if minutes < 60 { return "\(minutes)m \(twoDigits(seconds % 60))s" }
+            return "\(minutes / 60)h \(twoDigits(minutes % 60))m"
+        }
+    }
+
+    /// The reply is awaited and nothing of it shows yet: a turn runs (or a submit is
+    /// pending) and no live item since the latest prompt is visible output, that is,
+    /// assistant text or a tool row (reasoning alone keeps the row, as Desktop's
+    /// `ResponseLoadingIndicator` stands in for an empty running reply,
+    /// `components/assistant-ui/thread/status.tsx:243-268`). `nil` otherwise.
+    ///
+    /// The hint, most specific first: the turn's `status.update` (compaction, memory
+    /// recall), an explained provider wait, the tool whose call is being drafted, then
+    /// the slow agent-build notice.
+    ///
+    /// Only output since the latest send, or since the turn now running started,
+    /// counts: an earlier turn's reply (one that failed stays live, unstored) does not
+    /// end the wait for a new prompt.
+    public var waiting: Waiting? {
+        guard isRunning, !outputSinceWait else { return nil }
+        return Waiting(since: lastSentAt, hint: waitingHint)
+    }
+
+    /// Output the waiting row gives way to: assistant text that is not blank, or a tool row.
+    static func isVisibleOutput(_ item: TranscriptItem) -> Bool {
+        item.role == .tool
+            || (item.role == .assistant && !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var waitingHint: String? {
+        if let status, !status.isEmpty { return status }
+        if let providerWait { return providerWait }
+        if let generatingTool { return "Drafting \(generatingTool)…" }
+        return buildNotice
     }
 
     // MARK: - Helpers
@@ -928,12 +1296,91 @@ public struct Transcript: Sendable, Hashable {
 
     /// The live assistant item of the current turn with `text`, looking back to the
     /// prompt that started it (a steer is part of the running turn, not a new one).
+    /// Whitespace does not count (`_normalize_interim_visible_text`).
     private func liveAssistantSinceUser(withText text: String) -> Int? {
+        let target = Self.normalizedText(text)
         for index in items.indices.reversed() where index >= historyCount {
             if items[index].role == .user, !items[index].isSteer { return nil }
-            if items[index].role == .assistant, items[index].text == text { return index }
+            if items[index].role == .assistant, Self.normalizedText(items[index].text) == target { return index }
         }
         return nil
+    }
+
+    /// The open turn's current round: its live assistant items (not local rows) since the
+    /// round began, oldest first. A round is one model call and what it showed. Hermes runs a
+    /// call's tools only after storing its row (`agent/turn_tool_round.py:130-163`), so a turn
+    /// tool row (`tool.start`, `tool.complete`) ends a round: every item before it is stored.
+    /// `tool.generating` does not: it fires while the call still streams its tool calls
+    /// (`chat_completion_helpers.py:2643,2924`), and that call's text can go on after it.
+    /// With no tool rows in the turn (tool progress off: no `tool.start`, `tool_progress.py:291`;
+    /// no `tool.generating`, `agent_callbacks.py:156`), an interim ends a round instead: Hermes
+    /// sends it once the round's row is stored (`turn_tool_round.py:150-155`).
+    /// See `docs/protocol.md` §5, "Rounds".
+    private var currentRound: [Int] {
+        let turn = items.indices.filter {
+            $0 >= historyCount && turnItemIDs.contains(items[$0].id) && !localIDs.contains(items[$0].id)
+        }
+        let boundary = turn.last { items[$0].role == .tool }
+            ?? turn.last { items[$0].role == .assistant && items[$0].isInterim }
+        return turn.filter { $0 > (boundary ?? historyCount - 1) && items[$0].role == .assistant }
+    }
+
+    /// The current round already shows reply text.
+    private var roundShowsText: Bool {
+        currentRound.contains { !items[$0].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    /// `message.interim`: the current round's call ended with `text` visible. Matched as Hermes
+    /// matches it, whitespace-normalized (`_normalize_interim_visible_text`,
+    /// `stream_delivery.py:103-104`): the first delta after a tool round starts with "\n\n"
+    /// (`stream_delivery.py:305-310`), and `tool.generating` may have split the call's text into
+    /// segments. Among the round's segments no interim sealed yet, most specific first:
+    /// 1. one whose text is the interim's: it is sealed;
+    /// 2. all of their text, joined, is the interim's or its start (a partial stream): the first
+    ///    takes it in place, the others give up their text (one copy);
+    /// 3. an interim of this turn already shows it: a repeated delivery stays one row;
+    /// 4. none has text: the bubble streaming now, or the newest reasoning-only segment, takes it;
+    /// 5. otherwise it is appended once. Their text is other text (Codex commentary that never
+    ///    streamed, beside a streamed partial answer, `stream_delivery.py:188-195`).
+    /// Either way the call ended: none of the round's segments streams on.
+    private mutating func sealRound(with text: String) {
+        let target = Self.normalizedText(text)
+        let open = currentRound.filter { !items[$0].isInterim }
+        let segments = open.filter { !Self.normalizedText(items[$0].text).isEmpty }
+        let joined = Self.normalizedText(segments.map { items[$0].text }.joined(separator: " "))
+        for index in open { items[index].isActive = false }
+        func seal(_ index: Int) {
+            items[index].text = text
+            items[index].isActive = false
+            items[index].isInterim = true
+        }
+        if let match = segments.last(where: { Self.normalizedText(items[$0].text) == target }) {
+            seal(match)
+        } else if let first = segments.first, target.hasPrefix(joined) {
+            seal(first)
+            let emptied = segments.dropFirst()
+            for index in emptied { items[index].text = "" }
+            let gone = Set(emptied.filter { items[$0].reasoning.isEmpty }.map { items[$0].id })
+            items.removeAll { gone.contains($0.id) }
+            turnItemIDs.subtract(gone)
+        } else if let index = liveAssistantSinceUser(withText: text), items[index].isInterim {
+            items[index].text = text
+        } else if segments.isEmpty, let index = activeAssistantIndex ?? open.last(where: { !items[$0].reasoning.isEmpty }) {
+            seal(index)
+        } else {
+            seal(append(.assistant, text))
+        }
+    }
+
+    /// Text with no whitespace at all, for the receipt match (`settleByReceipt`).
+    static func squeezed(_ text: String) -> String {
+        String(text.filter { !$0.isWhitespace })
+    }
+
+    /// Text with every run of whitespace one space, trimmed, as Hermes compares interim
+    /// text (`_normalize_interim_visible_text`, `stream_delivery.py:103-104`).
+    static func normalizedText(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     /// A user row: its `@image:` lines become images, its leading `@file:` lines
@@ -962,9 +1409,21 @@ public struct Transcript: Sendable, Hashable {
     private mutating func startTurn() {
         guard !turnActive else { return }
         turnActive = true
+        openTurnRowFloor = max(heldRowIDs.max() ?? 0, newestReceiptRow)
         starts += 1
         clock += 1
         quietOnce = []
+        // This is the start the expected prompts waited for (or one before theirs, which
+        // ends the same way): its prompt's stored row, when known, anchors its mark.
+        turnPromptRow = expectedStarts.compactMap { id -> Int? in
+            if case .answered(_, let row?) = prompts[id] { return row }
+            return nil
+        }.max()
+        expectedStarts = []
+        queuedStarts = []
+        serverBusy = false
+        outputSinceWait = false
+        refreshRunning()
         // The turn that stores a row-less `streaming` prompt (see `promptAnswered`).
         turnItemIDs.formUnion(awaitingTurn)
         awaitingTurn = []
@@ -990,13 +1449,25 @@ public struct Transcript: Sendable, Hashable {
 
     private mutating func finishTurn(_ complete: MessageComplete) {
         startTurn()  // a reply that streamed nothing still was a turn
+        let receipt = (complete.persistedRowIDs ?? []) + [complete.persistedUserRowID].compactMap { $0 }
+        newestReceiptRow = max(newestReceiptRow, receipt.max() ?? 0)
         let finalText = complete.textValue
         // The segment that was still streaming when the turn ended.
         var streaming = activeAssistantIndex.map { items[$0].id }
+        // A reply stopped before it showed any text: the "Interrupted" mark, with whatever
+        // reasoning streamed. Hermes stores no assistant row for an empty partial
+        // (`agent/turn_api_call.py:204-210`), so it is a local row: it stays across re-reads,
+        // right after the turn's last committed row (`persisted_turn.row_ids`, so below the
+        // turn's own tool rows, `prompt_turn.py:897-903`). Without a receipt, after the
+        // turn's prompt row (its answered `user_row_id`).
+        var stoppedMark: String?
         if let index = activeAssistantIndex {
             if items[index].text.isEmpty, !finalText.isEmpty, !turnShows(finalText) { items[index].text = finalText }
             if items[index].reasoning.isEmpty, let reasoning = complete.reasoning { items[index].reasoning = reasoning }
             items[index].outcome = complete.status
+            if complete.status == "interrupted", items[index].text.isEmpty {
+                stoppedMark = items[index].id
+            }
         } else if !finalText.isEmpty, !turnShows(finalText) {
             let index = append(.assistant, finalText)
             items[index].outcome = complete.status
@@ -1007,14 +1478,25 @@ public struct Transcript: Sendable, Hashable {
         // Nothing keeps spinning once the turn is over, wherever its items are (a
         // prompt sent during the reply can follow its open bubble); empty bubbles go.
         endLiveActivity()
-        removeLiveItems { $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil }
+        if let stoppedMark {
+            turnItemIDs.remove(stoppedMark)
+            localIDs.insert(stoppedMark)
+            if let anchor = complete.persistedRowIDs?.max() ?? complete.persistedUserRowID ?? turnPromptRow {
+                localAnchors[stoppedMark] = anchor
+            }
+        }
+        removeLiveItems {
+            $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil && $0.id != stoppedMark
+        }
         if complete.status == "error" { lastError = complete.error ?? "The turn failed." }
-        isRunning = false
         status = nil
 
         // The turn's rows are stored before `message.complete` (`prompt_turn.py:1153-1182`).
         // The segment still streaming when the turn ended may not be:
-        // - `error`: the partial reply is kept in memory only (`session_auto_continue.py:524-552`).
+        // - `error`: the failing round's items (`currentRound`) may be unstored; the turn's
+        //   receipt says which were stored after all (`settleByReceipt`). Retry exhaustion stores
+        //   the message list (`agent/turn_recovery.py:1241`), a streamed partial merged into one
+        //   row (`settle_delivered_partial`, `:830-847`).
         // - `interrupted`: the agent loop stores it and sends it as this event's text
         //   (`agent/turn_api_call.py:206-214`; Stop during a tool stores the same text as a
         //   closing row, `agent/message_sanitization.py:287-299`). A repetition loop is stored
@@ -1035,21 +1517,16 @@ public struct Transcript: Sendable, Hashable {
         // That segment stays live; the turn's other live items wait for the re-read.
         completions += 1
         clock += 1
+        if let row = receipt.max() { receiptRowByCompletion[completions] = row }
         var unstored: String?
-        // `error`: the whole partial reply of the failing call is unstored, including
-        // segments a note, `/btw` or prompt sealed mid-reply; earlier calls ended at a
-        // tool row and were stored with it.
+        // `error`: the failing call's items, the current round (`currentRound`), are unstored,
+        // including segments a note, `/btw` or prompt sealed mid-reply, and Codex commentary
+        // it delivered mid-stream. Every earlier round was stored before its tools ran.
         var unstoredSplit: Set<String> = []
         switch complete.status {
         case "error":
             unstored = streaming
-            let anchor = streaming ?? items.last { turnItemIDs.contains($0.id) && $0.role == .assistant }?.id
-            if let anchor, let start = items.lastIndex(where: { $0.id == anchor }) {
-                for index in stride(from: start, through: historyCount, by: -1) where turnItemIDs.contains(items[index].id) {
-                    if items[index].role == .tool { break }
-                    if items[index].role == .assistant, items[index].rowID == nil { unstoredSplit.insert(items[index].id) }
-                }
-            }
+            for index in currentRound where items[index].rowID == nil { unstoredSplit.insert(items[index].id) }
         case "interrupted":
             let sent = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
             let shown = streaming.flatMap { id in items.first { $0.id == id } }?.text
@@ -1063,8 +1540,18 @@ public struct Transcript: Sendable, Hashable {
         default: unstored = nil
         }
         for id in turnItemIDs where id != unstored && !unstoredSplit.contains(id) { finishedItems[id] = completions }
+        // The round model says what the failing call may not have stored; the receipt says what
+        // Hermes did store, for every status (`prompt_turn.py:874-941`), also on an `error` end
+        // (the persist on retry exhaustion, `agent/turn_recovery.py:820-826,1241`).
+        if complete.status == "error", let rows = complete.persistedRowIDs, !rows.isEmpty {
+            for id in unstoredSplit { unstoredByReceipt[id] = Set(rows) }
+        }
         turnItemIDs = []
         turnActive = false
+        turnPromptRow = nil
+        // A prompt sent while this turn ran and not answered yet, or answered `queued`,
+        // still expects its own start: its waiting row and send time stay.
+        refreshRunning()
         if paging.rereadable { needsReread = true }
     }
 
@@ -1075,12 +1562,44 @@ public struct Transcript: Sendable, Hashable {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let own = items.filter { turnItemIDs.contains($0.id) && $0.role == .assistant }
         if own.contains(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == text }) { return true }
-        func normalized(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
-        let target = normalized(text)
+        let target = Self.normalizedText(text)
         guard !target.isEmpty else { return false }
         // Segments may split mid-word ("Shor" + "ter") or between words ("foo" + "bar").
         let texts = own.map(\.text)
-        return normalized(texts.joined()).hasSuffix(target) || normalized(texts.joined(separator: " ")).hasSuffix(target)
+        return Self.normalizedText(texts.joined()).hasSuffix(target)
+            || Self.normalizedText(texts.joined(separator: " ")).hasSuffix(target)
+    }
+
+    /// The items an `error` end left unstored that the history now shows stored: an assistant
+    /// row of that turn's receipt with the item's text, all whitespace aside (`squeezed`): a reply
+    /// cut off twice is stored joined with a "\n" at the seam the screen never had
+    /// (`_join_truncated_parts`, `agent/conversation_loop.py:301-302`). Hermes stores such a
+    /// partial on some error ends: a stream that died after visible text, merged into one row
+    /// when the retries ran out (`settle_delivered_partial`, `agent/turn_recovery.py:830-847`,
+    /// `agent/turn_truncation.py:89-90`), or a stall-guard or degenerate-final reply sent as an
+    /// interim before it was stored (`agent/turn_final_response.py:231-237`). Only the turn's own
+    /// rows are compared. An item is let go once every receipt row was read without a match:
+    /// Hermes did not store it, and it stays.
+    private mutating func settleByReceipt() -> Set<String> {
+        // Called after a re-read (`installRereadPage`) and an older page (`prependOlderPage`):
+        // the receipt's rows can sit on either.
+        guard !unstoredByReceipt.isEmpty else { return [] }
+        let stored = items[..<historyCount].filter { $0.role == .assistant }
+        var settled: Set<String> = []
+        for (id, receipt) in unstoredByReceipt {
+            guard let item = items[historyCount...].first(where: { $0.id == id }) else {
+                unstoredByReceipt[id] = nil  // gone (a rebuild, or settled otherwise)
+                continue
+            }
+            let text = Self.squeezed(item.text)
+            if !text.isEmpty, stored.contains(where: { $0.rowID.map(receipt.contains) == true && Self.squeezed($0.text) == text }) {
+                settled.insert(id)
+                unstoredByReceipt[id] = nil
+            } else if receipt.isSubset(of: heldRowIDs) {
+                unstoredByReceipt[id] = nil
+            }
+        }
+        return settled
     }
 
     private mutating func nextID() -> String {

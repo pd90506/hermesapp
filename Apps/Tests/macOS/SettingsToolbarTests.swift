@@ -92,16 +92,36 @@ import Testing
 
     // MARK: Sheet
 
+    /// Tags each posted click, so the loop below knows when it came back out of the queue.
+    private static var nextClickNumber = 7_000
+
     /// A mouse-down, put in the app's queue and run the way `NSApplication.run` does:
     /// taken with `nextEvent`, then given to `NSApp.sendEvent`, which runs the local
     /// monitors before the event goes to its window.
-    private func clickThroughTheEventLoop(in window: NSWindow, at point: NSPoint) {
+    ///
+    /// The loop runs until this very click has been taken and sent (a generous
+    /// deadline only guards against a hang), not for a fixed 0.1 s: under load the
+    /// queue can hand it back later than that, and the click was then never sent.
+    private func clickThroughTheEventLoop(in window: NSWindow, at point: NSPoint,
+                                          sourceLocation: SourceLocation = #_sourceLocation) {
+        Self.nextClickNumber += 1
+        let number = Self.nextClickNumber
         let down = NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [],
                                       timestamp: ProcessInfo.processInfo.systemUptime,
-                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                      windowNumber: window.windowNumber, context: nil, eventNumber: number,
                                       clickCount: 1, pressure: 1)!
         NSApp.postEvent(down, atStart: false)
-        while let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.1),
+        var sent = false
+        let deadline = Date().addingTimeInterval(10)
+        while !sent, Date() < deadline {
+            guard let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05),
+                                              inMode: .default, dequeue: true) else { continue }
+            NSApp.sendEvent(event)
+            if event.type == .leftMouseDown, event.eventNumber == number { sent = true }
+        }
+        #expect(sent, "the posted click never came out of the event queue", sourceLocation: sourceLocation)
+        // Whatever the click itself queued (a sheet's dismissal) runs too.
+        while let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05),
                                           inMode: .default, dequeue: true) {
             NSApp.sendEvent(event)
         }

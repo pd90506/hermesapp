@@ -21,6 +21,8 @@ import Testing
 /// table doesn't). This window counts as key, so clicks reach the List as in the app.
 private final class KeyWindow: NSWindow {
     override var isKeyWindow: Bool { true }
+    /// Stays where it is put, off every screen (AppKit pulls a titled window's top back on).
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 @MainActor
@@ -35,7 +37,10 @@ private final class HostWindow {
     nonisolated static let space = "host"
 
     init(size: CGSize, @ViewBuilder content: () -> some View) {
-        window = KeyWindow(contentRect: NSRect(origin: CGPoint(x: 200, y: 200), size: size),
+        // Beyond every screen, so the real cursor is never over it: SwiftUI's `onHover` areas
+        // take the cursor's real position when they are installed, whatever the events.
+        let beyond = (NSScreen.screens.map(\.frame.minX).min() ?? 0) - size.width - 10_000
+        window = KeyWindow(contentRect: NSRect(origin: CGPoint(x: beyond, y: 200), size: size),
                            styleMask: [.titled], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .aqua)
         // Opaque, so an empty pixel reads as white rather than transparent black.
@@ -44,6 +49,9 @@ private final class HostWindow {
             .background(Color.white)
             .coordinateSpace(.named(Self.space)))
         window.contentView = host
+        // No real mouse event reaches the test either. The synthetic events below are
+        // delivered to the areas' owners and views directly, so they still arrive.
+        window.ignoresMouseEvents = true
         window.orderFront(nil)
         settle()
     }
@@ -474,7 +482,7 @@ private func entries(_ count: Int) -> [HistoryEntry] {
 // MARK: - Message action bar
 
 @MainActor
-@Suite struct MessageActionBarHoverTests {
+@Suite(.serialized) struct MessageActionBarHoverTests {
     @MainActor private final class Frames { var rows: [String: CGRect] = [:] }
 
     /// The rows in transcript order, with the newest message chosen as `ChatView` does.

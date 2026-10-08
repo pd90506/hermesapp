@@ -27,8 +27,18 @@ struct ComposerTextView {
     var onImages: ([ImageSource]) -> Void
     /// iOS pastes: the pasteboard's image item providers.
     var onImageProviders: ([NSItemProvider]) -> Void
+    /// Whether an input method's marked text shows now (e.g. Pinyin before a candidate
+    /// is picked). The draft may not hold it: AppKit reports some marked-text edits and
+    /// not others, and a draft changed meanwhile waits for the composition (`DraftMerge`).
+    var onComposingChange: (Bool) -> Void = { _ in }
 
     static let verticalInset: CGFloat = 4
+
+    /// The placeholder shows only while the field shows nothing: no draft and no marked
+    /// text. A cancelled composition that leaves the field empty brings it back.
+    static func showsPlaceholder(draft: String, composing: Bool) -> Bool {
+        draft.isEmpty && !composing
+    }
 }
 
 #if os(macOS)
@@ -118,6 +128,17 @@ extension ComposerTextView: NSViewRepresentable {
             textView.onWindow = { [weak self] window in
                 if window == nil { self?.stopPasteMonitor() } else { self?.startPasteMonitor() }
             }
+            textView.onMarkedTextChange = { [weak self] in self?.reportComposing() }
+        }
+
+        /// Whether marked text showed when last reported.
+        private var composing = false
+
+        /// Tells the composer whether marked text shows (only on a change).
+        func reportComposing() {
+            guard let textView, textView.hasMarkedText() != composing else { return }
+            composing.toggle()
+            parent.onComposingChange(composing)
         }
 
         /// The draft as this view last left it: shown, or reported after an edit.
@@ -269,8 +290,26 @@ final class ComposerNSTextView: NSTextView {
     var onResize: (() -> Void)?
     /// Joined (or left, `nil`) a window.
     var onWindow: ((NSWindow?) -> Void)?
+    /// Marked text may have appeared, changed or gone.
+    var onMarkedTextChange: (() -> Void)?
     /// The clipboard (tests use their own).
     var pasteboard: NSPasteboard = .general
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        onMarkedTextChange?()
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onMarkedTextChange?()
+    }
+
+    /// Also after a candidate is committed (`insertText` replaces the marked text).
+    override func didChangeText() {
+        super.didChangeText()
+        onMarkedTextChange?()
+    }
 
     override func paste(_ sender: Any?) {
         let images = ImageLoader.sources(from: pasteboard)
@@ -394,6 +433,19 @@ extension ComposerTextView: UIViewRepresentable {
             textView.onLayout = { [weak self, weak textView] in
                 if let textView { self?.measure(textView, deferred: true) }
             }
+            textView.onMarkedTextChange = { [weak self, weak textView] in
+                if let textView { self?.reportComposing(textView) }
+            }
+        }
+
+        /// Whether marked text showed when last reported (as on macOS).
+        private var composing = false
+
+        func reportComposing(_ textView: UITextView) {
+            let now = textView.markedTextRange.map { !$0.isEmpty } ?? false
+            guard now != composing else { return }
+            composing = now
+            parent.onComposingChange(now)
         }
 
         /// The draft as this view last left it, and a draft changed outside it while
@@ -402,6 +454,7 @@ extension ComposerTextView: UIViewRepresentable {
         private var held: (base: String, draft: String)?
 
         func textViewDidChange(_ textView: UITextView) {
+            reportComposing(textView)
             if let held {
                 guard textView.markedTextRange == nil else { return measure(textView, deferred: false) }
                 self.held = nil
@@ -455,7 +508,19 @@ extension ComposerTextView: UIViewRepresentable {
 final class ComposerUITextView: UITextView {
     var onImageProviders: (([NSItemProvider]) -> Void)?
     var onLayout: (() -> Void)?
+    /// Marked text may have appeared, changed or gone.
+    var onMarkedTextChange: (() -> Void)?
     private var lastWidth: CGFloat = 0
+
+    override func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
+        super.setMarkedText(markedText, selectedRange: selectedRange)
+        onMarkedTextChange?()
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onMarkedTextChange?()
+    }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         // Metadata only (`hasImages`): reading the contents here would raise the

@@ -847,6 +847,9 @@ row.
   `session.create {profile}`: no title, not hidden. It is never the bot row's target.
 - **Sessions page** has a roster profile picker, defaulting to the default profile (or the
   first roster entry). Bots shows permanent Bot Chats only. Navigation changes do not open chats.
+  - `[client choice]` The page's "New chat" row creates a side chat with the selected profile.
+    It is enabled only while connected and the selection is in the roster
+    (`GatewayConnection.canStartListChat`).
   - Server: `session.list` has `limit` but no offset and no clamp
     (`contracts/sessions.py:221-224`). It reads the `max(2*limit, 200)` most recent
     non-hidden, non-archived rows, drops the internal sources `kanban`/`tool`/`oneshot`, then

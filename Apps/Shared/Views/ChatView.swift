@@ -110,7 +110,8 @@ private struct HistoryHeader: View {
             Button("Retry") {
                 Task { await session.retryHistory() }
             }
-            .controlSize(.small)
+            .hoverButtonStyle(padding: 4)
+            .foregroundStyle(.tint)
         }
     }
 }

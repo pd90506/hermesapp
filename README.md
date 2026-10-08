@@ -12,6 +12,20 @@ Status: foundation only.
 - The app UIs are minimal shells: connection settings, a bot sidebar (every Hermes profile as a
   bot with its one permanent "Bot Chat", shared with Hermes Desktop's Bot Mode, plus a Sessions
   page with a profile picker for ordinary chats), and a chat with approval/clarify cards.
+  - A title menu at the top of the sidebar switches between Bots and Sessions. The sidebar's
+    toolbar holds the system sidebar toggle and a Settings button, the same on both pages.
+  - Settings is a sheet on the window, with Done (and Esc, Command-W). On macOS, opened from
+    that button, a click anywhere else in the window also closes it, as Done would, and the
+    click does nothing else. When the app can't connect without them (no server yet, or the
+    launch connect failed), clicks elsewhere don't close it. Edits apply in place either
+    way; Connect saves them.
+  - On the Sessions page, a "New chat" row for the selected profile is pinned under the title
+    menu; only the session list scrolls. The profile picker
+    sits in the footer, next to the connection status; error and "waiting" notices sit just
+    above it on both pages. Bots has no New chat button; right-click a bot to start a side
+    chat with it.
+  - On macOS every row and borderless control shows a soft rounded fill under the pointer
+    (`Apps/Shared/Views/Hover.swift`); iOS keeps its native look.
 - Opening a chat loads only its newest 120 messages; older ones load page by page as you scroll
   up, as in Hermes Desktop.
 - Assistant replies (and reasoning) render as Markdown: headings, lists, quotes, code blocks,

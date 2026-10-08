@@ -114,7 +114,7 @@ struct ComposerView: View {
                 stopError = nil
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
+            .hoverButtonStyle(.circle, padding: 3)
             .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
@@ -195,9 +195,10 @@ struct ComposerView: View {
                 .contentShape(.rect)
         }
         .menuStyle(.button)
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .hoverHighlight(in: Circle())
         .foregroundStyle(.secondary)
         .help("Attach an image")
         .accessibilityLabel("Attach")
@@ -235,9 +236,10 @@ struct ComposerView: View {
             pillLabel(composer.currentModelLabel ?? "Model")
         }
         .menuStyle(.button)
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .hoverHighlight()
         .disabled(!isConnected)
         .help(composer.currentModel.map { "Model for this chat: \($0)" } ?? "Model for this chat")
         .accessibilityLabel("Model")
@@ -259,9 +261,10 @@ struct ComposerView: View {
                 pillLabel(ReasoningEffort.label(composer.currentEffort))
             }
             .menuStyle(.button)
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
+            .hoverHighlight()
             .disabled(!isConnected)
             .help("Reasoning effort for this chat")
             .accessibilityLabel("Reasoning effort")
@@ -291,11 +294,14 @@ struct ComposerView: View {
     /// iOS has no hover to explain it, so it is left out there.
     @ViewBuilder private var micButton: some View {
         #if os(macOS)
-        Button("Voice Input", systemImage: "mic") {}
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .frame(width: 26, height: 26)
-            .disabled(true)
+        Button {} label: {
+            Label("Voice Input", systemImage: "mic")
+                .labelStyle(.iconOnly)
+                .frame(width: 18, height: 18)
+        }
+        // Disabled, so it shows no hover; the style keeps it the size of its neighbours.
+        .hoverButtonStyle(.circle, padding: 4)
+        .disabled(true)
             .help("Voice input isn't available yet: Hermes's gateway voice methods record on the server's own microphone, not this Mac's.")
             .accessibilityHint("Not available yet.")
         #endif
@@ -417,12 +423,29 @@ struct ComposerView: View {
 private struct CircleButtonStyle: ButtonStyle {
     var isBusy = false
     var isProminent = true
-    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        CircleButton(configuration: configuration, isBusy: isBusy, isProminent: isProminent)
+    }
+}
+
+/// The style's body: a view, so it can hold the hover state (macOS; `Hover.swift`).
+/// Hovered, the filled circle lightens a little, and the quiet one gets the hover fill.
+private struct CircleButton: View {
+    let configuration: ButtonStyleConfiguration
+    let isBusy: Bool
+    let isProminent: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    var body: some View {
         ZStack {
             Circle()
                 .fill(isEnabled && isProminent ? AnyShapeStyle(.primary) : AnyShapeStyle(.quaternary))
+                .opacity(isEnabled && isProminent && hovered ? 0.8 : 1)
+            Circle()
+                .fill(Hover.fill(pressed: false))
+                .opacity(isEnabled && !isProminent && hovered ? 1 : 0)
             if isBusy {
                 // Sending: a spinner around the label (the cancel ✕).
                 ProgressView()
@@ -443,5 +466,14 @@ private struct CircleButtonStyle: ButtonStyle {
         .frame(width: 26, height: 26)
         .opacity(configuration.isPressed ? 0.7 : 1)
         .contentShape(.circle)
+        .onHover { isHovered = $0 }
+    }
+
+    private var hovered: Bool {
+        #if os(macOS)
+        isHovered
+        #else
+        false
+        #endif
     }
 }

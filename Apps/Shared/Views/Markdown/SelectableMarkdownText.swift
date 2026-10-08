@@ -80,8 +80,8 @@ enum MarkdownLayout {
     static func markerColumn(ordered: Bool) -> CGFloat { ordered ? 20 : 12 }
 }
 
-/// Builds one attributed string for the entire message. All its blocks share
-/// one native selection host, including code, table cells and math attachments.
+/// Builds one attributed string for a selectable prose run. Paragraphs, lists,
+/// headings, quotes and math share one native selection host.
 @MainActor
 enum MarkdownNativeText {
     struct Built {
@@ -532,12 +532,18 @@ final class MarkdownSelectionTextView: NSTextView {
     func fittingHeight(width: CGFloat) -> CGFloat {
         if let measured, measured.width == width { return measured.height }
         guard let textStorage, let liveManager = layoutManager, let liveContainer = textContainer else { return 0 }
+        // The width it will be placed at (a table cell's column): lay out live at it.
+        if let fixedWidth, fixedWidth == width, frame.width != width {
+            setFrameSize(NSSize(width: width, height: frame.height))
+        }
         let layoutManager: NSLayoutManager
         let container: NSTextContainer
         if hasLayoutWidth, abs(liveContainer.size.width - width) < 0.5 {
             (layoutManager, container) = (liveManager, liveContainer)
+            detachMeasuring()
         } else {
             if measuring == nil {
+                offscreenMeasurements += 1
                 let manager = NSLayoutManager()
                 let box = NSTextContainer(size: .zero)
                 box.lineFragmentPadding = liveContainer.lineFragmentPadding
@@ -593,7 +599,28 @@ final class MarkdownSelectionTextView: NSTextView {
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = newSize.width != frame.width
         super.setFrameSize(newSize)
-        if widthChanged { layoutCodeButtons() }
+        guard widthChanged else { return }
+        // Placed at a real width: measuring at it uses the live layout from now on.
+        if hasLayoutWidth { detachMeasuring() }
+        layoutCodeButtons()
+    }
+
+    /// Layout managers on this view's text: 1 once placed, 2 while a measurement
+    /// at another width is pending.
+    var layoutManagerCount: Int { textStorage?.layoutManagers.count ?? 0 }
+    /// Times the text was laid out a second time, off screen, to measure a width
+    /// the view did not have yet.
+    private(set) var offscreenMeasurements = 0
+    /// The only width this view is ever placed at, when its container fixes it
+    /// (a table cell): measuring at it may size the view itself.
+    var fixedWidth: CGFloat?
+
+    /// Drops the second layout manager `fittingHeight` adds for other widths, so
+    /// a placed view keeps one layout of its text, not two.
+    private func detachMeasuring() {
+        guard let measuring else { return }
+        textStorage?.removeLayoutManager(measuring.layoutManager)
+        self.measuring = nil
     }
 
     override func layout() {
@@ -673,19 +700,26 @@ struct SelectableMarkdownText: NSViewRepresentable {
     let bodySize: CGFloat
     let isReasoning: Bool
     let conversationSource: (() -> String)?
+    /// The width the view will be placed at, when the caller already fixes it
+    /// (table cells): it measures with its own layout and never needs a second one.
+    var width: CGFloat? = nil
 
     func makeNSView(context: Context) -> MarkdownSelectionTextView {
         MarkdownSelectionTextView.make()
     }
 
     func updateNSView(_ view: MarkdownSelectionTextView, context: Context) {
+        view.fixedWidth = width
         view.messageSource = source
         view.conversationSource = conversationSource
         view.apply(selection, bodySize: bodySize, isReasoning: isReasoning)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: MarkdownSelectionTextView, context: Context) -> CGSize? {
-        let width = MarkdownSelectionTextView.measuringWidth(proposal.width)
+        // A known width is the answer whatever is proposed: a Grid asks for ideal
+        // sizes (no width) too, and measuring those at 400 pt would lay the text
+        // out a second time.
+        let width = self.width ?? MarkdownSelectionTextView.measuringWidth(proposal.width)
         return CGSize(width: width, height: max(nsView.fittingHeight(width: width), bodySize))
     }
 }
@@ -871,6 +905,8 @@ struct SelectableMarkdownText: UIViewRepresentable {
     let bodySize: CGFloat
     let isReasoning: Bool
     let conversationSource: (() -> String)?
+    /// The width the view will be placed at, when the caller already knows it.
+    var width: CGFloat? = nil
 
     func makeUIView(context: Context) -> MarkdownSelectionTextView {
         // TextKit 1 from the start: the decorations and math use NSLayoutManager.
@@ -882,6 +918,7 @@ struct SelectableMarkdownText: UIViewRepresentable {
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
         view.observeAppearance()
+        if let width { view.frame.size.width = width }
         return view
     }
 
@@ -890,8 +927,9 @@ struct SelectableMarkdownText: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MarkdownSelectionTextView, context: Context) -> CGSize? {
-        // A nil or unbounded proposal asks for the ideal size: measure at 400 pt.
-        let width = proposal.width.flatMap { $0.isFinite ? max($0, 1) : nil } ?? 400
+        // A known width is the answer whatever is proposed; otherwise a nil or
+        // unbounded proposal asks for the ideal size: measure at 400 pt.
+        let width = self.width ?? proposal.width.flatMap { $0.isFinite ? max($0, 1) : nil } ?? 400
         return CGSize(width: width, height: max(uiView.fittingHeight(width: width), bodySize))
     }
 }

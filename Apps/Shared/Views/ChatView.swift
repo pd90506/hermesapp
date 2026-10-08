@@ -16,8 +16,10 @@ struct ChatView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 HistoryHeader(session: session)
+                let newestID = ConversationMarkdown.newestMessageID(in: session.transcript.items)
                 ForEach(session.transcript.items) { item in
-                    MessageRow(item: item, profile: session.profile, session: session)
+                    MessageRow(item: item, isNewest: item.id == newestID,
+                               profile: session.profile, session: session)
                 }
                 ForEach(session.transcript.pendingRequests) { request in
                     RequestCardView(session: session, request: request)
@@ -118,11 +120,12 @@ private struct HistoryHeader: View {
 
 private struct MessageRow: View {
     let item: TranscriptItem
+    /// The last user or assistant row: its action bar stays shown without hover.
+    let isNewest: Bool
     /// The chat's profile: stored images are read for it.
     let profile: String?
     let session: ChatSession
     @Environment(AppModel.self) private var model
-    @State private var isHovering = false
 
     var body: some View {
         switch item.role {
@@ -131,47 +134,40 @@ private struct MessageRow: View {
             // Images sent with it show as cards above the caption, live and stored alike.
             HStack {
                 Spacer(minLength: 40)
-                VStack(alignment: .trailing, spacing: 6) {
-                    if !item.images.isEmpty {
-                        TrailingFlowLayout {
-                            ForEach(item.images) { image in
-                                TranscriptImageCard(image: image, profile: profile, store: model.thumbnails,
-                                                    connection: model.connection)
+                MessageHoverArea { isHovering in
+                    VStack(alignment: .trailing, spacing: 0) {
+                        if !item.images.isEmpty {
+                            TrailingFlowLayout {
+                                ForEach(item.images) { image in
+                                    TranscriptImageCard(image: image, profile: profile, store: model.thumbnails,
+                                                        connection: model.connection)
+                                }
                             }
                         }
+                        if !item.text.isEmpty || item.images.isEmpty {
+                            Text(item.text)
+                                .textSelection(.enabled)
+                                .padding(10)
+                                .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+                        }
+                        MessageActionBar(isHovering: isHovering, isNewest: isNewest,
+                                         alignment: .trailing, copy: copyMessage)
                     }
-                    if !item.text.isEmpty || item.images.isEmpty {
-                        Text(item.text)
-                            .textSelection(.enabled)
-                            .padding(10)
-                            .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
-                    }
-                    InlineMessageCopyButton(action: copyMessage)
                 }
-                .messageCopyAccessory(isHovering: isHovering, placement: .leadingOutside, action: copyMessage)
             }
-            .onHover { isHovering = $0 }
             .contextMenu { copyMenu }
         case .assistant:
-            AssistantMessageContent(item: item, isHovering: isHovering,
-                                    conversationSource: { ConversationMarkdown.export(session.transcript.items) },
-                                    copy: copyMessage)
-                .onHover { isHovering = $0 }
+            MessageHoverArea { isHovering in
+                AssistantMessageContent(item: item, isHovering: isHovering, isNewest: isNewest,
+                                        conversationSource: { ConversationMarkdown.export(session.transcript.items) },
+                                        copy: copyMessage)
+            }
         case .tool:
-            ToolMessageContent(item: item, isHovering: isHovering, copy: copyMessage)
-                .onHover { isHovering = $0 }
+            ToolMessageContent(item: item)
                 .contextMenu { copyMenu }
         case .system:
-            HStack {
-                Text(item.text)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                InlineMessageCopyButton(action: copyMessage)
-            }
-            .messageCopyAccessory(isHovering: isHovering, placement: .trailingGutter(.center), action: copyMessage)
-            .onHover { isHovering = $0 }
-            .contextMenu { copyMenu }
+            Text(item.text).font(.caption).foregroundStyle(.secondary)
+                .contextMenu { copyMenu }
         }
     }
 

@@ -226,6 +226,13 @@ public enum ConversationMarkdown {
         return [item.toolName, item.detail].compactMap { $0 }.joined(separator: "\n")
     }
 
+    /// The row whose action bar stays shown without hover: the last user or
+    /// assistant message. Tool and system rows have no bar, so a tool call
+    /// running after a reply leaves the bar on that reply.
+    public static func newestMessageID(in items: [TranscriptItem]) -> String? {
+        items.last { $0.role == .user || $0.role == .assistant }?.id
+    }
+
     public static func export(_ items: [TranscriptItem]) -> String {
         items.map { item in
             let role: String

@@ -3,8 +3,7 @@ import HermesKit
 import SwiftUI
 import Testing
 
-/// One assistant message as one native text view: selection and copy, and its
-/// rendering against the former one-view-per-block layout.
+/// Native prose selection and the hosted message layout around components.
 @MainActor
 @Suite struct MarkdownSelectionHostTests {
     private let source = """
@@ -31,10 +30,10 @@ import Testing
     private static let wideFormula = "\\sum_{i=1}^{n} a_i + b_i + c_i + d_i + e_i + f_i + g_i + h_i + j_i + k_i + l_i + m_i + n_i + o_i + p_i + q_i + r_i"
 
     @MainActor private final class Hosted {
-        let host: NSHostingView<MarkdownView>
+        let host: NSHostingView<SelectableMarkdownText>
         let view: MarkdownSelectionTextView
 
-        init(host: NSHostingView<MarkdownView>, view: MarkdownSelectionTextView) {
+        init(host: NSHostingView<SelectableMarkdownText>, view: MarkdownSelectionTextView) {
             self.host = host
             self.view = view
         }
@@ -44,7 +43,9 @@ import Testing
         var string: NSString { view.string as NSString }
 
         func update(_ text: String, streaming: Bool = false) {
-            host.rootView = MarkdownView(text: text, isStreaming: streaming)
+            host.rootView = SelectableMarkdownText(selection: MarkdownSelection(parsing: text, streaming: streaming),
+                                                   source: text, bodySize: 13, isReasoning: false,
+                                                   conversationSource: nil)
             host.layoutSubtreeIfNeeded()
         }
 
@@ -86,7 +87,9 @@ import Testing
 
     private func host(_ text: String, width: CGFloat = 600, streaming: Bool = false, reasoning: Bool = false,
                       appearance: NSAppearance.Name? = nil) throws -> Hosted {
-        let host = NSHostingView(rootView: MarkdownView(text: text, isStreaming: streaming, isReasoning: reasoning))
+        let host = NSHostingView(rootView: SelectableMarkdownText(
+            selection: MarkdownSelection(parsing: text, streaming: streaming), source: text,
+            bodySize: 13, isReasoning: reasoning, conversationSource: nil))
         if let appearance { host.appearance = NSAppearance(named: appearance) }
         host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
         host.layoutSubtreeIfNeeded()
@@ -99,6 +102,173 @@ import Testing
             if let found = findTextView(in: child) { return found }
         }
         return nil
+    }
+
+    private func descendants<T: NSView>(_ type: T.Type, in view: NSView) -> [T] {
+        var result: [T] = []
+        if let match = view as? T { result.append(match) }
+        for child in view.subviews { result += descendants(type, in: child) }
+        return result
+    }
+
+    private func fullMessage(_ text: String, width: CGFloat = 320, streaming: Bool = false)
+        -> (host: NSHostingView<MarkdownView>, window: NSWindow) {
+        let host = NSHostingView(rootView: MarkdownView(text: text, isStreaming: streaming))
+        host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
+        host.frame.size.height = host.fittingSize.height
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        // Owned by ARC here. With AppKit's default for windows made in code,
+        // `close()` would release it a second time and crash at the next
+        // autorelease pool drain.
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        host.layoutSubtreeIfNeeded()
+        return (host, window)
+    }
+
+    @Test func actualMessageHasProseRunsAroundIndependentComponents() throws {
+        let text = """
+        Before $x$.
+
+        - one
+        - two
+
+        ```swift
+        let value = 1
+        ```
+
+        After.
+
+        | Name | Value |
+        |------|-------|
+        | a | longer |
+
+        Last.
+        """
+        let hosted = fullMessage(text)
+        defer { hosted.window.close() }
+        let runs = descendants(MarkdownSelectionTextView.self, in: hosted.host).filter {
+            $0.string.contains("Before") || $0.string == "After." || $0.string == "Last."
+        }
+        #expect(runs.count == 3)
+        guard runs.count == 3 else { return }
+        #expect(runs[0].string.contains("Before"))
+        #expect(runs[0].string.contains("•"))
+        #expect(!runs[0].string.contains("let value"))
+        #expect(runs[1].string == "After.")
+        #expect(runs[2].string == "Last.")
+
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        runs[0].pasteboard = pasteboard
+        runs[0].selectAll(nil)
+        runs[0].copy(nil)
+        #expect(pasteboard.string(forType: .string) == "Before $x$.\n\n- one\n- two")
+        #expect(runs[0].selectedRange().length == (runs[0].textStorage?.length ?? 0))
+
+        let cell = try #require(descendants(MarkdownSelectionTextView.self, in: hosted.host)
+            .first(where: { $0.string == "longer" }))
+        cell.pasteboard = pasteboard
+        cell.selectAll(nil)
+        cell.copy(nil)
+        #expect(pasteboard.string(forType: .string) == "longer")
+    }
+
+    @Test func codeAndTableScrollSeparatelyAtFullColumnWidth() throws {
+        let code = String(repeating: "veryLongCodeToken", count: 25)
+        let cell = String(repeating: "wide ", count: 25)
+        let hosted = fullMessage("Intro.\n\n```swift\n\(code)\n```\n\n| Short | Wide |\n|---|---|\n| x | \(cell) |", width: 260)
+        defer { hosted.window.close() }
+        let prose = try #require(descendants(MarkdownSelectionTextView.self, in: hosted.host)
+            .first(where: { $0.string == "Intro." }))
+        #expect(prose.frame.width >= 250, "the prose has a trailing gutter")
+        let scrolls = descendants(NSScrollView.self, in: hosted.host)
+        #expect(scrolls.count >= 2)
+        #expect(scrolls.allSatisfy { scroll in
+            guard let document = scroll.documentView else { return false }
+            return document.frame.width > scroll.contentSize.width + 20
+        }, "code and table need their own wider horizontal content")
+    }
+
+    @Test func tableGridHasBordersAndContentSizedColumns() throws {
+        let short = fullMessage("| A | B |\n|---|---|\n| x | y |", width: 260)
+        defer { short.window.close() }
+        let long = fullMessage("| A | Wide |\n|---|---|\n| x | \(String(repeating: "wide ", count: 30)) |", width: 260)
+        defer { long.window.close() }
+        let shortScroll = try #require(descendants(NSScrollView.self, in: short.host).first)
+        let longScroll = try #require(descendants(NSScrollView.self, in: long.host).first)
+        let shortWidth = try #require(shortScroll.documentView).frame.width
+        let longWidth = try #require(longScroll.documentView).frame.width
+        #expect(longWidth > shortWidth + 50, "columns do not grow with cell content")
+
+        let rendered = try render(width: 260) {
+            MarkdownTableGrid(table: MarkdownTable(alignments: [.none, .none],
+                                                  header: [[.text("A")], [.text("B")]],
+                                                  rows: [[[.text("x")], [.text("y")]]]))
+        }
+        // Sample in points, converted with the bitmap's own scale (the screen's
+        // backing scale, 2x on Retina): the grid sits inside a 1 pt inset, so
+        // fixed pixel (1, 1) is the margin at 2x and the stroke only at 1x.
+        let scale = CGFloat(rendered.rep.pixelsWide) / rendered.host.bounds.width
+        func isLine(_ x: CGFloat, _ y: CGFloat) -> Bool {
+            brightness(rendered.rep, Int((x * scale).rounded(.down)), Int((y * scale).rounded(.down))) < 0.97
+        }
+        // Everything the grid draws (strokes and text) on the white background;
+        // its outer edge is the border, if there is one.
+        let grid = try #require(box(rendered.rep, width: rendered.host.bounds.width) { x, y in
+            brightness(rendered.rep, x, y) < 0.97
+        }, "the table draws nothing")
+        #expect(grid.width > 30 && grid.height > 30, "the grid is \(grid)")
+        /// Separate stretches of grid line met walking from `start` to `end`.
+        func linesCrossed(from start: CGPoint, to end: CGPoint) -> Int {
+            let steps = Int(max(abs(end.x - start.x), abs(end.y - start.y)) * scale)
+            var count = 0, inLine = false
+            for step in 0...steps {
+                let t = CGFloat(step) / CGFloat(max(steps, 1))
+                let hit = isLine(start.x + (end.x - start.x) * t, start.y + (end.y - start.y) * t)
+                if hit && !inLine { count += 1 }
+                inLine = hit
+            }
+            return count
+        }
+        // The outer border: each edge of that box is one unbroken line.
+        let edges = [(CGPoint(x: grid.minX + 2, y: grid.minY + 0.25), CGPoint(x: grid.maxX - 2, y: grid.minY + 0.25)),
+                     (CGPoint(x: grid.minX + 2, y: grid.maxY - 0.25), CGPoint(x: grid.maxX - 2, y: grid.maxY - 0.25)),
+                     (CGPoint(x: grid.minX + 0.25, y: grid.minY + 2), CGPoint(x: grid.minX + 0.25, y: grid.maxY - 2)),
+                     (CGPoint(x: grid.maxX - 0.25, y: grid.minY + 2), CGPoint(x: grid.maxX - 0.25, y: grid.maxY - 2))]
+        for (start, end) in edges {
+            #expect(stride(from: 0, through: 1, by: 0.02).allSatisfy {
+                isLine(start.x + (end.x - start.x) * $0, start.y + (end.y - start.y) * $0)
+            }, "the table border is missing or broken between \(start) and \(end)")
+        }
+        // Walking across the header row's top padding (clear of text) meets the left
+        // border, the line between the columns and the right border; walking down
+        // the first column's padding meets the top, the header/body line and the bottom.
+        #expect(linesCrossed(from: CGPoint(x: grid.minX, y: grid.minY + 3),
+                             to: CGPoint(x: grid.maxX - 0.25, y: grid.minY + 3)) == 3, "no line between the columns")
+        #expect(linesCrossed(from: CGPoint(x: grid.minX + 4, y: grid.minY),
+                             to: CGPoint(x: grid.minX + 4, y: grid.maxY - 0.25)) == 3, "no line between the rows")
+    }
+
+    @Test func streamingComponentsKeepTheirPlace() throws {
+        let hosted = fullMessage("Before.\n\n```swift\nlet a", streaming: true)
+        defer { hosted.window.close() }
+        let first = try #require(descendants(NSScrollView.self, in: hosted.host).first)
+        for source in ["Before.\n\n```swift\nlet a = 1",
+                       "Before.\n\n```swift\nlet a = 1\n```",
+                       "Before.\n\n```swift\nlet a = 1\n```\n\n| a | b |",
+                       "Before.\n\n```swift\nlet a = 1\n```\n\n| a | b |\n|---|---|\n| x | y |"] {
+            hosted.host.rootView = MarkdownView(text: source, isStreaming: true)
+            hosted.host.frame.size.height = hosted.host.fittingSize.height
+            hosted.window.setContentSize(hosted.host.frame.size)
+            hosted.host.layoutSubtreeIfNeeded()
+            let scrolls = descendants(NSScrollView.self, in: hosted.host)
+            #expect(scrolls.count == (source.contains("| a | b |") ? 2 : 1))
+            #expect(scrolls.first === first, "the code component was recreated during a delta")
+            #expect(descendants(MarkdownSelectionTextView.self, in: hosted.host)
+                .filter { $0.string == "Before." }.count == 1)
+        }
     }
 
     private func privatePasteboard() -> NSPasteboard {
@@ -291,15 +461,146 @@ import Testing
         #expect(try font("Body").pointSize == 13)
     }
 
+    /// The grid that ships: header cells bold, body cells regular.
     @Test func tableHeaderIsBold() throws {
-        let hosted = try host("| Name | Value |\n|---|---|\n| cell1 | cell2 |")
-        func isBold(_ text: String) -> Bool {
-            let index = hosted.string.range(of: text).location
-            let font = hosted.storage.attribute(.font, at: index, effectiveRange: nil) as? NSFont
+        let hosted = fullMessage("| Name | Value |\n|---|---|\n| cell1 | cell2 |")
+        defer { hosted.window.close() }
+        func isBold(_ text: String) throws -> Bool {
+            let cell = try #require(descendants(MarkdownSelectionTextView.self, in: hosted.host).first { $0.string == text },
+                                    "no grid cell \(text)")
+            let font = cell.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
             return font.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } ?? false
         }
-        #expect(isBold("Name"))
-        #expect(!isBold("cell1"))
+        #expect(try isBold("Name"))
+        #expect(try isBold("Value"))
+        #expect(try !isBold("cell1"))
+        #expect(descendants(NSScrollView.self, in: hosted.host).count == 1, "the table is not the grid component")
+    }
+
+    /// Inner lines are one divider, as thick as the outer border, not two cell
+    /// borders side by side.
+    @Test func tableLinesAreAllOnePoint() throws {
+        let rendered = try render(width: 260) {
+            MarkdownTableGrid(table: MarkdownTable(alignments: [.none, .none, .none],
+                                                  header: [[.text("A")], [.text("B")], [.text("C")]],
+                                                  rows: [[[.text("x")], [.text("y")], [.text("z")]],
+                                                         [[.text("u")], [.text("v")], [.text("w")]]]))
+        }
+        let scale = CGFloat(rendered.rep.pixelsWide) / rendered.host.bounds.width
+        let grid = try #require(box(rendered.rep, width: rendered.host.bounds.width) { x, y in
+            brightness(rendered.rep, x, y) < 0.97
+        })
+        /// Lengths, in pixels, of the line stretches met along a pixel row or column.
+        func runs(along pixels: [(Int, Int)]) -> [Int] {
+            var lengths: [Int] = [], current = 0
+            for (x, y) in pixels {
+                if brightness(rendered.rep, x, y) < 0.97 { current += 1 } else if current > 0 { lengths.append(current); current = 0 }
+            }
+            if current > 0 { lengths.append(current) }
+            return lengths
+        }
+        let row = Int((grid.minY + 3) * scale)
+        let across = runs(along: (Int(grid.minX * scale)...Int(grid.maxX * scale - 1)).map { ($0, row) })
+        let column = Int((grid.minX + 4) * scale)
+        let down = runs(along: (Int(grid.minY * scale)...Int(grid.maxY * scale - 1)).map { (column, $0) })
+        #expect(across.count == 4 && down.count == 4, "across \(across), down \(down)")
+        for length in across + down {
+            #expect(length <= Int(scale) + 1, "a line is \(length) px thick; 1 pt is \(Int(scale)) px: \(across) \(down)")
+        }
+    }
+
+    /// Columns are as wide as the cells render (monospaced inline code, bold),
+    /// so a short identifier does not wrap.
+    @Test func tableColumnsFitRenderedCells() throws {
+        let hosted = fullMessage("| `averyLongIdentifier_name` | **Bold heading text** |\n|---|---|\n| `snake_case_value_42` | [link text here](https://example.com) |",
+                                 width: 600)
+        defer { hosted.window.close() }
+        let cells = descendants(MarkdownSelectionTextView.self, in: hosted.host)
+        #expect(cells.count == 4)
+        for cell in cells {
+            let layoutManager = try #require(cell.layoutManager)
+            layoutManager.ensureLayout(for: cell.textContainer!)
+            var lines = 0
+            layoutManager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: layoutManager.numberOfGlyphs)) { _, _, _, _, _ in
+                lines += 1
+            }
+            #expect(lines == 1, "\(cell.string) wraps onto \(lines) lines at width \(cell.frame.width)")
+        }
+    }
+
+    /// A 50 x 6 table: one layout of each cell's text (the extra measuring layout
+    /// manager used to stay attached to every cell, doubling it).
+    @Test func bigTableKeepsOneLayoutPerCell() throws {
+        let header = "| " + (1...6).map { "Column \($0)" }.joined(separator: " | ") + " |"
+        let rule = "|" + String(repeating: "---|", count: 6)
+        let rows = (1...50).map { row in "| " + (1...6).map { "r\(row) value \($0)" }.joined(separator: " | ") + " |" }
+        let start = Date()
+        let hosted = fullMessage(([header, rule] + rows).joined(separator: "\n"), width: 700)
+        defer { hosted.window.close() }
+        let elapsed = Date().timeIntervalSince(start)
+        let cells = descendants(MarkdownSelectionTextView.self, in: hosted.host)
+        #expect(cells.count == 51 * 6)
+        let managers = cells.reduce(0) { $0 + $1.layoutManagerCount }
+        #expect(managers == cells.count, "\(managers) layout managers for \(cells.count) cells")
+        // Cells start at their column width, so none lays its text out twice.
+        let doubled = cells.filter { $0.offscreenMeasurements > 0 }.count
+        #expect(doubled == 0, "\(doubled) cells laid out off screen first")
+        print("bigTableKeepsOneLayoutPerCell: built and laid out 306 cells in \(String(format: "%.3f", elapsed)) s")
+        #expect(elapsed < 5, "a 50 x 6 table took \(elapsed) s")
+    }
+
+    /// A prose run measured at another width keeps a second layout only until it
+    /// is placed.
+    @Test func placedProseDropsItsMeasuringLayout() throws {
+        let hosted = try host(String(repeating: "Words that wrap. ", count: 20), width: 600)
+        _ = hosted.view.fittingHeight(width: 300)
+        #expect(hosted.view.layoutManagerCount == 2)
+        hosted.resize(width: 300)
+        #expect(hosted.view.layoutManagerCount == 1)
+    }
+
+    /// Right-click in a cell offers the message actions, as in prose and code.
+    @Test func tableCellMenuHasMessageActions() throws {
+        let text = "Intro.\n\n| Name | Value |\n|---|---|\n| cell1 | cell2 |"
+        let host = NSHostingView(rootView: MarkdownView(text: text, isStreaming: false, conversationSource: { "the conversation" }))
+        host.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        let cell = try #require(descendants(MarkdownSelectionTextView.self, in: host).first { $0.string == "cell1" })
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        cell.pasteboard = pasteboard
+        let event = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: cell.convert(NSPoint(x: 2, y: 2), to: nil),
+                                                    modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let menu = try #require(cell.menu(for: event))
+        let message = try #require(menu.items.first { $0.title == "Copy Message" })
+        let conversation = try #require(menu.items.first { $0.title == "Copy Conversation" })
+        NSApp.sendAction(try #require(message.action), to: message.target, from: message)
+        #expect(pasteboard.string(forType: .string) == text)
+        NSApp.sendAction(try #require(conversation.action), to: conversation.target, from: conversation)
+        #expect(pasteboard.string(forType: .string) == "the conversation")
+    }
+
+    /// The parts of a reply keep 6 pt between them; only the action bar sits flush.
+    @Test func replyPartsKeepTheirSpacing() {
+        func height(_ view: some View) -> CGFloat { NSHostingView(rootView: view.frame(width: 400)).fittingSize.height }
+        let plain = TranscriptItem(id: "a", role: .assistant, text: "Reply.")
+        var interrupted = plain
+        interrupted.outcome = "interrupted"
+        var reasoned = plain
+        reasoned.reasoning = "Thought."
+        let base = height(AssistantMessageContent(item: plain) {})
+        let label = height(Text("Interrupted").font(.caption))
+        let disclosure = height(DisclosureGroup("Reasoning") { Text("Thought.") }.font(.caption))
+        #expect(abs(height(AssistantMessageContent(item: interrupted) {}) - base - (label + 6)) <= 1)
+        #expect(abs(height(AssistantMessageContent(item: reasoned) {}) - base - (disclosure + 6)) <= 1)
+        let bar = height(MessageActionBar(isHovering: false, isNewest: false) {})
+        let text = height(MarkdownView(text: "Reply.", isStreaming: false))
+        #expect(abs(base - (text + bar)) <= 1, "the bar is not flush under the reply")
     }
 
     @Test func blockQuoteIsIndentedWithABarNotPrefixed() throws {
@@ -322,18 +623,16 @@ import Testing
         #expect(abs(second.minY - first.maxY - 10) <= 1.5, "gap \(second.minY - first.maxY)")
     }
 
-    @Test func hiddenMessageCopyButtonAddsNoHeight() {
-        let plain = NSHostingView(rootView: Text("Hello").padding(10))
-        let gutter = NSHostingView(rootView: Text("Hello").padding(10)
-            .messageCopyAccessory(isHovering: false, placement: .trailingGutter(.bottom)) {})
-        let centered = NSHostingView(rootView: Text("Hello").padding(10)
-            .messageCopyAccessory(isHovering: false, placement: .trailingGutter(.center)) {})
-        let user = NSHostingView(rootView: Text("Hello").padding(10)
-            .messageCopyAccessory(isHovering: false, placement: .leadingOutside) {})
-        #expect(gutter.fittingSize.height == plain.fittingSize.height)
-        #expect(centered.fittingSize.height == plain.fittingSize.height)
-        #expect(user.fittingSize.height == plain.fittingSize.height)
-        #expect(user.fittingSize.width == plain.fittingSize.width)
+    @Test func actionBarHasStableHeightAndNoGutter() {
+        let hidden = NSHostingView(rootView: MessageActionBar(isHovering: false, isNewest: false) {})
+        let hovered = NSHostingView(rootView: MessageActionBar(isHovering: true, isNewest: false) {})
+        let newest = NSHostingView(rootView: MessageActionBar(isHovering: false, isNewest: true) {})
+        #expect(hidden.fittingSize.height == 26)
+        #expect(hovered.fittingSize.height == hidden.fittingSize.height)
+        #expect(newest.fittingSize.height == hidden.fittingSize.height)
+        #expect(MessageActionBar(isHovering: false, isNewest: false, copy: {}).isVisible == false)
+        #expect(MessageActionBar(isHovering: true, isNewest: false, copy: {}).isVisible)
+        #expect(MessageActionBar(isHovering: false, isNewest: true, copy: {}).isVisible)
     }
 
     // MARK: 6. Decorations follow the text
@@ -446,32 +745,16 @@ import Testing
         return (button, ink, off)
     }
 
-    @Test func replyCopyButtonStaysClearOfTheText() throws {
-        let code = String(repeating: "let value = compute(argument) + other; ", count: 4)
-        var item = TranscriptItem(id: "a", role: .assistant, text: "Answer.\n\n```swift\n\(code)\n```")
-        item.isActive = false
-        let result = try copyButtonAndInk(width: 460) { AssistantMessageContent(item: item, isHovering: $0) {} }
-        #expect(result.button.minX >= result.ink.maxX, "copy button \(result.button) overlaps text ink \(result.ink)")
-
-        // The whole width of the reply's last line, as if text ran to its end.
+    @Test func replyActionBarSitsBelowFullWidthText() throws {
+        let item = TranscriptItem(id: "a", role: .assistant, text: "Full width reply.")
+        let result = try copyButtonAndInk(width: 460) {
+            AssistantMessageContent(item: item, isHovering: $0) {}
+        }
         let view = try #require(findTextView(in: result.off.host))
-        let layoutManager = try #require(view.layoutManager)
-        let lastGlyph = layoutManager.glyphIndexForCharacter(at: (view.string as NSString).length - 1)
-        let lastLine = layoutManager.lineFragmentRect(forGlyphAt: lastGlyph, effectiveRange: nil)
-            .offsetBy(dx: view.textContainerOrigin.x, dy: view.textContainerOrigin.y)
-        let line = view.convert(lastLine, to: result.off.host)
-        #expect(lastLine.width > 300)
-        #expect(!result.button.intersects(line), "copy button \(result.button) covers the last line \(line)")
-        #expect(!result.button.intersects(view.convert(view.bounds, to: result.off.host)), "copy button is over the message")
-    }
-
-    @Test func toolCopyButtonStaysClearOfTheDetail() throws {
-        var item = TranscriptItem(id: "t", role: .tool, text: "")
-        item.toolName = "search"
-        item.detail = String(repeating: "a long tool detail that wraps across the card ", count: 6)
-        let result = try copyButtonAndInk(width: 420) { ToolMessageContent(item: item, isHovering: $0) {} }
-        #expect(result.ink.width > 300, "the detail must run across the card to test anything")
-        #expect(result.button.minX >= result.ink.maxX, "copy button \(result.button) overlaps the detail \(result.ink)")
+        let textFrame = view.convert(view.bounds, to: result.off.host)
+        #expect(textFrame.width >= 450, "a trailing gutter narrowed the text")
+        #expect(result.button.minY >= textFrame.maxY - 1 || result.button.maxY <= textFrame.minY + 1,
+                "action bar overlaps text")
     }
 
     // MARK: Round 2. Streaming cost

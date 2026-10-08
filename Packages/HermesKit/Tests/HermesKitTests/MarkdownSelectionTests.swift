@@ -5,7 +5,8 @@ import Testing
 @Suite struct MarkdownSelectionTests {
     /// Tags the runs as the app renderer does; every formula renders as one attachment.
     private func rendered(_ selection: MarkdownSelection) -> NSAttributedString {
-        let result = NSMutableAttributedString()
+        // `init(string:)`: swift-corelibs-foundation has no zero-argument initializer.
+        let result = NSMutableAttributedString(string: "")
         for index in selection.runs.indices {
             result.append(NSAttributedString(string: selection.runs[index].text,
                                              attributes: selection.copyAttributes(forRunAt: index)))
@@ -91,7 +92,7 @@ import Testing
     }
 
     @Test func adjacentUnitsWithEqualCopyTextStaySeparate() {
-        let text = NSMutableAttributedString()
+        let text = NSMutableAttributedString(string: "")
         for index in 0..<2 {
             text.append(NSAttributedString(string: "\u{FFFC}", attributes: [
                 MarkdownSelection.runIndexAttribute: index, MarkdownSelection.copyTextAttribute: "$x$",

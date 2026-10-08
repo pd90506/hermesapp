@@ -7,11 +7,14 @@ import Testing
 // Pointer feedback of the real sidebar controls (`SidebarControls.swift`, `Hover.swift`),
 // hosted in an `NSHostingView` in a window and checked in its rendered pixels.
 //
-// The pointer is driven the way AppKit drives it: an enter event carrying the tracking
-// area under the point (its `trackingNumber` is the area, so `event.trackingArea` is
-// that area), sent to the area's owner, then a mouse-moved event, and an exit when it
-// leaves. SwiftUI's `onHover` listens to exactly these. Plain `mouseMoved` events
-// without the enter change nothing, and `@State` is never touched from here.
+// The pointer is driven the way AppKit drives it: every tracking area under the point
+// gets an enter event carrying that area (its `trackingNumber` is the area, so
+// `event.trackingArea` is that area), sent to the area's owner, then a mouse-moved
+// event, and an exit when the pointer leaves it. SwiftUI's `onHover` listens to
+// exactly these. A hosting view can have several areas under one point (a `.help`
+// tooltip adds its own), in no fixed order, so all of them get the events, not just
+// one. Plain `mouseMoved` events without the enter change nothing, and `@State` is
+// never touched from here.
 
 /// The test process is never the active app, so its windows are never key, and AppKit
 /// hands a first click in a non-key window only to views that accept first mouse (a
@@ -24,7 +27,8 @@ private final class KeyWindow: NSWindow {
 private final class HostWindow {
     let window: NSWindow
     let host: NSView
-    private var hovered: (owner: NSView, area: NSTrackingArea)?
+    /// The tracking areas the pointer is in, with the view each belongs to.
+    private var hovered: [(view: NSView, area: NSTrackingArea)] = []
 
     /// The host's own coordinates, for frames measured in SwiftUI (`.global` is the
     /// window's, titlebar included).
@@ -59,42 +63,64 @@ private final class HostWindow {
 
     func movePointer(to point: CGPoint) {
         let location = windowPoint(point)
+        // Every enter/exit area under the point, on the hit view and its ancestors.
+        var under: [(view: NSView, area: NSTrackingArea)] = []
         var view = window.contentView?.superview?.hitTest(location)
-        while let candidate = view, area(of: candidate, at: location) == nil { view = candidate.superview }
-        guard let owner = view, let area = area(of: owner, at: location) else {
+        while let candidate = view {
+            under += areas(of: candidate, at: location).map { (candidate, $0) }
+            view = candidate.superview
+        }
+        guard !under.isEmpty else {
             Issue.record("No tracking area under \(point)")
             return
         }
-        if let hovered, hovered.area !== area { send(.mouseExited, hovered.area, to: hovered.owner, at: location) }
-        if hovered?.area !== area { send(.mouseEntered, area, to: owner, at: location) }
-        hovered = (owner, area)
+        for old in hovered where !under.contains(where: { $0.area === old.area }) {
+            send(.mouseExited, old.area, from: old.view, at: location)
+        }
+        for new in under where !hovered.contains(where: { $0.area === new.area }) {
+            send(.mouseEntered, new.area, from: new.view, at: location)
+        }
+        hovered = under
         let moved = NSEvent.mouseEvent(with: .mouseMoved, location: location, modifierFlags: [],
                                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                        context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
-        owner.mouseMoved(with: moved)
+        // Each owner of an area under the point that asked for moves gets one.
+        var owners: [NSObject] = []
+        for entry in under where entry.area.options.contains(.mouseMoved) {
+            guard let owner = entry.area.owner as? NSObject, !owners.contains(where: { $0 === owner }) else { continue }
+            owners.append(owner)
+        }
+        for owner in owners { deliver(#selector(NSResponder.mouseMoved(with:)), moved, to: owner) }
         settle()
     }
 
     /// The pointer leaves the window.
     func pointerLeaves() {
-        guard let hovered else { return }
-        send(.mouseExited, hovered.area, to: hovered.owner, at: NSPoint(x: -50, y: -50))
-        self.hovered = nil
+        for old in hovered { send(.mouseExited, old.area, from: old.view, at: NSPoint(x: -50, y: -50)) }
+        hovered = []
         settle()
     }
 
-    private func area(of view: NSView, at location: NSPoint) -> NSTrackingArea? {
+    private func areas(of view: NSView, at location: NSPoint) -> [NSTrackingArea] {
         let local = view.convert(location, from: nil)
-        return view.trackingAreas.first { $0.options.contains(.mouseEnteredAndExited) && $0.rect.contains(local) }
+        return view.trackingAreas.filter { $0.options.contains(.mouseEnteredAndExited) && $0.rect.contains(local) }
     }
 
-    private func send(_ type: NSEvent.EventType, _ area: NSTrackingArea, to owner: NSView, at location: NSPoint) {
+    /// AppKit sends an area's events to the area's owner, which need not be the view
+    /// (a `.help` tooltip's area belongs to a SwiftUI bridge object).
+    private func deliver(_ selector: Selector, _ event: NSEvent, to owner: NSObject) {
+        if owner.responds(to: selector) { owner.perform(selector, with: event) }
+    }
+
+    private func send(_ type: NSEvent.EventType, _ area: NSTrackingArea, from view: NSView, at location: NSPoint) {
         let event = NSEvent.enterExitEvent(
             with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: window.windowNumber, context: nil, eventNumber: 0,
             trackingNumber: Int(bitPattern: Unmanaged.passUnretained(area).toOpaque()), userData: nil)!
         #expect(event.trackingArea === area)
-        if type == .mouseEntered { owner.mouseEntered(with: event) } else { owner.mouseExited(with: event) }
+        guard let owner = area.owner as? NSObject ?? Optional(view) else { return }
+        deliver(type == .mouseEntered ? #selector(NSResponder.mouseEntered(with:)) : #selector(NSResponder.mouseExited(with:)),
+                event, to: owner)
     }
 
     /// A click on the view under `point`, as `NSWindow.sendEvent` delivers it in an active

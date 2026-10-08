@@ -126,6 +126,8 @@ final class PagedServer: Sendable {
                     "bytes": 4, "name": .string((path as NSString).lastPathComponent)]
         case "image.detach":
             return ["detached": true, "count": 0]  // `methods_prompt.py:998-1010`
+        case "session.interrupt":
+            return ["status": "interrupted"]  // `methods_session_interrupt.py:64`
         default:
             return nil
         }

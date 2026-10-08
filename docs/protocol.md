@@ -332,12 +332,15 @@ plus the newest page of the transcript over REST.
   - the turn streaming now, including the turn that was running at open (`inflight`);
   - prompts sent here;
   - finished turns, until their re-read lands.
-- **No matching.** Live and stored content are never matched: no text, row-id, call-id or anchor
-  comparison. While a turn runs, some content can show twice:
+- **No matching.** Live and stored content are never matched: no text, call-id or anchor
+  comparison. The one exception is a row id Hermes gives for a prompt sent here: the
+  `user_row_id` of a `prompt.submit` answered `streaming` names that prompt's own stored row
+  (see "Proven by its row id" below). While a turn runs, some content can show twice:
   - the stored part of a turn that was already running at open (Hermes stores each tool round
     before its tools run, `agent/turn_tool_round.py:127-130`);
   - its echoed `inflight.user`;
-  - a prompt the history already holds.
+  - a prompt the history already holds, sent without a `user_row_id` (queued, steered, redirected,
+    or row-less `streaming`; see below).
 - **When a turn finishes** (`message.complete`, from any source), the app reads the newest rows
   again:
   - same endpoint, `order=latest`, 120 rows;
@@ -358,15 +361,30 @@ plus the newest page of the transcript over REST.
   - prompts sent here, but only if the session was quiet throughout the re-read: no turn running,
     none started since it was requested, and every `prompt.submit` answered.
 
+  - **Proven by its row id: at once, quiet or not.** A prompt answered `streaming` with
+    `user_row_id` N goes as soon as the shown history holds stored row N: when a re-read installs
+    it, or when the answer arrives and an earlier re-read already showed it. Row N is that prompt
+    (`methods_prompt.py:815-821`), so nothing else is needed. Desktop ties its optimistic message to
+    the same id (`apps/desktop/src/app/session/hooks/use-prompt-actions/submit.ts:969-986`). The row
+    must be *shown*: a page that does not hold it, a row Hermes hides, or a row with the same text
+    and another id proves nothing, and the bubble stays.
+
+    This settles the warm-agent race of issue #5. The answer asks for a re-read, `message.start`
+    arrives while that read is in flight, and the page lands holding row N. The read is not quiet
+    (a turn started), so before this rule the bubble stayed beside its stored row for the whole
+    turn, and until the next turn if the turn's own re-read failed. It also settles a fast reply
+    whose `message.complete` and re-read land before the answer: the bubble stays while no answer
+    has proved it, then goes when the answer arrives.
+
   The quiet rule exists because a follow-up turn announces itself with `message.start` before it
   stores its prompt (`prompt_turn.py:421-427`). Follow-up turns are a queued prompt, or a steer the
   turn couldn't deliver, which is re-queued after the turn (`prompt_turn.py:438-450`,
   `agent/turn_finalizer.py:742-746`). Until such a turn finishes, the bubble stays.
 
   How many quiet re-reads a prompt needs depends on its answer:
-  - **`streaming` with `user_row_id`: one.** Its row was written before the answer
-    (`methods_prompt.py:815-819`), so the first quiet re-read holds it, and the bubble never sits
-    below its own reply.
+  - **`streaming` with `user_row_id`: one, if its row id has not settled it first** (above). Its
+    row was written before the answer (`methods_prompt.py:815-819`), so the first quiet re-read
+    holds it, and the bubble never sits below its own reply.
   - **`streaming` without `user_row_id`: its own turn.** No row was written at submit. Causes:
     - an empty text, i.e. an image-only prompt (`_write_submit_user_row` returns early,
       `session_workdir.py:621`);
@@ -379,7 +397,10 @@ plus the newest page of the transcript over REST.
     with the turn's other live items, at the first re-read requested after the turn finished. If
     no turn starts, it stays.
   - **`queued`, `steered`, `redirected`, and a missing status: two in a row**, the second requested
-    once the first had landed. `message.start` travels on the socket in batches of about 33 ms
+    once the first had landed. These answers carry no `user_row_id` ("absent on
+    queued/steered/redirected inputs", `contracts/prompt_voice.py:69-71`). The turn receipt in
+    `message.complete` (`persisted_turn.user_row_id`, `prompt_turn.py:899-903`) names a turn's user
+    row, not which bubble it holds (queued prompts can merge into one turn), so it is not used. `message.start` travels on the socket in batches of about 33 ms
     (`ws.py:82-83`), and a single re-read's HTTP answer could arrive before a start that was already
     sent. By the second read, the follow-up's prompt row has been written, or its start has arrived
     and ended the quiet spell.
@@ -435,8 +456,9 @@ plus the newest page of the transcript over REST.
 
 `[unverified]` Known limits:
 - **Temporary duplicates while a turn runs:** the stored part and echoed prompt of a turn that
-  was running at open, and a prompt the history already holds. They clear when that turn's re-read
-  lands.
+  was running at open, and a prompt the history already holds that has no `user_row_id` to prove
+  it (queued, steered, redirected). They clear when that turn's re-read lands. A prompt answered
+  `streaming` with `user_row_id` is not among them: it goes as soon as its row shows.
 - **Duplicates until a later re-read or reopening:** when a re-read fails. The next finished turn
   re-reads.
 - **Duplicates that only reopening clears:**
@@ -619,6 +641,111 @@ top; older pages loaded later go above it, not around its anchor.
 
 A failed turn (`status:"error"`) keeps every live segment of its last model call, also the ones
 a local row or a prompt sealed mid-reply: none of them is stored.
+
+**Waiting for the reply.** `[client choice]` (`Transcript.waiting`, `ResponseWaitingRow`) Between
+a send and the first token, Hermes sends little that can be shown. It sends:
+- the submit answer;
+- `message.start`, with no payload;
+- one `thinking.delta` spinner frame per API call (`agent/turn_iteration_prep.py:319-324`);
+- `reasoning.delta`, only with show-reasoning on;
+- `status.update`, only for lifecycle events such as compaction or memory recall;
+- `notification.show` with key `agent-build-slow`, only when the agent build takes more than 30 s
+  (`tui_gateway/server.py:945,989-996`, cleared by `notification.clear`).
+
+So the app shows one waiting row in the assistant column, as Desktop's `ResponseLoadingIndicator`
+does (`components/assistant-ui/thread/status.tsx:243-268`):
+- **When it shows:** from the moment a prompt is sent here (before its answer) until the reply
+  shows visible text (whitespace is none) or a tool row. Reasoning alone does not end it. Only
+  output since the latest send, or since the turn now running started, counts: an earlier turn's
+  reply, such as a failed one whose partial reply stays live, does not end a new wait.
+- **When it goes:** when the app no longer counts the session as running ("Running state" below),
+  or when visible output arrives, whichever is first.
+- **What it shows:**
+  - a pulse, still under Reduce Motion;
+  - "Thinking…";
+  - the time since the send. A turn this chat did not send, one running at open, counts from
+    when the row appeared.
+- **Hints:** when Hermes says what the wait is about, the hint replaces "Thinking…", most specific
+  first:
+  1. the turn's `status.update` text;
+  2. an explained provider wait (`thinking.delta`, see the table);
+  3. "Drafting ‹tool›…" while `tool.generating` names a tool;
+  4. the slow agent-build notice.
+- **VoiceOver:** the label is "Hermes is responding".
+- **No bare "…":** an assistant row with nothing to show (no text, no reasoning, no
+  "Interrupted") is not drawn. The waiting row stands in its place, and the reply's first line
+  takes the same spot.
+- **Stopped before any text:** the reply shows "Interrupted", with any reasoning that streamed, and
+  no action bar. No stored row holds it, so it is a local row (§5 "Local rows"): it stays across
+  re-reads, right after the turn's last committed row (`persisted_turn.row_ids`, so below the
+  turn's own tool rows), or after its prompt row when the turn sent no receipt.
+- **Action bar:** an assistant row gets its action bar only once it has text, and only then counts
+  as the newest message whose bar stays visible. While the reply is awaited, the prompt's bar
+  stays visible. Desktop shows the footer only with visible text (`assistant-message.tsx:345-356`).
+
+**Running state** (`Transcript.isRunning`: the Stop button, the waiting row's lifetime). It is
+derived from three server facts and nothing else:
+- **(T)** a turn is open: from `message.start`, or any streamed event of a turn this chat saw no
+  start of, until `message.complete`;
+- **(E)** a `message.start` is still to come for a prompt sent here: one not answered yet, or
+  answered `streaming` or `queued` (`expectedStarts`);
+- **(B)** the server said a turn runs (`running: true` on reactivation) and none is open here yet.
+
+*Running* is exactly T ∨ E ∨ B. *Waiting* is running with no visible output (assistant text that is
+not blank, an interim, a tool row) since the latest send or turn start. The table below gives what
+each answer and event does to them. "—" means unchanged.
+
+| Server fact | Turn (T) | Expected starts (E), busy (B) | The prompt | Source |
+|---|---|---|---|---|
+| send (`prompt.submit` in flight) | — | E += prompt | bubble shown | — |
+| answer `streaming` | — | — (its turn starts next) | row id kept for the drop rule (§4.1) | `methods_prompt.py:668` (running set before the answer), `:815-821` |
+| answer `queued` | — | E keeps it, as queued | quiet re-reads settle it | `session_auto_continue.py:431-457` (always for a send with images: it is never a text-only correction, `:419`); its turn starts with `message.start` after this one (`prompt_turn.py:438-448`) |
+| answer `steered` | — | E −= prompt | quiet re-reads settle it | into the running turn (`agent/interrupt_control.py:265-275`); a steer left over at turn end is queued and gets its own `message.start` (`prompt_turn.py:441-447`, `agent/turn_finalizer.py:744-746`) |
+| answer `redirected` | — | E −= prompt | quiet re-reads settle it | a correction inside the running turn, no new turn (`agent/interrupt_control.py:277-281`, `agent/turn_iteration_prep.py:370-375`); the default `busy_input_mode` is `interrupt`, so every text send during a reply gets this (`server.py:378-380`, `session_auto_continue.py:420-428`) |
+| submit failed, prompt withdrawn | — | E −= prompt | bubble stays (failed) or goes (withdrawn) | — |
+| Stop: `session.interrupt` answered | — (the turn's `message.complete` follows) | E −= every queued prompt | bubble stays; its row, stored at accept, shows after the re-read | Hermes clears its queue and bumps the queue generation with no event (`session_lifecycle.py:708-712`, `_persist_queued_user_row`, `session_auto_continue.py:441`) |
+| `error`, no turn open | — | E := unanswered only; B := false | bubble stays | the turn will not start: Stop during the agent build (`methods_prompt.py:625-635`), an ownership refusal (`prompt_turn.py:123-134`), a queued prompt that failed to dispatch (`session_auto_continue.py:505-513`); a failed build is followed by `message.complete(error)` (`methods_prompt.py:617-623`) |
+| `error`, turn open | closes it only if it has shown nothing (as for `running: false`) | then as with no turn open | — | a follow-up turn refused after its `message.start` sends only this (`_dispatch_followup_turn`, `prompt_turn.py:421-436`, then `:123-134`); a failed pending model switch sends it at turn start and the turn goes on (`session_compression.py:197-211`, `prompt_turn.py:685`): its next streamed event opens T again |
+| `message.start` (or a first streamed event) | opens | E := ∅; B := false | — | every turn, also follow-ups (`prompt_turn.py:426,1154`) |
+| `message.complete` `complete` | closes | — | its re-read settles the turn's live items | `prompt_turn.py:1183` |
+| `message.complete` `interrupted` | closes | — | a reply with no text stays as a local row showing "Interrupted" and any reasoning, after the turn's last committed row (`persisted_turn.row_ids`; without a receipt, its prompt row) | Hermes stores no row for an empty partial (`agent/turn_api_call.py:204-210`); receipt `prompt_turn.py:897-903,940-941` |
+| `message.complete` `error` | closes | — | the unstored partial stays; `lastError` | `session_auto_continue.py:524-583` |
+| `session.info` `running: false` | closes it only if it has shown nothing (no text, tool row or reasoning) | with no turn open: E keeps only unanswered and queued; B := false | — | every turn body closes with it (`prompt_turn.py:1196-1225`); it also comes between a turn and the queued one after it |
+| reactivation `running: true` | — | B := true if no turn is open | — | `session.activate` / `session.resume` `running` (`server.py:3157,3172`) |
+| reactivation `running: false`, reclaimed runtime | closes | E := unanswered only; B := false | — | `server.py:3157,3172`; `session.reclaimed` (`session_lifecycle.py:475`) |
+| reconnect (cold restore) | rebuilt from the snapshot (`inflight`, `running`) | E := ∅ (a send in flight waits in `settleIdentity`) | — | §7 |
+
+Invariants:
+- **Nothing hides content.** Ending a turn closes its items as finished, and the re-read drops only
+  what it holds. A turn that has shown text, a tool row or reasoning is never closed by
+  `running: false` or `error`.
+- **Every fact has an ending event.** T ends with `message.complete`, or with `running: false` or
+  `error` when it showed nothing. E entries end with `message.start`, their answer, an `error` with
+  no turn open, `running: false` (all but queued and unanswered ones), or Stop (queued ones). B
+  ends with `message.start`, `message.complete`, `running: false` or an `error`.
+- **Any streamed event means running again** (it opens T). A stale `running: false` or a
+  non-terminal `error` that closed an empty turn is undone by that turn's next event.
+- **A failed re-read is never the only way out.** Stopping needs no re-read. A failed re-read is
+  tried again after 2 s, 8 s and 30 s (`ChatSession.rereadRetryDelays`), so bubbles, and a queued
+  prompt Hermes dropped without a word (below), settle once reads work again. After the last retry,
+  the next turn, revisit or reconnect asks for one.
+
+Paths where Hermes sends nothing, and what ends them:
+- **A queued prompt dropped silently**: its drained turn finds the queue generation changed
+  (`prompt_turn.py:135-146`). Stop does this, and is handled above. Otherwise (a compaction's
+  re-anchor in that window) its expectation ends when the quiet re-reads settle its bubble
+  (retried as above), or with the next `message.start`, `error` with no turn open, revisit or
+  reclaim.
+- **A drain whose claim a generation bump cancelled** goes back to the queue silently and clears
+  `running` (`session_auto_continue.py:473-480`). The prompt still runs after a later turn, with its
+  own `message.start`. If Stop caused the bump, the client has already ended its expectation; its
+  bubble stays, and that later start shows the turn.
+- **Stop drops a redirect that was accepted but not yet applied** (`agent/interrupt_control.py:194`,
+  `_pending_redirect = None`): the correction is never stored. The bubble stays until the quiet
+  re-reads settle it (round 1's nit N4, deferred). The running state is not affected: a
+  `redirected` answer expects no start.
+- `[unverified]` **A turn that cannot start because the session is closing**
+  (`prompt_turn.py:1238-1245`). It ends with the reclaim (`session.reclaimed`).
 
 Unknown event types must be ignored. Hermes has about 80 notification types; see
 `x-notifications` in the OpenRPC file.

@@ -137,6 +137,30 @@ struct SessionNavigationTests {
         #expect(connection.history.count == 30)
     }
 
+    /// The sidebar's "New chat" row: enabled only while connected with a roster profile selected.
+    @Test func newChatNeedsAConnectionAndARosterProfile() async throws {
+        #expect(!GatewayConnection().canStartListChat)
+        let (connection, _) = try await connect()
+        #expect(connection.listProfileBot?.name == "default")
+        #expect(connection.canStartListChat)
+        connection.selectListProfile("coder")
+        #expect(connection.listProfileBot?.name == "coder")
+        #expect(connection.canStartListChat)
+        connection.selectListProfile("ghost")  // not in the roster
+        #expect(connection.listProfileBot == nil)
+        #expect(!connection.canStartListChat)
+        connection.selectListProfile(nil)
+        #expect(!connection.canStartListChat)
+        connection.selectListProfile("coder")
+        // A failed reconnect keeps the roster and the selection, but not the connection.
+        await #expect(throws: (any Error).self) { try await connection.connect(using: FakeConnector([])) }
+        #expect(connection.listProfileBot?.name == "coder")
+        #expect(!connection.canStartListChat)
+        await connection.disconnect()
+        #expect(connection.listProfileBot == nil)
+        #expect(!connection.canStartListChat)
+    }
+
     @Test func aReconnectDoesNotLeaveTheListLoading() async throws {
         let (connection, gateway) = try await connect()
         gateway.on("session.list") { params in params["profile"] == "coder" ? nil : .result(["sessions": []]) }

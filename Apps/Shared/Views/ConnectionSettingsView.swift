@@ -1,8 +1,9 @@
 import HermesKit
 import SwiftUI
 
-/// Server URL + credentials. Shown as a sheet on first launch and from the
-/// toolbar; also the macOS Settings window.
+/// Server URL + credentials, edited in place in `AppModel` (closing it never loses or
+/// reverts an edit; Connect saves). A sheet from the gear or on launch
+/// (`SettingsPresentation`); also the macOS Settings window.
 struct ConnectionSettingsView: View {
     /// Shown as a sheet (not the macOS Settings window, which has its own close button).
     var isSheet = false

@@ -68,7 +68,8 @@ struct ConnectionSettings: Codable, Equatable {
 final class AppModel {
     var settings: ConnectionSettings
     var secret: String
-    var isShowingSettings: Bool
+    /// Whether the connection settings are shown, and what may close them.
+    var settingsPresentation: SettingsPresentation
     var lastError: String?
     /// A failed sidebar action (opening a bot or a History chat), shown in the sidebar.
     var actionError: String?
@@ -86,7 +87,7 @@ final class AppModel {
         let settings = ConnectionSettings.load()
         self.settings = settings
         self.secret = KeychainStore.read(account: Self.secretAccount) ?? ""
-        self.isShowingSettings = settings.serverURL.isEmpty
+        self.settingsPresentation = SettingsPresentation(hasServer: !settings.serverURL.isEmpty)
     }
 
     var isConnected: Bool { connection.state == .connected }
@@ -112,7 +113,7 @@ final class AppModel {
             }
             try await connection.connect(using: DashboardConnector(endpoint: endpoint, credential: credential))
             connectedEndpoint = endpoint
-            if lastError == nil { isShowingSettings = false }
+            if lastError == nil { settingsPresentation.close() }
         } catch is CancellationError {
             // Superseded by a newer connect/disconnect.
         } catch {

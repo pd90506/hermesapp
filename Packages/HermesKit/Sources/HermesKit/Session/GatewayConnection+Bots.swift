@@ -304,6 +304,17 @@ extension GatewayConnection {
 
 // Navigation changes only list state; chat selection and composers are untouched.
 extension GatewayConnection {
+    /// The Sessions page's selected profile, while it is in the roster.
+    public var listProfileBot: Bot? {
+        bots.first { $0.name == listProfile }
+    }
+
+    /// Whether the Sessions page's "New chat" can start a side chat: connected,
+    /// with a roster profile selected.
+    public var canStartListChat: Bool {
+        state == .connected && listProfileBot != nil
+    }
+
     public func selectListProfile(_ profile: String?) {
         guard listProfile != profile else { return }
         listProfile = profile

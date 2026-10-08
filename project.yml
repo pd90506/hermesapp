@@ -71,8 +71,9 @@ targets:
     scheme: {}
 
   # AppKit tests of the composer's text view and clipboard handling, with synthetic
-  # NSPasteboards. Not hosted in the app (which connects on launch): it compiles the
-  # two files it tests. Run: xcodebuild test -scheme HermesMacTests -destination platform=macOS
+  # NSPasteboards, and of the sidebar controls' pointer hover, in a window. Not hosted
+  # in the app (which connects on launch): it compiles the files it tests.
+  # Run: xcodebuild test -scheme HermesMacTests -destination platform=macOS
   HermesMacTests:
     type: bundle.unit-test
     platform: macOS
@@ -81,6 +82,9 @@ targets:
       - path: Apps/Tests/macOS
       - path: Apps/Shared/Composer/ComposerTextView.swift
       - path: Apps/Shared/Composer/ImageLoader.swift
+      - path: Apps/Shared/Views/Hover.swift
+      - path: Apps/Shared/Views/SidebarControls.swift
+      - path: Apps/Shared/Views/SheetOutsideClick.swift
     dependencies:
       - package: HermesKit
         product: HermesKit

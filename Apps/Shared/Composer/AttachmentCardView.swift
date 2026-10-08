@@ -37,13 +37,16 @@ struct AttachmentCardView: View {
         }
         .overlay(alignment: .trailing) {
             if showsRemove {
-                Button("Remove \(attachment.filename)", systemImage: "xmark", action: onRemove)
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 9, weight: .bold))
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
-                    .background(.background.opacity(0.8), in: .circle)
+                Button(action: onRemove) {
+                    Label("Remove \(attachment.filename)", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 12, height: 12)
+                }
+                .hoverButtonStyle(.circle, padding: 3)
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .background(.background.opacity(0.8), in: .circle)
                     .padding(.trailing, 4)
                     .disabled(isSending)
                     .help("Remove")

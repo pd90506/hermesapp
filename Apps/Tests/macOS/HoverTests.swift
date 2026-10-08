@@ -1,0 +1,446 @@
+import AppKit
+import HermesKit
+import HermesProtocol
+import SwiftUI
+import Testing
+
+// Pointer feedback of the real sidebar controls (`SidebarControls.swift`, `Hover.swift`),
+// hosted in an `NSHostingView` in a window and checked in its rendered pixels.
+//
+// The pointer is driven the way AppKit drives it: an enter event carrying the tracking
+// area under the point (its `trackingNumber` is the area, so `event.trackingArea` is
+// that area), sent to the area's owner, then a mouse-moved event, and an exit when it
+// leaves. SwiftUI's `onHover` listens to exactly these. Plain `mouseMoved` events
+// without the enter change nothing, and `@State` is never touched from here.
+
+/// The test process is never the active app, so its windows are never key, and AppKit
+/// hands a first click in a non-key window only to views that accept first mouse (a
+/// table doesn't). This window counts as key, so clicks reach the List as in the app.
+private final class KeyWindow: NSWindow {
+    override var isKeyWindow: Bool { true }
+}
+
+@MainActor
+private final class HostWindow {
+    let window: NSWindow
+    let host: NSView
+    private var hovered: (owner: NSView, area: NSTrackingArea)?
+
+    /// The host's own coordinates, for frames measured in SwiftUI (`.global` is the
+    /// window's, titlebar included).
+    nonisolated static let space = "host"
+
+    init(size: CGSize, @ViewBuilder content: () -> some View) {
+        window = KeyWindow(contentRect: NSRect(origin: CGPoint(x: 200, y: 200), size: size),
+                           styleMask: [.titled], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .aqua)
+        // Opaque, so an empty pixel reads as white rather than transparent black.
+        host = NSHostingView(rootView: content()
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.white)
+            .coordinateSpace(.named(Self.space)))
+        window.contentView = host
+        window.orderFront(nil)
+        settle()
+    }
+
+    deinit {
+        MainActor.assumeIsolated { window.orderOut(nil) }
+    }
+
+    func settle() {
+        for _ in 0..<8 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+
+    /// `point` in the host's (top-left) coordinates.
+    func windowPoint(_ point: CGPoint) -> NSPoint { host.convert(point, to: nil) }
+
+    // MARK: Pointer
+
+    func movePointer(to point: CGPoint) {
+        let location = windowPoint(point)
+        var view = window.contentView?.superview?.hitTest(location)
+        while let candidate = view, area(of: candidate, at: location) == nil { view = candidate.superview }
+        guard let owner = view, let area = area(of: owner, at: location) else {
+            Issue.record("No tracking area under \(point)")
+            return
+        }
+        if let hovered, hovered.area !== area { send(.mouseExited, hovered.area, to: hovered.owner, at: location) }
+        if hovered?.area !== area { send(.mouseEntered, area, to: owner, at: location) }
+        hovered = (owner, area)
+        let moved = NSEvent.mouseEvent(with: .mouseMoved, location: location, modifierFlags: [],
+                                       timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                       context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
+        owner.mouseMoved(with: moved)
+        settle()
+    }
+
+    /// The pointer leaves the window.
+    func pointerLeaves() {
+        guard let hovered else { return }
+        send(.mouseExited, hovered.area, to: hovered.owner, at: NSPoint(x: -50, y: -50))
+        self.hovered = nil
+        settle()
+    }
+
+    private func area(of view: NSView, at location: NSPoint) -> NSTrackingArea? {
+        let local = view.convert(location, from: nil)
+        return view.trackingAreas.first { $0.options.contains(.mouseEnteredAndExited) && $0.rect.contains(local) }
+    }
+
+    private func send(_ type: NSEvent.EventType, _ area: NSTrackingArea, to owner: NSView, at location: NSPoint) {
+        let event = NSEvent.enterExitEvent(
+            with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+            trackingNumber: Int(bitPattern: Unmanaged.passUnretained(area).toOpaque()), userData: nil)!
+        #expect(event.trackingArea === area)
+        if type == .mouseEntered { owner.mouseEntered(with: event) } else { owner.mouseExited(with: event) }
+    }
+
+    /// A click on the view under `point`, as `NSWindow.sendEvent` delivers it in an active
+    /// app (the test app never is, and the window would swallow a first click). A table
+    /// tracks the press in its own loop (`nextEvent(matching:)`), so the release is queued
+    /// first; if nothing took it from the queue, it goes to the view, as for SwiftUI buttons.
+    func click(at point: CGPoint) {
+        let location = windowPoint(point)
+        func event(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                               timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                               context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        guard let target = window.contentView?.superview?.hitTest(location) else {
+            Issue.record("Nothing to click at \(point)")
+            return
+        }
+        NSApp.postEvent(event(.leftMouseUp), atStart: false)
+        target.mouseDown(with: event(.leftMouseDown))
+        if let release = NSApp.nextEvent(matching: .leftMouseUp, until: .now, inMode: .default, dequeue: true) {
+            target.mouseUp(with: release)
+        }
+        settle()
+    }
+
+    // MARK: Pixels
+
+    func snapshot() -> NSBitmapImageRep {
+        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
+    }
+
+    /// Mean brightness of `rect` (host coordinates): 1 is white.
+    func brightness(of rect: CGRect, in rep: NSBitmapImageRep) -> Double {
+        let scale = Double(rep.pixelsWide) / host.bounds.width
+        var sum = 0.0
+        var count = 0.0
+        for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+            for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                sum += (color.redComponent + color.greenComponent + color.blueComponent) / 3
+                count += 1
+            }
+        }
+        return sum / max(count, 1)
+    }
+
+    func brightness(of rect: CGRect) -> Double { brightness(of: rect, in: snapshot()) }
+
+    /// The darkest pixel in `rect`: thin strokes (a chevron) barely move the mean.
+    func darkest(in rect: CGRect, of rep: NSBitmapImageRep) -> Double {
+        let scale = Double(rep.pixelsWide) / host.bounds.width
+        var darkest = 1.0
+        for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+            for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                darkest = min(darkest, (color.redComponent + color.greenComponent + color.blueComponent) / 3)
+            }
+        }
+        return darkest
+    }
+
+    // MARK: Views
+
+    func subviews<T: NSView>(of type: T.Type, in view: NSView? = nil) -> [T] {
+        let root = view ?? host
+        return root.subviews.flatMap { ($0 as? T).map { [$0] } ?? [] } + root.subviews.flatMap { subviews(of: type, in: $0) }
+    }
+
+    /// Row `index` of the window's List, in host coordinates.
+    func rowRect(_ index: Int) throws -> CGRect {
+        let table = try #require(subviews(of: NSTableView.self).first)
+        return table.convert(table.rect(ofRow: index), to: host)
+    }
+
+    func selectedRows() -> IndexSet { subviews(of: NSTableView.self).first?.selectedRowIndexes ?? [] }
+}
+
+/// A fill this strong or stronger counts as "drawn" (`Hover.fill` is 6 % of black on white).
+private let visible = 0.02
+
+private let bots = [
+    Bot(profile: ProfileRow(name: "default", isDefault: true)),
+    Bot(profile: ProfileRow(name: "coder")),
+]
+
+private func entries(_ count: Int) -> [HistoryEntry] {
+    (0..<count).map { HistoryEntry(profile: "default", summary: SessionSummary(id: "s\($0)", title: "Chat \($0)")) }
+}
+
+@MainActor
+@Suite(.serialized) struct HoverTests {
+    // MARK: Switcher and profile picker
+
+    /// The switcher is drawn by SwiftUI, not as an AppKit pop-up button (what `.borderless`
+    /// gives a menu), so its padding, chevron and hover fill render.
+    @Test func switcherRendersItsPaddingChevronAndHoverFill() throws {
+        let size = NSHostingView(rootView: PageSwitcher(page: .constant(.sessions))).fittingSize
+        let ui = HostWindow(size: CGSize(width: 240, height: 60)) {
+            PageSwitcher(page: .constant(.sessions))
+        }
+        #expect(ui.subviews(of: NSPopUpButton.self).isEmpty)
+        // The left padding: empty until hovered.
+        let padding = CGRect(x: 1, y: 4, width: 5, height: size.height - 8)
+        // The chevron: just inside the right padding.
+        let chevron = CGRect(x: size.width - 8 - 11, y: 4, width: 10, height: size.height - 8)
+        let idle = ui.snapshot()
+        let background = ui.brightness(of: CGRect(x: 200, y: 40, width: 20, height: 10), in: idle)
+        #expect(abs(ui.brightness(of: padding, in: idle) - background) < 0.005)
+        #expect(ui.darkest(in: chevron, of: idle) < 0.8, "no chevron drawn")
+
+        ui.movePointer(to: CGPoint(x: size.width / 2, y: size.height / 2))
+        #expect(background - ui.brightness(of: padding) > visible, "no hover fill in the padding")
+        ui.pointerLeaves()
+        #expect(abs(ui.brightness(of: padding) - background) < 0.005, "the fill stays after the pointer left")
+    }
+
+    @Test func profilePickerHoversAndNotWhenDisabled() {
+        for enabled in [true, false] {
+            let size = NSHostingView(rootView: ProfilePicker(bots: bots, selection: "default") { _ in }).fittingSize
+            let ui = HostWindow(size: CGSize(width: 240, height: 60)) {
+                ProfilePicker(bots: enabled ? bots : [], selection: "default") { _ in }
+            }
+            #expect(ui.subviews(of: NSPopUpButton.self).isEmpty)
+            let padding = CGRect(x: 1, y: 3, width: 4, height: size.height - 6)
+            let background = ui.brightness(of: CGRect(x: 200, y: 40, width: 20, height: 10))
+            ui.movePointer(to: CGPoint(x: size.width / 2, y: size.height / 2))
+            let drop = background - ui.brightness(of: padding)
+            if enabled {
+                #expect(drop > visible)
+            } else {
+                #expect(abs(drop) < 0.005, "a disabled picker showed hover")
+            }
+        }
+    }
+
+    // MARK: Rows
+
+    /// Table rows of `Sidebar`: the "Sessions" header, then the sessions.
+    private let firstSessionRow = 1
+
+    /// Where SwiftUI laid the pinned header out, in host coordinates.
+    final class Frames { var header: CGRect = .zero }
+
+    /// The real sidebar's arrangement: the List, with `SidebarHeader` pinned above it.
+    private struct Sidebar: View {
+        @State var selection: String?
+        var newChatEnabled = true
+        var sessions = 3
+        var frames = Frames()
+        /// Forced, so the tests don't depend on the Mac's "Sidebar icon size" setting.
+        var rowSize = SidebarRowSize.medium
+        var onSelection: (String?) -> Void = { _ in }
+
+        var body: some View {
+            List(selection: $selection) {
+                Section("Sessions") {
+                    ForEach(entries(sessions)) { entry in
+                        HistoryRow(entry: entry, botName: "Hermes")
+                            .sidebarRowHover(isSelected: selection == entry.id)
+                            .tag(entry.id)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .safeAreaBar(edge: .top) {
+                SidebarHeader(page: .constant(.sessions),
+                              newChat: NewChatRow(isEnabled: newChatEnabled, disabledReason: "Connect first.") {})
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(HostWindow.space)) } action: {
+                        frames.header = $0
+                    }
+            }
+            .onChange(of: selection) { _, new in onSelection(new) }
+            .environment(\.sidebarRowSize, rowSize)
+        }
+    }
+
+    /// New chat: the header's bottom row, one sidebar row of `size` above its 6 pt margin.
+    private func newChatRect(_ frames: Frames, _ size: SidebarRowSize = .medium) -> CGRect {
+        let height = NewChatRow.metrics(for: size).height
+        return CGRect(x: 0, y: frames.header.maxY - 6 - height, width: frames.header.width, height: height)
+    }
+
+    nonisolated private static let rowSizes: [SidebarRowSize] = [.small, .medium, .large]
+
+    /// New chat's row heights are the List's: a one-line sidebar row, at each sidebar size.
+    @Test(arguments: rowSizes) func newChatIsAsTallAsAListRow(size: SidebarRowSize) throws {
+        let ui = HostWindow(size: CGSize(width: 280, height: 200)) {
+            List { Label("Row", systemImage: "square") }
+                .listStyle(.sidebar)
+                .environment(\.sidebarRowSize, size)
+        }
+        let rowHeight = try ui.rowRect(0).height
+        #expect(abs(rowHeight - NewChatRow.metrics(for: size).height) <= 1)
+    }
+
+    /// Hover fills the whole row, inset from the List's edges like the selection, also
+    /// where the pointer is between the row's lines; it goes when the pointer leaves.
+    @Test func rowHoverFillsTheRowInsetFromTheEdges() throws {
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) { Sidebar() }
+        let row = try ui.rowRect(firstSessionRow)
+        let inside = CGRect(x: Hover.rowInset + 2, y: row.minY + 1, width: 3, height: 3)  // a corner, past the text
+        let outside = CGRect(x: 2, y: row.midY - 2, width: 4, height: 4)  // the inset margin
+        let before = ui.snapshot()
+
+        ui.movePointer(to: CGPoint(x: row.maxX - 30, y: row.minY + 3))  // right of the text, at the row's top
+        let hovered = ui.snapshot()
+        #expect(ui.brightness(of: inside, in: before) - ui.brightness(of: inside, in: hovered) > visible)
+        #expect(abs(ui.brightness(of: outside, in: before) - ui.brightness(of: outside, in: hovered)) < 0.005)
+
+        // To the next row: this one clears, that one fills.
+        let next = try ui.rowRect(firstSessionRow + 1)
+        ui.movePointer(to: CGPoint(x: next.midX, y: next.midY))
+        let moved = ui.snapshot()
+        #expect(abs(ui.brightness(of: inside, in: before) - ui.brightness(of: inside, in: moved)) < 0.005)
+        let nextInside = inside.offsetBy(dx: 0, dy: next.minY - row.minY)
+        #expect(ui.brightness(of: nextInside, in: before) - ui.brightness(of: nextInside, in: moved) > visible)
+
+        ui.pointerLeaves()
+        #expect(abs(ui.brightness(of: nextInside, in: before) - ui.brightness(of: nextInside)) < 0.005)
+    }
+
+    /// The pinned New chat is drawn like a row: the pill inset from the edges, filled on
+    /// hover, and nothing when disabled.
+    @Test(arguments: rowSizes) func newChatHoversLikeARowButNotWhenDisabled(size: SidebarRowSize) throws {
+        for enabled in [true, false] {
+            let frames = Frames()
+            let ui = HostWindow(size: CGSize(width: 280, height: 300)) {
+                Sidebar(newChatEnabled: enabled, frames: frames, rowSize: size)
+            }
+            let row = newChatRect(frames, size)
+            let inside = CGRect(x: Hover.rowInset + 1, y: row.midY - 2, width: 4, height: 4)  // the pill, left of the icon
+            let outside = CGRect(x: 2, y: row.midY - 2, width: 4, height: 4)  // the inset margin
+            let before = ui.snapshot()
+            ui.movePointer(to: CGPoint(x: row.midX, y: row.midY))
+            let after = ui.snapshot()
+            let drop = ui.brightness(of: inside, in: before) - ui.brightness(of: inside, in: after)
+            if enabled {
+                #expect(drop > visible)
+                #expect(abs(ui.brightness(of: outside, in: before) - ui.brightness(of: outside, in: after)) < 0.005)
+            } else {
+                #expect(abs(drop) < 0.005, "a disabled New chat showed hover")
+            }
+        }
+    }
+
+    /// New chat lines up with the rows: its icon starts where row content starts.
+    @Test(arguments: rowSizes) func newChatStartsWhereRowContentStarts(size: SidebarRowSize) throws {
+        let frames = Frames()
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) { Sidebar(frames: frames, rowSize: size) }
+        let rep = ui.snapshot()
+        let row = newChatRect(frames, size)
+        let margin = CGRect(x: 0, y: row.minY + 4, width: Hover.rowContentInset - 1, height: row.height - 8)
+        #expect(ui.darkest(in: margin, of: rep) > 0.8, "ink left of the rows' content inset")
+        let icon = CGRect(x: Hover.rowContentInset, y: row.minY + 4, width: 16, height: row.height - 8)
+        #expect(ui.darkest(in: icon, of: rep) < 0.6, "no icon at the rows' content inset")
+    }
+
+    /// Pinned: scrolling the list moves the rows, under the header, and not New chat.
+    @Test(arguments: rowSizes) func newChatStaysPutWhileTheListScrolls(size: SidebarRowSize) throws {
+        let frames = Frames()
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) {
+            Sidebar(sessions: 40, frames: frames, rowSize: size)
+        }
+        let header = frames.header
+        #expect(header.height > 40)
+        let row = try ui.rowRect(firstSessionRow + 5)
+        let scrollView = try #require(ui.subviews(of: NSScrollView.self).first)
+        // A scroll wheel down, as a trackpad or mouse sends it.
+        let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                                          wheel1: -120, wheel2: 0, wheel3: 0))
+        scrollView.scrollWheel(with: try #require(NSEvent(cgEvent: wheel)))
+        for _ in 0..<10 { ui.settle() }
+
+        let scrolled = try ui.rowRect(firstSessionRow + 5)
+        #expect(scrolled.minY < row.minY - 50, "the list did not scroll")
+        #expect(frames.header == header, "the header moved")
+        // Rows now pass under the header.
+        let rows = try (firstSessionRow..<firstSessionRow + 10).map { try ui.rowRect($0) }
+        #expect(rows.contains { $0.minY < header.maxY && $0.maxY > header.minY })
+
+        // And it still hovers where it is.
+        let newChat = newChatRect(frames, size)
+        let inside = CGRect(x: Hover.rowInset + 1, y: newChat.midY - 2, width: 4, height: 4)
+        let before = ui.brightness(of: inside)
+        ui.movePointer(to: CGPoint(x: newChat.midX, y: newChat.midY))
+        #expect(before - ui.brightness(of: inside) > visible)
+    }
+
+    /// Hover is visual only: a click on a hovered row still selects it, and a click on
+    /// New chat leaves the selection alone.
+    ///
+    /// Whether the click runs New chat's action is not checked: in this test process
+    /// (never the active app) no synthetic click fires any SwiftUI `Button`, not even
+    /// one outside a List, whichever way the events are delivered.
+    @Test func hoverLeavesClicksAndSelectionAlone() throws {
+        var selections: [String?] = []
+        let frames = Frames()
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) {
+            Sidebar(frames: frames, onSelection: { selections.append($0) })
+        }
+        let session = try ui.rowRect(firstSessionRow)
+        ui.movePointer(to: CGPoint(x: session.midX, y: session.midY))
+        ui.click(at: CGPoint(x: session.midX, y: session.midY))
+        #expect(selections == ["default/s0"])
+        #expect(ui.selectedRows() == [firstSessionRow])
+
+        let newChat = newChatRect(frames)
+        ui.movePointer(to: CGPoint(x: newChat.midX, y: newChat.midY))
+        ui.click(at: CGPoint(x: 40, y: newChat.midY))
+        #expect(selections == ["default/s0"])
+        #expect(ui.selectedRows() == [firstSessionRow])
+    }
+
+    // MARK: Buttons
+
+    @Test func hoverButtonStyleFillsOnlyWhileEnabled() {
+        for enabled in [true, false] {
+            let ui = HostWindow(size: CGSize(width: 120, height: 60)) {
+                Button("Dismiss", systemImage: "xmark") {}
+                    .labelStyle(.iconOnly)
+                    .hoverButtonStyle(.rounded, padding: 8)
+                    .disabled(!enabled)
+            }
+            let edge = CGRect(x: 1, y: 6, width: 4, height: 4)  // inside the padding, off the icon
+            let before = ui.brightness(of: edge)
+            ui.movePointer(to: CGPoint(x: 12, y: 12))
+            let drop = before - ui.brightness(of: edge)
+            if enabled {
+                #expect(drop > visible)
+            } else {
+                #expect(abs(drop) < 0.005)
+            }
+        }
+    }
+
+    // MARK: Footer
+
+    /// The footer is as tall with the profile picker (Sessions) as without it (Bots).
+    @Test func footerHeightIsTheSameOnBothPages() {
+        let botsPage = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) { EmptyView() })
+        let sessionsPage = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) {
+            ProfilePicker(bots: bots, selection: "default") { _ in }
+        })
+        #expect(botsPage.fittingSize.height == sessionsPage.fittingSize.height)
+        #expect(botsPage.fittingSize.height == SidebarFooter<EmptyView>.height + 8)
+    }
+}

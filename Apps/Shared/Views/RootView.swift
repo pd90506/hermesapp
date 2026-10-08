@@ -7,17 +7,20 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: SidebarItem?
+    /// The column shown when the split view is collapsed (iPhone). A new side chat
+    /// has no row to select until the list catches up, so it is shown through this.
+    @State private var compactColumn = NavigationSplitViewColumn.sidebar
 
     var body: some View {
-        @Bindable var model = model
-
-        NavigationSplitView {
-            BotSidebarView(selection: Binding(
-                get: { selection },
-                set: { item in
-                    selection = item
-                    if let item { Task { await open(item) } }
-                }))
+        NavigationSplitView(preferredCompactColumn: $compactColumn) {
+            BotSidebarView(
+                selection: Binding(
+                    get: { selection },
+                    set: { item in
+                        selection = item
+                        if let item { Task { await open(item) } }
+                    }),
+                showChat: { compactColumn = .detail })
         } detail: {
             if let opening = model.connection.opening {
                 // A first open: the chat's frame at once, not the previous chat.
@@ -31,11 +34,20 @@ struct RootView: View {
                     description: Text(model.isConnected ? "Pick a bot or session to chat with." : "Connect to your Hermes gateway."))
             }
         }
-        .sheet(isPresented: $model.isShowingSettings) {
+        // The settings sheet, from the gear or because the app must connect
+        // (`SettingsPresentation`).
+        .sheet(isPresented: Binding(
+            get: { model.settingsPresentation.isShown },
+            set: { if !$0 { model.settingsPresentation.close() } })) {
             NavigationStack {
                 ConnectionSettingsView(isSheet: true)
             }
             #if os(macOS)
+            // Opened from the gear, a click elsewhere in the window closes it as Done
+            // would; the must-connect sheet ignores such clicks.
+            .onParentWindowClick(isEnabled: model.settingsPresentation.isTransient) {
+                model.settingsPresentation.clickedOutside()
+            }
             .frame(minWidth: 460, minHeight: 420)
             #endif
         }
@@ -50,7 +62,7 @@ struct RootView: View {
             // Auto-connect on launch when settings exist.
             if !model.settings.serverURL.isEmpty, model.connection.state == .disconnected {
                 await model.connect()
-                if !model.isConnected { model.isShowingSettings = true }
+                if !model.isConnected { model.settingsPresentation.requireConnection() }
             }
         }
     }

@@ -156,7 +156,7 @@ private struct CodeBlockView: View {
                 Spacer()
                 Button("Copy", systemImage: "doc.on.doc") { Clipboard.copy(code) }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
+                    .hoverButtonStyle(.rounded, padding: 4)
                     .font(.caption)
                     .help("Copy code")
             }

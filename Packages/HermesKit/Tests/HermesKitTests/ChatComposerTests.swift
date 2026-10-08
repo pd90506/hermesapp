@@ -251,7 +251,7 @@ struct ChatComposerTests {
     @Test func sendingWithImagesWhileDisconnectedKeepsTheDraftAndSendsNothing() async throws {
         let log = FrameLog()
         let (composer, _) = try await makeComposer(log: log)
-        await try #require(connections.all.last).disconnect()
+        try await #require(connections.all.last).disconnect()
         let framesBefore = log.all.count
 
         composer.attach(png("a.png"))

@@ -44,7 +44,7 @@ struct RevisitIdentityTests {
         try await Task.sleep(for: .milliseconds(50))
 
         // Replaced by one on the current socket, which is still binding the chat.
-        server.held.withLock { $0.insert("session.activate") }
+        _ = server.held.withLock { $0.insert("session.activate") }
         _ = connection.revisit(first, token: connection.beginSelection(), client: try #require(connection.client))
         let activate = try #require(await request("session.activate", in: log))
         try await Task.sleep(for: .milliseconds(100))

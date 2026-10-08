@@ -16,8 +16,10 @@ struct ChatView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 HistoryHeader(session: session)
+                let newestID = ConversationMarkdown.newestMessageID(in: session.transcript.items)
                 ForEach(session.transcript.items) { item in
-                    MessageRow(item: item, profile: session.profile)
+                    MessageRow(item: item, isNewest: item.id == newestID,
+                               profile: session.profile, session: session)
                 }
                 ForEach(session.transcript.pendingRequests) { request in
                     RequestCardView(session: session, request: request)
@@ -118,8 +120,11 @@ private struct HistoryHeader: View {
 
 private struct MessageRow: View {
     let item: TranscriptItem
+    /// The last user or assistant row: its action bar stays shown without hover.
+    let isNewest: Bool
     /// The chat's profile: stored images are read for it.
     let profile: String?
+    let session: ChatSession
     @Environment(AppModel.self) private var model
 
     var body: some View {
@@ -129,67 +134,49 @@ private struct MessageRow: View {
             // Images sent with it show as cards above the caption, live and stored alike.
             HStack {
                 Spacer(minLength: 40)
-                VStack(alignment: .trailing, spacing: 6) {
-                    if !item.images.isEmpty {
-                        TrailingFlowLayout {
-                            ForEach(item.images) { image in
-                                TranscriptImageCard(image: image, profile: profile, store: model.thumbnails,
-                                                    connection: model.connection)
+                MessageHoverArea { isHovering in
+                    VStack(alignment: .trailing, spacing: 0) {
+                        if !item.images.isEmpty {
+                            TrailingFlowLayout {
+                                ForEach(item.images) { image in
+                                    TranscriptImageCard(image: image, profile: profile, store: model.thumbnails,
+                                                        connection: model.connection)
+                                }
                             }
                         }
-                    }
-                    if !item.text.isEmpty || item.images.isEmpty {
-                        Text(item.text)
-                            .textSelection(.enabled)
-                            .padding(10)
-                            .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+                        if !item.text.isEmpty || item.images.isEmpty {
+                            Text(item.text)
+                                .textSelection(.enabled)
+                                .padding(10)
+                                .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+                        }
+                        MessageActionBar(isHovering: isHovering, isNewest: isNewest,
+                                         alignment: .trailing, copy: copyMessage)
                     }
                 }
             }
+            .contextMenu { copyMenu }
         case .assistant:
-            VStack(alignment: .leading, spacing: 6) {
-                if !item.reasoning.isEmpty {
-                    // Model-written like the reply, so rendered the same way; the
-                    // content is only built while expanded.
-                    DisclosureGroup("Reasoning") {
-                        MarkdownView(text: item.reasoning, isStreaming: item.isActive)
-                            .equatable()
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.caption)
-                }
-                if item.text.isEmpty && item.isActive {
-                    Text("…")
-                } else {
-                    MarkdownView(text: item.text, isStreaming: item.isActive)
-                        .equatable()
-                }
-                if item.outcome == "interrupted" {
-                    Text("Interrupted").font(.caption).foregroundStyle(.secondary)
-                }
+            MessageHoverArea { isHovering in
+                AssistantMessageContent(item: item, isHovering: isHovering, isNewest: isNewest,
+                                        conversationSource: { ConversationMarkdown.export(session.transcript.items) },
+                                        copy: copyMessage)
             }
         case .tool:
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.toolName ?? "tool").font(.callout.monospaced())
-                    if let detail = item.detail {
-                        Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                    }
-                }
-            } icon: {
-                if item.isActive {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "wrench.and.screwdriver")
-                }
-            }
-            .padding(8)
-            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+            ToolMessageContent(item: item)
+                .contextMenu { copyMenu }
         case .system:
-            Text(item.text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(item.text).font(.caption).foregroundStyle(.secondary)
+                .contextMenu { copyMenu }
         }
+    }
+
+    private func copyMessage() { Clipboard.copy(ConversationMarkdown.messageSource(for: item)) }
+
+    @ViewBuilder private var copyMenu: some View {
+        Button("Copy Message", action: copyMessage)
+        #if os(macOS)
+        Button("Copy Conversation") { Clipboard.copy(ConversationMarkdown.export(session.transcript.items)) }
+        #endif
     }
 }

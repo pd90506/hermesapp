@@ -71,8 +71,9 @@ targets:
     scheme: {}
 
   # AppKit tests of the composer's text view and clipboard handling, with synthetic
-  # NSPasteboards, and of the sidebar controls' pointer hover, in a window. Not hosted
-  # in the app (which connects on launch): it compiles the files it tests.
+  # NSPasteboards, of the sidebar controls' pointer hover, and of message
+  # selection, rendering and copy, in a window. Not hosted in the app (which
+  # connects on launch): it compiles the files it tests, and links SwiftMath itself.
   # Run: xcodebuild test -scheme HermesMacTests -destination platform=macOS
   HermesMacTests:
     type: bundle.unit-test
@@ -85,7 +86,11 @@ targets:
       - path: Apps/Shared/Views/Hover.swift
       - path: Apps/Shared/Views/SidebarControls.swift
       - path: Apps/Shared/Views/SheetOutsideClick.swift
+      - path: Apps/Shared/Views/MessageCopyButton.swift
+      - path: Apps/Shared/Views/MessageRowContent.swift
+      - path: Apps/Shared/Views/Markdown
     dependencies:
+      - package: SwiftMath
       - package: HermesKit
         product: HermesKit
       - package: HermesKit

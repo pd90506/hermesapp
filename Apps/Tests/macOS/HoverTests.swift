@@ -7,11 +7,14 @@ import Testing
 // Pointer feedback of the real sidebar controls (`SidebarControls.swift`, `Hover.swift`),
 // hosted in an `NSHostingView` in a window and checked in its rendered pixels.
 //
-// The pointer is driven the way AppKit drives it: an enter event carrying the tracking
-// area under the point (its `trackingNumber` is the area, so `event.trackingArea` is
-// that area), sent to the area's owner, then a mouse-moved event, and an exit when it
-// leaves. SwiftUI's `onHover` listens to exactly these. Plain `mouseMoved` events
-// without the enter change nothing, and `@State` is never touched from here.
+// The pointer is driven the way AppKit drives it: every tracking area under the point
+// gets an enter event carrying that area (its `trackingNumber` is the area, so
+// `event.trackingArea` is that area), sent to the area's owner, then a mouse-moved
+// event, and an exit when the pointer leaves it. SwiftUI's `onHover` listens to
+// exactly these. A hosting view can have several areas under one point (a `.help`
+// tooltip adds its own), in no fixed order, so all of them get the events, not just
+// one. Plain `mouseMoved` events without the enter change nothing, and `@State` is
+// never touched from here.
 
 /// The test process is never the active app, so its windows are never key, and AppKit
 /// hands a first click in a non-key window only to views that accept first mouse (a
@@ -24,7 +27,8 @@ private final class KeyWindow: NSWindow {
 private final class HostWindow {
     let window: NSWindow
     let host: NSView
-    private var hovered: (owner: NSView, area: NSTrackingArea)?
+    /// The tracking areas the pointer is in, with the view each belongs to.
+    private var hovered: [(view: NSView, area: NSTrackingArea)] = []
 
     /// The host's own coordinates, for frames measured in SwiftUI (`.global` is the
     /// window's, titlebar included).
@@ -59,42 +63,64 @@ private final class HostWindow {
 
     func movePointer(to point: CGPoint) {
         let location = windowPoint(point)
+        // Every enter/exit area under the point, on the hit view and its ancestors.
+        var under: [(view: NSView, area: NSTrackingArea)] = []
         var view = window.contentView?.superview?.hitTest(location)
-        while let candidate = view, area(of: candidate, at: location) == nil { view = candidate.superview }
-        guard let owner = view, let area = area(of: owner, at: location) else {
+        while let candidate = view {
+            under += areas(of: candidate, at: location).map { (candidate, $0) }
+            view = candidate.superview
+        }
+        guard !under.isEmpty else {
             Issue.record("No tracking area under \(point)")
             return
         }
-        if let hovered, hovered.area !== area { send(.mouseExited, hovered.area, to: hovered.owner, at: location) }
-        if hovered?.area !== area { send(.mouseEntered, area, to: owner, at: location) }
-        hovered = (owner, area)
+        for old in hovered where !under.contains(where: { $0.area === old.area }) {
+            send(.mouseExited, old.area, from: old.view, at: location)
+        }
+        for new in under where !hovered.contains(where: { $0.area === new.area }) {
+            send(.mouseEntered, new.area, from: new.view, at: location)
+        }
+        hovered = under
         let moved = NSEvent.mouseEvent(with: .mouseMoved, location: location, modifierFlags: [],
                                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                        context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
-        owner.mouseMoved(with: moved)
+        // Each owner of an area under the point that asked for moves gets one.
+        var owners: [NSObject] = []
+        for entry in under where entry.area.options.contains(.mouseMoved) {
+            guard let owner = entry.area.owner as? NSObject, !owners.contains(where: { $0 === owner }) else { continue }
+            owners.append(owner)
+        }
+        for owner in owners { deliver(#selector(NSResponder.mouseMoved(with:)), moved, to: owner) }
         settle()
     }
 
     /// The pointer leaves the window.
     func pointerLeaves() {
-        guard let hovered else { return }
-        send(.mouseExited, hovered.area, to: hovered.owner, at: NSPoint(x: -50, y: -50))
-        self.hovered = nil
+        for old in hovered { send(.mouseExited, old.area, from: old.view, at: NSPoint(x: -50, y: -50)) }
+        hovered = []
         settle()
     }
 
-    private func area(of view: NSView, at location: NSPoint) -> NSTrackingArea? {
+    private func areas(of view: NSView, at location: NSPoint) -> [NSTrackingArea] {
         let local = view.convert(location, from: nil)
-        return view.trackingAreas.first { $0.options.contains(.mouseEnteredAndExited) && $0.rect.contains(local) }
+        return view.trackingAreas.filter { $0.options.contains(.mouseEnteredAndExited) && $0.rect.contains(local) }
     }
 
-    private func send(_ type: NSEvent.EventType, _ area: NSTrackingArea, to owner: NSView, at location: NSPoint) {
+    /// AppKit sends an area's events to the area's owner, which need not be the view
+    /// (a `.help` tooltip's area belongs to a SwiftUI bridge object).
+    private func deliver(_ selector: Selector, _ event: NSEvent, to owner: NSObject) {
+        if owner.responds(to: selector) { owner.perform(selector, with: event) }
+    }
+
+    private func send(_ type: NSEvent.EventType, _ area: NSTrackingArea, from view: NSView, at location: NSPoint) {
         let event = NSEvent.enterExitEvent(
             with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: window.windowNumber, context: nil, eventNumber: 0,
             trackingNumber: Int(bitPattern: Unmanaged.passUnretained(area).toOpaque()), userData: nil)!
         #expect(event.trackingArea === area)
-        if type == .mouseEntered { owner.mouseEntered(with: event) } else { owner.mouseExited(with: event) }
+        guard let owner = area.owner as? NSObject ?? Optional(view) else { return }
+        deliver(type == .mouseEntered ? #selector(NSResponder.mouseEntered(with:)) : #selector(NSResponder.mouseExited(with:)),
+                event, to: owner)
     }
 
     /// A click on the view under `point`, as `NSWindow.sendEvent` delivers it in an active
@@ -442,5 +468,94 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         })
         #expect(botsPage.fittingSize.height == sessionsPage.fittingSize.height)
         #expect(botsPage.fittingSize.height == SidebarFooter<EmptyView>.height + 8)
+    }
+}
+
+// MARK: - Message action bar
+
+@MainActor
+@Suite struct MessageActionBarHoverTests {
+    @MainActor private final class Frames { var rows: [String: CGRect] = [:] }
+
+    /// The rows in transcript order, with the newest message chosen as `ChatView` does.
+    private func transcript(_ items: [TranscriptItem], frames: Frames) -> some View {
+        let newestID = ConversationMarkdown.newestMessageID(in: items)
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(items) { item in
+                Group {
+                    switch item.role {
+                    case .assistant:
+                        MessageHoverArea { hovering in
+                            AssistantMessageContent(item: item, isHovering: hovering, isNewest: item.id == newestID) {}
+                        }
+                    case .tool:
+                        ToolMessageContent(item: item)
+                    default:
+                        Text(item.text)
+                    }
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(HostWindow.space)) } action: {
+                    frames.rows[item.id] = $0
+                }
+            }
+        }
+        .padding(16)
+    }
+
+    /// The Copy button's square at the leading end of a row's action bar.
+    private func copyButton(of row: CGRect) -> CGRect {
+        CGRect(x: row.minX, y: row.maxY - 26, width: 26, height: 26)
+    }
+
+    private func barShown(_ ui: HostWindow, _ row: CGRect) -> Bool {
+        ui.darkest(in: copyButton(of: row).insetBy(dx: 4, dy: 4), of: ui.snapshot()) < 0.6
+    }
+
+    /// From the text, down across the bar's empty stretch and the strip just
+    /// above Copy, the bar of an older reply stays shown the whole way.
+    @Test func olderReplysBarStaysWhileThePointerMovesOntoIt() throws {
+        let frames = Frames()
+        let older = TranscriptItem(id: "older", role: .assistant,
+                                   text: "An older reply, long enough to run across most of the column width.")
+        let newer = TranscriptItem(id: "newer", role: .assistant, text: "The newest reply.")
+        let ui = HostWindow(size: CGSize(width: 520, height: 320)) { transcript([older, newer], frames: frames) }
+        let row = try #require(frames.rows["older"])
+        let button = copyButton(of: row)
+        #expect(!barShown(ui, row), "an older reply's bar shows without hover")
+
+        ui.movePointer(to: CGPoint(x: row.minX + 120, y: row.minY + 8))
+        #expect(barShown(ui, row), "hovering the text does not show the bar")
+        ui.movePointer(to: CGPoint(x: button.maxX + 100, y: button.midY))
+        #expect(barShown(ui, row), "the bar hid in its empty stretch, 100 pt from Copy")
+        ui.movePointer(to: CGPoint(x: button.midX, y: button.minY + 0.5))
+        #expect(barShown(ui, row), "the bar hid 1 pt above Copy")
+        ui.movePointer(to: CGPoint(x: button.midX, y: button.midY))
+        #expect(barShown(ui, row), "the bar hid on Copy")
+        // On to the next reply: the older one's bar hides again.
+        let next = try #require(frames.rows["newer"])
+        ui.movePointer(to: CGPoint(x: next.minX + 40, y: next.minY + 8))
+        #expect(!barShown(ui, row), "the bar stays after the pointer moves to the next reply")
+    }
+
+    /// The newest message's bar shows without hover; a tool call after it has no
+    /// bar and does not take the "newest" place.
+    @Test func newestReplyKeepsItsBarWhileAToolRuns() throws {
+        let frames = Frames()
+        let older = TranscriptItem(id: "older", role: .assistant, text: "Earlier reply.")
+        let reply = TranscriptItem(id: "reply", role: .assistant, text: "Latest reply.")
+        var tool = TranscriptItem(id: "tool", role: .tool, text: "")
+        tool.toolName = "search"
+        tool.detail = "running"
+        tool.isActive = true
+        let ui = HostWindow(size: CGSize(width: 520, height: 320)) { transcript([older, reply, tool], frames: frames) }
+        #expect(barShown(ui, try #require(frames.rows["reply"])))
+        #expect(!barShown(ui, try #require(frames.rows["older"])))
+        // The card's grey background runs to the row's bottom edge: nothing is
+        // reserved under it (a hidden bar would leave 26 pt of white there).
+        let toolRow = try #require(frames.rows["tool"])
+        let rep = ui.snapshot()
+        let bottomStrip = CGRect(x: toolRow.minX + 40, y: toolRow.maxY - 2, width: 200, height: 1)
+        #expect(ui.brightness(of: bottomStrip, in: rep) < 0.99, "the tool row ends below its card")
+        #expect(ui.brightness(of: CGRect(x: toolRow.minX + 40, y: toolRow.maxY + 2, width: 200, height: 1), in: rep) > 0.99)
     }
 }

@@ -16,23 +16,12 @@ struct ChatView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 HistoryHeader(session: session)
-                let newestID = ConversationMarkdown.newestMessageID(in: session.transcript.items)
-                ForEach(session.transcript.items) { item in
-                    MessageRow(item: item, isNewest: item.id == newestID,
-                               profile: session.profile, session: session)
-                }
-                ForEach(session.transcript.pendingRequests) { request in
-                    RequestCardView(session: session, request: request)
-                }
-                if let status = session.transcript.status, session.transcript.isRunning {
-                    Label(status, systemImage: "ellipsis")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let lastError = session.transcript.lastError {
-                    Label(lastError, systemImage: "exclamationmark.triangle")
-                        .font(.callout)
-                        .foregroundStyle(.red)
+                TranscriptMessages(transcript: session.transcript) { item, isNewest in
+                    MessageRow(item: item, isNewest: isNewest, profile: session.profile, session: session)
+                } requests: {
+                    ForEach(session.transcript.pendingRequests) { request in
+                        RequestCardView(session: session, request: request)
+                    }
                 }
             }
             .padding()
@@ -157,6 +146,7 @@ private struct MessageRow: View {
             }
             .contextMenu { copyMenu }
         case .assistant:
+            // `TranscriptMessages` skips a reply with nothing to show yet.
             MessageHoverArea { isHovering in
                 AssistantMessageContent(item: item, isHovering: isHovering, isNewest: isNewest,
                                         conversationSource: { ConversationMarkdown.export(session.transcript.items) },

@@ -373,6 +373,15 @@ public final class ChatSession: Identifiable {
 
     private func applyInfo(_ newInfo: SessionLiveInfo) {
         info = newInfo
+        // A turn that ended without `message.complete` (a refused `@` context) ends here
+        // too: every turn body closes with `running: false` (`Transcript.serverReportsIdle`).
+        if newInfo.running == false, transcript.isRunning {
+            transcript.serverReportsIdle()
+            if !transcript.isRunning {
+                transcript.requestReread()
+                rereadIfNeeded()
+            }
+        }
         if let title = newInfo.title, !title.isEmpty { self.title = title }
         // Compression can rotate the stored key mid-session.
         if let key = newInfo.storedSessionID, !key.isEmpty, key != storedSessionID {
@@ -390,7 +399,10 @@ public final class ChatSession: Identifiable {
     /// - Bounded: the newest page, then older pages only until one holds a row
     ///   already shown, at most `rereadPageLimit` pages. Never the whole history.
     /// - One re-read at a time; one that finishes while another is needed runs again.
-    /// - A failed or cancelled re-read changes nothing on screen.
+    /// - A failed or cancelled re-read changes nothing on screen. A failed one is tried
+    ///   again after `rereadRetryDelays` (a streak of failures stops after the last), so a
+    ///   dropped read never leaves bubbles, or a queued prompt Hermes dropped without a
+    ///   word, waiting for a turn that never comes.
     func rereadIfNeeded() {
         guard transcript.needsReread, rereadTask == nil, let source = connection?.messagesSource,
             let key = historyKey ?? storedSessionID
@@ -402,6 +414,7 @@ public final class ChatSession: Identifiable {
         rereadTask = Task { [weak self] in
             var rows: [StoredMessage] = []
             var reachesStart = false
+            var failed = false
             do {
                 for page in 0..<Self.rereadPageLimit {
                     let read = try await source.messagesPage(SessionMessagesQuery(
@@ -412,10 +425,31 @@ public final class ChatSession: Identifiable {
                 }
             } catch {
                 rows = []
+                failed = !(error is CancellationError) && !Task.isCancelled
             }
             guard let self, generation == self.historyGeneration else { return }
             self.rereadTask = nil
             self.transcript.installRereadPage(rows, ticket: ticket, reachesStart: reachesStart)
+            if failed { self.retryReread(generation: generation) } else { self.rereadFailures = 0 }
+            self.rereadIfNeeded()
+        }
+    }
+
+    /// Delays before trying a failed re-read again; a streak longer than this gives up
+    /// until the next turn, revisit or reconnect asks for one.
+    @ObservationIgnored var rereadRetryDelays: [Duration] = [.seconds(2), .seconds(8), .seconds(30)]
+    @ObservationIgnored private var rereadFailures = 0
+    @ObservationIgnored private var rereadRetry: Task<Void, Never>?
+
+    private func retryReread(generation: Int) {
+        guard rereadFailures < rereadRetryDelays.count else { return }
+        let delay = rereadRetryDelays[rereadFailures]
+        rereadFailures += 1
+        rereadRetry?.cancel()
+        rereadRetry = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self, generation == self.historyGeneration else { return }
+            self.transcript.requestReread()
             self.rereadIfNeeded()
         }
     }
@@ -721,7 +755,10 @@ public final class ChatSession: Identifiable {
     /// Stops the running turn. A reclaimed runtime has nothing running.
     public func interrupt() async throws {
         guard !isRuntimeGone else { return }
-        try await currentClient().interrupt(sessionID: sessionID)
+        let result = try await currentClient().interrupt(sessionID: sessionID)
+        // Hermes cleared its queue with the Stop (`session_lifecycle.py:708-712`). Only a
+        // hosted-task check answers `not_interrupted`, before touching it.
+        if result.status != "not_interrupted" { transcript.serverClearedQueue() }
     }
 
     // MARK: - Steering a running turn

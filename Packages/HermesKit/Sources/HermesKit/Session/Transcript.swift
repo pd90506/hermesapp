@@ -153,6 +153,20 @@ public struct RereadTicket: Sendable, Hashable {
 /// turn that was already running at open, a prompt the history already holds);
 /// nothing is hidden.
 ///
+/// **Running and waiting** (`isRunning`, `waiting`; the state table is `docs/protocol.md` §5)
+/// follow three server facts, never a chain of guesses:
+/// - a turn is open here (`message.start` or any streamed event, until `message.complete`);
+/// - a `message.start` is still to come for a prompt sent here (`expectedStarts`): sent and
+///   not answered yet, or answered `streaming` / `queued`. `steered` and `redirected` go
+///   into the running turn and expect none. Any `message.start` settles them all;
+/// - the server said a turn runs (a chat shown again) and none is open here yet.
+///
+/// `isRunning` is exactly "any of these" (`refreshRunning`). The waiting row is `isRunning`
+/// with no visible output since the latest send or turn start. What ends each fact:
+/// `message.complete`; for expectations, `message.start`, a failed submit, an in-turn answer,
+/// an `error` before any turn starts, and the server reporting the session idle (which ends
+/// `streaming` ones: Hermes marks the session running before it answers `streaming`).
+///
 /// **Local rows** (`appendNote`, `beginSideQuestion`: slash-command output, `/btw` and
 /// `/bg` answers) are never stored, so no re-read holds them. They join the history
 /// part once no unsettled live item is ahead of them, anchored to the stored row they
@@ -174,6 +188,9 @@ public struct Transcript: Sendable, Hashable {
     public private(set) var providerWait: String?
     /// The model is writing the arguments of a call to this tool (`tool.generating`).
     public private(set) var generatingTool: String?
+    /// The slow agent-build notice for this session (`notification.show` with key
+    /// `agent-build-slow`, `tui_gateway/server.py:989-996`), until it is cleared.
+    public private(set) var buildNotice: String?
     /// Last session-level or turn error.
     public private(set) var lastError: String?
     /// Unanswered server→client requests for this session, oldest first.
@@ -200,6 +217,24 @@ public struct Transcript: Sendable, Hashable {
     private var quietOnce: Set<String> = []
     /// `starts` when each prompt sent here was shown.
     private var promptSentAtStarts: [String: Int] = [:]
+    /// When the latest prompt was sent here, while its reply is pending: the waiting
+    /// row counts from it (see `waiting`). Cleared when no turn runs any more.
+    private var lastSentAt: Date?
+    /// Prompts sent here for which a `message.start` is still to come (see the type's
+    /// note on running). Any `message.start` empties it.
+    private var expectedStarts: Set<String> = []
+    /// Those of `expectedStarts` answered `queued`: their turn follows the running one, so
+    /// the closing `running: false` between the two does not end them.
+    private var queuedStarts: Set<String> = []
+    /// The server said a turn runs (`reconcileRunning(true)`, a chat shown again) and
+    /// none is open here yet; the next `message.start` or `message.complete` takes over.
+    private var serverBusy = false
+    /// The stored row of the open turn's prompt, when known: its "Interrupted" mark goes
+    /// after it.
+    private var turnPromptRow: Int?
+    /// Visible output (assistant text, a tool row) arrived since the latest send or
+    /// the latest turn start: the waiting row is over (see `waiting`).
+    private var outputSinceWait = false
     /// `requestReread` came before the newest page: read again once it is in.
     private var rereadWhenLoaded = false
     /// Prompts answered `streaming` without `user_row_id` whose turn has not started
@@ -221,9 +256,11 @@ public struct Transcript: Sendable, Hashable {
         /// `prompt.submit` not answered yet.
         case sent
         /// Hermes took it (at `clock`): it is stored, or will be by the time the
-        /// session is quiet again. `storedAtSubmit`: answered `streaming` with its
-        /// row's id, so the row was written before the answer (`methods_prompt.py:815-819`).
-        case answered(Int, storedAtSubmit: Bool)
+        /// session is quiet again. `storedRow`: answered `streaming` with its row's id
+        /// (`user_row_id`), so that row was written before the answer
+        /// (`methods_prompt.py:815-819`); once a shown stored row has that id, the
+        /// bubble goes (`dropPromptsShownByRows`).
+        case answered(Int, storedRow: Int?)
         /// The submit failed: only this bubble holds the text.
         case failed
     }
@@ -307,16 +344,16 @@ public struct Transcript: Sendable, Hashable {
                 lastError = inflight.error
                 turnItemIDs = []
                 if let echo { finishedItems[echo] = completions }
-                isRunning = snapshot.running == true
+                serverBusy = snapshot.running == true
             } else {
                 let streaming = inflight.streaming ?? (snapshot.running == true)
                 append(.assistant, assistant, active: streaming)
-                isRunning = streaming || snapshot.running == true
             }
         } else if snapshot.running == true {
             startTurn()
-            isRunning = true
         }
+        refreshRunning()
+        outputSinceWait = items[historyCount...].contains(where: Self.isVisibleOutput)
     }
 
     static func toolItemID(_ toolID: String) -> String { "tool-" + toolID }
@@ -433,12 +470,25 @@ public struct Transcript: Sendable, Hashable {
     /// - Not running while a turn is still open here: its `message.complete` went to
     ///   another socket. The turn ends here as it would have; its live items wait for
     ///   the re-read, which holds what it stored (`finishedItems`).
+    /// - Not running, also before any `message.start` arrived here: no turn runs and none
+    ///   is coming, except for a submit still unanswered (its answer decides).
     public mutating func reconcileRunning(_ running: Bool) {
         if running {
-            isRunning = true
+            if !turnActive { serverBusy = true }
+            refreshRunning()
             return
         }
-        guard turnActive else { return }
+        if turnActive { closeTurnHere() }
+        serverBusy = false
+        expectedStarts = expectedStarts.filter { prompts[$0] == .sent }
+        queuedStarts.formIntersection(expectedStarts)
+        refreshRunning()
+    }
+
+    /// The open turn ends here without its `message.complete`: it went to another socket,
+    /// or Hermes sent none (`serverReportsIdle`). Its live items wait for the re-read,
+    /// which holds what it stored (`finishedItems`); only empty reply bubbles go.
+    private mutating func closeTurnHere() {
         endLiveActivity()
         removeLiveItems { $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil }
         completions += 1
@@ -446,8 +496,58 @@ public struct Transcript: Sendable, Hashable {
         for id in turnItemIDs { finishedItems[id] = completions }
         turnItemIDs = []
         turnActive = false
-        isRunning = prompts.values.contains(.sent)
+        turnPromptRow = nil
         status = nil
+    }
+
+    /// `session.info` with `running: false` (`tui_gateway/server.py:2400`): every turn
+    /// body ends with it (`prompt_turn.py:1196-1225`, `_emit_settled_session_info`),
+    /// also one that sent no `message.complete`, such as a refused `@` context
+    /// (`prompt_turn.py:715-718`: `message.start`, `error`, then this).
+    ///
+    /// - An open turn that has shown nothing (no text, tool row or reasoning) ends: Hermes
+    ///   sent no `message.complete` for it. One that has shown something ends with its own
+    ///   `message.complete`, so a stale report cannot hide what it streamed.
+    /// - With no turn open, a `streaming` answer expects no start any more: Hermes marks
+    ///   the session running before it answers `streaming` (`_lock_in_submit_turn`,
+    ///   `methods_prompt.py:668`).
+    ///   A `queued` one does (its turn follows this report, `prompt_turn.py:438-448`), and
+    ///   so does a submit still unanswered.
+    public mutating func serverReportsIdle() {
+        serverBusy = false
+        if turnActive, !outputSinceWait, !turnShowsReasoning { closeTurnHere() }
+        if !turnActive {
+            expectedStarts = expectedStarts.filter { prompts[$0] == .sent || queuedStarts.contains($0) }
+            queuedStarts.formIntersection(expectedStarts)
+        }
+        refreshRunning()
+    }
+
+    /// `session.interrupt` succeeded: Hermes cleared its queue (`queued_prompt = None`,
+    /// generation bumped, `session_lifecycle.py:708-712`) and sends no event for it, so no
+    /// `message.start` comes for a prompt answered `queued`. Its row, stored when it was
+    /// accepted (`_persist_queued_user_row`, `session_auto_continue.py:441`), still
+    /// shows after the re-read; its bubble settles as before.
+    public mutating func serverClearedQueue() {
+        expectedStarts.subtract(queuedStarts)
+        queuedStarts = []
+        refreshRunning()
+    }
+
+    /// The open turn's live reply holds reasoning.
+    private var turnShowsReasoning: Bool {
+        items[historyCount...].contains { turnItemIDs.contains($0.id) && !$0.reasoning.isEmpty }
+    }
+
+    /// `isRunning` from the three facts (see the type's note). Everything that changes
+    /// one of them calls this; nothing else sets `isRunning`.
+    private mutating func refreshRunning() {
+        isRunning = turnActive || !expectedStarts.isEmpty || serverBusy
+        if !isRunning {
+            lastSentAt = nil
+            buildNotice = nil
+            status = nil
+        }
     }
 
     /// Starts a re-read of the newest rows: it may settle everything up to now.
@@ -500,9 +600,9 @@ public struct Transcript: Sendable, Hashable {
         let quiet = !turnActive && starts == ticket.starts && !prompts.values.contains(.sent)
         var eligible: Set<String> = [], storedAtSubmit: Set<String> = []
         for (id, state) in prompts where quiet {
-            guard case .answered(let at, let stored) = state, at <= ticket.clock else { continue }
+            guard case .answered(let at, let storedRow) = state, at <= ticket.clock else { continue }
             eligible.insert(id)
-            if stored { storedAtSubmit.insert(id) }
+            if storedRow != nil { storedAtSubmit.insert(id) }
         }
         // A prompt answered `streaming` was stored before its answer: this read holds it.
         // Any other prompt can still be ahead of its row: a follow-up's `message.start`
@@ -515,6 +615,34 @@ public struct Transcript: Sendable, Hashable {
         if !quietOnce.isEmpty { needsReread = true }
         prompts = prompts.filter { !dropped.contains($0.key) }
         removeLiveItems { settled.contains($0.id) || dropped.contains($0.id) }
+        // A queued prompt the quiet re-reads settled had no turn of its own start in
+        // all that time: Hermes merged or dropped it (a superseded queue entry sends
+        // nothing, `prompt_turn.py:135-146`). It expects no start any more.
+        let unstarted = dropped.intersection(queuedStarts)
+        if !unstarted.isEmpty {
+            expectedStarts.subtract(unstarted)
+            queuedStarts.subtract(unstarted)
+            refreshRunning()
+        }
+        // Quiet or not: a prompt whose stored row this read shows is settled by that row.
+        dropPromptsShownByRows()
+    }
+
+    /// Drops prompt bubbles whose own stored row (`user_row_id`, see `PromptState`)
+    /// the history now shows: the row is the prompt, as in Desktop, which ties its
+    /// optimistic message to that id (`use-prompt-actions/submit.ts:969-986`). This
+    /// needs no quiet session: the id proves this row is this prompt, whatever ran
+    /// since. A prompt without that proof keeps its bubble (the quiet rules above).
+    private mutating func dropPromptsShownByRows() {
+        let shown = Set(items[..<historyCount].compactMap(\.rowID))
+        let proven = Set(prompts.compactMap { id, state -> String? in
+            guard case .answered(_, let row?) = state, shown.contains(row) else { return nil }
+            return id
+        })
+        guard !proven.isEmpty else { return }
+        prompts = prompts.filter { !proven.contains($0.key) }
+        quietOnce.subtract(proven)
+        removeLiveItems { proven.contains($0.id) }
     }
 
     /// Projects `rows` into the history from `start` on, replacing what was there.
@@ -546,12 +674,29 @@ public struct Transcript: Sendable, Hashable {
     /// added while it loads follows it), nor while a turn runs (a row added during a
     /// turn follows that turn's rows, which are not stored yet).
     private mutating func absorbLocalRows() {
+        placeAnchoredLocalRows()
         guard paging.isLoaded, !turnActive else { return }
         while historyCount < items.count, localIDs.contains(items[historyCount].id) {
             let id = items[historyCount].id
             localAnchors[id] = items[..<historyCount].last { $0.rowID != nil }?.rowID
             historyCount += 1
         }
+    }
+
+    /// Live local rows whose anchor was fixed when they were made (a stopped turn's
+    /// "Interrupted" mark, after that turn's prompt row) join the history after that row
+    /// as soon as it shows, whatever is live meanwhile: the next turn cannot take them.
+    private mutating func placeAnchoredLocalRows() {
+        let shown = Set(items[..<historyCount].compactMap(\.rowID))
+        let ready = items[historyCount...].filter { item in
+            localIDs.contains(item.id) && localAnchors[item.id].map(shown.contains) == true
+        }
+        guard !ready.isEmpty else { return }
+        let ids = Set(ready.map(\.id))
+        let live = items[historyCount...].filter { !ids.contains($0.id) }
+        items.removeSubrange(historyCount...)
+        items.append(contentsOf: live)
+        for item in ready { placeLocalRow(item) }
     }
 
     /// Puts a local row of the history part back after its anchor row (or the
@@ -612,9 +757,10 @@ public struct Transcript: Sendable, Hashable {
     ///   - images: the images sent with it (`text` is then the caption, possibly empty).
     ///   - attachments: names of the files sent with it.
     ///   - displayKind: `steer` for guidance injected with `session.steer`.
+    ///   - sentAt: when it was sent; the waiting row counts from it.
     @discardableResult
     public mutating func appendUserPrompt(_ text: String, images: [TranscriptImage] = [], attachments: [String] = [],
-                                          displayKind: String? = nil) -> String {
+                                          displayKind: String? = nil, sentAt: Date = Date()) -> String {
         sealActiveAssistant()
         counter += 1
         var item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
@@ -624,8 +770,11 @@ public struct Transcript: Sendable, Hashable {
         items.append(item)
         prompts[item.id] = .sent
         promptSentAtStarts[item.id] = starts
-        isRunning = true
+        expectedStarts.insert(item.id)
+        lastSentAt = sentAt
+        outputSinceWait = false
         lastError = nil
+        refreshRunning()
         return item.id
     }
 
@@ -634,8 +783,10 @@ public struct Transcript: Sendable, Hashable {
     public mutating func withdrawPrompt(_ itemID: String) {
         guard prompts.removeValue(forKey: itemID) != nil else { return }
         promptSentAtStarts[itemID] = nil
+        expectedStarts.remove(itemID)
+        queuedStarts.remove(itemID)
         removeLiveItems { $0.id == itemID }
-        if !turnActive, !prompts.values.contains(.sent) { isRunning = false }
+        refreshRunning()
     }
 
     /// Moves a prompt bubble to the end: a redirect the gateway queued as the next
@@ -689,6 +840,24 @@ public struct Transcript: Sendable, Hashable {
     /// finished (`finishedItems`). If no turn ever starts, it stays: no row holds it.
     public mutating func promptAnswered(itemID: String, status: String? = nil, userRowID: Int? = nil) {
         guard prompts[itemID] != nil else { return }
+        defer { refreshRunning() }
+        switch status {
+        case "steered", "redirected":
+            // Into the running turn, as guidance or a correction (`interrupt_control.py:265-281`,
+            // `turn_iteration_prep.py:370-375`): no `message.start` of its own. Answered after
+            // that turn ended, nothing runs any more. A steer the turn left over is queued and
+            // starts its own turn with `message.start` (`prompt_turn.py:441-447`).
+            expectedStarts.remove(itemID)
+            queuedStarts.remove(itemID)
+        case "queued":
+            if expectedStarts.contains(itemID) { queuedStarts.insert(itemID) }
+        case "streaming":
+            // The open turn is this prompt's if it started after the send: its row anchors
+            // the turn's "Interrupted" mark.
+            if turnActive, !expectedStarts.contains(itemID), let userRowID { turnPromptRow = userRowID }
+        default:
+            break
+        }
         if status == "streaming", userRowID == nil {
             prompts[itemID] = nil
             let sentAt = promptSentAtStarts.removeValue(forKey: itemID) ?? starts
@@ -701,7 +870,9 @@ public struct Transcript: Sendable, Hashable {
         }
         promptSentAtStarts[itemID] = nil
         clock += 1
-        prompts[itemID] = .answered(clock, storedAtSubmit: status == "streaming" && userRowID != nil)
+        prompts[itemID] = .answered(clock, storedRow: status == "streaming" ? userRowID : nil)
+        // A re-read can land before the answer (a fast reply): its row may already show.
+        dropPromptsShownByRows()
         // No turn will finish to settle it if none runs (Hermes may have dropped or
         // merged it, or its turn has not started): read the newest rows again.
         if !turnActive, paging.rereadable { needsReread = true }
@@ -714,8 +885,10 @@ public struct Transcript: Sendable, Hashable {
         if let itemID, prompts[itemID] != nil {
             prompts[itemID] = .failed
             promptSentAtStarts[itemID] = nil
+            expectedStarts.remove(itemID)
+            queuedStarts.remove(itemID)
         }
-        if !turnActive { isRunning = false }
+        refreshRunning()
     }
 
     public mutating func addRequest(_ request: ServerRequest) {
@@ -734,14 +907,13 @@ public struct Transcript: Sendable, Hashable {
         switch event.kind {
         case .messageStart:
             startTurn()
-            isRunning = true
             if activeAssistantIndex == nil { append(.assistant, "", active: true) }
 
         case .messageDelta(let delta):
             startTurn()
-            isRunning = true
             let index = activeAssistantIndex ?? append(.assistant, "", active: true)
             items[index].text += delta.text
+            if Self.isVisibleOutput(items[index]) { outputSinceWait = true }
 
         case .reasoningDelta(let delta):
             startTurn()
@@ -768,6 +940,7 @@ public struct Transcript: Sendable, Hashable {
             // place with the authoritative interim text; the next deltas open a new
             // one (`use-message-stream/index.ts:614-719`).
             let text = interim.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { outputSinceWait = true }
             if text.isEmpty {
                 if interim.alreadyStreamed == true, let index = activeAssistantIndex { items[index].isActive = false }
             } else if let index = activeAssistantIndex {
@@ -810,6 +983,7 @@ public struct Transcript: Sendable, Hashable {
             items[index].tool = tool
             items[index].toolName = start.name
             items[index].detail = tool.context
+            outputSinceWait = true
 
         case .toolComplete(let complete):
             startTurn()
@@ -838,6 +1012,7 @@ public struct Transcript: Sendable, Hashable {
             items[index].isActive = false
             items[index].toolName = complete.name
             if let summary = complete.summary, !summary.isEmpty { items[index].detail = summary }
+            outputSinceWait = true
 
         case .messageComplete(let complete):
             finishTurn(complete)
@@ -853,6 +1028,25 @@ public struct Transcript: Sendable, Hashable {
 
         case .error(let payload):
             lastError = payload.message
+            // Before any turn starts, an `error` is the end of what was sent: Hermes
+            // cancelled or refused it and sends nothing more (Stop during the agent build,
+            // `methods_prompt.py:625-635`; an ownership refusal, `prompt_turn.py:123-134`;
+            // a queued prompt that failed to dispatch, `session_auto_continue.py:505-513`),
+            // or a `message.complete` follows (a failed build, `methods_prompt.py:617-623`).
+            // An open turn that has shown nothing ends too, by the rule `running: false` uses:
+            // a follow-up refused after its `message.start` sends only this
+            // (`_dispatch_followup_turn`, `prompt_turn.py:421-436`, then `:123-134`). A failed
+            // pending model switch also sends it at turn start and its turn goes on
+            // (`session_compression.py:197-211`, `prompt_turn.py:685`): that turn's next streamed
+            // event opens it again (the timer then counts from there).
+            if turnActive, !outputSinceWait, !turnShowsReasoning { closeTurnHere() }
+            // With no turn open, no start is coming, except for a submit still unanswered.
+            if !turnActive {
+                serverBusy = false
+                expectedStarts = expectedStarts.filter { prompts[$0] == .sent }
+                queuedStarts.formIntersection(expectedStarts)
+                refreshRunning()
+            }
 
         case .requestCancel(let cancel):
             removeRequest(id: cancel.id)
@@ -865,10 +1059,78 @@ public struct Transcript: Sendable, Hashable {
                 return false
             }
 
-        case .gatewayReady, .sessionTitle, .sessionInfo, .sessionsChanged, .sessionReclaimed, .notificationShow,
-            .notificationClear, .unknown:
+        case .notificationShow(let notice):
+            if notice.key == Self.buildNoticeKey { buildNotice = notice.text }
+
+        case .notificationClear(let clear):
+            if clear.key == Self.buildNoticeKey { buildNotice = nil }
+
+        case .gatewayReady, .sessionTitle, .sessionInfo, .sessionsChanged, .sessionReclaimed, .unknown:
             break
         }
+    }
+
+    /// `_AGENT_BUILD_SLOW_NOTICE_KEY` (`tui_gateway/server.py:945`).
+    static let buildNoticeKey = "agent-build-slow"
+
+    // MARK: - Waiting for the reply
+
+    /// The waiting row: from a send until the reply shows text or a tool row.
+    public struct Waiting: Sendable, Hashable {
+        /// When the prompt was sent here; `nil` for a turn this chat did not start
+        /// (it was running at open, or started elsewhere).
+        public var since: Date?
+        /// What the wait is about, when Hermes says (see `Transcript.waiting`).
+        public var hint: String?
+
+        public init(since: Date?, hint: String?) {
+            self.since = since
+            self.hint = hint
+        }
+
+        /// The label: the hint, else "Thinking…". Never a bare ellipsis.
+        public var label: String { hint ?? "Thinking…" }
+
+        /// Elapsed time as the row shows it: `4s`, `1m 05s`, `1h 02m`.
+        public static func elapsedText(from start: Date, to now: Date) -> String {
+            func twoDigits(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
+            let seconds = max(0, Int(now.timeIntervalSince(start)))
+            if seconds < 60 { return "\(seconds)s" }
+            let minutes = seconds / 60
+            if minutes < 60 { return "\(minutes)m \(twoDigits(seconds % 60))s" }
+            return "\(minutes / 60)h \(twoDigits(minutes % 60))m"
+        }
+    }
+
+    /// The reply is awaited and nothing of it shows yet: a turn runs (or a submit is
+    /// pending) and no live item since the latest prompt is visible output, that is,
+    /// assistant text or a tool row (reasoning alone keeps the row, as Desktop's
+    /// `ResponseLoadingIndicator` stands in for an empty running reply,
+    /// `components/assistant-ui/thread/status.tsx:243-268`). `nil` otherwise.
+    ///
+    /// The hint, most specific first: the turn's `status.update` (compaction, memory
+    /// recall), an explained provider wait, the tool whose call is being drafted, then
+    /// the slow agent-build notice.
+    ///
+    /// Only output since the latest send, or since the turn now running started,
+    /// counts: an earlier turn's reply (one that failed stays live, unstored) does not
+    /// end the wait for a new prompt.
+    public var waiting: Waiting? {
+        guard isRunning, !outputSinceWait else { return nil }
+        return Waiting(since: lastSentAt, hint: waitingHint)
+    }
+
+    /// Output the waiting row gives way to: assistant text that is not blank, or a tool row.
+    static func isVisibleOutput(_ item: TranscriptItem) -> Bool {
+        item.role == .tool
+            || (item.role == .assistant && !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private var waitingHint: String? {
+        if let status, !status.isEmpty { return status }
+        if let providerWait { return providerWait }
+        if let generatingTool { return "Drafting \(generatingTool)…" }
+        return buildNotice
     }
 
     // MARK: - Helpers
@@ -965,6 +1227,17 @@ public struct Transcript: Sendable, Hashable {
         starts += 1
         clock += 1
         quietOnce = []
+        // This is the start the expected prompts waited for (or one before theirs, which
+        // ends the same way): its prompt's stored row, when known, anchors its mark.
+        turnPromptRow = expectedStarts.compactMap { id -> Int? in
+            if case .answered(_, let row?) = prompts[id] { return row }
+            return nil
+        }.max()
+        expectedStarts = []
+        queuedStarts = []
+        serverBusy = false
+        outputSinceWait = false
+        refreshRunning()
         // The turn that stores a row-less `streaming` prompt (see `promptAnswered`).
         turnItemIDs.formUnion(awaitingTurn)
         awaitingTurn = []
@@ -993,10 +1266,20 @@ public struct Transcript: Sendable, Hashable {
         let finalText = complete.textValue
         // The segment that was still streaming when the turn ended.
         var streaming = activeAssistantIndex.map { items[$0].id }
+        // A reply stopped before it showed any text: the "Interrupted" mark, with whatever
+        // reasoning streamed. Hermes stores no assistant row for an empty partial
+        // (`agent/turn_api_call.py:204-210`), so it is a local row: it stays across re-reads,
+        // right after the turn's last committed row (`persisted_turn.row_ids`, so below the
+        // turn's own tool rows, `prompt_turn.py:897-903`). Without a receipt, after the
+        // turn's prompt row (its answered `user_row_id`).
+        var stoppedMark: String?
         if let index = activeAssistantIndex {
             if items[index].text.isEmpty, !finalText.isEmpty, !turnShows(finalText) { items[index].text = finalText }
             if items[index].reasoning.isEmpty, let reasoning = complete.reasoning { items[index].reasoning = reasoning }
             items[index].outcome = complete.status
+            if complete.status == "interrupted", items[index].text.isEmpty {
+                stoppedMark = items[index].id
+            }
         } else if !finalText.isEmpty, !turnShows(finalText) {
             let index = append(.assistant, finalText)
             items[index].outcome = complete.status
@@ -1007,9 +1290,17 @@ public struct Transcript: Sendable, Hashable {
         // Nothing keeps spinning once the turn is over, wherever its items are (a
         // prompt sent during the reply can follow its open bubble); empty bubbles go.
         endLiveActivity()
-        removeLiveItems { $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil }
+        if let stoppedMark {
+            turnItemIDs.remove(stoppedMark)
+            localIDs.insert(stoppedMark)
+            if let anchor = complete.persistedRowIDs?.max() ?? complete.persistedUserRowID ?? turnPromptRow {
+                localAnchors[stoppedMark] = anchor
+            }
+        }
+        removeLiveItems {
+            $0.role == .assistant && $0.text.isEmpty && $0.reasoning.isEmpty && $0.rowID == nil && $0.id != stoppedMark
+        }
         if complete.status == "error" { lastError = complete.error ?? "The turn failed." }
-        isRunning = false
         status = nil
 
         // The turn's rows are stored before `message.complete` (`prompt_turn.py:1153-1182`).
@@ -1065,6 +1356,10 @@ public struct Transcript: Sendable, Hashable {
         for id in turnItemIDs where id != unstored && !unstoredSplit.contains(id) { finishedItems[id] = completions }
         turnItemIDs = []
         turnActive = false
+        turnPromptRow = nil
+        // A prompt sent while this turn ran and not answered yet, or answered `queued`,
+        // still expects its own start: its waiting row and send time stay.
+        refreshRunning()
         if paging.rereadable { needsReread = true }
     }
 

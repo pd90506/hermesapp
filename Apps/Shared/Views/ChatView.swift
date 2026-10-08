@@ -17,7 +17,7 @@ struct ChatView: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 HistoryHeader(session: session)
                 ForEach(session.transcript.items) { item in
-                    MessageRow(item: item, profile: session.profile)
+                    MessageRow(item: item, profile: session.profile, session: session)
                 }
                 ForEach(session.transcript.pendingRequests) { request in
                     RequestCardView(session: session, request: request)
@@ -120,7 +120,9 @@ private struct MessageRow: View {
     let item: TranscriptItem
     /// The chat's profile: stored images are read for it.
     let profile: String?
+    let session: ChatSession
     @Environment(AppModel.self) private var model
+    @State private var isHovering = false
 
     var body: some View {
         switch item.role {
@@ -144,52 +146,41 @@ private struct MessageRow: View {
                             .padding(10)
                             .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
                     }
+                    InlineMessageCopyButton(action: copyMessage)
                 }
+                .messageCopyAccessory(isHovering: isHovering, placement: .leadingOutside, action: copyMessage)
             }
+            .onHover { isHovering = $0 }
+            .contextMenu { copyMenu }
         case .assistant:
-            VStack(alignment: .leading, spacing: 6) {
-                if !item.reasoning.isEmpty {
-                    // Model-written like the reply, so rendered the same way; the
-                    // content is only built while expanded.
-                    DisclosureGroup("Reasoning") {
-                        MarkdownView(text: item.reasoning, isStreaming: item.isActive)
-                            .equatable()
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.caption)
-                }
-                if item.text.isEmpty && item.isActive {
-                    Text("…")
-                } else {
-                    MarkdownView(text: item.text, isStreaming: item.isActive)
-                        .equatable()
-                }
-                if item.outcome == "interrupted" {
-                    Text("Interrupted").font(.caption).foregroundStyle(.secondary)
-                }
-            }
+            AssistantMessageContent(item: item, isHovering: isHovering,
+                                    conversationSource: { ConversationMarkdown.export(session.transcript.items) },
+                                    copy: copyMessage)
+                .onHover { isHovering = $0 }
         case .tool:
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.toolName ?? "tool").font(.callout.monospaced())
-                    if let detail = item.detail {
-                        Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                    }
-                }
-            } icon: {
-                if item.isActive {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "wrench.and.screwdriver")
-                }
-            }
-            .padding(8)
-            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+            ToolMessageContent(item: item, isHovering: isHovering, copy: copyMessage)
+                .onHover { isHovering = $0 }
+                .contextMenu { copyMenu }
         case .system:
-            Text(item.text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack {
+                Text(item.text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                InlineMessageCopyButton(action: copyMessage)
+            }
+            .messageCopyAccessory(isHovering: isHovering, placement: .trailingGutter(.center), action: copyMessage)
+            .onHover { isHovering = $0 }
+            .contextMenu { copyMenu }
         }
+    }
+
+    private func copyMessage() { Clipboard.copy(ConversationMarkdown.messageSource(for: item)) }
+
+    @ViewBuilder private var copyMenu: some View {
+        Button("Copy Message", action: copyMessage)
+        #if os(macOS)
+        Button("Copy Conversation") { Clipboard.copy(ConversationMarkdown.export(session.transcript.items)) }
+        #endif
     }
 }

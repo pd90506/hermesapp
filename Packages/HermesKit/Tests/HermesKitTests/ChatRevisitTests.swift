@@ -50,7 +50,7 @@ struct ChatRevisitTests {
         // Meanwhile another client ran a turn on it; its events went to that client.
         server.store.append([storedRow(id: 301, role: "user", text: "从桌面问的"),
                              storedRow(id: 302, role: "assistant", text: "桌面的回答")])
-        server.held.withLock { $0.insert("session.activate") }
+        _ = server.held.withLock { $0.insert("session.activate") }
 
         let back = try await connection.open(SessionSummary(id: "stored-1"))
 
@@ -126,7 +126,7 @@ struct ChatRevisitTests {
         let (first, _) = try await openTwo(connection)
         let oldSID = first.sessionID
         let resumes = log.requests("session.resume").count
-        server.held.withLock { $0.insert("session.activate") }
+        _ = server.held.withLock { $0.insert("session.activate") }
 
         let back = try await connection.open(SessionSummary(id: "stored-1"))
         let activate = try #require(await request("session.activate", in: log))
@@ -163,7 +163,7 @@ struct ChatRevisitTests {
         let first = try await connection.open(SessionSummary(id: "stored-1"))
         await settle(first)
         let resumes = log.requests("session.resume").count
-        server.held.withLock { $0.insert("session.resume") }
+        _ = server.held.withLock { $0.insert("session.resume") }
 
         let opening = Task { try await connection.open(SessionSummary(id: "stored-2", title: "Earlier")) }
         let resume = try #require(await request("session.resume", in: log, after: resumes))
@@ -187,7 +187,7 @@ struct ChatRevisitTests {
 
     @Test func aBotChatsNewestPageIsReadAlongsideItsLookup() async throws {
         let (connection, transport, server, log) = try await connect()
-        server.held.withLock { $0.insert("session.list") }
+        _ = server.held.withLock { $0.insert("session.list") }
 
         let opening = Task { try await connection.openBotChat(profile: "coder") }
         // History refreshes list sessions too; the registry lookup is the one by title.
@@ -197,7 +197,7 @@ struct ChatRevisitTests {
             if found == nil { try await Task.sleep(for: .milliseconds(10)) }
         }
         let lookup = try #require(found)
-        server.held.withLock { $0.remove("session.list") }
+        _ = server.held.withLock { $0.remove("session.list") }
         for other in log.requests("session.list") where other["params"]?["title"] != "Bot Chat" {
             transport.respond(to: other, result: try #require(server.answer("session.list", other["params"] ?? nil)))
         }
@@ -229,7 +229,7 @@ struct ChatRevisitTests {
         composer.attach(png("a.png"))
         composer.attach(png("b.png"))
 
-        server.held.withLock { $0.insert("session.list") }
+        _ = server.held.withLock { $0.insert("session.list") }
         let opening = Task { try await connection.openBotChat(profile: "coder") }
         var lookup: JSONValue?
         for _ in 0..<300 where lookup == nil {
@@ -255,7 +255,7 @@ struct ChatRevisitTests {
         composer.draft = "draft"
         composer.attach(png("a.png"))
         let resumes = log.requests("session.resume").count
-        server.held.withLock { $0.insert("session.resume") }
+        _ = server.held.withLock { $0.insert("session.resume") }
 
         let cancelled = Task { try await connection.open(SessionSummary(id: "stored-2", title: "Two")) }
         _ = try #require(await request("session.resume", in: log, after: resumes))
@@ -304,7 +304,7 @@ struct ChatRevisitTests {
         #expect(log.requests("prompt.submit").count == submits)  // held until the chat is resumed
         #expect(occurrences(first.transcript, "hi") == 0)
 
-        server.held.withLock { $0.remove("session.resume") }
+        _ = server.held.withLock { $0.remove("session.resume") }
         transport.respond(to: resume, result: try #require(server.answer("session.resume", resume["params"] ?? nil)))
         try await sending.value
 
@@ -324,7 +324,7 @@ struct ChatRevisitTests {
         _ = try await connection.open(SessionSummary(id: "stored-1"))
         // Desktop replaced the Bot Chat meanwhile.
         server.botTip.withLock { $0 = "coder-chat-2" }
-        server.held.withLock { $0.insert("session.list") }
+        _ = server.held.withLock { $0.insert("session.list") }
         let isLookup: (JSONValue) -> Bool = { $0["params"]?["title"] == "Bot Chat" }
         let lookups = log.requests("session.list").filter(isLookup).count
 
@@ -340,7 +340,7 @@ struct ChatRevisitTests {
         try await Task.sleep(for: .milliseconds(100))
         #expect(log.requests("prompt.submit").count == submits)
 
-        server.held.withLock { $0.remove("session.list") }
+        _ = server.held.withLock { $0.remove("session.list") }
         for other in log.requests("session.list") where other["params"]?["title"] != "Bot Chat" {
             transport.respond(to: other, result: try #require(server.answer("session.list", other["params"] ?? nil)))
         }
@@ -362,7 +362,7 @@ struct ChatRevisitTests {
         let (connection, transport, server, log) = try await connect()
         let (first, _) = try await openTwo(connection)
         let resumes = log.requests("session.resume").count
-        server.held.withLock { $0.insert("session.activate") }
+        _ = server.held.withLock { $0.insert("session.activate") }
 
         _ = try await connection.open(SessionSummary(id: "stored-1"))
         let reconcile = first.revisitTask
@@ -409,7 +409,7 @@ struct ChatRevisitTests {
         let first = try await connection.open(SessionSummary(id: "stored-1"))
         await settle(first)
         let resumes = log.requests("session.resume").count
-        server.held.withLock { $0.insert("session.resume") }
+        _ = server.held.withLock { $0.insert("session.resume") }
 
         let slow = Task { try await connection.open(SessionSummary(id: "stored-2", title: "Slow")) }
         let resume = try #require(await request("session.resume", in: log, after: resumes))

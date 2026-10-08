@@ -444,3 +444,92 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         #expect(botsPage.fittingSize.height == SidebarFooter<EmptyView>.height + 8)
     }
 }
+
+// MARK: - Message action bar
+
+@MainActor
+@Suite struct MessageActionBarHoverTests {
+    @MainActor private final class Frames { var rows: [String: CGRect] = [:] }
+
+    /// The rows in transcript order, with the newest message chosen as `ChatView` does.
+    private func transcript(_ items: [TranscriptItem], frames: Frames) -> some View {
+        let newestID = ConversationMarkdown.newestMessageID(in: items)
+        return VStack(alignment: .leading, spacing: 12) {
+            ForEach(items) { item in
+                Group {
+                    switch item.role {
+                    case .assistant:
+                        MessageHoverArea { hovering in
+                            AssistantMessageContent(item: item, isHovering: hovering, isNewest: item.id == newestID) {}
+                        }
+                    case .tool:
+                        ToolMessageContent(item: item)
+                    default:
+                        Text(item.text)
+                    }
+                }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(HostWindow.space)) } action: {
+                    frames.rows[item.id] = $0
+                }
+            }
+        }
+        .padding(16)
+    }
+
+    /// The Copy button's square at the leading end of a row's action bar.
+    private func copyButton(of row: CGRect) -> CGRect {
+        CGRect(x: row.minX, y: row.maxY - 26, width: 26, height: 26)
+    }
+
+    private func barShown(_ ui: HostWindow, _ row: CGRect) -> Bool {
+        ui.darkest(in: copyButton(of: row).insetBy(dx: 4, dy: 4), of: ui.snapshot()) < 0.6
+    }
+
+    /// From the text, down across the bar's empty stretch and the strip just
+    /// above Copy, the bar of an older reply stays shown the whole way.
+    @Test func olderReplysBarStaysWhileThePointerMovesOntoIt() throws {
+        let frames = Frames()
+        let older = TranscriptItem(id: "older", role: .assistant,
+                                   text: "An older reply, long enough to run across most of the column width.")
+        let newer = TranscriptItem(id: "newer", role: .assistant, text: "The newest reply.")
+        let ui = HostWindow(size: CGSize(width: 520, height: 320)) { transcript([older, newer], frames: frames) }
+        let row = try #require(frames.rows["older"])
+        let button = copyButton(of: row)
+        #expect(!barShown(ui, row), "an older reply's bar shows without hover")
+
+        ui.movePointer(to: CGPoint(x: row.minX + 120, y: row.minY + 8))
+        #expect(barShown(ui, row), "hovering the text does not show the bar")
+        ui.movePointer(to: CGPoint(x: button.maxX + 100, y: button.midY))
+        #expect(barShown(ui, row), "the bar hid in its empty stretch, 100 pt from Copy")
+        ui.movePointer(to: CGPoint(x: button.midX, y: button.minY + 0.5))
+        #expect(barShown(ui, row), "the bar hid 1 pt above Copy")
+        ui.movePointer(to: CGPoint(x: button.midX, y: button.midY))
+        #expect(barShown(ui, row), "the bar hid on Copy")
+        // On to the next reply: the older one's bar hides again.
+        let next = try #require(frames.rows["newer"])
+        ui.movePointer(to: CGPoint(x: next.minX + 40, y: next.minY + 8))
+        #expect(!barShown(ui, row), "the bar stays after the pointer moves to the next reply")
+    }
+
+    /// The newest message's bar shows without hover; a tool call after it has no
+    /// bar and does not take the "newest" place.
+    @Test func newestReplyKeepsItsBarWhileAToolRuns() throws {
+        let frames = Frames()
+        let older = TranscriptItem(id: "older", role: .assistant, text: "Earlier reply.")
+        let reply = TranscriptItem(id: "reply", role: .assistant, text: "Latest reply.")
+        var tool = TranscriptItem(id: "tool", role: .tool, text: "")
+        tool.toolName = "search"
+        tool.detail = "running"
+        tool.isActive = true
+        let ui = HostWindow(size: CGSize(width: 520, height: 320)) { transcript([older, reply, tool], frames: frames) }
+        #expect(barShown(ui, try #require(frames.rows["reply"])))
+        #expect(!barShown(ui, try #require(frames.rows["older"])))
+        // The card's grey background runs to the row's bottom edge: nothing is
+        // reserved under it (a hidden bar would leave 26 pt of white there).
+        let toolRow = try #require(frames.rows["tool"])
+        let rep = ui.snapshot()
+        let bottomStrip = CGRect(x: toolRow.minX + 40, y: toolRow.maxY - 2, width: 200, height: 1)
+        #expect(ui.brightness(of: bottomStrip, in: rep) < 0.99, "the tool row ends below its card")
+        #expect(ui.brightness(of: CGRect(x: toolRow.minX + 40, y: toolRow.maxY + 2, width: 200, height: 1), in: rep) > 0.99)
+    }
+}

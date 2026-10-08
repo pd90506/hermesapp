@@ -18,9 +18,23 @@ struct MarkdownView: View, Equatable {
     @ScaledMetric(relativeTo: .body) private var mathSize = MarkdownMetrics.bodySize
 
     var body: some View {
-        SelectableMarkdownText(selection: MarkdownDocumentCache.selection(for: text, streaming: isStreaming),
-                               source: text, bodySize: mathSize * (isReasoning ? 0.92 : 1),
-                               isReasoning: isReasoning, conversationSource: conversationSource)
+        VStack(alignment: .leading, spacing: MarkdownLayout.blockGap) {
+            ForEach(MarkdownDocumentCache.presentation(for: text, streaming: isStreaming).parts) { part in
+                switch part.content {
+                case .prose(let selection):
+                    SelectableMarkdownText(selection: selection, source: text,
+                                           bodySize: mathSize * (isReasoning ? 0.92 : 1),
+                                           isReasoning: isReasoning, conversationSource: conversationSource)
+                case .code(let language, let code, _):
+                    MarkdownCodeBlock(language: language, code: code,
+                                      messageSource: text, conversationSource: conversationSource)
+                case .table(let table):
+                    MarkdownTableGrid(table: table, messageSource: text,
+                                      conversationSource: conversationSource)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
@@ -33,8 +47,8 @@ struct MarkdownView: View, Equatable {
 @MainActor
 private enum MarkdownDocumentCache {
     private final class Entry {
-        let selection: MarkdownSelection
-        init(_ selection: MarkdownSelection) { self.selection = selection }
+        let presentation: MarkdownPresentation
+        init(_ presentation: MarkdownPresentation) { self.presentation = presentation }
     }
 
     private static let cache: NSCache<NSString, Entry> = {
@@ -43,13 +57,13 @@ private enum MarkdownDocumentCache {
         return cache
     }()
 
-    static func selection(for text: String, streaming: Bool) -> MarkdownSelection {
-        if streaming { return MarkdownSelection(parsing: text, streaming: true) }
+    static func presentation(for text: String, streaming: Bool) -> MarkdownPresentation {
+        if streaming { return MarkdownPresentation(parsing: text, streaming: true) }
         let key = text as NSString
-        if let entry = cache.object(forKey: key) { return entry.selection }
-        let selection = MarkdownSelection(parsing: text)
-        cache.setObject(Entry(selection), forKey: key)
-        return selection
+        if let entry = cache.object(forKey: key) { return entry.presentation }
+        let presentation = MarkdownPresentation(parsing: text)
+        cache.setObject(Entry(presentation), forKey: key)
+        return presentation
     }
 }
 

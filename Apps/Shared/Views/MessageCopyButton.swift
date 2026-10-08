@@ -1,70 +1,55 @@
 import SwiftUI
 
-/// Copies one message's source. Always shown on iOS; on macOS it appears while
-/// the pointer is over the message.
-struct MessageCopyButton: View {
-    var isVisible = true
-    let action: () -> Void
+/// Fixed-height action row. Keeping it in layout while hidden prevents row
+/// movement on hover and while the newest reply streams.
+struct MessageActionBar: View {
+    let isHovering: Bool
+    let isNewest: Bool
+    var alignment: HorizontalAlignment = .leading
+    var timestamp: Date? = nil
+    let copy: () -> Void
+
+    var isVisible: Bool {
+        #if os(macOS)
+        isHovering || isNewest
+        #else
+        true
+        #endif
+    }
 
     var body: some View {
-        #if os(macOS)
-        Button("Copy Message", systemImage: "doc.on.doc", action: action)
-            .labelStyle(.iconOnly)
-            .hoverButtonStyle(.rounded, padding: 4)
-            .background(.regularMaterial, in: .rect(cornerRadius: 6))
-            .opacity(isVisible ? 1 : 0)
-            .allowsHitTesting(isVisible)
-            .accessibilityLabel("Copy Message")
-            .help("Copy Message")
-        #else
-        Button("Copy Message", systemImage: "doc.on.doc", action: action)
-            .labelStyle(.iconOnly)
-            .font(.caption)
-            .accessibilityLabel("Copy Message")
-        #endif
+        HStack(spacing: 8) {
+            if alignment == .trailing { Spacer(minLength: 0) }
+            Button("Copy Message", systemImage: "doc.on.doc", action: copy)
+                .labelStyle(.iconOnly)
+                .hoverButtonStyle(.rounded, padding: 4)
+                .help("Copy Message")
+            if let timestamp {
+                Text(timestamp, format: .relative(presentation: .named))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            if alignment == .leading { Spacer(minLength: 0) }
+        }
+        .frame(minHeight: 26)
+        .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(isVisible)
+        .accessibilityHidden(!isVisible)
+        .accessibilityIdentifier("messageActionBar")
     }
 }
 
-/// Where the macOS hover-only copy button goes. Neither placement adds height to
-/// the row, and neither puts the button over the message's text.
-enum MessageCopyPlacement {
-    /// In a gutter reserved along the row's trailing edge, at `alignment`: for
-    /// rows whose text can run the full width (replies, tool and system rows).
-    case trailingGutter(VerticalAlignment)
-    /// Hanging just past the leading edge, in the empty space beside a trailing
-    /// user bubble.
-    case leadingOutside
-}
+/// A message and its action bar as one pointer area. `onHover` only counts
+/// hit-testable parts of a view, so without the content shape the bar's empty
+/// stretch (and the strip around Copy) would read as leaving the message: the
+/// bar would hide, stop taking hits, and could not be brought back from below.
+struct MessageHoverArea<Content: View>: View {
+    @ViewBuilder let content: (_ isHovering: Bool) -> Content
+    @State private var isHovering = false
 
-extension MessageCopyButton {
-    /// Width kept clear for the button beside full-width rows: the button is
-    /// about 24 pt wide, plus a small gap from the text.
-    static let gutterWidth: CGFloat = 30
-}
-
-extension View {
-    /// On macOS, places the hover-only copy button beside the message instead of
-    /// stacking it below, so a hidden button adds no height, and outside the
-    /// message's text, so a visible one never covers or intercepts it.
-    /// On iOS the row places a visible `MessageCopyButton` itself.
-    @ViewBuilder
-    func messageCopyAccessory(isHovering: Bool, placement: MessageCopyPlacement,
-                              action: @escaping () -> Void) -> some View {
-        #if os(macOS)
-        switch placement {
-        case .trailingGutter(let vertical):
-            padding(.trailing, MessageCopyButton.gutterWidth)
-                .overlay(alignment: Alignment(horizontal: .trailing, vertical: vertical)) {
-                    MessageCopyButton(isVisible: isHovering, action: action)
-                }
-        case .leadingOutside:
-            overlay(alignment: .bottomLeading) {
-                MessageCopyButton(isVisible: isHovering, action: action)
-                    .alignmentGuide(.leading) { $0[.trailing] + 4 }
-            }
-        }
-        #else
-        self
-        #endif
+    var body: some View {
+        content(isHovering)
+            .contentShape(.rect)
+            .onHover { isHovering = $0 }
     }
 }

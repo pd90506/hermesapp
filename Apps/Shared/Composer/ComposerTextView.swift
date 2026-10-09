@@ -17,6 +17,8 @@ import SwiftUI
 /// On macOS, Command-V with an image on the clipboard attaches it whenever the chat's
 /// window is focused and no other editable text has the keyboard.
 struct ComposerTextView {
+    /// `accept` is plain Return; Shift-Return still inserts a newline.
+    enum SlashKey { case up, down, tab, accept, escape }
     @Binding var text: String
     @Binding var contentHeight: CGFloat
     /// The tallest the text area gets; past it, the text scrolls.
@@ -31,6 +33,8 @@ struct ComposerTextView {
     /// is picked). The draft may not hold it: AppKit reports some marked-text edits and
     /// not others, and a draft changed meanwhile waits for the composition (`DraftMerge`).
     var onComposingChange: (Bool) -> Void = { _ in }
+    /// Called only when AppKit has no marked text. Returning true consumes the key.
+    var onSlashKey: (SlashKey) -> Bool = { _ in false }
 
     static let verticalInset: CGFloat = 4
 
@@ -197,18 +201,33 @@ extension ComposerTextView: NSViewRepresentable {
         func undoManager(for view: NSTextView) -> UndoManager? { undo }
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            // Let the input method own all navigation, commit and cancel keys.
+            if textView.hasMarkedText() { return false }
+            let flags = NSApp.currentEvent?.modifierFlags ?? []
+            if let key = Self.slashKey(for: selector, flags: flags), parent.onSlashKey(key) { return true }
             guard selector == #selector(NSResponder.insertNewline(_:))
                 || selector == #selector(NSResponder.insertLineBreak(_:))
             else { return false }
-            // Marked text: Return belongs to the input method.
-            if textView.hasMarkedText() { return false }
-            let flags = NSApp.currentEvent?.modifierFlags ?? []
             if flags.contains(.shift) || flags.contains(.option) {
                 textView.insertNewlineIgnoringFieldEditor(nil)
             } else {
                 parent.onSubmit()
             }
             return true
+        }
+
+        /// The slash-list key a text command is, if any: plain arrows, Tab, Return
+        /// and Escape. Shift-Return stays a newline; other modifiers keep their meaning.
+        static func slashKey(for selector: Selector, flags: NSEvent.ModifierFlags) -> SlashKey? {
+            guard flags.isDisjoint(with: [.command, .control, .option]) else { return nil }
+            switch selector {
+            case #selector(NSResponder.moveUp(_:)): return .up
+            case #selector(NSResponder.moveDown(_:)): return .down
+            case #selector(NSResponder.insertTab(_:)): return .tab
+            case #selector(NSResponder.insertNewline(_:)): return flags.contains(.shift) ? nil : .accept
+            case #selector(NSResponder.cancelOperation(_:)): return .escape
+            default: return nil
+            }
         }
 
         enum Moment {

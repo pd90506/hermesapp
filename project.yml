@@ -83,6 +83,7 @@ targets:
       - path: Apps/Tests/macOS
       - path: Apps/Shared/Composer/ComposerTextView.swift
       - path: Apps/Shared/Composer/ImageLoader.swift
+      - path: Apps/Shared/Composer/SlashSuggestionList.swift
       - path: Apps/Shared/Views/Hover.swift
       - path: Apps/Shared/Views/SidebarControls.swift
       - path: Apps/Shared/Views/SheetOutsideClick.swift

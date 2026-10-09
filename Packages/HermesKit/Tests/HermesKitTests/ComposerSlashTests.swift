@@ -36,6 +36,25 @@ import Testing
         SlashCatalog(try composerSlashCatalog.decode(CommandsCatalogResult.self))
     }
 
+    /// The rows the view draws come from one snapshot: headers where the category
+    /// changes, the highlight, and ids unique even for a text the gateway repeated
+    /// (`hermes_cli/commands_completion.py:448-466` does not remove duplicates).
+    @Test func rowsAreOneSnapshotWithUniqueIDs() {
+        func suggestion(_ text: String, _ category: String) -> SlashSuggestion {
+            SlashSuggestion(item: SlashCompletionItem(text: text), category: category)
+        }
+        let rows = SlashRow.rows([suggestion("/deploy", "Skills"), suggestion("/deploy", "Skills"),
+                                  suggestion("/deploy#2", "Skills"), suggestion("/save", "Session"),
+                                  suggestion("/deploy", "Session")],
+                                 selection: 3)
+        #expect(rows.map(\.id) == ["/deploy", "/deploy#2", "/deploy#2#2", "/save", "/deploy#3"])
+        #expect(Set(rows.map(\.id)).count == rows.count)
+        #expect(rows.map(\.header) == ["Skills", nil, nil, "Session", nil])
+        #expect(rows.map(\.isSelected) == [false, false, false, true, false])
+        #expect(SlashRow.rows([], selection: 0).isEmpty)
+        #expect(SlashRow.rows([suggestion("/stop", "Session")], selection: 4).map(\.isSelected) == [false])
+    }
+
     /// Bare `/`: refused commands are left out, a command narrowed to some
     /// subcommands stays (`desktop-slash-commands.ts:749`).
     @Test func browsingLeavesOutRefusedCommands() throws {
@@ -122,6 +141,38 @@ struct ComposerSlashTests {
         let connection = try await gateway.withDefaults().connect()
         connections.keep(connection)
         return try await connection.newSession()
+    }
+
+    /// A click acts on the row drawn: found by its id where it is now, even after
+    /// the list was replaced; a row no longer listed does nothing.
+    @Test func clickingARowAcceptsThatRow() async throws {
+        let gateway = ScriptedGateway()
+        gateway.on("commands.catalog", result: composerSlashCatalog)
+        gateway.on("complete.slash") { params in
+            switch params["text"]?.stringValue {
+            case "/s"?: return .result(["items": [["text": "/save"], ["text": "/stop"], ["text": "/save"]],
+                                        "replace_from": 1])
+            case "/st"?: return .result(["items": [["text": "/stop"]], "replace_from": 1])
+            default: return nil
+            }
+        }
+        let composer = ChatComposer(session: try await openChat(gateway))
+        await composer.loadSlashCommands()
+
+        composer.draft = "/s"
+        await composer.updateSlashSuggestions()
+        #expect(composer.slashRows.map(\.id) == ["/save", "/stop", "/save#2"])
+        let drawn = composer.slashRows
+        // The list is replaced before the click lands: `/stop` moved to row 0.
+        composer.draft = "/st"
+        await composer.updateSlashSuggestions()
+        composer.acceptSlashRow(id: drawn[0].id)  // `/save`, gone now
+        #expect(composer.draft == "/st")
+        #expect(composer.slashIsOpen)
+        composer.acceptSlashRow(id: drawn[1].id)  // `/stop`
+        #expect(composer.draft == "/stop ")
+        #expect(!composer.slashIsOpen)
+        #expect(composer.slashRows.isEmpty)
     }
 
     /// One `complete.slash` per query, none for prose after a `text` command or

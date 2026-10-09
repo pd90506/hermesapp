@@ -40,6 +40,8 @@ struct ComposerView: View {
             if !composer.attachments.isEmpty {
                 cards
             }
+            if composer.slashIsOpen { slashList }
+            if composer.isCompressing { compressingRow }
             textArea
             toolbar
         }
@@ -85,7 +87,16 @@ struct ComposerView: View {
         }
         .task(id: TaskKey(sessionID: session.sessionID, isConnected: isConnected)) {
             // Again after a reconnect: the runtime id (and maybe the backend) changed.
-            if isConnected { await composer.loadOptions() }
+            if isConnected { await composer.loadCommandsAndOptions() }
+        }
+        .task(id: composer.draft) {
+            // Like Desktop, wait 60 ms before asking the gateway (`use-live-completion-adapter.ts:43`);
+            // the next keystroke cancels this. A cached or catalog answer shows at once.
+            if composer.slashUpdateNeedsRequest {
+                try? await Task.sleep(for: .milliseconds(60))
+                if Task.isCancelled { return }
+            }
+            await composer.updateSlashSuggestions()
         }
     }
 
@@ -123,6 +134,21 @@ struct ComposerView: View {
         .padding(.top, 8)
     }
 
+    /// A `/compress` still running (it can take minutes). The composer stays usable
+    /// meanwhile; Desktop shows the same notice, for a compaction only (`slash.ts:703-709`).
+    private var compressingRow: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Compressing context…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+    }
+
     private var cards: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
@@ -149,7 +175,8 @@ struct ComposerView: View {
             onSubmit: submit,
             onImages: { sources in Task { await attach(sources) } },
             onImageProviders: { providers in Task { await attach(await ImageLoader.sources(from: providers)) } },
-            onComposingChange: { isComposing = $0 }
+            onComposingChange: { isComposing = $0 },
+            onSlashKey: handleSlashKey
         )
         .frame(height: min(max(textHeight, 28), maxTextHeight))
         .overlay(alignment: .topLeading) {
@@ -163,6 +190,61 @@ struct ComposerView: View {
         }
         .padding(.horizontal, 10)
         .padding(.top, 8)
+    }
+
+    private var slashList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(composer.slashSuggestions.enumerated()), id: \.element.id) { index, suggestion in
+                    if index == 0 || composer.slashSuggestions[index - 1].category != suggestion.category {
+                        Text(suggestion.category)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 5)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    Button {
+                        composer.acceptSlashSuggestion(at: index)
+                        focusRequest += 1
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(suggestion.item.display ?? suggestion.item.text)
+                                .font(.body.monospaced())
+                            Text(suggestion.item.meta ?? "")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(index == composer.slashSelection ? Color.accentColor.opacity(0.15) : .clear,
+                                    in: .rect(cornerRadius: 5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("slash-option-\(suggestion.item.text)")
+                }
+            }
+            .padding(6)
+        }
+        .frame(maxHeight: 220)
+        .accessibilityIdentifier("slash-popover")
+    }
+
+    private func handleSlashKey(_ key: ComposerTextView.SlashKey) -> Bool {
+        if key == .tab, composer.swallowsSlashTab { return true }
+        guard composer.slashIsOpen else { return false }
+        switch key {
+        case .up: composer.moveSlashSelection(-1)
+        case .down: composer.moveSlashSelection(1)
+        case .tab, .accept:
+            // False: nothing to take, so Return sends the draft as typed.
+            guard composer.acceptSlashSuggestionFromKey(isTab: key == .tab) else { return false }
+            focusRequest += 1
+        case .escape: composer.dismissSlashSuggestions()
+        }
+        return true
     }
 
     private var toolbar: some View {
@@ -216,7 +298,8 @@ struct ComposerView: View {
     }
 
     private var modelMenu: some View {
-        Menu {
+        @Bindable var composer = composer
+        return Menu {
             if let catalog = composer.catalog, !catalog.isEmpty {
                 ForEach(catalog.providers, id: \.slug) { provider in
                     Section(provider.name) {
@@ -247,6 +330,11 @@ struct ComposerView: View {
         .help(composer.currentModel.map { "Model for this chat: \($0)" } ?? "Model for this chat")
         .accessibilityLabel("Model")
         .accessibilityValue(composer.currentModelLabel ?? "")
+        // `/model` with no model opens the same choices from this pill. SwiftUI
+        // cannot open a `Menu` from code, so they come as a list in a popover.
+        .popover(isPresented: $composer.isModelPickerRequested, arrowEdge: .top) {
+            ModelPickerList(composer: composer)
+        }
     }
 
     @ViewBuilder private var effortMenu: some View {
@@ -375,7 +463,11 @@ struct ComposerView: View {
 
     private func submit() {
         guard composer.canSubmit else { return }
-        Task { await composer.submit() }
+        if SlashCommand.isCommand(composer.draft) {
+            Task { await composer.submitSlash() }
+        } else {
+            Task { await composer.submit() }
+        }
         focusRequest += 1
     }
 
@@ -419,6 +511,58 @@ struct ComposerView: View {
         }
     }
     #endif
+}
+
+/// The model menu's choices as a list, for `/model` (Desktop opens its model
+/// picker there, `use-prompt-actions/slash.ts:1284-1295`): grouped by provider,
+/// the current one checked, with the menu's Reload when the catalog is missing.
+private struct ModelPickerList: View {
+    let composer: ChatComposer
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            if let catalog = composer.catalog, !catalog.isEmpty {
+                ForEach(catalog.providers, id: \.slug) { provider in
+                    Section(provider.name) {
+                        ForEach(provider.models, id: \.self) { model in
+                            row(ModelChoice(provider: provider.slug, model: model))
+                        }
+                    }
+                }
+            } else {
+                Text(composer.catalog == nil ? "Loading models…" : "No models available")
+                    .foregroundStyle(.secondary)
+            }
+            Button("Reload Models", systemImage: "arrow.clockwise") {
+                Task { await composer.loadOptions() }
+            }
+        }
+        .frame(minWidth: 260, idealWidth: 300, minHeight: 200, idealHeight: 360)
+        #if os(iOS)
+        .presentationDetents([.medium, .large])
+        #endif
+    }
+
+    private func row(_ choice: ModelChoice) -> some View {
+        let isCurrent = composer.isCurrent(choice)
+        return Button {
+            dismiss()
+            Task { await composer.selectModel(choice) }
+        } label: {
+            HStack {
+                Text(ModelLabel.displayName(choice.model))
+                Spacer(minLength: 8)
+                if isCurrent {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
 }
 
 /// The filled circular Send/Stop button: the composer's one high-contrast

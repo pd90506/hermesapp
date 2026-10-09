@@ -1062,6 +1062,11 @@ public final class ChatSession: Identifiable {
         return .output(text)
     }
 
+    /// Device-local feedback for client actions and unavailable commands.
+    public func appendLocalNote(_ text: String) {
+        transcript.appendNote(text)
+    }
+
     // MARK: - Server requests
 
     public func answer(_ request: ServerRequest, approval choice: ApprovalChoice, all: Bool = false) async throws {
@@ -1118,4 +1123,3 @@ public final class ChatSession: Identifiable {
         return try currentClient()
     }
 }
-

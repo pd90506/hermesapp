@@ -40,7 +40,7 @@ struct ComposerView: View {
             if !composer.attachments.isEmpty {
                 cards
             }
-            if composer.slashIsOpen { slashList }
+            SlashSuggestionList(composer: composer) { focusRequest += 1 }
             if composer.isCompressing { compressingRow }
             textArea
             toolbar
@@ -190,46 +190,6 @@ struct ComposerView: View {
         }
         .padding(.horizontal, 10)
         .padding(.top, 8)
-    }
-
-    private var slashList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(composer.slashSuggestions.enumerated()), id: \.element.id) { index, suggestion in
-                    if index == 0 || composer.slashSuggestions[index - 1].category != suggestion.category {
-                        Text(suggestion.category)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 5)
-                            .accessibilityAddTraits(.isHeader)
-                    }
-                    Button {
-                        composer.acceptSlashSuggestion(at: index)
-                        focusRequest += 1
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(suggestion.item.display ?? suggestion.item.text)
-                                .font(.body.monospaced())
-                            Text(suggestion.item.meta ?? "")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(index == composer.slashSelection ? Color.accentColor.opacity(0.15) : .clear,
-                                    in: .rect(cornerRadius: 5))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("slash-option-\(suggestion.item.text)")
-                }
-            }
-            .padding(6)
-        }
-        .frame(maxHeight: 220)
-        .accessibilityIdentifier("slash-popover")
     }
 
     private func handleSlashKey(_ key: ComposerTextView.SlashKey) -> Bool {

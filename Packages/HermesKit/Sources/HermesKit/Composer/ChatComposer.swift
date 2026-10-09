@@ -192,6 +192,19 @@ public final class ChatComposer {
         return true
     }
 
+    /// The list as the view draws it: one snapshot of the rows, their headers and
+    /// the highlight, read together (`SlashRow`).
+    public var slashRows: [SlashRow] {
+        SlashRow.rows(slashSuggestions, selection: slashSelection)
+    }
+
+    /// A click on a drawn row: accepts that row where it is in the list now. A row
+    /// that is gone (the list changed under the pointer) is ignored.
+    public func acceptSlashRow(id: SlashRow.ID) {
+        guard let index = slashRows.firstIndex(where: { $0.id == id }) else { return }
+        acceptSlashSuggestion(at: index)
+    }
+
     /// Puts the row into the draft. A command gets Desktop's trailing space
     /// (`use-composer-trigger.ts:375`): an `options` or `mixed` command then lists
     /// its arguments, any other leaves the list closed. An argument row is the whole

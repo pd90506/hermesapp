@@ -357,6 +357,36 @@ extension SlashCatalog {
     }
 }
 
+/// One row of the composer's slash list, with everything the view draws for it,
+/// taken from a single snapshot of the list (`SlashRow.rows`). A row never looks
+/// back into the live list: SwiftUI may lay out a row from an older snapshot (one
+/// being removed as the list empties), and an index into the live list would then
+/// be out of range.
+public struct SlashRow: Sendable, Hashable, Identifiable {
+    /// Unique within its list: the row's text, plus `#n` for the nth repeat of a text
+    /// the gateway sent twice (`complete.slash` does not remove duplicates).
+    public let id: String
+    public let suggestion: SlashSuggestion
+    /// The category header shown above this row (the first row of its category).
+    public let header: String?
+    public let isSelected: Bool
+
+    public static func rows(_ suggestions: [SlashSuggestion], selection: Int) -> [SlashRow] {
+        var used = Set<String>()
+        return suggestions.enumerated().map { index, suggestion in
+            var id = suggestion.id
+            var copy = 1
+            while used.contains(id) {
+                copy += 1
+                id = "\(suggestion.id)#\(copy)"
+            }
+            used.insert(id)
+            let header = index == 0 || suggestions[index - 1].category != suggestion.category ? suggestion.category : nil
+            return SlashRow(id: id, suggestion: suggestion, header: header, isSelected: index == selection)
+        }
+    }
+}
+
 /// What running a slash command did.
 public enum SlashOutcome: Sendable, Hashable {
     /// Text output, also appended to the transcript as a system row.

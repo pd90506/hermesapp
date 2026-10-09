@@ -87,6 +87,11 @@ struct MarkdownTableGrid: View {
                     }
                 }
             }
+            // Its ideal height, as the scroll view took. Offered the scroll view's
+            // height instead, a Grid spreads a wrapped row's extra lines over all
+            // its stretchy cells as well, outgrows the scroll view and loses its
+            // last row and bottom border below it.
+            .fixedSize(horizontal: false, vertical: true)
             .overlay { Rectangle().strokeBorder(.quaternary, lineWidth: 1) }
             .padding(1)
         }

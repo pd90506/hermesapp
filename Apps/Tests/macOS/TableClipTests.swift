@@ -73,12 +73,12 @@ import Testing
         init(width: CGFloat, style: NSScroller.Style, items: [TranscriptItem]) {
             self.style = style
             host = NSHostingView(rootView: Column(items: items))
-            window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 1600),
+            window = NSWindow(contentRect: .testArea(CGSize(width: width, height: 1600)),
                               styleMask: [.borderless], backing: .buffered, defer: false)
             // Owned by ARC here (see MarkdownSelectionHostTests.fullMessage).
             window.isReleasedWhenClosed = false
             window.contentView = host
-            window.orderFront(nil)
+            window.showInTestArea()
             settle()
         }
 
@@ -340,7 +340,7 @@ import Testing
         host.appearance = NSAppearance(named: .aqua)
         host.frame = NSRect(x: 0, y: 0, width: 738, height: 10)
         host.frame.size.height = host.fittingSize.height
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: .testArea(host.frame.size), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         defer { window.close() }

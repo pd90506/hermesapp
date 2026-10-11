@@ -84,6 +84,15 @@ final class AppModel {
     private static let secretAccount = "gateway-secret"
 
     init() {
+        #if DEBUG
+        if let launch = UITestLaunch.current {
+            // UI tests: never read or write the user's saved settings or Keychain.
+            self.settings = ConnectionSettings(serverURL: launch.serverURL, authMode: .sessionToken)
+            self.secret = launch.token
+            self.settingsPresentation = SettingsPresentation(hasServer: true)
+            return
+        }
+        #endif
         let settings = ConnectionSettings.load()
         self.settings = settings
         self.secret = KeychainStore.read(account: Self.secretAccount) ?? ""
@@ -100,12 +109,14 @@ final class AppModel {
         lastError = nil
         do {
             let endpoint = try GatewayEndpoint(settings.serverURL)
-            settings.save()
-            do {
-                try KeychainStore.write(secret, account: Self.secretAccount)
-            } catch {
-                // Still connect with the in-memory secret, but say it won't survive a relaunch.
-                lastError = error.localizedDescription
+            if !Self.isUITest {
+                settings.save()
+                do {
+                    try KeychainStore.write(secret, account: Self.secretAccount)
+                } catch {
+                    // Still connect with the in-memory secret, but say it won't survive a relaunch.
+                    lastError = error.localizedDescription
+                }
             }
             if connectedEndpoint != endpoint {
                 // Another server: its sessions must not stay on screen or be restored.
@@ -114,6 +125,12 @@ final class AppModel {
             try await connection.connect(using: DashboardConnector(endpoint: endpoint, credential: credential))
             connectedEndpoint = endpoint
             if lastError == nil { settingsPresentation.close() }
+            #if DEBUG
+            if let profile = UITestLaunch.current?.profile {
+                connection.navigationPage = .sessions
+                connection.selectListProfile(profile)
+            }
+            #endif
         } catch is CancellationError {
             // Superseded by a newer connect/disconnect.
         } catch {
@@ -161,5 +178,33 @@ final class AppModel {
         case .accessToken: .bearer(accessToken: secret)
         case .sessionToken: .sessionToken(secret)
         }
+    }
+}
+
+#if DEBUG
+/// Set by the UI tests (`Apps/UITests`) in the launch environment: connect to this
+/// dashboard with a `?token=` and open the Sessions page on this profile.
+struct UITestLaunch {
+    var serverURL: String
+    var token: String
+    var profile: String?
+
+    static let current: UITestLaunch? = {
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"],
+            !url.isEmpty, !token.isEmpty
+        else { return nil }
+        return UITestLaunch(serverURL: url, token: token, profile: env["HERMES_UITEST_PROFILE"])
+    }()
+}
+#endif
+
+extension AppModel {
+    static var isUITest: Bool {
+        #if DEBUG
+        UITestLaunch.current != nil
+        #else
+        false
+        #endif
     }
 }

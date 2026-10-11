@@ -783,6 +783,25 @@ final class MathTextAttachment: NSTextAttachment {
 }
 
 final class MarkdownSelectionTextView: UITextView {
+    /// A TextKit 1 view built through `init(frame:textContainer:)`.
+    ///
+    /// Not `init(usingTextLayoutManager: false)`: on iOS 27 that left this subclass's
+    /// stored properties uninitialised, and the first `apply` crashed reading
+    /// `selectionModel` (SIGSEGV in `Array ==`, seen in the simulator, 2026-10).
+    static func textKit1() -> MarkdownSelectionTextView {
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layoutManager.addTextContainer(container)
+        let view = MarkdownSelectionTextView(frame: .zero, textContainer: container)
+        view.ownedStorage = storage
+        return view
+    }
+
+    /// The text system's root: the layout manager and container only reference it weakly.
+    private var ownedStorage: NSTextStorage?
     private(set) var selectionModel = MarkdownSelection(document: MarkdownDocument(blocks: []))
     private(set) var appliedBodySize: CGFloat = 0
     private var appliedReasoning = false
@@ -910,7 +929,7 @@ struct SelectableMarkdownText: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MarkdownSelectionTextView {
         // TextKit 1 from the start: the decorations and math use NSLayoutManager.
-        let view = MarkdownSelectionTextView(usingTextLayoutManager: false)
+        let view = MarkdownSelectionTextView.textKit1()
         view.isEditable = false
         view.isSelectable = true
         view.isScrollEnabled = false

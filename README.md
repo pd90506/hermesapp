@@ -170,9 +170,17 @@ on the Mac.
     - Un-gated only exists on a **loopback** bind, which refuses other devices except through a
       tunnel. `--insecure` no longer disables the gate.
     - Prefer the other modes: this token is long-lived and travels in the URL.
+- **Several servers.** Add Server in the settings adds another dashboard (say a home server and
+  a local one), each with its own name, URL and sign-in. The app stays connected to all of them
+  at once, one connection each.
+  - With more than one, the Bots page has a section per server, headed by its name and status.
+    The Sessions page lists one server; its footer profile menu groups profiles by server, and
+    picking one also picks its server.
+  - The single-server setting of earlier versions becomes the first server on launch, its
+    Keychain secret moved to that server's own item.
 - **Secrets:**
-  - The password or token is stored in the Keychain, as this-device-only. If saving fails, the app
-    says so.
+  - Each server's password or token is stored in the Keychain, as this-device-only. If saving
+    fails, the app says so. Removing a server deletes its item.
   - Unsigned macOS builds fall back from the data-protection keychain to the login keychain.
   - Non-secret settings go in UserDefaults. Nothing is hard-coded.
 - **Cookies.** Dashboard session cookies live in a per-connection in-memory cookie jar, not the

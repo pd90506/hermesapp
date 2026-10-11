@@ -22,16 +22,17 @@ struct RootView: View {
                     }),
                 showChat: { compactColumn = .detail })
         } detail: {
-            if let opening = model.connection.opening {
+            if let server = model.activeServer, let opening = server.connection.opening {
                 // A first open: the chat's frame at once, not the previous chat.
-                OpeningChatView(title: title(of: opening))
-            } else if let session = model.connection.activeSession {
-                ChatView(session: session, title: title(of: session))
+                OpeningChatView(title: title(of: opening, on: server))
+            } else if let server = model.activeServer, let session = server.connection.activeSession {
+                ChatView(session: session, title: title(of: session, on: server))
                     .id(session.id)  // a fresh composer per chat
+                    .environment(server)
             } else {
                 ContentUnavailableView(
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
-                    description: Text(model.isConnected ? "Pick a bot or session to chat with." : "Connect to your Hermes gateway."))
+                    description: Text(model.isAnyConnected ? "Pick a bot or session to chat with." : "Connect to your Hermes gateway."))
             }
         }
         // The settings sheet, from the gear or because the app must connect
@@ -51,58 +52,66 @@ struct RootView: View {
             .frame(minWidth: 460, minHeight: 420)
             #endif
         }
-        .onChange(of: model.connection.activeSession?.id) { _, _ in
-            // The chat on screen can change without a click: dropped on reconnect,
-            // cleared on a server switch, or a new side chat. Follow it, so the
-            // highlighted row is always the one on screen and clicking a row always opens it.
-            let shown = item(for: model.connection.activeSession)
-            if selection != shown { selection = shown }
-        }
+        // The chat on screen can change without a click: dropped on reconnect,
+        // cleared on a server switch, or a new side chat. Follow it, so the
+        // highlighted row is always the one on screen and clicking a row always opens it.
+        .onChange(of: model.activeServer?.connection.activeSession?.id) { _, _ in followActiveChat() }
+        // A click on another server's row moves `activeServerID` before its chat opens,
+        // so only a server that stopped showing anything (disconnected, removed) clears it.
+        .onChange(of: model.activeServerID) { _, id in if id == nil { followActiveChat() } }
         .task {
             // Auto-connect on launch when settings exist.
-            if !model.settings.serverURL.isEmpty, model.connection.state == .disconnected {
-                await model.connect()
-                if !model.isConnected { model.settingsPresentation.requireConnection() }
+            if model.servers.contains(where: \.hasURL) {
+                await model.connectAll()
+                if !model.isAnyConnected { model.settingsPresentation.requireConnection() }
             }
         }
     }
 
+    private func followActiveChat() {
+        let shown = model.activeServer.flatMap { item(for: $0.connection.activeSession, on: $0) }
+        if selection != shown { selection = shown }
+    }
+
     /// The sidebar row for a chat, if it has one.
-    private func item(for session: ChatSession?) -> SidebarItem? {
+    private func item(for session: ChatSession?, on server: ServerConnection) -> SidebarItem? {
         guard let session, let profile = session.profile else { return nil }
         switch session.kind {
-        case .botChat: return .bot(profile)
+        case .botChat: return .bot(server: server.id, profile: profile)
         case .sideChat:
-            return model.connection.history
+            return server.connection.history
                 .first { $0.profile == profile && $0.summary.id == session.storedSessionID }
-                .map { .history($0.id) }
+                .map { .history(server: server.id, id: $0.id) }
         case .session: return nil
         }
     }
 
     private func open(_ item: SidebarItem) async {
+        guard let server = model.server(item.server) else { return }
+        // The chat area follows the row's server at once, so it shows the chat opening.
+        model.activeServerID = server.id
         do {
             switch item {
-            case .bot(let profile):
+            case .bot(_, let profile):
                 // Resolved by name on every click; HermesKit never creates a second Bot Chat.
-                try await model.connection.openBotChat(profile: profile)
-            case .history(let id):
-                guard let entry = model.connection.history.first(where: { $0.id == id }) else { return }
-                try await model.connection.open(entry)
+                try await server.connection.openBotChat(profile: profile)
+            case .history(_, let id):
+                guard let entry = server.connection.history.first(where: { $0.id == id }) else { return }
+                try await server.connection.open(entry)
             }
             model.actionError = nil
         } catch is CancellationError {
             // Opened on a socket that was since replaced: let a click on the same row retry.
             if selection == item { selection = nil }
         } catch {
-            model.actionError = GatewayConnection.describe(error)
+            model.actionError = model.describe(error, on: server)
             // Clear the selection so clicking the same row again retries.
             if selection == item { selection = nil }
         }
     }
 
-    private func title(of opening: PendingChat) -> String {
-        let botName = model.connection.bots.first { $0.name == opening.profile }?.displayName ?? opening.profile
+    private func title(of opening: PendingChat, on server: ServerConnection) -> String {
+        let botName = server.connection.bots.first { $0.name == opening.profile }?.displayName ?? opening.profile
         switch opening.kind {
         case .botChat: return botName ?? "Hermes"
         case .sideChat:
@@ -112,8 +121,8 @@ struct RootView: View {
         }
     }
 
-    private func title(of session: ChatSession) -> String? {
-        let botName = model.connection.bots.first { $0.name == session.profile }?.displayName ?? session.profile
+    private func title(of session: ChatSession, on server: ServerConnection) -> String? {
+        let botName = server.connection.bots.first { $0.name == session.profile }?.displayName ?? session.profile
         switch session.kind {
         case .botChat: return botName
         case .sideChat:

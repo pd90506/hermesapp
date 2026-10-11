@@ -3,14 +3,8 @@ import HermesKit
 import HermesProtocol
 import Observation
 
-/// How the app signs in to the dashboard. Maps 1:1 onto `GatewayCredential`.
-enum AuthMode: String, CaseIterable, Identifiable, Codable {
-    case password
-    case accessToken
-    case sessionToken
-
-    var id: Self { self }
-
+/// The sign-in methods as the settings show them. Map 1:1 onto `GatewayCredential`.
+extension AuthMode {
     var label: String {
         switch self {
         case .password: "Username & password"
@@ -38,127 +32,259 @@ enum AuthMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-/// Non-secret connection settings, persisted in UserDefaults.
-/// The password/token lives in the Keychain (`KeychainStore`).
-struct ConnectionSettings: Codable, Equatable {
-    var serverURL = ""
-    var authMode: AuthMode = .password
-    var provider = "basic"
-    var username = ""
+/// One Hermes dashboard: its settings, its secret and its own connection.
+@MainActor
+@Observable
+final class ServerConnection: Identifiable {
+    /// `config.id`, which never changes.
+    let id: UUID
+    var config: ServerConfig
+    /// The password or token, kept in the Keychain under `config.secretAccount`.
+    var secret: String
+    var lastError: String?
+    var probeResult: String?
+    fileprivate(set) var isConnecting = false
+    fileprivate var connectedEndpoint: GatewayEndpoint?
 
-    private static let defaultsKey = "connectionSettings.v1"
+    let connection = GatewayConnection()
+    /// Thumbnails of the images in this server's transcripts and composers
+    /// (`TranscriptImages.swift`). Per server: image paths are only unique within one.
+    let thumbnails = ThumbnailStore()
 
-    static func load() -> ConnectionSettings {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
-            let settings = try? JSONDecoder().decode(ConnectionSettings.self, from: data)
-        else { return ConnectionSettings() }
-        return settings
+    init(config: ServerConfig, secret: String) {
+        self.id = config.id
+        self.config = config
+        self.secret = secret
     }
 
-    func save() {
-        if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: Self.defaultsKey)
-        }
-    }
+    var name: String { config.displayName }
+    var isConnected: Bool { connection.state == .connected }
+    var hasURL: Bool { !config.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 }
 
-/// Root app state shared by the macOS and iOS apps.
+/// Root app state shared by the macOS and iOS apps: the servers, each with its own
+/// connection, and which of them the chat on screen and the Sessions page belong to.
 @MainActor
 @Observable
 final class AppModel {
-    var settings: ConnectionSettings
-    var secret: String
+    private(set) var servers: [ServerConnection]
+    /// The server edited in the settings.
+    var selectedServerID: UUID?
+    /// The server whose chat is on screen.
+    var activeServerID: UUID?
+    /// The server the Sessions page lists (with its own profile picker).
+    var sessionsServerID: UUID? {
+        didSet { syncPages() }
+    }
+    /// The sidebar's page, for every server: only the Sessions page's server lists
+    /// sessions, so the others don't read lists nobody sees.
+    var sidebarPage: GatewayConnection.NavigationPage = .bots {
+        didSet { syncPages() }
+    }
     /// Whether the connection settings are shown, and what may close them.
     var settingsPresentation: SettingsPresentation
-    var lastError: String?
     /// A failed sidebar action (opening a bot or a History chat), shown in the sidebar.
     var actionError: String?
-    var probeResult: String?
-    private(set) var isConnecting = false
-    private var connectedEndpoint: GatewayEndpoint?
-
-    let connection = GatewayConnection()
-    /// Thumbnails of the images in transcripts and the composer (`TranscriptImages.swift`).
-    let thumbnails = ThumbnailStore()
-
-    private static let secretAccount = "gateway-secret"
 
     init() {
         #if DEBUG
         if let launch = UITestLaunch.current {
             // UI tests: never read or write the user's saved settings or Keychain.
-            self.settings = ConnectionSettings(serverURL: launch.serverURL, authMode: .sessionToken)
-            self.secret = launch.token
+            // `serverCount` servers, all the same dashboard under different names.
+            let servers = (0..<launch.serverCount).map { index in
+                ServerConnection(
+                    config: ServerConfig(name: launch.serverCount > 1 ? "Test \(index + 1)" : "",
+                                         serverURL: launch.serverURL, authMode: .sessionToken),
+                    secret: launch.token)
+            }
+            self.servers = servers
+            self.selectedServerID = servers.first?.id
+            self.sessionsServerID = servers.first?.id
             self.settingsPresentation = SettingsPresentation(hasServer: true)
             return
         }
         #endif
-        let settings = ConnectionSettings.load()
-        self.settings = settings
-        self.secret = KeychainStore.read(account: Self.secretAccount) ?? ""
-        self.settingsPresentation = SettingsPresentation(hasServer: !settings.serverURL.isEmpty)
+        let defaults = UserDefaults.standard
+        let loaded = ServerList.load(current: defaults.data(forKey: ServerList.defaultsKey),
+                                     legacy: defaults.data(forKey: ServerList.legacyDefaultsKey))
+        var servers: [ServerConnection] = []
+        for config in loaded.servers {
+            var secret = KeychainStore.read(account: config.secretAccount) ?? ""
+            if config.id == loaded.migrated?.id {
+                // The single server of earlier versions: its secret moves to its own account.
+                secret = KeychainStore.read(account: ServerList.legacySecretAccount) ?? ""
+            }
+            servers.append(ServerConnection(config: config, secret: secret))
+        }
+        self.servers = servers
+        self.selectedServerID = servers.first?.id
+        self.sessionsServerID = servers.first?.id
+        self.settingsPresentation = SettingsPresentation(hasServer: servers.contains { $0.hasURL })
+        if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
+            saveServers()
+            if (try? KeychainStore.write(server.secret, account: migrated.secretAccount)) != nil {
+                try? KeychainStore.write("", account: ServerList.legacySecretAccount)
+            }
+        }
     }
 
-    var isConnected: Bool { connection.state == .connected }
+    func server(_ id: UUID?) -> ServerConnection? {
+        guard let id else { return nil }
+        return servers.first { $0.id == id }
+    }
 
-    /// Saves settings and (re)connects.
-    func connect() async {
-        guard !isConnecting else { return }
-        isConnecting = true
-        defer { isConnecting = false }
-        lastError = nil
+    var selectedServer: ServerConnection? { server(selectedServerID) }
+    var activeServer: ServerConnection? { server(activeServerID) }
+    var sessionsServer: ServerConnection? {
+        server(sessionsServerID).flatMap { $0.hasURL ? $0 : nil } ?? sidebarServers.first
+    }
+
+    /// The servers the sidebar shows: those with an address (a server just added in
+    /// the settings has none yet).
+    var sidebarServers: [ServerConnection] { servers.filter(\.hasURL) }
+    var isAnyConnected: Bool { servers.contains { $0.isConnected } }
+    /// Whether the sidebar names each server (more than one).
+    var showsServerNames: Bool { sidebarServers.count > 1 }
+
+    // MARK: Server list
+
+    /// A blank server, selected for editing (the one already there, if any).
+    @discardableResult
+    func addServer() -> ServerConnection {
+        if let blank = servers.first(where: { !$0.hasURL }) {
+            selectedServerID = blank.id
+            return blank
+        }
+        let server = ServerConnection(config: ServerConfig(), secret: "")
+        servers.append(server)
+        selectedServerID = server.id
+        if sessionsServerID == nil { sessionsServerID = server.id }
+        return server
+    }
+
+    /// Disconnects and forgets a server, its secret included.
+    func removeServer(_ server: ServerConnection) async {
+        servers.removeAll { $0 === server }
+        if selectedServerID == server.id { selectedServerID = servers.first?.id }
+        if activeServerID == server.id { activeServerID = nil }
+        if sessionsServerID == server.id { sessionsServerID = servers.first?.id }
+        if !Self.isUITest {
+            saveServers()
+            try? KeychainStore.write("", account: server.config.secretAccount)
+        }
+        await server.connection.disconnect()
+    }
+
+    private func saveServers() {
+        // A server without an address isn't one yet.
+        guard !Self.isUITest, let data = ServerList.encode(sidebarServers.map(\.config)) else { return }
+        UserDefaults.standard.set(data, forKey: ServerList.defaultsKey)
+    }
+
+    private func syncPages() {
+        let listing = sessionsServer?.id
+        for server in servers {
+            let page: GatewayConnection.NavigationPage =
+                sidebarPage == .sessions && server.id == listing ? .sessions : .bots
+            if server.connection.navigationPage != page { server.connection.navigationPage = page }
+        }
+    }
+
+    // MARK: Connections
+
+    /// Saves the servers and (re)connects this one.
+    func connect(_ server: ServerConnection) async {
+        guard !server.isConnecting else { return }
+        server.isConnecting = true
+        defer { server.isConnecting = false }
+        server.lastError = nil
+        if server.secret.isEmpty {
+            // Never saved, or the Keychain refused to hand it over (an unsigned debug build
+            // gets a new identity on every build): say so, rather than send an empty
+            // password and report it as rejected.
+            server.lastError = "No \(server.config.authMode.secretLabel.lowercased()) for \(server.name). Enter it in Settings."
+            return
+        }
         do {
-            let endpoint = try GatewayEndpoint(settings.serverURL)
+            let endpoint = try GatewayEndpoint(server.config.serverURL)
             if !Self.isUITest {
-                settings.save()
+                saveServers()
                 do {
-                    try KeychainStore.write(secret, account: Self.secretAccount)
+                    try KeychainStore.write(server.secret, account: server.config.secretAccount)
                 } catch {
                     // Still connect with the in-memory secret, but say it won't survive a relaunch.
-                    lastError = error.localizedDescription
+                    server.lastError = error.localizedDescription
                 }
             }
-            if connectedEndpoint != endpoint {
-                // Another server: its sessions must not stay on screen or be restored.
-                await connection.disconnect()
+            if server.connectedEndpoint != endpoint {
+                // Another address: its sessions must not stay on screen or be restored.
+                await server.connection.disconnect()
+                if activeServerID == server.id { activeServerID = nil }
             }
-            try await connection.connect(using: DashboardConnector(endpoint: endpoint, credential: credential))
-            connectedEndpoint = endpoint
-            if lastError == nil { settingsPresentation.close() }
+            try await server.connection.connect(
+                using: DashboardConnector(endpoint: endpoint, credential: server.config.credential(secret: server.secret)))
+            server.connectedEndpoint = endpoint
+            syncPages()
             #if DEBUG
             if let profile = UITestLaunch.current?.profile {
-                connection.navigationPage = .sessions
-                connection.selectListProfile(profile)
+                sidebarPage = .sessions
+                server.connection.selectListProfile(profile)
             }
             #endif
         } catch is CancellationError {
             // Superseded by a newer connect/disconnect.
         } catch {
-            lastError = GatewayConnection.describe(error)
+            server.lastError = GatewayConnection.describe(error)
         }
     }
 
-    func disconnect() async {
-        await connection.disconnect()
-        connectedEndpoint = nil
+    /// The settings' Connect: connects the server and, unless it failed, closes them.
+    func connectFromSettings(_ server: ServerConnection) async {
+        await connect(server)
+        if server.isConnected, server.lastError == nil { settingsPresentation.close() }
+    }
+
+    /// Launch, or back from the background (iOS): every server with an address that
+    /// isn't connected or on its way there, all at once.
+    func connectAll() async {
+        let idle = servers.filter { server in
+            guard server.hasURL, !server.isConnecting else { return false }
+            switch server.connection.state {
+            case .disconnected, .failed: return true
+            case .connecting, .connected, .reconnecting: return false
+            }
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for server in idle {
+                group.addTask { await self.connect(server) }
+            }
+        }
+    }
+
+    func disconnect(_ server: ServerConnection) async {
+        await server.connection.disconnect()
+        server.connectedEndpoint = nil
+        if activeServerID == server.id { activeServerID = nil }
         actionError = nil
     }
 
-    /// Pull-to-refresh: the roster and the visible profile’s sessions.
+    /// Pull-to-refresh: every roster, and the visible profile’s sessions.
     func refreshLists() async {
-        do {
-            try await connection.refreshBots()
-            await connection.refreshSessionListIfVisible()
-        } catch {
-            actionError = GatewayConnection.describe(error)
+        for server in servers where server.isConnected {
+            do {
+                try await server.connection.refreshBots()
+                await server.connection.refreshSessionListIfVisible()
+            } catch {
+                actionError = describe(error, on: server)
+            }
         }
     }
 
     /// Calls the public `/api/status` to check the URL before signing in.
-    func probe() async {
-        probeResult = nil
+    func probe(_ server: ServerConnection) async {
+        server.probeResult = nil
         do {
-            let endpoint = try GatewayEndpoint(settings.serverURL)
+            let endpoint = try GatewayEndpoint(server.config.serverURL)
             let status = try await DashboardClient(endpoint: endpoint).status()
             var parts = ["Hermes \(status.version ?? "?")"]
             if status.authRequired == true {
@@ -166,35 +292,37 @@ final class AppModel {
             } else {
                 parts.append("no sign-in required")
             }
-            probeResult = parts.joined(separator: " · ")
+            server.probeResult = parts.joined(separator: " · ")
         } catch {
-            probeResult = "Unreachable: \(GatewayConnection.describe(error))"
+            server.probeResult = "Unreachable: \(GatewayConnection.describe(error))"
         }
     }
 
-    private var credential: GatewayCredential {
-        switch settings.authMode {
-        case .password: .password(provider: settings.provider, username: settings.username, password: secret)
-        case .accessToken: .bearer(accessToken: secret)
-        case .sessionToken: .sessionToken(secret)
-        }
+    /// An error message, naming the server when there are several.
+    func describe(_ error: any Error, on server: ServerConnection) -> String {
+        let message = GatewayConnection.describe(error)
+        return showsServerNames ? "\(server.name): \(message)" : message
     }
 }
 
 #if DEBUG
 /// Set by the UI tests (`Apps/UITests`) in the launch environment: connect to this
-/// dashboard with a `?token=` and open the Sessions page on this profile.
+/// dashboard with a `?token=` and open the Sessions page on this profile. With
+/// `HERMES_UITEST_SERVERS`, the app lists the dashboard that many times, as servers
+/// named "Test 1", "Test 2"….
 struct UITestLaunch {
     var serverURL: String
     var token: String
     var profile: String?
+    var serverCount = 1
 
     static let current: UITestLaunch? = {
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"],
             !url.isEmpty, !token.isEmpty
         else { return nil }
-        return UITestLaunch(serverURL: url, token: token, profile: env["HERMES_UITEST_PROFILE"])
+        return UITestLaunch(serverURL: url, token: token, profile: env["HERMES_UITEST_PROFILE"],
+                            serverCount: max(1, Int(env["HERMES_UITEST_SERVERS"] ?? "") ?? 1))
     }()
 }
 #endif

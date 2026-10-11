@@ -16,7 +16,7 @@ struct ComposerView: View {
     /// An input method's marked text shows in the field (`ComposerTextView.onComposingChange`).
     @State private var isComposing = false
     @State private var thumbnails: [UUID: CGImage] = [:]
-    @Environment(AppModel.self) private var model
+    @Environment(ServerConnection.self) private var server
     @State private var focusRequest = 0
     @State private var isImportingFile = false
     @State private var isDropTargeted = false
@@ -156,7 +156,7 @@ struct ComposerView: View {
                     // The draft outlives this view (`GatewayConnection.composer(for:)`); its thumbnails
                     // are also in the shared store, for when the chat is shown again.
                     AttachmentCardView(attachment: attachment,
-                                       thumbnail: thumbnails[attachment.id] ?? model.thumbnails.local(attachment.id),
+                                       thumbnail: thumbnails[attachment.id] ?? server.thumbnails.local(attachment.id),
                                        isSending: composer.isSubmitting) {
                         composer.removeAttachment(id: attachment.id)
                     }
@@ -438,7 +438,7 @@ struct ComposerView: View {
                 if composer.attach(loaded.attachment) {
                     thumbnails[loaded.attachment.id] = loaded.thumbnail
                     // The sent bubble shows the same thumbnail (`TranscriptImageCard`).
-                    if let thumbnail = loaded.thumbnail { model.thumbnails.storeLocal(thumbnail, for: loaded.attachment.id) }
+                    if let thumbnail = loaded.thumbnail { server.thumbnails.storeLocal(thumbnail, for: loaded.attachment.id) }
                 }
             } catch {
                 composer.error = error.localizedDescription

@@ -22,6 +22,9 @@ let package = Package(
         .target(name: "HermesKit", dependencies: ["HermesProtocol"]),
         .testTarget(name: "HermesProtocolTests", dependencies: ["HermesProtocol"]),
         .testTarget(name: "HermesKitTests", dependencies: ["HermesKit"]),
+        // Opt-in end-to-end tests against real Hermes dashboards. Skipped unless
+        // HERMES_LIVE=1 (set by scripts/live-test.sh); see AGENTS.md.
+        .testTarget(name: "HermesLiveTests", dependencies: ["HermesKit"]),
     ],
     swiftLanguageModes: [.v6]
 )

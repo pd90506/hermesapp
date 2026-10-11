@@ -98,6 +98,14 @@ Every third-party dependency, its license, pin and reason. Add a row here before
 - Use Swift Testing (`import Testing`, `@Test`, `#expect`).
 - Network-facing code is tested through `MessageTransport` / `HTTPClient` fakes
   (`Tests/HermesKitTests/Support/`). Tests never open real sockets.
+- **Live tests are the one exception** (decided by the user, 2026-10):
+  `Tests/HermesLiveTests` runs against real dashboards, only when `HERMES_LIVE=1`, which
+  `scripts/live-test.sh` sets on the Mac. A plain `swift test` and CI skip them.
+  - Servers come from git-ignored `.env.live-local` (token, made by the script, which also
+    starts a loopback `hermes dashboard` on port 9139 by environment only) and
+    `.env.live-remote` (URL, username, password; the user writes it).
+  - Everything runs in the `hermesapp-test` profile (`test` is reserved by Hermes), never in a
+    real profile. A test that creates a chat deletes it, also when it fails.
 - Fake server payloads must match what Hermes actually sends, not the contract's optional fields.
   For example, resume payloads have `session_key` and no `stored_session_id`. Cite the Hermes
   source line when adding a fixture shape.

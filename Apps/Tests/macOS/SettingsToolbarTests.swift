@@ -50,7 +50,7 @@ import Testing
     }
 
     private func window(_ model: Model) -> RecordingWindow {
-        let window = RecordingWindow(contentRect: NSRect(x: 200, y: 200, width: 800, height: 500),
+        let window = RecordingWindow(contentRect: .testArea(CGSize(width: 800, height: 500)),
                                      styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                                      backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .aqua)

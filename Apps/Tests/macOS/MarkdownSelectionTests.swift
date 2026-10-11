@@ -116,7 +116,7 @@ import Testing
         let host = NSHostingView(rootView: MarkdownView(text: text, isStreaming: streaming))
         host.frame = NSRect(x: 0, y: 0, width: width, height: 800)
         host.frame.size.height = host.fittingSize.height
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: .testArea(host.frame.size), styleMask: [.borderless], backing: .buffered, defer: false)
         // Owned by ARC here. With AppKit's default for windows made in code,
         // `close()` would release it a second time and crash at the next
         // autorelease pool drain.
@@ -564,7 +564,7 @@ import Testing
         let text = "Intro.\n\n| Name | Value |\n|---|---|\n| cell1 | cell2 |"
         let host = NSHostingView(rootView: MarkdownView(text: text, isStreaming: false, conversationSource: { "the conversation" }))
         host.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: .testArea(host.frame.size), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         defer { window.close() }

@@ -108,7 +108,7 @@ struct ComposerSlashListTests {
     }
 
     private func host(_ composer: ChatComposer) -> (NSWindow, NSView) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520), styleMask: [.titled],
+        let window = NSWindow(contentRect: .testArea(CGSize(width: 520, height: 520)), styleMask: [.titled],
                               backing: .buffered, defer: false)
         // Owned by the test: closing must not release it a second time.
         window.isReleasedWhenClosed = false

@@ -54,7 +54,7 @@ if (( run_ui || run_mac_ui )); then
   export TEST_RUNNER_HERMES_UITEST_URL=$url TEST_RUNNER_HERMES_UITEST_TOKEN=$token
   export TEST_RUNNER_HERMES_UITEST_PROFILE=hermesapp-test
   command -v xcodegen >/dev/null && xcodegen generate --quiet
-  sim=${HERMES_UITEST_SIMULATOR:-iPhone 18 Pro}
+  sim=${HERMES_UITEST_SIMULATOR:-iPhone 17}
   if (( run_ui )); then
     xcodebuild test -project Hermes.xcodeproj -scheme HermesiOSUITests \
       -destination "platform=iOS Simulator,name=$sim" -quiet || status=1

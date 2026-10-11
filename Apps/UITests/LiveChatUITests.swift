@@ -35,19 +35,38 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
-        newChat.tap()
+        press(newChat)
 
         let composer = app.textViews.firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
-        composer.tap()
+        press(composer)
         let marker = "PONG-\(Int.random(in: 1000...9999))"
         composer.typeText("Reply with exactly \(marker) and nothing else. Do not use tools.")
-        app.buttons["Send"].firstMatch.tap()
+        press(app.buttons["Send"].firstMatch)
 
-        // The prompt bubble also contains the marker; the reply is a second match.
-        let matches = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", marker))
+        // The reply is exactly the marker, in a selectable text view (its value); the
+        // prompt bubble holds more than the marker.
+        let reply = app.textViews.matching(NSPredicate(format: "value == %@", marker))
         let deadline = Date().addingTimeInterval(150)
-        while matches.count < 2, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
-        XCTAssertGreaterThanOrEqual(matches.count, 2, "reply containing \(marker) shown")
+        while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        if reply.count < 1 {
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "no reply"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
+    }
+
+    /// A click in the element's middle. On macOS, XCUITest's `tap()` (on the element or a
+    /// coordinate) did not trigger SwiftUI buttons such as New chat, nor find a hit point
+    /// in the composer; a coordinate `click()` did (checked in a VM, 2026-10).
+    @MainActor
+    private func press(_ element: XCUIElement) {
+        #if os(macOS)
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        #else
+        element.tap()
+        #endif
     }
 }

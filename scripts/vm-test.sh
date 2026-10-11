@@ -52,7 +52,7 @@ sleep 2
 vexec "curl -fsS -m 5 http://127.0.0.1:$port/api/status >/dev/null" || { echo "VM cannot reach the dashboard"; exit 1; }
 
 # 4. A writable copy of the repo in the VM (secrets and build output left out).
-vexec "rsync -rlpc --delete --exclude .build --exclude DerivedData --exclude '.env*' --exclude Hermes.xcodeproj \
+vexec "rsync -rlpc --delete --exclude .build --exclude DerivedData --exclude '.env*' --exclude Hermes.xcodeproj --exclude Config/Local.xcconfig \
   '/Volumes/My Shared Files/hermesapp/' ~/hermesapp/"
 
 # 5. macOS tests in the VM. Automation mode is the VM's own setting, not this Mac's.

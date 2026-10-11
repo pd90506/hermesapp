@@ -160,7 +160,10 @@ struct BotSidebarView: View {
 
     private func header(_ server: ServerConnection) -> some View {
         let state = server.connection.state
-        return ServerSectionHeader(name: server.name, status: state.statusText, color: state.statusColor,
+        // Not connected because of something the user can fix (no password): say what.
+        let status = state == .connected ? state.statusText : server.lastError ?? state.statusText
+        let color = state != .connected && server.lastError != nil ? Color.red : state.statusColor
+        return ServerSectionHeader(name: server.name, status: status, color: color,
                                    isConnected: server.isConnected)
     }
 

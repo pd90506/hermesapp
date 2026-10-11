@@ -8,7 +8,7 @@ import XCTest
 /// sets them). The chats it creates are deleted by the script's sweep afterwards.
 final class LiveChatUITests: XCTestCase {
     @MainActor
-    private func launchApp() throws -> XCUIApplication {
+    private func launchApp(servers: Int = 1) throws -> XCUIApplication {
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
             throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
@@ -17,6 +17,7 @@ final class LiveChatUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_URL"] = url
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = String(servers)
         app.launch()
         return app
     }
@@ -56,6 +57,44 @@ final class LiveChatUITests: XCTestCase {
             add(shot)
         }
         XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
+    }
+
+    /// Two servers (the same dashboard twice): both connect, each on its own socket,
+    /// and the sidebar names the server it lists.
+    @MainActor
+    func testTwoServersConnectAndAreNamed() throws {
+        continueAfterFailure = false
+        let app = try launchApp(servers: 2)
+        defer { app.terminate() }
+        #if os(iOS)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        #endif
+        if !waitForText(in: app, "All 2 servers connected", timeout: 60) {
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "not both connected"
+            shot.lifetime = .keepAlways
+            add(shot)
+            XCTFail("both servers connected")
+        }
+        XCTAssertTrue(waitForText(in: app, "Test 1", timeout: 10), "the Sessions list is headed by its server")
+        let newChat = app.buttons["New chat"]
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+    }
+
+    /// Whether some text containing `text` shows up: a static text (macOS keeps its
+    /// string in the value, iOS in the label) or a combined element's label.
+    @MainActor
+    private func waitForText(in app: XCUIApplication, _ text: String, timeout: TimeInterval) -> Bool {
+        let texts = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text))
+        let others = app.otherElements.matching(NSPredicate(format: "label CONTAINS %@", text))
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if texts.count > 0 || others.count > 0 { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        } while Date() < deadline
+        return false
     }
 
     /// A click in the element's middle. On macOS, XCUITest's `tap()` (on the element or a

@@ -22,7 +22,7 @@ struct HermesMacApp: App {
                 ConnectionSettingsView()
             }
             .environment(model)
-            .frame(width: 480, height: 460)
+            .frame(width: 480, height: 560)
         }
     }
 }

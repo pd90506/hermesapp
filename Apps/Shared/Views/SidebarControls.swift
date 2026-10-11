@@ -154,23 +154,50 @@ struct SettingsToolbarItem: ToolbarContent {
 }
 
 /// The Sessions page's profile, unlabeled: avatar, name and an up/down chevron.
+/// With several servers, the menu lists every server's profiles under its name.
 struct ProfilePicker: View {
+    /// One server's profiles in the menu.
+    struct ServerProfiles: Identifiable {
+        let id: UUID
+        let name: String
+        let bots: [Bot]
+        /// The server the Sessions page lists.
+        let isCurrent: Bool
+    }
+
+    /// The listed server's profiles.
     let bots: [Bot]
     let selection: String?
+    /// Every server, when there are several; empty for one server.
+    var servers: [ServerProfiles] = []
     /// Main-actor: SwiftUI calls a `Binding`'s setter there.
     let select: @MainActor @Sendable (String) -> Void
+    /// A profile on another server (or the same one), from the grouped menu.
+    var selectOnServer: (@MainActor @Sendable (UUID, String) -> Void)? = nil
 
     private var selected: Bot? { bots.first { $0.name == selection } }
 
     var body: some View {
         Menu {
-            Picker("Profile", selection: Binding(get: { selection ?? "" }, set: select)) {
-                ForEach(bots) { bot in
-                    Text(bot.displayName).tag(bot.name)
+            if servers.isEmpty {
+                Picker("Profile", selection: Binding(get: { selection ?? "" }, set: select)) {
+                    ForEach(bots) { bot in
+                        Text(bot.displayName).tag(bot.name)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } else {
+                ForEach(servers) { server in
+                    Section(server.name) {
+                        ForEach(server.bots) { bot in
+                            Toggle(bot.displayName, isOn: Binding(
+                                get: { server.isCurrent && bot.name == selection },
+                                set: { if $0 { selectOnServer?(server.id, bot.name) } }))
+                        }
+                    }
                 }
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
         } label: {
             HStack(spacing: 6) {
                 if let selected {
@@ -194,10 +221,35 @@ struct ProfilePicker: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .hoverHighlight()
-        .disabled(bots.isEmpty)
+        .disabled(bots.isEmpty && servers.allSatisfy(\.bots.isEmpty))
         .accessibilityLabel("Profile")
         .accessibilityValue(selected?.displayName ?? "None")
         .accessibilityHint("Chooses whose sessions are listed")
+    }
+}
+
+/// A server's section header in the sidebar, with several servers: its name and,
+/// unless connected, its connection status.
+struct ServerSectionHeader: View {
+    let name: String
+    let status: String
+    let color: Color
+    let isConnected: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(name)
+                .lineLimit(1)
+            if !isConnected {
+                Text(status)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -343,6 +395,27 @@ struct HistoryRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
+        }
+    }
+}
+
+extension GatewayConnection.State {
+    var statusText: String {
+        switch self {
+        case .disconnected: "Disconnected"
+        case .connecting: "Connecting…"
+        case .connected: "Connected"
+        case .reconnecting(let attempt): "Reconnecting (attempt \(attempt))…"
+        case .failed(let message): message
+        }
+    }
+
+    var statusColor: Color {
+        switch self {
+        case .connected: .green
+        case .connecting, .reconnecting: .yellow
+        case .disconnected: .gray
+        case .failed: .red
         }
     }
 }

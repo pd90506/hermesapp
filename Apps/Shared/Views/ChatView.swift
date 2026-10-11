@@ -7,10 +7,10 @@ struct ChatView: View {
     let session: ChatSession
     /// Overrides the session title (a Bot Chat is titled "Bot Chat"; show the bot instead).
     var title: String?
-    @Environment(AppModel.self) private var model
+    @Environment(ServerConnection.self) private var server
 
     /// The chat's own composer: it outlives this view (`GatewayConnection.composer(for:)`).
-    private var composer: ChatComposer { model.connection.composer(for: session) }
+    private var composer: ChatComposer { server.connection.composer(for: session) }
 
     var body: some View {
         ScrollView {
@@ -30,7 +30,7 @@ struct ChatView: View {
         // keeps the rows on screen where they are.
         .defaultScrollAnchor(.bottom)
         .safeAreaInset(edge: .bottom) {
-            ComposerView(composer: composer, isConnected: model.isConnected)
+            ComposerView(composer: composer, isConnected: server.isConnected)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(.bar)
@@ -114,7 +114,7 @@ private struct MessageRow: View {
     /// The chat's profile: stored images are read for it.
     let profile: String?
     let session: ChatSession
-    @Environment(AppModel.self) private var model
+    @Environment(ServerConnection.self) private var server
 
     var body: some View {
         switch item.role {
@@ -128,8 +128,8 @@ private struct MessageRow: View {
                         if !item.images.isEmpty {
                             TrailingFlowLayout {
                                 ForEach(item.images) { image in
-                                    TranscriptImageCard(image: image, profile: profile, store: model.thumbnails,
-                                                        connection: model.connection)
+                                    TranscriptImageCard(image: image, profile: profile, store: server.thumbnails,
+                                                        connection: server.connection)
                                 }
                             }
                         }

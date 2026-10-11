@@ -6,13 +6,19 @@ struct HermesMacApp: App {
     private var model: AppModel { delegate.model }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView()
                 .environment(model)
                 .frame(minWidth: 720, minHeight: 480)
+                // The size and place the window last had, across launches and updates.
+                .windowFrameAutosave("HermesMainWindow")
                 #if DEBUG
                 .onAppear { UITestLaunch.placeWindowsOnBuiltInDisplay() }
                 #endif
+        }
+        // The first window, before there is a saved frame.
+        .defaultWindowPlacement { _, context in
+            WindowPlacement(size: Self.defaultWindowSize(in: context.defaultDisplay.visibleRect.size))
         }
         .commands {
             SidebarCommands()
@@ -39,6 +45,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         model.terminateLocalBackend()
+    }
+}
+
+extension HermesMacApp {
+    /// 1160 × 760 pt (picked by the user, 2026-10), shrunk to fit a smaller screen.
+    /// (`defaultSize` doesn't shrink: on a 1024-pt screen the window ran off the edge.)
+    static func defaultWindowSize(in screen: CGSize) -> CGSize {
+        CGSize(width: min(1160, screen.width), height: min(760, screen.height))
     }
 }
 

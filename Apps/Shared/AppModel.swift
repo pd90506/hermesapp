@@ -47,6 +47,10 @@ final class ServerConnection: Identifiable {
     fileprivate var connectedEndpoint: GatewayEndpoint?
 
     let connection = GatewayConnection()
+    #if os(macOS)
+    /// The Hermes backend this server is, when the app runs it on this Mac ("This Mac").
+    let backend: LocalBackendProcess?
+    #endif
     /// Thumbnails of the images in this server's transcripts and composers
     /// (`TranscriptImages.swift`). Per server: image paths are only unique within one.
     let thumbnails = ThumbnailStore()
@@ -55,11 +59,38 @@ final class ServerConnection: Identifiable {
         self.id = config.id
         self.config = config
         self.secret = secret
+        #if os(macOS)
+        self.backend = nil
+        #endif
+    }
+
+    #if os(macOS)
+    /// "This Mac": a backend the app starts on a port the OS picks, with a fresh token
+    /// each time; its URL and token are filled in when it starts and never saved.
+    init(localBackend: LocalBackendProcess) {
+        let config = ServerConfig(id: Self.localID, name: "This Mac", authMode: .sessionToken)
+        self.id = config.id
+        self.config = config
+        self.secret = ""
+        self.backend = localBackend
+    }
+    #endif
+
+    static let localID = UUID(uuidString: "00000000-0000-0000-0000-00000000AC01")!
+
+    /// The backend the app runs on this Mac (always false on iOS).
+    var isLocal: Bool {
+        #if os(macOS)
+        backend != nil
+        #else
+        false
+        #endif
     }
 
     var name: String { config.displayName }
     var isConnected: Bool { connection.state == .connected }
-    var hasURL: Bool { !config.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Something to connect to: an address, or the local backend (whose address comes later).
+    var hasURL: Bool { isLocal || !config.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 }
 
 /// Root app state shared by the macOS and iOS apps: the servers, each with its own
@@ -116,6 +147,9 @@ final class AppModel {
             }
             servers.append(ServerConnection(config: config, secret: secret))
         }
+        #if os(macOS)
+        if Self.runsLocalBackend { servers.insert(ServerConnection(localBackend: .hermes()), at: 0) }
+        #endif
         self.servers = servers
         self.selectedServerID = servers.first?.id
         self.sessionsServerID = servers.first?.id
@@ -164,6 +198,7 @@ final class AppModel {
 
     /// Disconnects and forgets a server, its secret included.
     func removeServer(_ server: ServerConnection) async {
+        guard !server.isLocal else { return }
         servers.removeAll { $0 === server }
         if selectedServerID == server.id { selectedServerID = servers.first?.id }
         if activeServerID == server.id { activeServerID = nil }
@@ -177,7 +212,9 @@ final class AppModel {
 
     private func saveServers() {
         // A server without an address isn't one yet.
-        guard !Self.isUITest, let data = ServerList.encode(sidebarServers.map(\.config)) else { return }
+        guard !Self.isUITest,
+            let data = ServerList.encode(sidebarServers.filter { !$0.isLocal }.map(\.config))
+        else { return }
         UserDefaults.standard.set(data, forKey: ServerList.defaultsKey)
     }
 
@@ -198,7 +235,7 @@ final class AppModel {
         server.isConnecting = true
         defer { server.isConnecting = false }
         server.lastError = nil
-        if server.secret.isEmpty {
+        if server.secret.isEmpty, !server.isLocal {
             // Never saved, or the Keychain refused to hand it over (an unsigned debug build
             // gets a new identity on every build): say so, rather than send an empty
             // password and report it as rejected.
@@ -206,8 +243,16 @@ final class AppModel {
             return
         }
         do {
+            #if os(macOS)
+            if let backend = server.backend {
+                // (Re)started if it isn't running: a new port and token each time.
+                let running = try await backend.start()
+                server.config.serverURL = running.url
+                server.secret = running.token
+            }
+            #endif
             let endpoint = try GatewayEndpoint(server.config.serverURL)
-            if !Self.isUITest {
+            if !Self.isUITest, !server.isLocal {
                 saveServers()
                 do {
                     try KeychainStore.write(server.secret, account: server.config.secretAccount)
@@ -263,10 +308,68 @@ final class AppModel {
 
     func disconnect(_ server: ServerConnection) async {
         await server.connection.disconnect()
+        #if os(macOS)
+        // This Mac's backend runs only while the app uses it.
+        await server.backend?.stop()
+        #endif
         server.connectedEndpoint = nil
         if activeServerID == server.id { activeServerID = nil }
         actionError = nil
     }
+
+    #if os(macOS)
+    // MARK: This Mac
+
+    private static let localBackendKey = "localBackend.enabled"
+
+    /// Whether the app runs a Hermes backend on this Mac (on unless turned off; never
+    /// under UI tests).
+    static var runsLocalBackend: Bool {
+        !isUITest && UserDefaults.standard.object(forKey: localBackendKey) as? Bool ?? true
+    }
+
+    var localServer: ServerConnection? { servers.first { $0.isLocal } }
+
+    /// Turns "This Mac" on (started and connected) or off (stopped and removed).
+    func setRunsLocalBackend(_ isOn: Bool) async {
+        UserDefaults.standard.set(isOn, forKey: Self.localBackendKey)
+        if isOn, localServer == nil {
+            let server = ServerConnection(localBackend: .hermes())
+            servers.insert(server, at: 0)
+            selectedServerID = server.id
+            await connect(server)
+        } else if !isOn, let server = localServer {
+            servers.removeAll { $0 === server }
+            if selectedServerID == server.id { selectedServerID = servers.first?.id }
+            if activeServerID == server.id { activeServerID = nil }
+            if sessionsServerID == server.id { sessionsServerID = sidebarServers.first?.id }
+            await server.connection.disconnect()
+            await server.backend?.stop()
+        }
+    }
+
+    /// The backend died (crashed, `hermes serve --stop`, an update): start a new one and
+    /// connect to it, instead of retrying a port nobody listens on. Runs for the app's life.
+    func watchLocalBackend() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(5))
+            guard let server = localServer, let backend = server.backend, !server.isConnecting,
+                server.connectedEndpoint != nil
+            else { continue }
+            switch server.connection.state {
+            case .reconnecting, .failed:
+                if await !backend.isRunning { await connect(server) }
+            case .connected, .connecting, .disconnected:
+                break
+            }
+        }
+    }
+
+    /// App quit: asks the backend to stop now (its parent watchdog would stop it anyway).
+    func terminateLocalBackend() {
+        localServer?.backend?.terminateNow()
+    }
+    #endif
 
     /// Pull-to-refresh: every roster, and the visible profile’s sessions.
     func refreshLists() async {

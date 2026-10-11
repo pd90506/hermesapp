@@ -154,7 +154,10 @@ on the Mac.
   - `HERMES_BUNDLE_ID_PREFIX`: e.g. `com.<you>.hermesapp`
 - Then run `xcodegen generate`. Automatic signing works with a free personal team. Personal-team
   iOS builds expire after 7 days.
-- The macOS app is sandboxed with `com.apple.security.network.client`.
+- The macOS app is **not** sandboxed (decided 2026-10): it runs `hermes serve` itself (see
+  "This Mac" below), which needs to read `~/.hermes`, and a sandboxed app's child process
+  inherits the sandbox. Hermes Desktop isn't sandboxed either. A Mac App Store build would need
+  the sandbox back, and "This Mac" with it gone.
 
 ## Connecting to Hermes
 
@@ -178,6 +181,17 @@ on the Mac.
     picking one also picks its server.
   - The single-server setting of earlier versions becomes the first server on launch, its
     Keychain secret moved to that server's own item.
+- **This Mac (macOS).** Like Hermes Desktop, the app starts its own Hermes backend when it
+  launches and stops it when it quits: `hermes serve --isolated` on 127.0.0.1, on a port the OS
+  picks, with a new `HERMES_DASHBOARD_SESSION_TOKEN` each time. It is the first server in the
+  list.
+  - `hermes` is looked up in `~/.local/bin`, `~/.hermes/hermes-agent/.hermes/bin`,
+    `/opt/homebrew/bin`, `/usr/local/bin`, then PATH.
+  - The backend gets `HERMES_PARENT_PID`, so it also exits shortly after the app crashes. If it
+    dies while the app runs, the app starts a new one and reconnects.
+  - It shares `~/.hermes` with Desktop's own backend: the same chats and bots; a chat open in one
+    refuses messages from the other.
+  - Turn it off with "Run Hermes on this Mac" in the settings.
 - **Secrets:**
   - Each server's password or token is stored in the Keychain, as this-device-only. If saving
     fails, the app says so. Removing a server deletes its item.

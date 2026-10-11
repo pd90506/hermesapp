@@ -198,6 +198,13 @@ final class AppModel {
         server.isConnecting = true
         defer { server.isConnecting = false }
         server.lastError = nil
+        if server.secret.isEmpty {
+            // Never saved, or the Keychain refused to hand it over (an unsigned debug build
+            // gets a new identity on every build): say so, rather than send an empty
+            // password and report it as rejected.
+            server.lastError = "No \(server.config.authMode.secretLabel.lowercased()) for \(server.name). Enter it in Settings."
+            return
+        }
         do {
             let endpoint = try GatewayEndpoint(server.config.serverURL)
             if !Self.isUITest {

@@ -116,7 +116,7 @@ struct ComposerSlashListTests {
             .frame(width: 520, height: 520, alignment: .top))
         window.contentView = host
         // Shown, not made key: other suites' windows keep their key state.
-        window.orderFront(nil)
+        window.showInTestArea()
         return (window, host)
     }
 

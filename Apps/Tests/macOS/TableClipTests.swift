@@ -78,7 +78,7 @@ import Testing
             // Owned by ARC here (see MarkdownSelectionHostTests.fullMessage).
             window.isReleasedWhenClosed = false
             window.contentView = host
-            window.orderFront(nil)
+            window.showInTestArea()
             settle()
         }
 

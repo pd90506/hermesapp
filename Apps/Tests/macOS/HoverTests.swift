@@ -37,10 +37,10 @@ private final class HostWindow {
     nonisolated static let space = "host"
 
     init(size: CGSize, @ViewBuilder content: () -> some View) {
-        // Beyond every screen, so the real cursor is never over it: SwiftUI's `onHover` areas
-        // take the cursor's real position when they are installed, whatever the events.
-        let beyond = (NSScreen.screens.map(\.frame.minX).min() ?? 0) - size.width - 10_000
-        window = KeyWindow(contentRect: NSRect(origin: CGPoint(x: beyond, y: 200), size: size),
+        // On the built-in display, away from the screens in use. SwiftUI's `onHover` areas
+        // take the cursor's real position when they are installed, whatever the events,
+        // so keep the real pointer off that display while these run.
+        window = KeyWindow(contentRect: .testArea(size),
                            styleMask: [.titled], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .aqua)
         // Opaque, so an empty pixel reads as white rather than transparent black.
@@ -52,7 +52,7 @@ private final class HostWindow {
         // No real mouse event reaches the test either. The synthetic events below are
         // delivered to the areas' owners and views directly, so they still arrive.
         window.ignoresMouseEvents = true
-        window.orderFront(nil)
+        window.showInTestArea()
         settle()
     }
 

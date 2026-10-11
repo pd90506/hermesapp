@@ -57,7 +57,7 @@ import Testing
         let host = NSHostingView(rootView: Root(model: model))
         host.sceneBridgingOptions = [.toolbars, .title]
         window.contentView = host
-        window.orderFront(nil)
+        window.showInTestArea()
         settle()
         return window
     }

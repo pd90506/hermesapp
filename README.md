@@ -115,6 +115,12 @@ open Hermes.xcodeproj
 - If you add, remove or move an app source file, re-run `xcodegen generate`. Folder contents are
   picked up automatically; only `project.yml` changes need a regenerate.
 
+### Live tests (Mac)
+
+`scripts/live-test.sh` runs end-to-end tests against real dashboards, in the `hermesapp-test`
+profile only, then deletes the chats they made. `--ui` adds the macOS and iOS-simulator UI tests
+against the local server. Rules and env files: AGENTS.md, "Testing conventions".
+
 ### Why XcodeGen
 
 A hand-maintained `.xcodeproj` can't be edited sensibly on Linux and causes merge conflicts

@@ -25,6 +25,11 @@ struct ConnectionSettingsView: View {
                 Button("Add Server", systemImage: "plus") {
                     model.addServer()
                 }
+                #if os(macOS)
+                Toggle("Run Hermes on this Mac", isOn: Binding(
+                    get: { model.localServer != nil },
+                    set: { isOn in Task { await model.setRunsLocalBackend(isOn) } }))
+                #endif
             } header: {
                 Text("Servers")
             } footer: {
@@ -32,8 +37,13 @@ struct ConnectionSettingsView: View {
             }
 
             if let server = model.selectedServer {
-                ServerSettingsSection(server: server, dismiss: { dismiss() })
-                    .id(server.id)
+                if server.isLocal {
+                    LocalServerSection(server: server)
+                        .id(server.id)
+                } else {
+                    ServerSettingsSection(server: server, dismiss: { dismiss() })
+                        .id(server.id)
+                }
             }
         }
         .formStyle(.grouped)
@@ -178,5 +188,59 @@ private struct ServerSettingsSection: View {
 
     private var namePrompt: String {
         ServerConfig(serverURL: server.config.serverURL).displayName
+    }
+}
+
+/// "This Mac": the backend the app runs itself. Nothing to fill in.
+private struct LocalServerSection: View {
+    let server: ServerConnection
+    @Environment(AppModel.self) private var model
+    @State private var isWorking = false
+
+    var body: some View {
+        Section {
+            LabeledContent("Status", value: server.connection.state.statusText)
+            if server.isConnected {
+                LabeledContent("Address", value: server.config.serverURL)
+                    .textSelection(.enabled)
+            }
+        } header: {
+            Text("This Mac")
+        } footer: {
+            Text("The app runs `hermes serve` on this Mac, as Hermes Desktop does: on a free port, with a new token each time. It stops when you quit the app.")
+        }
+
+        if let error = server.lastError {
+            Section {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
+        }
+
+        Section {
+            Button {
+                Task {
+                    isWorking = true
+                    if server.isConnected { await model.disconnect(server) }
+                    await model.connect(server)
+                    isWorking = false
+                }
+            } label: {
+                HStack {
+                    Text(server.isConnected ? "Restart Hermes" : "Start Hermes")
+                    if isWorking || server.isConnecting {
+                        Spacer()
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            }
+            .disabled(isWorking || server.isConnecting)
+            if server.isConnected {
+                Button("Stop Hermes") {
+                    Task { await model.disconnect(server) }
+                }
+            }
+        }
     }
 }

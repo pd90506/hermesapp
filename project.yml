@@ -21,7 +21,6 @@ settings:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     SWIFT_EMIT_LOC_STRINGS: YES
 
@@ -58,10 +57,10 @@ targets:
     entitlements:
       path: Config/Generated/HermesMac.entitlements
       properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.network.client: true
-        # The composer's "Choose Image…" panel: read the images the user picks.
-        com.apple.security.files.user-selected.read-only: true
+        # Not sandboxed (decided by the user, 2026-10): the app runs `hermes serve` on this
+        # Mac ("This Mac"), which must read ~/.hermes, as Hermes Desktop does. A sandboxed
+        # app's child process inherits the sandbox. A Mac App Store build would need it back.
+        com.apple.security.app-sandbox: false
     settings:
       base:
         PRODUCT_NAME: Hermes

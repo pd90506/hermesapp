@@ -3,3 +3,12 @@
 
 DEVELOPMENT_TEAM = ABCDE12345
 HERMES_BUNDLE_ID_PREFIX = com.yourname.hermesapp
+
+// Or, on macOS without a development team (e.g. a free account with no certificate left
+// to create): a self-signed "Code Signing" certificate made in Keychain Access ▸ Certificate
+// Assistant ▸ Create a Certificate. Rebuilds then keep one identity, so the Keychain keeps
+// handing the app its saved passwords. Leave DEVELOPMENT_TEAM unset with these.
+// CODE_SIGN_STYLE = Manual
+// CODE_SIGN_IDENTITY = Hermes Local Signing
+// No separate debug dylib: library validation refuses one without a team id.
+// ENABLE_DEBUG_DYLIB = NO

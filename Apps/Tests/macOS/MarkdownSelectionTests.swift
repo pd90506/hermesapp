@@ -122,7 +122,7 @@ import Testing
         // autorelease pool drain.
         window.isReleasedWhenClosed = false
         window.contentView = host
-        window.orderFront(nil)
+        window.showInTestArea()
         host.layoutSubtreeIfNeeded()
         return (host, window)
     }

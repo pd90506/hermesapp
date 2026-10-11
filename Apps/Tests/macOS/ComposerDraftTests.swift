@@ -166,7 +166,7 @@ import Testing
         window.contentView = NSHostingView(rootView: Host(draft: draft))
         settle()
         let textView = try #require(textView(in: window.contentView!))
-        window.makeKeyAndOrderFront(nil)
+        window.showInTestArea(key: true)
         window.makeFirstResponder(textView)
         settle()
 

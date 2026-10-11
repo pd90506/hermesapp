@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct HermesMacApp: App {
-    @State private var model = AppModel()
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    private var model: AppModel { delegate.model }
 
     var body: some Scene {
         WindowGroup {
@@ -24,6 +25,20 @@ struct HermesMacApp: App {
             .environment(model)
             .frame(width: 480, height: 560)
         }
+    }
+}
+
+/// Owns the model, so quitting can stop the Hermes backend the app started.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let model = AppModel()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Task { await model.watchLocalBackend() }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.terminateLocalBackend()
     }
 }
 

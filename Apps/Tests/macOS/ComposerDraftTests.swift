@@ -113,7 +113,7 @@ import Testing
         let box = Box()
         let coordinator = makeView(box)
         let textView = try #require(coordinator.textView)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100), styleMask: [.titled],
+        let window = NSWindow(contentRect: .testArea(CGSize(width: 300, height: 100)), styleMask: [.titled],
                               backing: .buffered, defer: true)
         window.contentView = textView.enclosingScrollView
         let undo = try #require(textView.undoManager)
@@ -161,12 +161,12 @@ import Testing
     @Test(arguments: [false, true])
     func textGivenBackWhileComposingIsNeverLostInSwiftUI(markedTextReported: Bool) throws {
         let draft = Draft()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 60), styleMask: [.titled],
+        let window = NSWindow(contentRect: .testArea(CGSize(width: 320, height: 60)), styleMask: [.titled],
                               backing: .buffered, defer: false)
         window.contentView = NSHostingView(rootView: Host(draft: draft))
         settle()
         let textView = try #require(textView(in: window.contentView!))
-        window.makeKeyAndOrderFront(nil)
+        window.showInTestArea(key: true)
         window.makeFirstResponder(textView)
         settle()
 

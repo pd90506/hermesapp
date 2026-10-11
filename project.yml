@@ -104,6 +104,25 @@ targets:
       testTargets:
         - HermesMacTests
 
+  # Live UI tests: the real app against a real dashboard (Apps/UITests).
+  # Run: scripts/live-test.sh --ui
+  HermesMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Apps/UITests
+    dependencies:
+      - target: HermesMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).mac.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: HermesMac
+    scheme:
+      testTargets:
+        - HermesMacUITests
+
   HermesiOS:
     type: application
     platform: iOS
@@ -142,3 +161,21 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).ios
         TARGETED_DEVICE_FAMILY: "1,2"
     scheme: {}
+
+  HermesiOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Apps/UITests
+    dependencies:
+      - target: HermesiOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).ios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: HermesiOS
+        TARGETED_DEVICE_FAMILY: "1,2"
+    scheme:
+      testTargets:
+        - HermesiOSUITests

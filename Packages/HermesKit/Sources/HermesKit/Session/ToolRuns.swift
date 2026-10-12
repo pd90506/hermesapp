@@ -353,6 +353,16 @@ public enum ToolCallSummary {
         return first.lowercased() + text.dropFirst()
     }
 
+    /// A unified diff as a diff box shows it: file headers (`diff --git`, `index`,
+    /// `---`, `+++`) and hunk headers (`@@`) dropped, as Desktop's `parseDiff` drops
+    /// them (`apps/desktop/src/components/chat/diff-lines.tsx:140-200`).
+    public static func displayDiff(_ diff: String) -> String {
+        diff.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+            !(line.hasPrefix("diff --git") || line.hasPrefix("index ") || line.hasPrefix("--- ")
+                || line.hasPrefix("+++ ") || line == "---" || line == "+++" || line.hasPrefix("@@"))
+        }.joined(separator: "\n")
+    }
+
     // MARK: Shell commands
 
     static let silentHeads: Set<String> = ["cd", "pushd", "popd", "export", "set", "unset", "source", ".",

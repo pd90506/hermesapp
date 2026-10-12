@@ -17,7 +17,10 @@ public struct DeliveredFile: Sendable, Hashable, Identifiable {
     public var kind: FileKind { FileKind(filename: name) }
 
     /// Shown as an image card: its thumbnail is read like a sent image's (`imageData`).
-    public var isImage: Bool { TranscriptImage.isImagePath(path) }
+    /// Not SVG: ImageIO cannot draw it, so it is a file card (Quick Look previews it).
+    public var isImage: Bool {
+        TranscriptImage.isImagePath(path) && (path as NSString).pathExtension.lowercased() != "svg"
+    }
 }
 
 /// `MEDIA:<path>` tags in assistant text: how Hermes delivers files to a graphical
@@ -29,8 +32,8 @@ public struct DeliveredFile: Sendable, Hashable, Identifiable {
 /// Parsed as Desktop parses them (`apps/desktop/src/lib/chat-messages/parts.ts:121-300`,
 /// `renderMediaTags` / `mediaTagValues`), with one difference `[client choice]`:
 /// Desktop turns a tag into an inline link; here a tag on its own line is removed
-/// and an inline one becomes the file's name, and the files show as cards under
-/// the message. Tags in fenced code blocks are examples, not deliveries, and are
+/// and an inline one becomes the file's name, and the files show as cards right
+/// after the line that held the tag (`segments`). Tags in fenced code blocks are examples, not deliveries, and are
 /// left alone (Hermes' own cleanup masks code too, `gateway/platforms/base.py:1316`).
 public enum MediaTags {
     public static let prefix = "MEDIA:"
@@ -66,41 +69,75 @@ public enum MediaTags {
     /// Sentence punctuation that can trail a bare path in prose.
     private static let trailingPunctuation: Set<Character> = [".", ",", ";", ":", "!", "?"]
 
-    /// The text to show and the files it delivers, in order, each once.
+    /// A run of a reply as shown: Markdown, or the files delivered at that point.
+    public enum Segment: Sendable, Hashable {
+        case markdown(String)
+        case files([DeliveredFile])
+    }
+
+    /// The reply split where its files were delivered, so each card shows where the
+    /// tag was (like Desktop's inline link), not all at the end. A line holding a tag
+    /// ends the Markdown before it: the line itself stays (its tags replaced by the
+    /// file names) unless it was only the tag, and the files follow it. Each file shows
+    /// once, at its first tag; adjacent files share one segment.
     /// - Parameter isStreaming: the reply is still arriving: a tag on its unfinished
     ///   last line may be a partial path, so that line is held back (neither shown
     ///   nor read) until it is complete.
-    public static func extract(_ text: String, isStreaming: Bool = false) -> (text: String, files: [DeliveredFile]) {
-        guard text.contains(prefix) else { return (text, []) }
+    public static func segments(_ text: String, isStreaming: Bool = false) -> [Segment] {
+        guard text.contains(prefix) else { return text.isEmpty ? [] : [.markdown(text)] }
         var body = text
         if isStreaming {
             let lastLine = body.lastIndex(of: "\n").map { body.index(after: $0) } ?? body.startIndex
             if body[lastLine...].contains(prefix) { body = String(body[..<lastLine]) }
         }
-        var files: [DeliveredFile] = []
-        var output: [Substring] = []
-        var fenced = false
-        var chunk: [Substring] = []
-        func flush() {
-            guard !chunk.isEmpty else { return }
-            output.append(Substring(rewrite(chunk.joined(separator: "\n"), into: &files)))
+        var segments: [Segment] = []
+        var chunk: [String] = []
+        var seen = Set<String>()
+        func flushText() {
+            let markdown = chunk.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             chunk = []
+            guard !markdown.isEmpty else { return }
+            segments.append(.markdown(markdown))
         }
+        var fenced = false
         for line in body.split(separator: "\n", omittingEmptySubsequences: false) {
             if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                if !fenced { flush() }
                 fenced.toggle()
-                output.append(line)
-            } else if fenced {
-                output.append(line)
+                chunk.append(String(line))
+                continue
+            }
+            guard !fenced, line.contains(prefix) else {
+                chunk.append(String(line))
+                continue
+            }
+            var files: [DeliveredFile] = []
+            let shown = rewrite(String(line), into: &files)
+            files = files.filter { seen.insert($0.path).inserted }
+            if !shown.trimmingCharacters(in: .whitespaces).isEmpty { chunk.append(shown) }
+            guard !files.isEmpty else { continue }
+            flushText()
+            if case .files(let earlier) = segments.last {
+                segments[segments.count - 1] = .files(earlier + files)
             } else {
-                chunk.append(line)
+                segments.append(.files(files))
             }
         }
-        flush()
-        var seen = Set<String>()
-        files = files.filter { seen.insert($0.path).inserted }
-        return (output.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), files)
+        flushText()
+        return segments
+    }
+
+    /// The text to show and the files it delivers, in order, each once.
+    public static func extract(_ text: String, isStreaming: Bool = false) -> (text: String, files: [DeliveredFile]) {
+        guard text.contains(prefix) else { return (text, []) }
+        var markdown: [String] = []
+        var files: [DeliveredFile] = []
+        for segment in segments(text, isStreaming: isStreaming) {
+            switch segment {
+            case .markdown(let text): markdown.append(text)
+            case .files(let delivered): files += delivered
+            }
+        }
+        return (markdown.joined(separator: "\n\n"), files)
     }
 
     /// Lines with a tag alone go; other tags become the file's name.

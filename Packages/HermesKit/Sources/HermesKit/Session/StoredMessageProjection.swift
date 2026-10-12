@@ -46,6 +46,7 @@ enum StoredMessageProjection {
                 var user = item(row, role: .user, text: body)
                 user.images = TranscriptImage.stored(paths)
                 user.attachments = refs.map(AttachmentRefs.displayName)
+                user.attachmentPaths = refs
                 // `steer` rows show the steer text (`display_content`, `web_routers/sessions.py:663-667`).
                 user.displayKind = row.displayKind
                 items.append(user)

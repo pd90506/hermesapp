@@ -17,7 +17,7 @@ import Testing
     private func makeView(_ state: State) -> (ComposerTextView.Coordinator, ComposerNSTextView) {
         let view = ComposerTextView(
             text: .constant("/"), contentHeight: .constant(28), maxHeight: 170, focusRequest: 0,
-            onSubmit: { state.submits += 1 }, onImages: { _ in }, onImageProviders: { _ in },
+            onSubmit: { state.submits += 1 }, onAttach: { _ in }, onProviders: { _ in },
             onSlashKey: { key in
                 guard state.open else { return false }
                 switch key {

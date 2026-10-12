@@ -38,11 +38,20 @@ import Testing
         // An image file: its URL, its name as text, its icon as TIFF. The file is attached.
         #expect(decide(["public.file-url", "public.utf8-plain-text", "public.tiff"], string: "cat.heic",
                        files: ["/Users/u/Pictures/cat.heic"]) == .files([URL(fileURLWithPath: "/Users/u/Pictures/cat.heic")]))
-        // Other files: the icon is not what the user meant.
+        // Other files are attached too, never their icon.
         #expect(decide(["public.file-url", "public.utf8-plain-text", "public.tiff"], string: "report.pdf",
-                       files: ["/Users/u/report.pdf"]) == .text)
-        // A mix: the images among them.
-        #expect(decide(["public.file-url"], files: ["/u/a.png", "/u/b.pdf"]) == .files([URL(fileURLWithPath: "/u/a.png")]))
+                       files: ["/Users/u/report.pdf"]) == .files([URL(fileURLWithPath: "/Users/u/report.pdf")]))
+        // A mix: all of them, in order.
+        #expect(decide(["public.file-url"], files: ["/u/a.png", "/u/b.pdf"])
+            == .files([URL(fileURLWithPath: "/u/a.png"), URL(fileURLWithPath: "/u/b.pdf")]))
+    }
+
+    @Test func filesAppCopyOnIOS() {
+        // A PDF copied in Files: its contents, no file URL.
+        #expect(ClipboardPolicy.decide(.init(types: ["com.adobe.pdf"], hasFileItems: true)) == .fileItems)
+        // Text that came with file data stays text.
+        #expect(ClipboardPolicy.decide(.init(types: ["public.utf8-plain-text", "com.adobe.pdf"],
+                                             string: "Quarterly numbers\nwere up", hasFileItems: true)) == .text)
     }
 
     @Test func realTextWinsOverItsPicture() {

@@ -23,8 +23,8 @@ import Testing
         let view = ComposerTextView(
             text: Binding(get: { box.frozen ?? box.text }, set: { box.text = $0; box.writes.append($0) }),
             contentHeight: Binding(get: { box.height }, set: { box.height = $0 }),
-            maxHeight: 170, focusRequest: 0, onSubmit: { box.submits += 1 }, onImages: { _ in },
-            onImageProviders: { _ in })
+            maxHeight: 170, focusRequest: 0, onSubmit: { box.submits += 1 }, onAttach: { _ in },
+            onProviders: { _ in })
         let coordinator = ComposerTextView.Coordinator(view)
         let scrollView = ComposerTextView.makeScrollView(coordinator: coordinator, text: "")
         scrollView.frame = NSRect(x: 0, y: 0, width: 300, height: 28)
@@ -140,7 +140,7 @@ import Testing
         @Bindable var draft: Draft
         var body: some View {
             ComposerTextView(text: $draft.text, contentHeight: $draft.height, maxHeight: 170, focusRequest: 0,
-                             onSubmit: {}, onImages: { _ in }, onImageProviders: { _ in })
+                             onSubmit: {}, onAttach: { _ in }, onProviders: { _ in })
                 .frame(width: 300, height: 40)
         }
     }

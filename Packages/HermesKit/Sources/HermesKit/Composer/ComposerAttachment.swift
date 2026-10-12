@@ -158,16 +158,22 @@ public struct ComposerFile: Identifiable, Sendable, Hashable {
     public var byteCount: Int
     /// `@file:<ref_path>`, quoted when needed; sent in front of the prompt text.
     public var refText: String
+    /// Where the gateway stored it, absolute (`file.attach`'s `path`).
+    public var path: String?
 
-    public init(id: UUID = UUID(), name: String, byteCount: Int, refText: String) {
+    public init(id: UUID = UUID(), name: String, byteCount: Int, refText: String, path: String? = nil) {
         self.id = id
         self.name = name
         self.byteCount = byteCount
         self.refText = refText
+        self.path = path
     }
 
     /// The card's second line, e.g. `2.4 MB`.
     public var detail: String { ComposerAttachment.formatBytes(byteCount) }
+
+    /// Where the gateway stored it: `refText`'s value (`ref_path`).
+    public var refPath: String { AttachmentRefs.splitLeading(refText).refs.first ?? name }
 }
 
 /// What the composer uploads with `file.attach`.

@@ -13,14 +13,23 @@ struct AssistantMessageContent: View {
     var isHovering = false
     var isNewest = false
     var conversationSource: (() -> String)?
+    /// Draws files the reply delivers (`MEDIA:` tags), where their tags were
+    /// (`MediaTags.segments`); the tags themselves are not shown. Without it the
+    /// files are left out.
+    var deliveredFiles: (([DeliveredFile]) -> AnyView)?
     let copy: () -> Void
 
     /// No text (whitespace counts as none, as for the waiting row and the action bar),
     /// no reasoning and no outcome to show: the row has no content yet.
     static func isBlank(_ item: TranscriptItem) -> Bool { item.isBlankReply }
 
-    private static func hasText(_ item: TranscriptItem) -> Bool {
-        !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// The reply as Markdown runs and the files delivered between them. Text without
+    /// a tag is one run, as it was (whitespace-only text is none).
+    static func segments(_ item: TranscriptItem) -> [MediaTags.Segment] {
+        guard item.text.contains(MediaTags.prefix) else {
+            return item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [.markdown(item.text)]
+        }
+        return MediaTags.segments(item.text, isStreaming: item.isActive)
     }
 
     var body: some View {
@@ -35,9 +44,14 @@ struct AssistantMessageContent: View {
                     }
                     .font(.caption)
                 }
-                if Self.hasText(item) {
-                    MarkdownView(text: item.text, isStreaming: item.isActive, conversationSource: conversationSource)
-                        .equatable()
+                ForEach(Array(Self.segments(item).enumerated()), id: \.offset) { _, segment in
+                    switch segment {
+                    case .markdown(let text):
+                        MarkdownView(text: text, isStreaming: item.isActive, conversationSource: conversationSource)
+                            .equatable()
+                    case .files(let files):
+                        if let deliveredFiles { deliveredFiles(files) }
+                    }
                 }
                 if item.outcome == "interrupted" {
                     Text("Interrupted").font(.caption).foregroundStyle(.secondary)

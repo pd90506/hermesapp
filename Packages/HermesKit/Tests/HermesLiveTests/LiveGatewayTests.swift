@@ -82,4 +82,43 @@ struct LiveGatewayTests {
             !second.history.contains { $0.summary.id == storedID }
         }
     }
+
+    @Test("Attaches a file, gets it back as a MEDIA: delivery and downloads it",
+          .timeLimit(.minutes(4)), arguments: LiveServer.all)
+    func fileRoundTrip(server: LiveServer) async throws {
+        let connection = GatewayConnection()
+        try await connection.connect(using: server.connector())
+        let chat = try await connection.newSideChat(profile: LiveServer.profile)
+        defer {
+            Task { @MainActor in
+                try? await connection.delete(chat)
+                await connection.disconnect()
+            }
+        }
+
+        let marker = "FILE-\(Int.random(in: 1000...9999))"
+        let contents = Data("hermesapp live test \(marker)\n".utf8)
+        let composer = connection.composer(for: chat)
+        #expect(await composer.attachFile(contents, filename: "\(marker).txt", mimeType: "text/plain"),
+                "\(composer.error ?? "")")
+        let file = try #require(composer.files.first)
+        let path = try #require(file.path)
+        #expect(file.refText.hasPrefix("@file:"))
+
+        // What the composer staged is on the gateway's disk, byte for byte.
+        let staged = try await connection.downloadFile(path: path, profile: LiveServer.profile, sessionID: nil)
+        defer { try? FileManager.default.removeItem(at: staged) }
+        #expect(try Data(contentsOf: staged) == contents)
+
+        composer.draft = "Reply with exactly this one line and nothing else, and do not use tools: MEDIA:\(path)"
+        await composer.submit()
+        #expect(composer.error == nil && composer.files.isEmpty)
+        try? await connection.rename(chat, to: "\(LiveServer.chatPrefix) \(marker)")
+        let bubble = try #require(chat.transcript.items.last { $0.role == .user })
+        #expect(bubble.attachments == [file.name] && bubble.attachmentPaths == [file.refPath])
+        try await waitUntil("the reply to start", timeout: .seconds(60)) { chat.transcript.isRunning }
+        try await waitUntil("the reply to finish", timeout: .seconds(150)) { !chat.transcript.isRunning }
+        let reply = try #require(chat.transcript.items.last { $0.role == .assistant })
+        #expect(reply.deliveredFiles.map(\.path) == [path], "reply: \(reply.text)")
+    }
 }

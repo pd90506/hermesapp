@@ -511,9 +511,10 @@ public final class ChatSession: Identifiable {
     public func send(_ text: String, images: [ComposerAttachment], files: [ComposerFile]) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let names = files.map(\.name)
+        let paths = files.map(\.refPath)
         let prompt = ([files.map(\.refText).joined(separator: "\n"), trimmed].filter { !$0.isEmpty })
             .joined(separator: "\n\n")
-        if !images.isEmpty { return try await sendWithImages(trimmed, prompt: prompt, images: images, files: names) }
+        if !images.isEmpty { return try await sendWithImages(trimmed, prompt: prompt, images: images, files: names, filePaths: paths) }
         guard !prompt.isEmpty else { return }
         try await settleIdentity()
         // A failed resume shows on the prompt's bubble, like a failed submit.
@@ -528,7 +529,7 @@ public final class ChatSession: Identifiable {
         if reviveError == nil, let client = connection?.client {
             try await clearStrandedImages(using: client)
         }
-        let itemID = transcript.appendUserPrompt(trimmed, attachments: names)
+        let itemID = transcript.appendUserPrompt(trimmed, attachments: names, attachmentPaths: paths)
         do {
             if let reviveError { throw reviveError }
             let client = try currentClient()
@@ -565,9 +566,9 @@ public final class ChatSession: Identifiable {
     /// - Parameters:
     ///   - trimmed: the caption the bubble shows; `prompt`: the text submitted
     ///     (the caption behind the files' references).
-    ///   - files: the names of the files the prompt references.
+    ///   - files: the names of the files the prompt references; `filePaths` their paths.
     private func sendWithImages(_ trimmed: String, prompt: String, images: [ComposerAttachment],
-                                files: [String]) async throws {
+                                files: [String], filePaths: [String]) async throws {
         try await settleIdentity()
         do {
             try await reviveIfGone()
@@ -612,7 +613,7 @@ public final class ChatSession: Identifiable {
         let shown = zip(images, queued).enumerated().map { position, pair in
             TranscriptImage(name: pair.0.filename, path: pair.1, localID: pair.0.id, position: position)
         }
-        let itemID = transcript.appendUserPrompt(trimmed, images: shown, attachments: files)
+        let itemID = transcript.appendUserPrompt(trimmed, images: shown, attachments: files, attachmentPaths: filePaths)
         do {
             let result = try await Self.submitUncancellably(client, sessionID: sid, text: prompt)
             // The bubble settles like any prompt (and like a row-less `streaming`
@@ -708,7 +709,8 @@ public final class ChatSession: Identifiable {
         guard result.attached, let ref = result.refText, !ref.isEmpty else {
             throw ComposerError.attachmentFailed(filename: filename, reason: "the gateway did not stage it")
         }
-        return ComposerFile(name: result.name?.nonEmpty ?? filename, byteCount: data.count, refText: ref)
+        return ComposerFile(name: result.name?.nonEmpty ?? filename, byteCount: data.count, refText: ref,
+                            path: result.path?.nonEmpty)
     }
 
     // MARK: - Model and reasoning effort

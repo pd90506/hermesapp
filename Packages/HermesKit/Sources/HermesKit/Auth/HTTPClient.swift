@@ -7,6 +7,18 @@ import FoundationNetworking
 /// Minimal HTTP abstraction so dashboard auth can be unit-tested with a fake.
 public protocol HTTPClient: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
+    /// The response body saved to a new temporary file, which the caller moves or deletes.
+    func download(for request: URLRequest) async throws -> (URL, HTTPURLResponse)
+}
+
+extension HTTPClient {
+    /// Through memory: for fakes, and clients that cannot stream to disk.
+    public func download(for request: URLRequest) async throws -> (URL, HTTPURLResponse) {
+        let (data, response) = try await data(for: request)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try data.write(to: url)
+        return (url, response)
+    }
 }
 
 /// `HTTPClient` backed by a `URLSession`. Its cookie storage holds the
@@ -34,4 +46,19 @@ public struct URLSessionHTTPClient: HTTPClient, @unchecked Sendable {
         }
         return (data, http)
     }
+
+    #if !canImport(FoundationNetworking)
+    /// Streamed to disk: a delivered file can be large. URLSession deletes its own
+    /// file when this returns, so it is moved to one the caller owns.
+    public func download(for request: URLRequest) async throws -> (URL, HTTPURLResponse) {
+        let (location, response) = try await session.download(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            try? FileManager.default.removeItem(at: location)
+            throw URLError(.badServerResponse)
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.moveItem(at: location, to: url)
+        return (url, http)
+    }
+    #endif
 }

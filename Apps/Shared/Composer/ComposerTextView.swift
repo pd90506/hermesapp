@@ -12,9 +12,9 @@ import SwiftUI
 /// - iOS: Return inserts a newline; the Send button (or Command-Return on a hardware
 ///   keyboard) sends, as in Messages.
 ///
-/// Pasting an image attaches it instead of inserting anything (`ClipboardPolicy`
-/// decides what counts as an image); dropping image files onto the text attaches them.
-/// On macOS, Command-V with an image on the clipboard attaches it whenever the chat's
+/// Pasting an image or a copied file attaches it instead of inserting anything
+/// (`ClipboardPolicy` decides); dropping files onto the text attaches them. On macOS,
+/// Command-V with an image or file on the clipboard attaches it whenever the chat's
 /// window is focused and no other editable text has the keyboard.
 struct ComposerTextView {
     /// `accept` is plain Return; Shift-Return still inserts a newline.
@@ -26,9 +26,9 @@ struct ComposerTextView {
     /// Bumped by the caller to move keyboard focus here.
     var focusRequest: Int
     var onSubmit: () -> Void
-    var onImages: ([ImageSource]) -> Void
-    /// iOS pastes: the pasteboard's image item providers.
-    var onImageProviders: ([NSItemProvider]) -> Void
+    var onAttach: ([AttachmentSource]) -> Void
+    /// iOS pastes: the pasteboard's image and file item providers.
+    var onProviders: ([NSItemProvider]) -> Void
     /// Whether an input method's marked text shows now (e.g. Pinyin before a candidate
     /// is picked). The draft may not hold it: AppKit reports some marked-text edits and
     /// not others, and a draft changed meanwhile waits for the composition (`DraftMerge`).
@@ -127,7 +127,7 @@ extension ComposerTextView: NSViewRepresentable {
         }
 
         func bind(_ textView: ComposerNSTextView) {
-            textView.onImages = { [weak self] in self?.parent.onImages($0) }
+            textView.onAttach = { [weak self] in self?.parent.onAttach($0) }
             textView.onResize = { [weak self] in self?.measure(during: .layout) }
             textView.onWindow = { [weak self] window in
                 if window == nil { self?.stopPasteMonitor() } else { self?.startPasteMonitor() }
@@ -287,7 +287,7 @@ extension ComposerTextView: NSViewRepresentable {
             let images = ImageLoader.sources(from: textView.pasteboard)
             guard !images.isEmpty else { return false }
             window.makeFirstResponder(textView)
-            parent.onImages(images)
+            parent.onAttach(images)
             return true
         }
     }
@@ -303,9 +303,9 @@ final class ComposerScrollView: NSScrollView {
     }
 }
 
-/// `NSTextView` that attaches pasted or dropped images instead of inserting them.
+/// `NSTextView` that attaches pasted or dropped images and files instead of inserting them.
 final class ComposerNSTextView: NSTextView {
-    var onImages: (([ImageSource]) -> Void)?
+    var onAttach: (([AttachmentSource]) -> Void)?
     var onResize: (() -> Void)?
     /// Joined (or left, `nil`) a window.
     var onWindow: ((NSWindow?) -> Void)?
@@ -332,7 +332,7 @@ final class ComposerNSTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let images = ImageLoader.sources(from: pasteboard)
-        if images.isEmpty { super.paste(sender) } else { onImages?(images) }
+        if images.isEmpty { super.paste(sender) } else { onAttach?(images) }
     }
 
     /// A plain-text view enables Paste only for text it can read, so with just an
@@ -379,7 +379,7 @@ final class ComposerNSTextView: NSTextView {
         defer { dragCarriesImages = nil }
         let images = ImageLoader.sources(from: sender.draggingPasteboard)
         guard !images.isEmpty else { return super.performDragOperation(sender) }
-        onImages?(images)
+        onAttach?(images)
         return true
     }
 
@@ -397,6 +397,7 @@ final class ComposerNSTextView: NSTextView {
 
 #else
 import UIKit
+import UniformTypeIdentifiers
 
 extension ComposerTextView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -448,7 +449,7 @@ extension ComposerTextView: UIViewRepresentable {
         }
 
         func bind(_ textView: ComposerUITextView) {
-            textView.onImageProviders = { [weak self] in self?.parent.onImageProviders($0) }
+            textView.onProviders = { [weak self] in self?.parent.onProviders($0) }
             textView.onLayout = { [weak self, weak textView] in
                 if let textView { self?.measure(textView, deferred: true) }
             }
@@ -523,9 +524,9 @@ extension ComposerTextView: UIViewRepresentable {
     }
 }
 
-/// `UITextView` that attaches pasted images instead of inserting them.
+/// `UITextView` that attaches pasted images and files instead of inserting them.
 final class ComposerUITextView: UITextView {
-    var onImageProviders: (([NSItemProvider]) -> Void)?
+    var onProviders: (([NSItemProvider]) -> Void)?
     var onLayout: (() -> Void)?
     /// Marked text may have appeared, changed or gone.
     var onMarkedTextChange: (() -> Void)?
@@ -545,13 +546,18 @@ final class ComposerUITextView: UITextView {
         // Metadata only (`hasImages`): reading the contents here would raise the
         // "Allow Paste" prompt each time the edit menu is validated. The contents
         // are read in `paste(_:)`, after the user picked Paste.
-        if action == #selector(paste(_:)), UIPasteboard.general.hasImages { return true }
+        if action == #selector(paste(_:)), UIPasteboard.general.hasImages || Self.mayHoldFiles { return true }
         return super.canPerformAction(action, withSender: sender)
     }
 
     override func paste(_ sender: Any?) {
-        let providers = ImageLoader.pastedImageProviders()
-        if providers.isEmpty { super.paste(sender) } else { onImageProviders?(providers) }
+        let providers = ImageLoader.pastedProviders()
+        if providers.isEmpty { super.paste(sender) } else { onProviders?(providers) }
+    }
+
+    /// The pasteboard's types (metadata, no paste prompt) include a file's contents.
+    private static var mayHoldFiles: Bool {
+        UIPasteboard.general.types.contains { UTType($0).map(ImageLoader.isFileContent) ?? false }
     }
 
     override func layoutSubviews() {

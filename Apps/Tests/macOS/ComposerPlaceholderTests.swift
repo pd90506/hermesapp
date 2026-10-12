@@ -21,7 +21,7 @@ import Testing
         let view = ComposerTextView(
             text: Binding(get: { box.text }, set: { box.text = $0 }),
             contentHeight: Binding(get: { box.height }, set: { box.height = $0 }),
-            maxHeight: 170, focusRequest: 0, onSubmit: {}, onImages: { _ in }, onImageProviders: { _ in },
+            maxHeight: 170, focusRequest: 0, onSubmit: {}, onAttach: { _ in }, onProviders: { _ in },
             onComposingChange: { box.composing = $0; box.reports.append($0) })
         let coordinator = ComposerTextView.Coordinator(view)
         let scrollView = ComposerTextView.makeScrollView(coordinator: coordinator, text: "")

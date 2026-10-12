@@ -340,6 +340,13 @@ public final class GatewayConnection {
         return try await source.imageData(path: path, profile: profile)
     }
 
+    /// A file on the gateway (`MEDIA:` delivery, attachment), downloaded to a
+    /// temporary file the caller owns (`GatewayMediaSource.downloadFile`).
+    public func downloadFile(path: String, profile: String?, sessionID: String?) async throws -> URL {
+        guard let source = connector?.mediaSource else { throw GatewayClientError.notConnected }
+        return try await source.downloadFile(path: path, profile: profile, sessionID: sessionID)
+    }
+
     /// A read of a stored transcript's newest page, started now.
     func latestPageRead(_ key: String, profile: String?) -> Task<LatestHistory, any Error>? {
         messagesSource.map { source in

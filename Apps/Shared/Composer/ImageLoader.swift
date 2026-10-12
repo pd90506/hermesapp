@@ -10,10 +10,25 @@ import AppKit
 import UIKit
 #endif
 
-/// Where an image to attach comes from.
-enum ImageSource: Sendable {
+/// Where an image or file to attach comes from.
+enum AttachmentSource: Sendable {
     case file(URL)
     case data(Data, filename: String)
+
+    var filename: String {
+        switch self {
+        case .file(let url): url.lastPathComponent
+        case .data(_, let filename): filename
+        }
+    }
+
+    /// Whether to attach it as an image (re-encoded if needed, `ImageLoader`) rather
+    /// than as a file (`file.attach`), by its extension. Desktop likewise sends an
+    /// attachment of kind `image` with `image.attach_bytes` and anything else with
+    /// `file.attach` (`use-prompt-actions/index.ts:139-160`).
+    var isImage: Bool {
+        ClipboardPolicy.imageFileExtensions.contains((filename as NSString).pathExtension.lowercased())
+    }
 }
 
 /// A composer card's payload plus its thumbnail.
@@ -49,7 +64,7 @@ enum ImageLoader {
     /// Decodes and, if needed, re-encodes. `@concurrent`: always off the main
     /// actor, whatever the module's default isolation.
     @concurrent
-    nonisolated static func load(_ source: ImageSource) async throws -> LoadedImage {
+    nonisolated static func load(_ source: AttachmentSource) async throws -> LoadedImage {
         let (data, filename, origin) = try read(source)
         guard let image = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(image) > 0 else {
             throw Failure.notAnImage(filename)
@@ -107,7 +122,7 @@ enum ImageLoader {
     }
 
     /// Bytes, the name to show, and (macOS) the folder it came from.
-    private static func read(_ source: ImageSource) throws -> (Data, String, String?) {
+    private static func read(_ source: AttachmentSource) throws -> (Data, String, String?) {
         switch source {
         case .data(let data, let filename):
             return (data, filename, nil)
@@ -159,15 +174,15 @@ enum ImageLoader {
                                         string: pasteboard.string(forType: .string), fileURLs: urls ?? [])
     }
 
-    /// The images a pasteboard holds, or none when it should paste as text
-    /// (`ClipboardPolicy.decide`).
+    /// The images and files a pasteboard holds, or none when it should paste as
+    /// text (`ClipboardPolicy.decide`).
     @MainActor
-    static func sources(from pasteboard: NSPasteboard) -> [ImageSource] {
+    static func sources(from pasteboard: NSPasteboard) -> [AttachmentSource] {
         switch ClipboardPolicy.decide(contents(of: pasteboard)) {
-        case .text:
+        case .text, .fileItems:
             return []
         case .files(let urls):
-            return urls.map(ImageSource.file)
+            return urls.map(AttachmentSource.file)
         case .imageData(let type):
             guard let data = pasteboard.data(forType: NSPasteboard.PasteboardType(type)) else { return [] }
             let ext = UTType(type)?.preferredFilenameExtension ?? "png"
@@ -175,31 +190,44 @@ enum ImageLoader {
         }
     }
     #else
-    /// The general pasteboard's image providers, or none when it should paste as
-    /// text (`ClipboardPolicy.decide`). Reads the pasteboard's contents: call it only
-    /// once the user chose Paste, or iOS shows its paste-permission alert.
+    /// The general pasteboard's image and file providers, or none when it should
+    /// paste as text (`ClipboardPolicy.decide`). Reads the pasteboard's contents: call
+    /// it only once the user chose Paste, or iOS shows its paste-permission alert.
     @MainActor
-    static func pastedImageProviders() -> [NSItemProvider] {
+    static func pastedProviders() -> [NSItemProvider] {
         let pasteboard = UIPasteboard.general
-        guard pasteboard.hasImages || pasteboard.hasURLs else { return [] }
+        let fileItems = pasteboard.types.contains { UTType($0).map(isFileContent) ?? false }
+        guard pasteboard.hasImages || pasteboard.hasURLs || fileItems else { return [] }
         let contents = ClipboardPolicy.Contents(types: pasteboard.types, string: pasteboard.string,
-                                                fileURLs: (pasteboard.urls ?? []).filter(\.isFileURL))
+                                                fileURLs: (pasteboard.urls ?? []).filter(\.isFileURL),
+                                                hasFileItems: fileItems)
         if case .text = ClipboardPolicy.decide(contents) { return [] }
-        return pasteboard.itemProviders.filter {
-            $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
-                || $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-        }
+        return pasteboard.itemProviders.filter(isAttachable)
     }
     #endif
 
-    /// Image sources from dropped (or iOS-pasted) item providers: a file URL
-    /// when the provider has one, else the image data.
+    /// A type that is a file's contents rather than text, an image, a link or rich
+    /// text: a PDF, an archive, a document. Such an item is attached as a file.
+    nonisolated static func isFileContent(_ type: UTType) -> Bool {
+        type.conforms(to: .data) && !type.conforms(to: .text) && !type.conforms(to: .image)
+            && !type.conforms(to: .url) && !type.conforms(to: .rtf) && !type.conforms(to: .rtfd)
+            && !type.conforms(to: .html) && !type.conforms(to: .flatRTFD)
+    }
+
+    /// Whether a dropped or pasted provider carries something to attach.
+    nonisolated static func isAttachable(_ provider: NSItemProvider) -> Bool {
+        provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+            || provider.registeredContentTypes.contains { $0.conforms(to: .image) || isFileContent($0) }
+    }
+
+    /// Sources from dropped (or iOS-pasted) item providers: a file URL when the
+    /// provider has one, else the image data, else a copy of the file it carries.
     @MainActor
-    static func sources(from providers: [NSItemProvider]) async -> [ImageSource] {
-        var sources: [ImageSource] = []
+    static func sources(from providers: [NSItemProvider]) async -> [AttachmentSource] {
+        var sources: [AttachmentSource] = []
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
-                let url = await loadFileURL(provider), (UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) ?? false)
+                let url = await loadFileURL(provider)
             {
                 sources.append(.file(url))
             } else if let type = provider.registeredContentTypes.first(where: { $0.conforms(to: .image) }),
@@ -208,9 +236,40 @@ enum ImageLoader {
                 let base = provider.suggestedName ?? "Image"
                 let ext = type.preferredFilenameExtension ?? "png"
                 sources.append(.data(data, filename: ImageAttachmentPolicy.filename(base, withExtension: ext)))
+            } else if let type = provider.registeredContentTypes.first(where: isFileContent),
+                let copy = await loadFileCopy(provider, type: type)
+            {
+                sources.append(.file(copy))
             }
         }
         return sources
+    }
+
+    /// The provider's file, copied to a temporary folder: the system deletes its
+    /// own copy as soon as the load's handler returns.
+    @MainActor
+    private static func loadFileCopy(_ provider: NSItemProvider, type: UTType) async -> URL? {
+        let suggested = provider.suggestedName
+        return await withCheckedContinuation { continuation in
+            _ = provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, _ in
+                guard let url else { return continuation.resume(returning: nil) }
+                var name = suggested ?? url.lastPathComponent
+                if (name as NSString).pathExtension.isEmpty, let ext = type.preferredFilenameExtension {
+                    name += ".\(ext)"
+                }
+                let folder = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("Attachments", isDirectory: true)
+                    .appendingPathComponent(UUID().uuidString, isDirectory: true)
+                let copy = folder.appendingPathComponent(name)
+                do {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: url, to: copy)
+                    continuation.resume(returning: copy)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
     }
 
     @MainActor

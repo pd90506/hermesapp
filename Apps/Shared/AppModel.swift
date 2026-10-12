@@ -54,11 +54,14 @@ final class ServerConnection: Identifiable {
     /// Thumbnails of the images in this server's transcripts and composers
     /// (`TranscriptImages.swift`). Per server: image paths are only unique within one.
     let thumbnails = ThumbnailStore()
+    /// Files from this server's transcripts downloaded to preview or save (`TranscriptFiles.swift`).
+    let downloads: FileDownloads
 
     init(config: ServerConfig, secret: String) {
         self.id = config.id
         self.config = config
         self.secret = secret
+        self.downloads = FileDownloads(serverID: config.id)
         #if os(macOS)
         self.backend = nil
         #endif
@@ -72,6 +75,7 @@ final class ServerConnection: Identifiable {
         self.id = config.id
         self.config = config
         self.secret = ""
+        self.downloads = FileDownloads(serverID: config.id)
         self.backend = localBackend
     }
     #endif

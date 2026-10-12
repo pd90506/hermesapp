@@ -2,12 +2,6 @@
   "fill-specializations": [
     {
       "value": {
-        "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
-      }
-    },
-    {
-      "appearance": "dark",
-      "value": {
         "solid": "srgb:0.05098,0.06667,0.09020,1.00000"
       }
     }
@@ -28,15 +22,6 @@
       "layers": [
         {
           "name": "art",
-          "image-name-specializations": [
-            {
-              "value": "art-light.png"
-            },
-            {
-              "appearance": "dark",
-              "value": "art-dark.png"
-            }
-          ],
           "glass": false,
           "hidden-specializations": [
             {
@@ -46,7 +31,8 @@
               "appearance": "tinted",
               "value": true
             }
-          ]
+          ],
+          "image-name": "art-dark.png"
         },
         {
           "name": "mono",

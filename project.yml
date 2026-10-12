@@ -67,6 +67,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).mac
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme: {}
 
   # AppKit tests of the composer's text view and clipboard handling, with synthetic
@@ -160,6 +161,7 @@ targets:
         PRODUCT_NAME: Hermes
         PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).ios
         TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme: {}
 
   HermesiOSUITests:

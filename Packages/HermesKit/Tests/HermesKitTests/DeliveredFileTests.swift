@@ -91,7 +91,7 @@ import Testing
             .files([file("/s/icon/master.svg")]),
             .markdown("Does this direction work?"),
         ])
-        #expect(!file("/s/icon/master.svg").isImage && file("/s/icon/ios-1024.png").isImage)
+        #expect(file("/s/icon/master.svg").isImage && file("/s/icon/ios-1024.png").isImage)
     }
 
     @Test func adjacentTagsShareOneRowAndAnInlineTagFollowsItsLine() {

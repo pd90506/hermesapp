@@ -16,11 +16,9 @@ public struct DeliveredFile: Sendable, Hashable, Identifiable {
 
     public var kind: FileKind { FileKind(filename: name) }
 
-    /// Shown as an image card: its thumbnail is read like a sent image's (`imageData`).
-    /// Not SVG: ImageIO cannot draw it, so it is a file card (Quick Look previews it).
-    public var isImage: Bool {
-        TranscriptImage.isImagePath(path) && (path as NSString).pathExtension.lowercased() != "svg"
-    }
+    /// Shown as an image card: its thumbnail is read like a sent image's (`imageData`;
+    /// the apps draw SVG with Quick Look).
+    public var isImage: Bool { TranscriptImage.isImagePath(path) }
 }
 
 /// `MEDIA:<path>` tags in assistant text: how Hermes delivers files to a graphical

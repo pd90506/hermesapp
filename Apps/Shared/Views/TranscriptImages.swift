@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import HermesKit
 import ImageIO
+import QuickLookThumbnailing
 import SwiftUI
 
 /// Decoded thumbnails of images in the transcript, bounded in memory.
@@ -77,7 +78,9 @@ final class ThumbnailStore {
         let task = Task<CGImage?, Never> {
             await limiter.run {
                 guard let data = try? await connection.imageData(path: path, profile: profile) else { return nil }
-                return await Self.decode(data)
+                if let image = await Self.decode(data) { return image }
+                // ImageIO cannot draw SVG; Quick Look can.
+                return Self.isVector(path) ? await Self.quickLookThumbnail(data, fileExtension: "svg") : nil
             }
         }
         inFlight[key] = task
@@ -90,6 +93,22 @@ final class ThumbnailStore {
             failures[key] = Date()
         }
         return result
+    }
+
+    nonisolated static func isVector(_ path: String) -> Bool {
+        (path as NSString).pathExtension.lowercased() == "svg"
+    }
+
+    /// A thumbnail drawn by Quick Look, for formats ImageIO cannot decode (SVG). It
+    /// reads a file, so the bytes are written to a temporary one first.
+    nonisolated static func quickLookThumbnail(_ data: Data, fileExtension: String) async -> CGImage? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).\(fileExtension)")
+        guard (try? data.write(to: url)) != nil else { return nil }
+        defer { try? FileManager.default.removeItem(at: url) }
+        let side = CGFloat(maxPixels) / 2
+        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: side, height: side), scale: 2,
+                                                   representationTypes: .thumbnail)
+        return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).cgImage
     }
 
     /// A downsampled decode, refused when the image is larger than

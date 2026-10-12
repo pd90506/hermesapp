@@ -1394,14 +1394,15 @@ public struct Transcript: Sendable, Hashable {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    /// A user row: its `@image:` lines become images, its leading `@file:` lines
-    /// attachments, the rest its caption.
+    /// A user row: recalled memory is dropped, its `@image:` lines and image hints
+    /// become images, its leading `@file:` lines attachments, the rest its caption.
     @discardableResult
     private mutating func appendUser(_ text: String, rowID: Int? = nil) -> Int {
-        let (caption, paths) = ImageDirectives.split(text)
+        let (typed, hinted) = InjectedContext.userTurn(text)
+        let (caption, directives) = ImageDirectives.split(typed)
         let (body, refs) = AttachmentRefs.splitLeading(caption)
         let index = append(.user, body, rowID: rowID)
-        items[index].images = TranscriptImage.stored(paths)
+        items[index].images = TranscriptImage.stored(directives + hinted)
         items[index].attachments = refs.map(AttachmentRefs.displayName)
         items[index].attachmentPaths = refs
         return index

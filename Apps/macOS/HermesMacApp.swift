@@ -49,10 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension HermesMacApp {
-    /// 1160 × 760 pt (picked by the user, 2026-10), shrunk to fit a smaller screen.
+    /// 1240 × 820 pt (the size the user settled on, 2026-10), shrunk to fit a smaller screen.
     /// (`defaultSize` doesn't shrink: on a 1024-pt screen the window ran off the edge.)
     static func defaultWindowSize(in screen: CGSize) -> CGSize {
-        CGSize(width: min(1160, screen.width), height: min(760, screen.height))
+        CGSize(width: min(1240, screen.width), height: min(820, screen.height))
     }
 }
 

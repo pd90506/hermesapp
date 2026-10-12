@@ -3,6 +3,10 @@ import Testing
 
 @testable import HermesKit
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// `MEDIA:` tags, as Desktop's `renderMediaTags` / `mediaTagValues` read them
 /// (`apps/desktop/src/lib/chat-messages/parts.ts:121-300`).
 @Suite struct MediaTagsTests {

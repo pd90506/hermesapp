@@ -117,6 +117,16 @@ private struct MessageRow: View {
     @Environment(ServerConnection.self) private var server
 
     var body: some View {
+        // Background work Hermes reported as a user turn: a line, not a prompt bubble.
+        if let notice = item.backgroundNotice {
+            BackgroundNoticeRow(notice: notice)
+                .contextMenu { copyMenu }
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder private var row: some View {
         switch item.role {
         case .user:
             // Shown verbatim: what the user typed, not a reinterpretation of it.

@@ -31,6 +31,15 @@ import Testing
         #expect(abs(long - limit) <= 1, "the box is one height once it scrolls: \(long) vs \(limit)")
     }
 
+    /// A background-process notice is one line until opened, however long its output.
+    @Test func aBackgroundNoticeIsOneLine() throws {
+        let text = "[IMPORTANT: Background process proc_1 completed normally (exit code 0).\nCommand: make\nOutput:\n"
+            + (1...80).map { "build step \($0)" }.joined(separator: "\n") + "]"
+        let notice = try #require(BackgroundNotice(text))
+        let line = height(BackgroundNoticeRow(notice: notice))
+        #expect(line < 24, "the notice is \(line) pt tall")
+    }
+
     @Test func aShortDiffHasNoScrollBox() {
         let host = NSHostingView(rootView: ToolMessageContent(item: Self.edit(lines: 3)).frame(width: 400))
         host.frame.size = host.fittingSize

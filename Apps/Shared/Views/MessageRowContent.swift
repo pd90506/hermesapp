@@ -140,7 +140,10 @@ struct ToolMessageContent: View {
 /// What an opened tool call shows: its input, then its diff, output or error, each
 /// capped so a huge result never lays out in full.
 struct ToolCallDetail: View {
-    let item: TranscriptItem
+    let sections: [Section]
+
+    init(item: TranscriptItem) { sections = Self.sections(for: item) }
+    init(sections: [Section]) { self.sections = sections }
 
     struct Section: Identifiable {
         enum Kind { case input, output, diff, error }
@@ -186,7 +189,7 @@ struct ToolCallDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(Self.sections(for: item)) { section in
+            ForEach(sections) { section in
                 box(section)
                     .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
             }
@@ -258,6 +261,48 @@ struct ToolCallDetail: View {
             result += piece
         }
         return result
+    }
+}
+
+/// A background notice Hermes wrote as a user turn (`BackgroundNotice`): one line, as
+/// Desktop's `BackgroundResult` shows it, opening to the command and output.
+struct BackgroundNoticeRow: View {
+    let notice: BackgroundNotice
+    @State private var isExpanded = false
+
+    static let accessibilityIdentifier = "backgroundNotice"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "bell").imageScale(.small).frame(width: 14)
+                    Text(notice.headline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if !notice.detail.isEmpty {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(notice.detail.isEmpty)
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            .accessibilityValue(isExpanded ? "expanded" : "collapsed")
+            if isExpanded {
+                ToolCallDetail(sections: [.init(kind: .output, text: notice.detail)])
+                    .padding(.leading, 20)
+            }
+        }
     }
 }
 

@@ -84,7 +84,8 @@ import Testing
     }
 
     @Test(.timeLimit(.minutes(1))) func restartsAfterTheBackendDied() async throws {
-        let backend = fake(#"echo "HERMES_BACKEND_READY port=$$"; sleep 0.3"#)
+        // A fixed port: the shell's PID (`$$`) can be above 65535 and is then no port.
+        let backend = fake(#"echo "HERMES_BACKEND_READY port=4322"; sleep 0.3"#)
         let first = try await backend.start()
         try await Task.sleep(for: .seconds(1))
         #expect(await !backend.isRunning)

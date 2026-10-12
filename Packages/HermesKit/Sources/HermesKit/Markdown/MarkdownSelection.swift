@@ -226,13 +226,14 @@ public enum ConversationMarkdown {
         return [item.toolName, item.detail].compactMap { $0 }.joined(separator: "\n")
     }
 
-    /// The row whose action bar stays shown without hover: the last user message,
+    /// The row whose action bar stays shown without hover: the last user message (not
+    /// a background notice, which has no bar),
     /// or assistant message with text. Tool and system rows have no bar, so a tool
     /// call running after a reply leaves the bar on that reply; an assistant row with
     /// no text yet has none either (nothing to copy), so while the reply is awaited
     /// the bar stays on the prompt.
     public static func newestMessageID(in items: [TranscriptItem]) -> String? {
-        items.last { $0.role == .user || hasActionBar($0) }?.id
+        items.last { ($0.role == .user && $0.backgroundNotice == nil) || hasActionBar($0) }?.id
     }
 
     /// An assistant row gets an action bar once it has text to copy.

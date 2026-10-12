@@ -59,6 +59,60 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
     }
 
+    /// A turn that runs tools and answers with a table: once the reply is in, its tool
+    /// calls are one closed summary line ("Ran 2 commands"), which opens to the calls.
+    @MainActor
+    func testToolCallsFoldIntoOneSummary() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        #if os(iOS)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        #endif
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+
+        let composer = app.textViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        composer.typeText("Use the terminal tool twice: first run `echo alpha`, then run `echo beta`. "
+            + "Then reply with only a Markdown table with the columns Command and Output, one row per command.")
+        press(app.buttons["Send"].firstMatch)
+
+        let summary = app.buttons.matching(identifier: "toolRunSummary").firstMatch
+        let settled = NSPredicate(format: "label MATCHES 'Ran [2-9] commands.*'")
+        let deadline = Date().addingTimeInterval(180)
+        while !(summary.exists && settled.evaluate(with: summary)), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
+        attach(app, "settled")
+        XCTAssertTrue(summary.exists && settled.evaluate(with: summary),
+                      "one summary line for the turn's tool calls, got \(summary.exists ? summary.label : "none")")
+        XCTAssertEqual(app.buttons.matching(identifier: "toolCallRow").count, 0, "the calls are folded")
+
+        // The live run's line becomes the turn's line as the reply lands: let it
+        // settle before clicking it.
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        press(summary)
+        let rows = app.buttons.matching(identifier: "toolCallRow")
+        let opened = Date().addingTimeInterval(10)
+        while rows.count < 2, Date() < opened { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
+        attach(app, "opened")
+        XCTAssertGreaterThanOrEqual(rows.count, 2, "opening the summary shows each call")
+    }
+
+    @MainActor
+    private func attach(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     /// Two servers (the same dashboard twice): both connect, each on its own socket,
     /// and the sidebar names the server it lists.
     @MainActor

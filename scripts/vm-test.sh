@@ -28,10 +28,10 @@ url=$(sed -n 's/^HERMES_LIVE_URL=//p' .env.live-local)
 token=$(sed -n 's/^HERMES_LIVE_TOKEN=//p' .env.live-local)
 port=${url##*:}
 
-# 2. The VM: cloned once, 8 cores / 16 GB, headless, the repo shared read-only.
+# 2. The VM: cloned once, 8 cores / 8 GB, headless, the repo shared read-only.
 if ! tart list --quiet | grep -qx "$VM"; then
   tart clone "$IMAGE" "$VM"
-  tart set "$VM" --cpu 8 --memory 16384
+  tart set "$VM" --cpu 8 --memory 8192
 fi
 if ! tart list | awk -v vm="$VM" '$2 == vm && $NF == "running"' | grep -q .; then
   nohup tart run "$VM" --no-graphics --dir="hermesapp:$repo:ro" >"${TMPDIR:-/tmp}/hermesapp-vm.log" 2>&1 &

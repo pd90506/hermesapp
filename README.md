@@ -114,6 +114,9 @@ open Hermes.xcodeproj
   `Packages/HermesKit/Package.swift` in Xcode to run the tests there.
 - If you add, remove or move an app source file, re-run `xcodegen generate`. Folder contents are
   picked up automatically; only `project.yml` changes need a regenerate.
+- The app icon is an Icon Composer document, `Apps/Shared/AppIcon.icon`, shared by both apps.
+  The system draws its light, dark, tinted and clear looks from it. Its two layers are drawn by
+  `scripts/app-icon.py`; colours and glass are in its `icon.json` (open it in Icon Composer).
 
 ### Live tests (Mac)
 

@@ -37,9 +37,12 @@ enum StoredMessageProjection {
             switch row.role {
             case "user":
                 if text.trimmingCharacters(in: .whitespaces).hasPrefix("[System:") { continue }
-                // `@image:` lines are the images sent with it (`session_history.py:51-60`),
+                // Recalled memory is not the user's text; `@image:` lines and image hints
+                // are the images sent with it (`session_history.py:51-60`, `InjectedContext`),
                 // leading `@file:` lines the files (`AttachmentRefs`).
-                let (caption, paths) = ImageDirectives.split(userDisplayText(text))
+                let (typed, hinted) = InjectedContext.userTurn(text)
+                let (caption, directives) = ImageDirectives.split(userDisplayText(typed))
+                let paths = directives + hinted
                 let (body, refs) = AttachmentRefs.splitLeading(caption)
                 guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !paths.isEmpty || !refs.isEmpty
                 else { continue }

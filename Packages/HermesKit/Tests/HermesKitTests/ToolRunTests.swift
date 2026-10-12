@@ -109,6 +109,11 @@ import Testing
         #expect(Self.tool("t", "terminal").toolDiff == nil)
     }
 
+    @Test func diffBoxesDropHeaders() {
+        let diff = "diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n keep\n-old\n+new"
+        #expect(ToolCallSummary.displayDiff(diff) == " keep\n-old\n+new")
+    }
+
     // MARK: Summaries
 
     @Test func summaryMatchesDesktopWording() {

@@ -27,7 +27,7 @@ private let pngBytes: Data = {
 private let tiffBytes: Data = NSBitmapImageRep(data: pngBytes)!.tiffRepresentation!
 
 @MainActor
-private func filename(_ source: ImageSource) -> String {
+private func filename(_ source: AttachmentSource) -> String {
     switch source {
     case .data(_, let filename): filename
     case .file(let url): url.lastPathComponent
@@ -45,8 +45,8 @@ private func filename(_ source: ImageSource) -> String {
         board.setData(pngBytes, forType: .png)
         let textView = ComposerNSTextView()
         textView.pasteboard = board
-        var attached: [ImageSource] = []
-        textView.onImages = { attached = $0 }
+        var attached: [AttachmentSource] = []
+        textView.onAttach = { attached = $0 }
 
         // AppKit alone would not: a plain-text view reads no image type.
         #expect(textView.preferredPasteboardType(from: board.types ?? [], restrictedToTypesFrom: nil) == nil)
@@ -68,7 +68,7 @@ private func filename(_ source: ImageSource) -> String {
         let textView = ComposerNSTextView()
         textView.pasteboard = board
         var attached = false
-        textView.onImages = { _ in attached = true }
+        textView.onAttach = { _ in attached = true }
 
         #expect(textView.validateUserInterfaceItem(pasteItem))
         #expect(ImageLoader.sources(from: board).isEmpty)
@@ -117,13 +117,15 @@ private func filename(_ source: ImageSource) -> String {
         #expect(ImageLoader.sources(from: board).map(filename) == [url.lastPathComponent])
     }
 
-    /// Finder's Copy of a PDF: its icon is not what the user meant.
-    @Test func finderCopyOfAnotherFileStaysText() {
+    /// Finder's Copy of a PDF: the file is attached (as a file), never its icon.
+    @Test func finderCopyOfAnotherFileAttachesTheFile() {
         let board = pasteboard()
         board.writeObjects([URL(fileURLWithPath: "/tmp/report.pdf") as NSURL])
         board.addTypes([.tiff], owner: nil)
         board.setData(tiffBytes, forType: .tiff)
-        #expect(ImageLoader.sources(from: board).isEmpty)
+        let sources = ImageLoader.sources(from: board)
+        #expect(sources.map(filename) == ["report.pdf"])
+        #expect(sources.map(\.isImage) == [false])
     }
 
     /// A spreadsheet range carries a picture of itself beside the text.
@@ -144,7 +146,7 @@ private func filename(_ source: ImageSource) -> String {
     private func makeView(_ box: Box) -> (ComposerTextView.Coordinator, ComposerScrollView) {
         let view = ComposerTextView(
             text: .constant(""), contentHeight: Binding(get: { box.height }, set: { box.height = $0 }),
-            maxHeight: 170, focusRequest: 0, onSubmit: {}, onImages: { _ in }, onImageProviders: { _ in })
+            maxHeight: 170, focusRequest: 0, onSubmit: {}, onAttach: { _ in }, onProviders: { _ in })
         let coordinator = ComposerTextView.Coordinator(view)
         let scrollView = ComposerTextView.makeScrollView(coordinator: coordinator, text: "")
         scrollView.frame = NSRect(x: 0, y: 0, width: 300, height: 28)

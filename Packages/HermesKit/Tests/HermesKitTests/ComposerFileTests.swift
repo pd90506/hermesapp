@@ -61,6 +61,7 @@ struct ComposerFileTests {
         #expect(composer.files.isEmpty && composer.attachments.isEmpty && composer.error == nil)
         let bubble = try #require(composer.session.transcript.items.last)
         #expect(bubble.text == "Summarise these" && bubble.attachments == ["report.pdf"] && bubble.images.count == 1)
+        #expect(bubble.attachmentPaths == ["attachments/report.pdf"])
     }
 
     @Test func aFileAloneIsSentAsItsReference() async throws {

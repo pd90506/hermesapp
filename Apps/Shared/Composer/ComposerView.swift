@@ -7,7 +7,9 @@ import UniformTypeIdentifiers
 /// The chat composer, after Hermes Desktop's: attachment cards, an auto-growing
 /// text area, and a toolbar with `+`, the model and effort pickers, the mic and
 /// Send/Stop. All state lives in `ChatComposer` (HermesKit); this view only
-/// reads images and lays things out.
+/// reads images and files and lays things out. Images go to the gateway with the
+/// prompt (`image.attach_bytes`); any other file is uploaded as soon as it is
+/// attached (`file.attach`), as in Desktop (docs/protocol.md §10.3, §10.5).
 struct ComposerView: View {
     let composer: ChatComposer
     var isConnected: Bool
@@ -37,7 +39,7 @@ struct ComposerView: View {
             if let message = composer.error ?? stopError {
                 errorRow(message)
             }
-            if !composer.attachments.isEmpty {
+            if !composer.attachments.isEmpty || !composer.files.isEmpty || composer.uploadingFiles > 0 {
                 cards
             }
             SlashSuggestionList(composer: composer) { focusRequest += 1 }
@@ -50,13 +52,15 @@ struct ComposerView: View {
             RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(isDropTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator), lineWidth: 1)
         }
-        .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
-            Task { await attach(await ImageLoader.sources(from: providers)) }
+        .onDrop(of: [.fileURL, .image, .data], isTargeted: $isDropTargeted) { providers in
+            let attachable = providers.filter(ImageLoader.isAttachable)
+            guard !attachable.isEmpty else { return false }
+            Task { await attach(await ImageLoader.sources(from: attachable)) }
             return true
         }
-        .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
-            case .success(let urls): Task { await attach(urls.map(ImageSource.file)) }
+            case .success(let urls): Task { await attach(urls.map(AttachmentSource.file)) }
             case .failure(let error): composer.error = error.localizedDescription
             }
         }
@@ -161,6 +165,14 @@ struct ComposerView: View {
                         composer.removeAttachment(id: attachment.id)
                     }
                 }
+                ForEach(composer.files) { file in
+                    AttachmentCardView(file: file, isSending: composer.isSubmitting) {
+                        composer.removeAttachment(id: file.id)
+                    }
+                }
+                ForEach(Array(composer.uploadingFileNames.enumerated()), id: \.offset) { _, name in
+                    UploadingCardView(name: name)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.top, 8)
@@ -173,8 +185,8 @@ struct ComposerView: View {
         return ComposerTextView(
             text: $composer.draft, contentHeight: $textHeight, maxHeight: maxTextHeight, focusRequest: focusRequest,
             onSubmit: submit,
-            onImages: { sources in Task { await attach(sources) } },
-            onImageProviders: { providers in Task { await attach(await ImageLoader.sources(from: providers)) } },
+            onAttach: { sources in Task { await attach(sources) } },
+            onProviders: { providers in Task { await attach(await ImageLoader.sources(from: providers)) } },
             onComposingChange: { isComposing = $0 },
             onSlashKey: handleSlashKey
         )
@@ -231,8 +243,8 @@ struct ComposerView: View {
                 Label("Photo Library", systemImage: "photo.on.rectangle")
             }
             #endif
-            Button(fileMenuTitle, systemImage: "doc") { isImportingFile = true }
-            Button("Paste Image", systemImage: "doc.on.clipboard", action: pasteImage)
+            Button("Choose Files…", systemImage: "doc") { isImportingFile = true }
+            Button("Paste", systemImage: "doc.on.clipboard", action: paste)
         } label: {
             Image(systemName: "plus")
                 .font(.body.weight(.medium))
@@ -245,16 +257,8 @@ struct ComposerView: View {
         .fixedSize()
         .hoverHighlight(in: Circle())
         .foregroundStyle(.secondary)
-        .help("Attach an image")
+        .help("Attach images or files")
         .accessibilityLabel("Attach")
-    }
-
-    private var fileMenuTitle: String {
-        #if os(macOS)
-        "Choose Image…"
-        #else
-        "Choose File…"
-        #endif
     }
 
     private var modelMenu: some View {
@@ -431,29 +435,43 @@ struct ComposerView: View {
         focusRequest += 1
     }
 
-    private func attach(_ sources: [ImageSource]) async {
+    /// Images become image cards (re-encoded if needed); anything else, or an image
+    /// that cannot be decoded, is uploaded as a file.
+    private func attach(_ sources: [AttachmentSource]) async {
         for source in sources {
-            do {
-                let loaded = try await ImageLoader.load(source)
-                if composer.attach(loaded.attachment) {
-                    thumbnails[loaded.attachment.id] = loaded.thumbnail
-                    // The sent bubble shows the same thumbnail (`TranscriptImageCard`).
-                    if let thumbnail = loaded.thumbnail { server.thumbnails.storeLocal(thumbnail, for: loaded.attachment.id) }
+            if source.isImage {
+                do {
+                    let loaded = try await ImageLoader.load(source)
+                    if composer.attach(loaded.attachment) {
+                        thumbnails[loaded.attachment.id] = loaded.thumbnail
+                        // The sent bubble shows the same thumbnail (`TranscriptImageCard`).
+                        if let thumbnail = loaded.thumbnail { server.thumbnails.storeLocal(thumbnail, for: loaded.attachment.id) }
+                    }
+                    continue
+                } catch ImageLoader.Failure.notAnImage {
+                    // Named like an image but not one: send the file as it is.
+                } catch {
+                    composer.error = error.localizedDescription
+                    continue
                 }
+            }
+            do {
+                let file = try await FileLoader.load(source)
+                await composer.attachFile(file.data, filename: file.filename, mimeType: file.mimeType)
             } catch {
                 composer.error = error.localizedDescription
             }
         }
     }
 
-    private func pasteImage() {
+    private func paste() {
         #if os(macOS)
         let sources = ImageLoader.sources(from: NSPasteboard.general)
-        if sources.isEmpty { composer.error = "The clipboard has no image." }
+        if sources.isEmpty { composer.error = "The clipboard has no image or file." }
         Task { await attach(sources) }
         #else
-        let providers = ImageLoader.pastedImageProviders()
-        if providers.isEmpty { composer.error = "The clipboard has no image." }
+        let providers = ImageLoader.pastedProviders()
+        if providers.isEmpty { composer.error = "The clipboard has no image or file." }
         Task { await attach(await ImageLoader.sources(from: providers)) }
         #endif
     }

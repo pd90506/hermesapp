@@ -29,6 +29,15 @@ public struct TranscriptItem: Sendable, Hashable, Identifiable {
     /// User rows: names of the files sent with the prompt (`file.attach`); the stored
     /// row carries them as leading `@file:` lines (see `AttachmentRefs`).
     public var attachments: [String] = []
+    /// User rows: where those files are on the gateway (`@file:` values), in the same
+    /// order; a relative path belongs to the session's folder.
+    public var attachmentPaths: [String] = []
+    /// Assistant rows: the files the reply delivers with `MEDIA:` tags (`MediaTags`),
+    /// in order. `text` keeps the tags; views show `MediaTags.extract(text)`.
+    public var deliveredFiles: [DeliveredFile] {
+        guard role == .assistant, text.contains(MediaTags.prefix) else { return [] }
+        return MediaTags.extract(text, isStreaming: isActive).files
+    }
     /// User rows: `steer` for guidance injected into a running turn (`session.steer`;
     /// stored rows carry `display_kind: "steer"`, `agent/prompt_builder.py:594-601`).
     public var displayKind: String?
@@ -846,17 +855,19 @@ public struct Transcript: Sendable, Hashable {
     /// prompt, as Desktop orders it (`appendAfterActiveReply`, `use-prompt-actions/index.ts:817-825`).
     /// - Parameters:
     ///   - images: the images sent with it (`text` is then the caption, possibly empty).
-    ///   - attachments: names of the files sent with it.
+    ///   - attachments: names of the files sent with it; `attachmentPaths` their paths.
     ///   - displayKind: `steer` for guidance injected with `session.steer`.
     ///   - sentAt: when it was sent; the waiting row counts from it.
     @discardableResult
     public mutating func appendUserPrompt(_ text: String, images: [TranscriptImage] = [], attachments: [String] = [],
-                                          displayKind: String? = nil, sentAt: Date = Date()) -> String {
+                                          attachmentPaths: [String] = [], displayKind: String? = nil,
+                                          sentAt: Date = Date()) -> String {
         sealActiveAssistant()
         counter += 1
         var item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
         item.images = images
         item.attachments = attachments
+        item.attachmentPaths = attachmentPaths
         item.displayKind = displayKind
         items.append(item)
         prompts[item.id] = .sent
@@ -1392,6 +1403,7 @@ public struct Transcript: Sendable, Hashable {
         let index = append(.user, body, rowID: rowID)
         items[index].images = TranscriptImage.stored(paths)
         items[index].attachments = refs.map(AttachmentRefs.displayName)
+        items[index].attachmentPaths = refs
         return index
     }
 

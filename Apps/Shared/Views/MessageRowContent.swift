@@ -13,14 +13,18 @@ struct AssistantMessageContent: View {
     var isHovering = false
     var isNewest = false
     var conversationSource: (() -> String)?
+    /// The files the reply delivers (`MEDIA:` tags), shown under its text; the tags
+    /// themselves are not shown (`MediaTags`).
+    var deliveredFiles: AnyView?
     let copy: () -> Void
 
     /// No text (whitespace counts as none, as for the waiting row and the action bar),
     /// no reasoning and no outcome to show: the row has no content yet.
     static func isBlank(_ item: TranscriptItem) -> Bool { item.isBlankReply }
 
-    private static func hasText(_ item: TranscriptItem) -> Bool {
-        !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// The reply without its `MEDIA:` tags.
+    static func shownText(_ item: TranscriptItem) -> String {
+        item.text.contains(MediaTags.prefix) ? MediaTags.extract(item.text, isStreaming: item.isActive).text : item.text
     }
 
     var body: some View {
@@ -35,10 +39,12 @@ struct AssistantMessageContent: View {
                     }
                     .font(.caption)
                 }
-                if Self.hasText(item) {
-                    MarkdownView(text: item.text, isStreaming: item.isActive, conversationSource: conversationSource)
+                let shown = Self.shownText(item)
+                if !shown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    MarkdownView(text: shown, isStreaming: item.isActive, conversationSource: conversationSource)
                         .equatable()
                 }
+                if let deliveredFiles { deliveredFiles }
                 if item.outcome == "interrupted" {
                     Text("Interrupted").font(.caption).foregroundStyle(.secondary)
                 }

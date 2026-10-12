@@ -1346,6 +1346,19 @@ Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/C
   (nor any other call that removes a staged file), and a file no prompt references is never read.
 - Chat attachments never use the dashboard's `/api/files/upload`, which belongs to the file
   browser (`hermes_cli/web_routers/files.py:643-715`). `GatewayClient` allows 300 s for an upload.
+- **Where files come from in the apps** `[client choice]`:
+  - the `+` menu's Choose Files… (any type), the iOS photo library, and its Paste;
+  - a drop of files onto the composer (macOS and iPad), or onto the macOS text area;
+  - a paste: Finder's Copy of files attaches the files (never their icon), and on iOS a
+    copy in the Files app (file contents with no URL) attaches the file. Text with a
+    file beside it stays text (`ClipboardPolicy`).
+  - Images by extension (`ClipboardPolicy.imageFileExtensions`) go as images (§10.3); a
+    file named like an image that does not decode goes as a file. Folders are refused.
+  - The composer shows a pending card per upload (`ChatComposer.uploadingFileNames`).
+- **In the bubble.** A user message lists its files as chips under its images. The bubble
+  and the stored row both keep each file's reference value (`TranscriptItem.attachmentPaths`):
+  the live bubble from `ref_text`, the row from its leading `@file:` lines. A chip downloads
+  the file to preview or save it (§10.10).
 
 ### 10.6 Slash commands
 
@@ -1551,6 +1564,45 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
     - its stored id is the roster's `canonical_session.id` or `resolved_id` for that profile.
   - It also refuses to give any session the title `Bot Chat` (`.reservedTitle`), which would make
     that session the bot's chat. `/title` goes through the same checks.
+
+### 10.10 Files Hermes sends
+
+- **`MEDIA:` tags are the only channel.** No event, message field or RPC carries a file
+  (`apps/shared/src/gateway-contract.openrpc.json`). The `desktop` surface's system prompt, which
+  the dashboard chat uses, says: deliver files by writing `MEDIA:/absolute/path/to/file`; images,
+  audio and video render inline, everything else becomes a card with download and preview
+  (`agent/prompt_builder.py:749-756`).
+- **Parsing** (`MediaTags`) follows Desktop's `renderMediaTags` / `mediaTagValues`
+  (`apps/desktop/src/lib/chat-messages/parts.ts:121-300`):
+  - a tag on its own line, or inline; the value may be quoted with `` ` ``, `"` or `'`;
+  - an unquoted path may contain spaces only when it ends in one of Hermes'
+    `MEDIA_DELIVERY_EXTS` (`gateway/platforms/base.py:1289`);
+  - a bare value sheds trailing `.,;:!?`, and a value without a `/`, `\` or an extension is
+    prose, not a file.
+  - `[client choice]` Desktop rewrites a tag into an inline link. Here a tag alone on its line
+    is removed, an inline one becomes the file's name, and the files show as cards right after
+    the line that held the tag (`MediaTags.segments`), each once, so a file listed under a
+    bullet shows under that bullet. SVG thumbnails are drawn by Quick Look, which ImageIO
+    cannot do. Tags inside fenced code blocks are examples and stay text (Hermes masks
+    code before its own delivery too). While a reply streams, a tag on its unfinished last
+    line waits, so a half-written path never shows as a card.
+- **Reading the bytes:** `GET /api/fs/download?path=&profile=&session_id=`
+  (`hermes_cli/web_routers/files.py:931-960`), as Desktop downloads a delivered file
+  (`apps/desktop/electron/gateway-file-download.ts:100-112`).
+  - Authenticated like the other REST calls (§4.1): `Authorization: Bearer`, or the cookie
+    session.
+  - The answer is the file itself (`FileResponse`, `Content-Disposition: attachment`), with no
+    size cap; `HTTPClient.download(for:)` streams it to a temporary file.
+  - `session_id` is a **stored** session key; a relative path resolves against that session's
+    folder (`_fs_download_path`, `files.py:891-901`). The apps send it only for relative paths: a
+    chat Hermes has not stored yet answers 404.
+  - `/api/fs/read-data-url` caps at 16 MiB, `/api/media` serves only `HERMES_HOME/{images,
+    screenshots,cache}` images; neither suits arbitrary files. Image *thumbnails* still use the
+    §10.3 path (`imageData`).
+- **In the apps** (`TranscriptFiles.swift`): images show as thumbnails, other files as chips with
+  their kind's icon. Clicking (tapping) one downloads it once per server, profile and path into
+  the caches folder and opens Quick Look. The menu has Save… (macOS save panel) or Save to Files
+  (iOS), Open (macOS, the default app), and Share once downloaded.
 
 ## 11. Live sidebar (server pushes)
 

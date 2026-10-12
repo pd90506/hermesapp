@@ -133,7 +133,16 @@ private struct MessageRow: View {
                                 }
                             }
                         }
-                        if !item.text.isEmpty || item.images.isEmpty {
+                        if !item.attachments.isEmpty {
+                            VStack(alignment: .trailing, spacing: 4) {
+                                ForEach(Array(item.attachments.enumerated()), id: \.offset) { index, name in
+                                    let path = index < item.attachmentPaths.count ? item.attachmentPaths[index] : name
+                                    FileChipView(path: path, name: name, context: fileContext)
+                                }
+                            }
+                            .padding(.bottom, 4)
+                        }
+                        if !item.text.isEmpty || (item.images.isEmpty && item.attachments.isEmpty) {
                             Text(item.text)
                                 .textSelection(.enabled)
                                 .padding(10)
@@ -150,6 +159,7 @@ private struct MessageRow: View {
             MessageHoverArea { isHovering in
                 AssistantMessageContent(item: item, isHovering: isHovering, isNewest: isNewest,
                                         conversationSource: { ConversationMarkdown.export(session.transcript.items) },
+                                        deliveredFiles: deliveredFiles,
                                         copy: copyMessage)
             }
         case .tool:
@@ -162,6 +172,15 @@ private struct MessageRow: View {
     }
 
     private func copyMessage() { Clipboard.copy(ConversationMarkdown.messageSource(for: item)) }
+
+    private var fileContext: GatewayFileContext {
+        GatewayFileContext(profile: profile, sessionKey: session.storedSessionID, connection: server.connection,
+                           downloads: server.downloads)
+    }
+
+    private func deliveredFiles(_ files: [DeliveredFile]) -> AnyView {
+        AnyView(DeliveredFilesView(files: files, context: fileContext, thumbnails: server.thumbnails))
+    }
 
     @ViewBuilder private var copyMenu: some View {
         Button("Copy Message", action: copyMessage)

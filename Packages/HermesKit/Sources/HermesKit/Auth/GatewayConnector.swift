@@ -21,10 +21,14 @@ extension GatewayConnector {
     public var mediaSource: (any GatewayMediaSource)? { nil }
 }
 
-/// Images stored on the gateway's disk, for a client that cannot read that disk.
+/// Images and files on the gateway's disk, for a client that cannot read that disk.
 public protocol GatewayMediaSource: Sendable {
     /// The bytes of the image at `path` (an `@image:` path), read for `profile`.
     func imageData(path: String, profile: String?) async throws -> Data
+    /// The file at `path` (a `MEDIA:` path or an attachment), downloaded to a new
+    /// temporary file the caller owns. `sessionID`: the stored session a relative
+    /// path belongs to.
+    func downloadFile(path: String, profile: String?, sessionID: String?) async throws -> URL
 }
 
 /// Bounded pages of a stored transcript (`GET /api/sessions/{id}/messages`).
@@ -187,6 +191,12 @@ extension DashboardConnector: GatewayMediaSource {
         }
         guard let data = DataURL.decode(url) else { throw DashboardError.invalidResponse("not a base64 data URL") }
         return data
+    }
+
+    public func downloadFile(path: String, profile: String?, sessionID: String?) async throws -> URL {
+        try await authorized { bearer in
+            try await dashboard.downloadFile(path: path, profile: profile, sessionID: sessionID, bearer: bearer)
+        }
     }
 }
 

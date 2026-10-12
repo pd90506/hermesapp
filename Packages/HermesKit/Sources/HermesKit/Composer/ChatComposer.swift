@@ -13,8 +13,11 @@ public final class ChatComposer {
     /// Files already staged on the gateway (`attachFile`); sent as `@file:`
     /// references in front of the text.
     public private(set) var files: [ComposerFile] = []
-    /// Files being uploaded by `attachFile`.
-    public private(set) var uploadingFiles = 0
+    /// Names of the files `attachFile` is uploading, in the order they started;
+    /// the composer shows a pending card for each.
+    public private(set) var uploadingFileNames: [String] = []
+    /// How many files `attachFile` is uploading.
+    public var uploadingFiles: Int { uploadingFileNames.count }
     /// Images are uploading or the prompt is being submitted.
     public private(set) var isSubmitting = false
     /// A composer failure (attachment, model or effort change), shown in the
@@ -451,8 +454,10 @@ public final class ChatComposer {
             return attach(ComposerAttachment(filename: filename, data: data))
         }
         error = nil
-        uploadingFiles += 1
-        defer { uploadingFiles -= 1 }
+        uploadingFileNames.append(filename)
+        defer {
+            if let index = uploadingFileNames.firstIndex(of: filename) { uploadingFileNames.remove(at: index) }
+        }
         do {
             files.append(try await session.attachFile(data, filename: filename, mimeType: mimeType))
             return true

@@ -196,6 +196,36 @@ public struct DashboardClient: Sendable {
         return url
     }
 
+    /// `GET /api/fs/download?path=&profile=&session_id=`: the file itself, streamed to a
+    /// temporary file (`hermes_cli/web_routers/files.py:931-960`), as Desktop downloads a
+    /// delivered file (`apps/desktop/electron/gateway-file-download.ts:100-112`). No size
+    /// cap. `sessionID` is a stored session key: a relative `path` resolves against that
+    /// session's folder (`_fs_download_path`, `files.py:891-901`).
+    public func downloadFile(path: String, profile: String?, sessionID: String?, bearer: String? = nil) async throws -> URL {
+        var query = [URLQueryItem(name: "path", value: path)]
+        if let profile { query.append(URLQueryItem(name: "profile", value: profile)) }
+        if let sessionID { query.append(URLQueryItem(name: "session_id", value: sessionID)) }
+        var request = request(path: "/api/fs/download", method: "GET", query: query)
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 300
+        if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
+        let (url, response) = try await http.download(for: request)
+        switch response.statusCode {
+        case 200..<300:
+            return url
+        default:
+            let body = try? Data(contentsOf: url)
+            try? FileManager.default.removeItem(at: url)
+            switch response.statusCode {
+            case 401:
+                let json = body.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
+                throw DashboardError.unauthenticated(reason: json?["reason"]?.stringValue ?? json?["error"]?.stringValue)
+            case 429: throw DashboardError.rateLimited
+            default: throw DashboardError.http(status: response.statusCode, body: body.flatMap { String(data: $0, encoding: .utf8) })
+            }
+        }
+    }
+
     private struct MediaAnswer: Decodable {
         var dataURL: String?
         var dataUrl: String?

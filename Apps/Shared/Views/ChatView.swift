@@ -178,10 +178,8 @@ private struct MessageRow: View {
                            downloads: server.downloads)
     }
 
-    private var deliveredFiles: AnyView? {
-        let files = item.deliveredFiles
-        guard !files.isEmpty else { return nil }
-        return AnyView(DeliveredFilesView(files: files, context: fileContext, thumbnails: server.thumbnails))
+    private func deliveredFiles(_ files: [DeliveredFile]) -> AnyView {
+        AnyView(DeliveredFilesView(files: files, context: fileContext, thumbnails: server.thumbnails))
     }
 
     @ViewBuilder private var copyMenu: some View {

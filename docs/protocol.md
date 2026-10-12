@@ -1580,8 +1580,9 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
   - a bare value sheds trailing `.,;:!?`, and a value without a `/`, `\` or an extension is
     prose, not a file.
   - `[client choice]` Desktop rewrites a tag into an inline link. Here a tag alone on its line
-    is removed, an inline one becomes the file's name, and the files show under the reply as
-    cards, each once. Tags inside fenced code blocks are examples and stay text (Hermes masks
+    is removed, an inline one becomes the file's name, and the files show as cards right after
+    the line that held the tag (`MediaTags.segments`), each once, so a file listed under a
+    bullet shows under that bullet. SVG shows as a file card: ImageIO cannot draw it. Tags inside fenced code blocks are examples and stay text (Hermes masks
     code before its own delivery too). While a reply streams, a tag on its unfinished last
     line waits, so a half-written path never shows as a card.
 - **Reading the bytes:** `GET /api/fs/download?path=&profile=&session_id=`

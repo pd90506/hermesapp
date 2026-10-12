@@ -61,6 +61,48 @@ import Testing
         #expect(complete.files.map(\.path) == ["/tmp/report.pdf"])
     }
 
+    /// A reply as Hermes wrote it (the icon chat, 2026-10-12): each card belongs
+    /// where its tag was, under the bullet it follows.
+    @Test func filesShowWhereTheirTagsWere() {
+        let text = """
+            Done: a black icon.
+
+            MEDIA:/s/icon/preview.png
+
+            Downloads:
+            - **iOS**: 1024×1024.
+            MEDIA:/s/icon/ios-1024.png
+            - **macOS**: rounded corners.
+            MEDIA:/s/icon/macos-1024.png
+            - **SVG master**
+            MEDIA:/s/icon/master.svg
+
+            Does this direction work?
+            """
+        func file(_ path: String) -> DeliveredFile { DeliveredFile(path: path) }
+        #expect(MediaTags.segments(text) == [
+            .markdown("Done: a black icon."),
+            .files([file("/s/icon/preview.png")]),
+            .markdown("Downloads:\n- **iOS**: 1024×1024."),
+            .files([file("/s/icon/ios-1024.png")]),
+            .markdown("- **macOS**: rounded corners."),
+            .files([file("/s/icon/macos-1024.png")]),
+            .markdown("- **SVG master**"),
+            .files([file("/s/icon/master.svg")]),
+            .markdown("Does this direction work?"),
+        ])
+        #expect(!file("/s/icon/master.svg").isImage && file("/s/icon/ios-1024.png").isImage)
+    }
+
+    @Test func adjacentTagsShareOneRowAndAnInlineTagFollowsItsLine() {
+        #expect(MediaTags.segments("Here:\nMEDIA:/a/1.png\nMEDIA:/a/2.png") == [
+            .markdown("Here:"), .files([DeliveredFile(path: "/a/1.png"), DeliveredFile(path: "/a/2.png")]),
+        ])
+        #expect(MediaTags.segments("See MEDIA:/a/r.pdf now.\nBye") == [
+            .markdown("See r.pdf now."), .files([DeliveredFile(path: "/a/r.pdf")]), .markdown("Bye"),
+        ])
+    }
+
     @Test func assistantItemsListTheirFiles() {
         var item = TranscriptItem(id: "a", role: .assistant, text: "MEDIA:/tmp/x.zip")
         #expect(item.deliveredFiles.map(\.path) == ["/tmp/x.zip"])

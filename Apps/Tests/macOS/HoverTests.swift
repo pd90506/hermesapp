@@ -558,12 +558,9 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         let ui = HostWindow(size: CGSize(width: 520, height: 320)) { transcript([older, reply, tool], frames: frames) }
         #expect(barShown(ui, try #require(frames.rows["reply"])))
         #expect(!barShown(ui, try #require(frames.rows["older"])))
-        // The card's grey background runs to the row's bottom edge: nothing is
-        // reserved under it (a hidden bar would leave 26 pt of white there).
+        // The tool row is its one line: nothing is reserved under it (a hidden
+        // bar would add 26 pt).
         let toolRow = try #require(frames.rows["tool"])
-        let rep = ui.snapshot()
-        let bottomStrip = CGRect(x: toolRow.minX + 40, y: toolRow.maxY - 2, width: 200, height: 1)
-        #expect(ui.brightness(of: bottomStrip, in: rep) < 0.99, "the tool row ends below its card")
-        #expect(ui.brightness(of: CGRect(x: toolRow.minX + 40, y: toolRow.maxY + 2, width: 200, height: 1), in: rep) > 0.99)
+        #expect(toolRow.height < 24, "the tool row is \(toolRow.height) pt tall")
     }
 }

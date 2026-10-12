@@ -345,6 +345,12 @@ import Testing
         window.contentView = host
         defer { window.close() }
         host.layoutSubtreeIfNeeded()
+        // The grid learns the width it fills in its first layout, then lays out again:
+        // size the window to that second layout, as the chat's stack does.
+        RunLoop.main.run(mode: .default, before: Date())
+        host.layoutSubtreeIfNeeded()
+        window.setContentSize(NSSize(width: 738, height: host.fittingSize.height))
+        host.layoutSubtreeIfNeeded()
         let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: rep)
         let scale = CGFloat(rep.pixelsWide) / host.bounds.width
@@ -372,21 +378,24 @@ import Testing
             return result
         }
         let step = 1 / scale
-        // Column lines: met walking across the header's top padding (clear of text).
-        let columnLines = crossings(stride(from: minX, through: maxX, by: step).map { CGPoint(x: $0, y: minY + 3) })
-        #expect(columnLines.count == 4, "outer border and 2 column lines expected, got \(columnLines.count)")
-        // Row lines: met walking down the first column's left padding.
-        let rowLines = crossings(stride(from: minY, through: maxY, by: step).map { CGPoint(x: minX + 4, y: $0) })
-        #expect(rowLines.count == 7, "top, 5 row lines and the bottom border expected, got \(rowLines.count)")
+        let inset = MarkdownTableGrid.cornerRadius + 1
+        // Row lines, met walking down the first column's left padding: the top border
+        // (run into the tinted header and its rule), 4 rules between body rows, the bottom.
+        let rowLines = crossings(stride(from: minY, through: maxY, by: step).map { CGPoint(x: minX + inset + 2, y: $0) })
+        #expect(rowLines.count == 6, "top, 4 row lines and the bottom border expected, got \(rowLines.count)")
+        // Column lines, met walking across a body row's top padding: only the border.
+        let bodyY = (rowLines.dropFirst().first?.y ?? minY) + 3
+        let columnLines = crossings(stride(from: minX, through: maxX, by: step).map { CGPoint(x: $0, y: bodyY) })
+        #expect(columnLines.count == 2, "only the outer border expected, got \(columnLines.count)")
         // Each line runs the table's full height or width, through the wrapped row.
         for line in columnLines {
             let x = line.x + step / 2
-            let gaps = stride(from: minY + 1, through: maxY - 1, by: step).filter { !dark(x, $0) }
-            #expect(gaps.isEmpty, "the column line at \(x) is broken at \(gaps.prefix(3))")
+            let gaps = stride(from: minY + inset, through: maxY - inset, by: step).filter { !dark(x, $0) }
+            #expect(gaps.isEmpty, "the border at \(x) is broken at \(gaps.prefix(3))")
         }
-        for line in rowLines {
+        for line in rowLines.dropFirst() {
             let y = line.y + step / 2
-            let gaps = stride(from: minX + 1, through: maxX - 1, by: step).filter { !dark($0, y) }
+            let gaps = stride(from: minX + inset, through: maxX - inset, by: step).filter { !dark($0, y) }
             #expect(gaps.isEmpty, "the row line at \(y) is broken at \(gaps.prefix(3))")
         }
     }

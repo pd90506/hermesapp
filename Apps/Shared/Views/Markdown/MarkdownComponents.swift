@@ -59,27 +59,35 @@ struct MarkdownCodeBlock: View {
     }
 }
 
-/// Grid columns take the widest cell's rendered width (bold header, inline
-/// code, links and math included). Cells whose content is unusually long cap at
-/// 300 pt and wrap, while the whole grid can scroll sideways. Lines are 1 pt
-/// throughout: an outer border plus one divider between columns and rows.
+/// Laid out as Desktop's transcript tables are (`components/assistant-ui/markdown-table.tsx`):
+/// the full width of the column, a rounded border, a tinted header row and a 1 pt
+/// rule between rows. Columns start at the widest cell's rendered width (bold
+/// header, inline code, links and math included) and share the room left over in
+/// proportion to it. Cells whose content is unusually long cap at 300 pt and wrap
+/// when the column has no room for them; a grid wider than the column scrolls
+/// sideways.
 struct MarkdownTableGrid: View {
     let table: MarkdownTable
     var messageSource: String? = nil
     var conversationSource: (() -> String)? = nil
     @ScaledMetric(relativeTo: .body) private var bodySize = MarkdownMetrics.bodySize
+    /// The width the table may fill; 0 until the first layout reports it.
+    @State private var available: CGFloat = 0
+
+    static let cellPadding: CGFloat = 10
+    static let cornerRadius: CGFloat = 6
 
     var body: some View {
         let layout = MarkdownTableLayout.layout(for: table, bodySize: bodySize)
+        let widths = MarkdownTableLayout.fit(layout.widths, into: available - 2,
+                                             padding: Self.cellPadding * 2)
         ScrollView(.horizontal) {
             Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
                 ForEach(layout.cells.indices, id: \.self) { row in
                     GridRow {
                         ForEach(table.header.indices, id: \.self) { column in
-                            cell(layout.cells[row][column], width: layout.widths[column], column: column)
-                                .overlay(alignment: .trailing) {
-                                    if column < table.header.count - 1 { Rectangle().fill(.quaternary).frame(width: 1) }
-                                }
+                            cell(layout.cells[row][column], width: widths[column], column: column)
+                                .background(row == 0 ? AnyShapeStyle(.quaternary.opacity(0.6)) : AnyShapeStyle(.clear))
                                 .overlay(alignment: .bottom) {
                                     if row < layout.cells.count - 1 { Rectangle().fill(.quaternary).frame(height: 1) }
                                 }
@@ -92,10 +100,12 @@ struct MarkdownTableGrid: View {
             // its stretchy cells as well, outgrows the scroll view and loses its
             // last row and bottom border below it.
             .fixedSize(horizontal: false, vertical: true)
-            .overlay { Rectangle().strokeBorder(.quaternary, lineWidth: 1) }
+            .clipShape(.rect(cornerRadius: Self.cornerRadius))
+            .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius).strokeBorder(.quaternary, lineWidth: 1) }
             .padding(1)
         }
         .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { available = $0 }
         .accessibilityIdentifier("markdownTableScroll")
         #if os(macOS)
         .contextMenu { messageMenu }
@@ -123,8 +133,8 @@ struct MarkdownTableGrid: View {
                                       bodySize: bodySize, isReasoning: false,
                                       conversationSource: conversationSource, width: width)
             .frame(width: width, alignment: Alignment(horizontal: alignment, vertical: .center))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, Self.cellPadding)
+            .padding(.vertical, 6)
             .gridColumnAlignment(alignment)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
     }
@@ -138,6 +148,7 @@ enum MarkdownTableLayout {
     struct Layout {
         /// Row 0 is the header.
         let cells: [[MarkdownSelection]]
+        /// Each column's widest cell on one line, uncapped.
         let widths: [CGFloat]
     }
 
@@ -148,6 +159,9 @@ enum MarkdownTableLayout {
 
     private static var cache: [Key: Layout] = [:]
 
+    /// The widest a column grows to before its cells wrap, when the grid has no room.
+    static let wrapWidth: CGFloat = 300
+
     static func layout(for table: MarkdownTable, bodySize: CGFloat) -> Layout {
         let key = Key(table: table, bodySize: bodySize)
         if let layout = cache[key] { return layout }
@@ -157,13 +171,36 @@ enum MarkdownTableLayout {
         let cells = [table.header.map { selection($0, header: true) }]
             + table.rows.map { row in row.map { selection($0, header: false) } }
         let widths = table.header.indices.map { column in
-            let widest = cells.map { width(of: $0[column], bodySize: bodySize) }.max() ?? 0
-            return min(max(widest, 24), 300)
+            max(cells.map { width(of: $0[column], bodySize: bodySize) }.max() ?? 0, 24)
         }
         let layout = Layout(cells: cells, widths: widths)
         if cache.count > 64 { cache.removeAll() }
         cache[key] = layout
         return layout
+    }
+
+    /// Column text widths for a grid `available` wide, each column adding `padding`:
+    /// - everything fits on one line: the room left over is shared in proportion to
+    ///   each column's width, so the grid is exactly `available` wide;
+    /// - it fits with the long columns wrapped at `wrapWidth`: those columns get the
+    ///   room there is, in proportion to what they lack;
+    /// - otherwise the long columns wrap at `wrapWidth` and the grid scrolls.
+    static func fit(_ natural: [CGFloat], into available: CGFloat, padding: CGFloat) -> [CGFloat] {
+        let capped = natural.map { min($0, wrapWidth) }
+        let pads = padding * CGFloat(natural.count)
+        let room = (available - pads).rounded(.down)
+        let full = natural.reduce(0, +)
+        if room >= full, full > 0 {
+            let extra = room - full
+            return natural.map { ($0 + extra * $0 / full).rounded(.down) }
+        }
+        let wrapped = capped.reduce(0, +)
+        if room > wrapped {
+            let lacking = zip(natural, capped).map { $0 - $1 }
+            let total = lacking.reduce(0, +)
+            return zip(capped, lacking).map { ($0 + (room - wrapped) * $1 / total).rounded(.down) }
+        }
+        return capped
     }
 
     /// The cell's text on one line, as the cell's text view renders it.

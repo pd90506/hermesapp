@@ -90,6 +90,25 @@ import Testing
         #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: false)) == ["u1", "[t1,t2]", "s1", "sys", "a1"])
     }
 
+    @Test func fileEditsStayOutOfTheSummary() {
+        let items = [
+            Self.user("u1"), Self.tool("t1", "read_file"), Self.tool("e1", "patch"),
+            Self.tool("t2", "terminal"), Self.reply("a1", "Done."),
+        ]
+        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: false)) == ["u1", "[t1,t2]", "e1", "a1"])
+        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: true)) == ["u1", "[t1]", "e1", "[t2]", "a1"])
+    }
+
+    @Test func diffsComeFromTheEventOrTheStoredResult() {
+        var live = Self.tool("e1", "patch")
+        live.tool?.inlineDiff = "\u{1B}[33m┊ review diff\n--- a/x\n+++ b/x\n-old\n+new\u{1B}[0m"
+        #expect(live.toolDiff == "--- a/x\n+++ b/x\n-old\n+new")
+        var stored = Self.tool("e2", "patch")
+        stored.tool?.output = #"{"success": true, "diff": "-a\n+b"}"#
+        #expect(stored.toolDiff == "-a\n+b")
+        #expect(Self.tool("t", "terminal").toolDiff == nil)
+    }
+
     // MARK: Summaries
 
     @Test func summaryMatchesDesktopWording() {

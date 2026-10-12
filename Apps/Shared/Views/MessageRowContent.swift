@@ -52,24 +52,34 @@ struct AssistantMessageContent: View {
 }
 
 /// One tool call, as Desktop draws it: a single line (status, what it did, chevron)
-/// that opens on demand to the call's input, output, diff or error. No action bar
+/// that opens on demand to the call's input, output, diff or error. A file edit
+/// with a diff opens by default, with its +/− counts on the line. No action bar
 /// (Copy Message is in its context menu), so a run of tool calls stays compact.
 struct ToolMessageContent: View {
     let item: TranscriptItem
-    @State private var isExpanded = false
+    /// The user's choice; until then an edit with a diff is open and the rest closed.
+    @State private var toggled: Bool?
+
+    private var isExpanded: Bool { toggled ?? (item.isFileEdit && item.toolDiff != nil) }
 
     static let accessibilityIdentifier = "toolCallRow"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button {
-                withAnimation(.snappy(duration: 0.2)) { isExpanded.toggle() }
+                let open = !isExpanded
+                withAnimation(.snappy(duration: 0.2)) { toggled = open }
             } label: {
                 HStack(spacing: 6) {
                     statusIcon.frame(width: 14)
                     Text(ToolCallSummary.title(for: item))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    if item.isFileEdit, let diff = item.toolDiff {
+                        let stats = ToolCallDetail.stats(diff)
+                        if stats.added > 0 { Text("+\(stats.added)").monospacedDigit().foregroundStyle(.green) }
+                        if stats.removed > 0 { Text("−\(stats.removed)").monospacedDigit().foregroundStyle(.red) }
+                    }
                     if let duration = item.tool?.durationSeconds, !item.isActive {
                         Text(Self.duration(duration)).monospacedDigit().foregroundStyle(.tertiary)
                     }
@@ -130,11 +140,14 @@ struct ToolCallDetail: View {
     static func sections(for item: TranscriptItem) -> [Section] {
         let tool = item.tool
         var sections: [Section] = []
+        // An edit's diff says what its arguments would, more readably.
         let input = tool?.args.map(inputText) ?? tool?.context ?? item.detail
-        if let input, !input.isEmpty { sections.append(Section(kind: .input, text: input)) }
+        if let input, !input.isEmpty, !(item.isFileEdit && item.toolDiff != nil) {
+            sections.append(Section(kind: .input, text: input))
+        }
         if let error = tool?.error, !error.isEmpty {
             sections.append(Section(kind: .error, text: error))
-        } else if let diff = tool?.inlineDiff, !diff.isEmpty {
+        } else if let diff = item.toolDiff {
             sections.append(Section(kind: .diff, text: diff))
         } else if let output = tool?.output ?? tool?.summary, !output.isEmpty {
             sections.append(Section(kind: .output, text: output))
@@ -180,6 +193,15 @@ struct ToolCallDetail: View {
         case .error: Text(capped).foregroundStyle(.red)
         case .diff: Text(Self.diff(capped))
         }
+    }
+
+    static func stats(_ diff: String) -> (added: Int, removed: Int) {
+        var added = 0, removed = 0
+        for line in diff.split(separator: "\n") {
+            if line.hasPrefix("+"), !line.hasPrefix("+++") { added += 1 }
+            if line.hasPrefix("-"), !line.hasPrefix("---") { removed += 1 }
+        }
+        return (added, removed)
     }
 
     static func diff(_ text: String) -> AttributedString {

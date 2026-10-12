@@ -173,20 +173,46 @@ struct ToolCallDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Self.sections(for: item)) { section in
-                text(section)
-                    .font(.caption.monospaced())
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                box(section)
                     .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
             }
         }
     }
 
+    /// The most lines a box shows before it scrolls inside itself, as Desktop's diff
+    /// box stops at 12rem (`components/chat/diff-lines.tsx:67`).
+    static let maxLines = 12
+    @ScaledMetric(relativeTo: .caption) private var lineHeight: CGFloat = 15
+
+    @ViewBuilder private func box(_ section: Section) -> some View {
+        let content = text(section)
+            .font(.caption.monospaced())
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+        if Self.lineCount(Self.shown(section)) > Self.maxLines {
+            ScrollView(.vertical) { content }
+                .frame(height: lineHeight * CGFloat(Self.maxLines) + 16)
+                .accessibilityIdentifier("toolDetailScroll")
+        } else {
+            content
+        }
+    }
+
+    static func lineCount(_ text: String) -> Int {
+        text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
+    }
+
+    /// What a section shows: a diff without its headers.
+    static func shown(_ section: Section) -> String {
+        section.kind == .diff ? ToolCallSummary.displayDiff(section.text) : section.text
+    }
+
     @ViewBuilder private func text(_ section: Section) -> some View {
-        let capped = section.text.count > Self.maxCharacters
-            ? String(section.text.prefix(Self.maxCharacters)) + "\n…"
-            : section.text
+        let shown = Self.shown(section)
+        let capped = shown.count > Self.maxCharacters
+            ? String(shown.prefix(Self.maxCharacters)) + "\n…"
+            : shown
         switch section.kind {
         case .input: Text(capped).foregroundStyle(.primary)
         case .output: Text(capped).foregroundStyle(.secondary)
@@ -206,8 +232,8 @@ struct ToolCallDetail: View {
 
     static func diff(_ text: String) -> AttributedString {
         var result = AttributedString()
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            var piece = AttributedString(line + "\n")
+        for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            var piece = AttributedString((index > 0 ? "\n" : "") + line)
             if line.hasPrefix("+"), !line.hasPrefix("+++") {
                 piece.foregroundColor = .green
             } else if line.hasPrefix("-"), !line.hasPrefix("---") {

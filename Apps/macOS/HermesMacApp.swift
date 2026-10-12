@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ScrollLatching.install()
         Task { await model.watchLocalBackend() }
     }
 

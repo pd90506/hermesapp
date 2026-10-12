@@ -94,6 +94,9 @@ final class LiveChatUITests: XCTestCase {
                       "one summary line for the turn's tool calls, got \(summary.exists ? summary.label : "none")")
         XCTAssertEqual(app.buttons.matching(identifier: "toolCallRow").count, 0, "the calls are folded")
 
+        // The live run's line becomes the turn's line as the reply lands: let it
+        // settle before clicking it.
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
         press(summary)
         let rows = app.buttons.matching(identifier: "toolCallRow")
         let opened = Date().addingTimeInterval(10)

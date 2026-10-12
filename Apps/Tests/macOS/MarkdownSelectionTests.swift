@@ -191,7 +191,10 @@ import Testing
         }, "code and table need their own wider horizontal content")
     }
 
-    @Test func tableGridHasBordersAndContentSizedColumns() throws {
+    /// A table fills the column when it fits (Desktop's `w-full`), and scrolls inside
+    /// its own container when it does not; a rounded border, a tinted header row and
+    /// rules between rows only.
+    @Test func tableFillsTheColumnWithBordersAndATintedHeader() throws {
         let short = fullMessage("| A | B |\n|---|---|\n| x | y |", width: 260)
         defer { short.window.close() }
         let long = fullMessage("| A | Wide |\n|---|---|\n| x | \(String(repeating: "wide ", count: 30)) |", width: 260)
@@ -200,27 +203,25 @@ import Testing
         let longScroll = try #require(descendants(NSScrollView.self, in: long.host).first)
         let shortWidth = try #require(shortScroll.documentView).frame.width
         let longWidth = try #require(longScroll.documentView).frame.width
-        #expect(longWidth > shortWidth + 50, "columns do not grow with cell content")
+        #expect(abs(shortWidth - shortScroll.contentSize.width) <= 2,
+                "a short table is \(shortWidth) wide in a \(shortScroll.contentSize.width) column")
+        #expect(longWidth > longScroll.contentSize.width + 20, "a wide table does not scroll")
 
         let rendered = try render(width: 260) {
             MarkdownTableGrid(table: MarkdownTable(alignments: [.none, .none],
                                                   header: [[.text("A")], [.text("B")]],
                                                   rows: [[[.text("x")], [.text("y")]]]))
         }
-        // Sample in points, converted with the bitmap's own scale (the screen's
-        // backing scale, 2x on Retina): the grid sits inside a 1 pt inset, so
-        // fixed pixel (1, 1) is the margin at 2x and the stroke only at 1x.
+        // Sample in points, converted with the bitmap's own scale (2x on Retina).
         let scale = CGFloat(rendered.rep.pixelsWide) / rendered.host.bounds.width
-        func isLine(_ x: CGFloat, _ y: CGFloat) -> Bool {
-            brightness(rendered.rep, Int((x * scale).rounded(.down)), Int((y * scale).rounded(.down))) < 0.97
+        func level(_ x: CGFloat, _ y: CGFloat) -> CGFloat {
+            brightness(rendered.rep, Int((x * scale).rounded(.down)), Int((y * scale).rounded(.down)))
         }
-        // Everything the grid draws (strokes and text) on the white background;
-        // its outer edge is the border, if there is one.
+        func isLine(_ x: CGFloat, _ y: CGFloat) -> Bool { level(x, y) < 0.97 }
         let grid = try #require(box(rendered.rep, width: rendered.host.bounds.width) { x, y in
             brightness(rendered.rep, x, y) < 0.97
         }, "the table draws nothing")
-        #expect(grid.width > 30 && grid.height > 30, "the grid is \(grid)")
-        /// Separate stretches of grid line met walking from `start` to `end`.
+        #expect(grid.width > 240, "the table is \(grid.width) pt wide in a 260 pt column")
         func linesCrossed(from start: CGPoint, to end: CGPoint) -> Int {
             let steps = Int(max(abs(end.x - start.x), abs(end.y - start.y)) * scale)
             var count = 0, inLine = false
@@ -232,23 +233,24 @@ import Testing
             }
             return count
         }
-        // The outer border: each edge of that box is one unbroken line.
-        let edges = [(CGPoint(x: grid.minX + 2, y: grid.minY + 0.25), CGPoint(x: grid.maxX - 2, y: grid.minY + 0.25)),
-                     (CGPoint(x: grid.minX + 2, y: grid.maxY - 0.25), CGPoint(x: grid.maxX - 2, y: grid.maxY - 0.25)),
-                     (CGPoint(x: grid.minX + 0.25, y: grid.minY + 2), CGPoint(x: grid.minX + 0.25, y: grid.maxY - 2)),
-                     (CGPoint(x: grid.maxX - 0.25, y: grid.minY + 2), CGPoint(x: grid.maxX - 0.25, y: grid.maxY - 2))]
+        // The outer border: each edge is one unbroken line between the rounded corners.
+        let inset = MarkdownTableGrid.cornerRadius + 1
+        let edges = [(CGPoint(x: grid.minX + inset, y: grid.minY + 0.25), CGPoint(x: grid.maxX - inset, y: grid.minY + 0.25)),
+                     (CGPoint(x: grid.minX + inset, y: grid.maxY - 0.25), CGPoint(x: grid.maxX - inset, y: grid.maxY - 0.25)),
+                     (CGPoint(x: grid.minX + 0.25, y: grid.minY + inset), CGPoint(x: grid.minX + 0.25, y: grid.maxY - inset)),
+                     (CGPoint(x: grid.maxX - 0.25, y: grid.minY + inset), CGPoint(x: grid.maxX - 0.25, y: grid.maxY - inset))]
         for (start, end) in edges {
             #expect(stride(from: 0, through: 1, by: 0.02).allSatisfy {
                 isLine(start.x + (end.x - start.x) * $0, start.y + (end.y - start.y) * $0)
             }, "the table border is missing or broken between \(start) and \(end)")
         }
-        // Walking across the header row's top padding (clear of text) meets the left
-        // border, the line between the columns and the right border; walking down
-        // the first column's padding meets the top, the header/body line and the bottom.
-        #expect(linesCrossed(from: CGPoint(x: grid.minX, y: grid.minY + 3),
-                             to: CGPoint(x: grid.maxX - 0.25, y: grid.minY + 3)) == 3, "no line between the columns")
-        #expect(linesCrossed(from: CGPoint(x: grid.minX + 4, y: grid.minY),
-                             to: CGPoint(x: grid.minX + 4, y: grid.maxY - 0.25)) == 3, "no line between the rows")
+        // The body row's bottom padding (clear of text): only the two borders, no
+        // line between the columns.
+        let bodyY = grid.maxY - 3
+        #expect(linesCrossed(from: CGPoint(x: grid.minX, y: bodyY), to: CGPoint(x: grid.maxX - 0.25, y: bodyY)) == 2,
+                "a line between the columns")
+        // The header is tinted, the body is not.
+        #expect(level(grid.minX + 4, grid.minY + 3) < level(grid.minX + 4, bodyY) - 0.02, "the header row is not tinted")
     }
 
     @Test func streamingComponentsKeepTheirPlace() throws {
@@ -499,12 +501,15 @@ import Testing
             if current > 0 { lengths.append(current) }
             return lengths
         }
-        let row = Int((grid.minY + 3) * scale)
+        // Across the last body row's bottom padding: the two borders. Down the first
+        // column: the top border runs into the tinted header and its rule, then the
+        // rule between the body rows and the bottom border.
+        let row = Int((grid.maxY - 3) * scale)
         let across = runs(along: (Int(grid.minX * scale)...Int(grid.maxX * scale - 1)).map { ($0, row) })
         let column = Int((grid.minX + 4) * scale)
         let down = runs(along: (Int(grid.minY * scale)...Int(grid.maxY * scale - 1)).map { (column, $0) })
-        #expect(across.count == 4 && down.count == 4, "across \(across), down \(down)")
-        for length in across + down {
+        #expect(across.count == 2 && down.count == 3, "across \(across), down \(down)")
+        for length in across + down.dropFirst() {
             #expect(length <= Int(scale) + 1, "a line is \(length) px thick; 1 pt is \(Int(scale)) px: \(across) \(down)")
         }
     }

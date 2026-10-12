@@ -39,7 +39,7 @@ import Testing
     }
 }
 
-private func descendants<T: NSView>(_ type: T.Type, in view: NSView) -> [T] {
+@MainActor private func descendants<T: NSView>(_ type: T.Type, in view: NSView) -> [T] {
     var result: [T] = []
     if let match = view as? T { result.append(match) }
     for child in view.subviews { result += descendants(type, in: child) }

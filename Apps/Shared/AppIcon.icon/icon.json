@@ -1,58 +1,71 @@
 {
-  "fill-specializations" : [
+  "fill-specializations": [
     {
-      "value" : {
-        "linear-gradient" : [
-          "srgb:0.35686,0.54902,1.00000,1.00000",
-          "srgb:0.14118,0.25098,0.78431,1.00000"
-        ],
-        "orientation" : {
-          "start" : { "x" : 0.5, "y" : 0 },
-          "stop" : { "x" : 0.5, "y" : 1 }
-        }
+      "value": {
+        "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
       }
     },
     {
-      "appearance" : "dark",
-      "value" : {
-        "linear-gradient" : [
-          "srgb:0.14902,0.16471,0.21176,1.00000",
-          "srgb:0.04314,0.04706,0.06275,1.00000"
-        ],
-        "orientation" : {
-          "start" : { "x" : 0.5, "y" : 0 },
-          "stop" : { "x" : 0.5, "y" : 1 }
-        }
+      "appearance": "dark",
+      "value": {
+        "solid": "srgb:0.05098,0.06667,0.09020,1.00000"
       }
     }
   ],
-  "groups" : [
+  "groups": [
     {
-      "name" : "Bubble",
-      "layers" : [
+      "lighting": "individual",
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
+      },
+      "blur-material": null,
+      "layers": [
         {
-          "name" : "bubble",
-          "image-name" : "bubble.svg",
-          "glass" : true
-        }
-      ],
-      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
-      "translucency" : { "enabled" : true, "value" : 0.3 }
-    },
-    {
-      "name" : "Wing",
-      "layers" : [
+          "name": "art",
+          "image-name-specializations": [
+            {
+              "value": "art-light.png"
+            },
+            {
+              "appearance": "dark",
+              "value": "art-dark.png"
+            }
+          ],
+          "glass": false,
+          "hidden-specializations": [
+            {
+              "value": false
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        },
         {
-          "name" : "wing",
-          "image-name" : "wing.svg",
-          "glass" : true
+          "name": "mono",
+          "image-name": "mono.png",
+          "glass": true,
+          "hidden-specializations": [
+            {
+              "value": true
+            },
+            {
+              "appearance": "tinted",
+              "value": false
+            }
+          ]
         }
-      ],
-      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
-      "translucency" : { "enabled" : true, "value" : 0.3 }
+      ]
     }
   ],
-  "supported-platforms" : {
-    "squares" : "shared"
+  "supported-platforms": {
+    "squares": "shared"
   }
 }

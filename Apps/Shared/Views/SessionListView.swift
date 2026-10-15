@@ -41,28 +41,30 @@ struct SessionListView: View {
                 sessionsSection(server)
             }
         }
+        #if os(macOS)
+        .listStyle(.sidebar)
+        #endif
         .navigationTitle(profileName ?? "Sessions")
-        #if os(iOS)
-        // The header shows the name; the navigation title stays for the back button.
-        .navigationBarTitleDisplayMode(.inline)
+        // The header shows the name; the navigation title stays for the back button
+        // and the window menu.
         .toolbar(removing: .title)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
         // Pinned above the list: it never scrolls away; rows scroll under it.
         .safeAreaBar(edge: .top) {
             SessionListHeader(title: profileName ?? "No profile",
-                              subtitle: model.showsServerNames ? model.sessionsServer?.name : nil,
+                              subtitle: subtitle,
                               newChat: newChatRow)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        // A bar like the header's: rows fade out under it instead of showing through the
+        // status text, and it keeps the sidebar's material (an opaque .bar did not).
+        .safeAreaBar(edge: .bottom) {
             VStack(spacing: 0) {
                 banners
                 SidebarFooter(status: statusText, color: statusColor) { EmptyView() }
             }
-            // The list scrolls under this inset; without a bar behind it, rows
-            // showed through the status text.
-            .background(.bar)
-            .overlay(alignment: .top) { Divider() }
         }
         .toolbar {
             SettingsToolbarItem(presentation: $model.settingsPresentation)
@@ -128,16 +130,12 @@ struct SessionListView: View {
             }
             ForEach(connection.history) { entry in
                 let item = SidebarItem.history(server: server.id, id: entry.id)
-                HistoryRow(entry: entry, botName: displayName(of: entry.profile, on: server))
+                HistoryRow(entry: entry)
                     .sidebarRowHover(isSelected: selection == item)
                     .tag(item)
             }
         } header: {
-            if model.showsServerNames {
-                header(server)
-            } else {
-                Text("Sessions")
-            }
+            Text("Sessions")
         }
     }
 
@@ -145,13 +143,15 @@ struct SessionListView: View {
         model.sessionsServer?.connection.listProfileBot?.displayName
     }
 
-    private func header(_ server: ServerConnection) -> some View {
+    /// The profile's server, with several, and its status unless connected (the rail
+    /// shows the same as a dot).
+    private var subtitle: String? {
+        guard let server = model.sessionsServer else { return nil }
         let state = server.connection.state
         // Not connected because of something the user can fix (no password): say what.
-        let status = state == .connected ? state.statusText : server.lastError ?? state.statusText
-        let color = state != .connected && server.lastError != nil ? Color.red : state.statusColor
-        return ServerSectionHeader(name: server.name, status: status, color: color,
-                                   isConnected: server.isConnected)
+        let status = state == .connected ? nil : server.lastError ?? state.statusText
+        let parts = [model.showsServerNames ? server.name : nil, status].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Re-reads the session list when its server, profile or connection changes.
@@ -230,10 +230,6 @@ struct SessionListView: View {
         let connected = servers.filter(\.isConnected).count
         if connected == servers.count { return .green }
         return connected > 0 ? .yellow : .red
-    }
-
-    private func displayName(of profile: String, on server: ServerConnection) -> String {
-        server.connection.bots.first { $0.name == profile }?.displayName ?? profile
     }
 
     private func startSideChat(with bot: Bot, on server: ServerConnection) {

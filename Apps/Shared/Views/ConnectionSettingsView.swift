@@ -33,7 +33,7 @@ struct ConnectionSettingsView: View {
             } header: {
                 Text("Servers")
             } footer: {
-                Text("The app stays connected to every server at once; the sidebar groups bots by server.")
+                Text("The app stays connected to every server at once; the profile rail groups profiles by server.")
             }
 
             if let server = model.selectedServer {

@@ -9,21 +9,21 @@ remote gateway. See [`docs/protocol.md`](docs/protocol.md).
 
 Status: foundation only.
 - The shared package is real and tested on Linux.
-- The app UIs are minimal shells: connection settings, a bot sidebar (every Hermes profile as a
-  bot with its one permanent "Bot Chat", shared with Hermes Desktop's Bot Mode, plus a Sessions
-  page with a profile picker for ordinary chats), and a chat with approval/clarify cards.
-  - A title menu at the top of the sidebar switches between Bots and Sessions. The sidebar's
-    toolbar holds the system sidebar toggle and a Settings button, the same on both pages.
+- The app UIs are minimal shells: connection settings, three columns (a narrow profile rail,
+  the selected profile's session list, and the chat), and a chat with approval/clarify cards.
+  - The rail shows every Hermes profile as an avatar with its activity badge. Picking one lists
+    its sessions in the middle column, so profiles never mix; on iPhone the columns become a
+    stack (profiles, sessions, chat).
+  - The session list pins the profile's one permanent "Bot Chat" (shared with Hermes Desktop's
+    Bot Mode) above its other sessions. Its toolbar holds a Settings button.
   - Settings is a sheet on the window, with Done (and Esc, Command-W). On macOS, opened from
     that button, a click anywhere else in the window also closes it, as Done would, and the
     click does nothing else. When the app can't connect without them (no server yet, or the
     launch connect failed), clicks elsewhere don't close it. Edits apply in place either
     way; Connect saves them.
-  - On the Sessions page, a "New chat" row for the selected profile is pinned under the title
-    menu; only the session list scrolls. The profile picker
-    sits in the footer, next to the connection status; error and "waiting" notices sit just
-    above it on both pages. Bots has no New chat button; right-click a bot to start a side
-    chat with it.
+  - A "New chat" row for the selected profile is pinned under the profile's name; only the
+    session list scrolls. The connection status sits in the footer, with error and "waiting"
+    notices just above it. Right-click the Bot Chat row to start a side chat.
   - On macOS every row and borderless control shows a soft rounded fill under the pointer
     (`Apps/Shared/Views/Hover.swift`); iOS keeps its native look.
 - Opening a chat loads only its newest 120 messages; older ones load page by page as you scroll
@@ -180,9 +180,8 @@ on the Mac.
 - **Several servers.** Add Server in the settings adds another dashboard (say a home server and
   a local one), each with its own name, URL and sign-in. The app stays connected to all of them
   at once, one connection each.
-  - With more than one, the Bots page has a section per server, headed by its name and status.
-    The Sessions page lists one server; its footer profile menu groups profiles by server, and
-    picking one also picks its server.
+  - With more than one, the profile rail groups profiles under each server's name and status
+    dot, and the session list names the server of the profile it lists.
   - The single-server setting of earlier versions becomes the first server on launch, its
     Keychain secret moved to that server's own item.
 - **This Mac (macOS).** Like Hermes Desktop, the app starts its own Hermes backend when it

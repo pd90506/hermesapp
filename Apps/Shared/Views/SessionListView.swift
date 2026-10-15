@@ -16,19 +16,16 @@ enum SidebarItem: Hashable {
     }
 }
 
-/// The bot roster and the profile-scoped session browser, under a page switcher.
+/// The middle column: the profile picked in the profile rail, its Bot Chat pinned
+/// first, then its sessions.
 ///
-/// The chrome is the same on both pages, so switching moves nothing but the rows:
-/// - pinned at the top, the switcher (and on Sessions, New chat under it, so the list
-///   starts one row lower there; see `SidebarHeader`);
-/// - one toolbar button (Settings), beside the system sidebar toggle;
-/// - at the bottom, the error and "waiting" banners and a fixed-height footer: the
-///   connection status, plus the Sessions profile picker on the same line.
-///
-/// With several servers, Bots has a section per server, and Sessions lists the server
-/// picked in the footer's profile menu (which groups the profiles by server).
+/// - Pinned at the top, the profile's name (and server, with several) and New chat
+///   (`SessionListHeader`); rows scroll under it.
+/// - One toolbar button (Settings).
+/// - At the bottom, the error and "waiting" banners and a fixed-height footer with the
+///   connection status.
 /// Rows and controls are in `SidebarControls.swift`; pointer feedback in `Hover.swift`.
-struct BotSidebarView: View {
+struct SessionListView: View {
     @Environment(AppModel.self) private var model
     @Binding var selection: SidebarItem?
     /// Shows the chat a side chat was started for (on iPhone, pushes it).
@@ -39,33 +36,28 @@ struct BotSidebarView: View {
     var body: some View {
         @Bindable var model = model
         List(selection: $selection) {
-            if model.sidebarPage == .bots {
-                ForEach(model.sidebarServers) { server in
-                    botSection(server)
-                }
-            } else if let server = model.sessionsServer {
+            if let server = model.sessionsServer {
+                botChatSection(server)
                 sessionsSection(server)
             }
         }
-        .navigationTitle(model.sidebarPage.title)
+        .navigationTitle(profileName ?? "Sessions")
         #if os(iOS)
-        // The switcher is the title; the navigation title stays for the back button.
+        // The header shows the name; the navigation title stays for the back button.
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(removing: .title)
         #endif
         .refreshable { await model.refreshLists() }
         // Pinned above the list: it never scrolls away; rows scroll under it.
         .safeAreaBar(edge: .top) {
-            SidebarHeader(page: $model.sidebarPage, newChat: newChatRow)
+            SessionListHeader(title: profileName ?? "No profile",
+                              subtitle: model.showsServerNames ? model.sessionsServer?.name : nil,
+                              newChat: newChatRow)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 banners
-                SidebarFooter(status: statusText, color: statusColor) {
-                    if model.sidebarPage == .sessions, let server = model.sessionsServer {
-                        profilePicker(server)
-                    }
-                }
+                SidebarFooter(status: statusText, color: statusColor) { EmptyView() }
             }
             // The list scrolls under this inset; without a bar behind it, rows
             // showed through the status text.
@@ -73,7 +65,6 @@ struct BotSidebarView: View {
             .overlay(alignment: .top) { Divider() }
         }
         .toolbar {
-            // The same single item on both pages, so the glass group never changes shape.
             SettingsToolbarItem(presentation: $model.settingsPresentation)
         }
         .task(id: sessionListKey) {
@@ -90,15 +81,16 @@ struct BotSidebarView: View {
             }
         }
         #if os(macOS)
-        .navigationSplitViewColumnWidth(min: 240, ideal: 280)
+        .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 480)
         #endif
     }
 
-    @ViewBuilder private func botSection(_ server: ServerConnection) -> some View {
+    /// The profile's one ongoing chat, above its other sessions.
+    @ViewBuilder private func botChatSection(_ server: ServerConnection) -> some View {
         let connection = server.connection
-        Section {
-            ForEach(connection.bots) { bot in
-                let item = SidebarItem.bot(server: server.id, profile: bot.name)
+        if let bot = connection.listProfileBot {
+            let item = SidebarItem.bot(server: server.id, profile: bot.name)
+            Section {
                 BotRow(bot: bot, activity: connection.activity(for: bot))
                     .sidebarRowHover(isSelected: selection == item)
                     .tag(item)
@@ -106,17 +98,8 @@ struct BotSidebarView: View {
                         Button("New Side Chat", systemImage: "plus.bubble") { startSideChat(with: bot, on: server) }
                             .disabled(!server.isConnected || isStartingChat)
                     }
-            }
-            if model.showsServerNames, connection.bots.isEmpty {
-                Text(server.isConnected ? "No bots" : "Not connected")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            if model.showsServerNames {
-                header(server)
-            } else {
-                Text("Bots")
+            } header: {
+                Text(Bot.chatTitle)
             }
         }
     }
@@ -158,6 +141,10 @@ struct BotSidebarView: View {
         }
     }
 
+    private var profileName: String? {
+        model.sessionsServer?.connection.listProfileBot?.displayName
+    }
+
     private func header(_ server: ServerConnection) -> some View {
         let state = server.connection.state
         // Not connected because of something the user can fix (no password): say what.
@@ -167,30 +154,14 @@ struct BotSidebarView: View {
                                    isConnected: server.isConnected)
     }
 
-    private func profilePicker(_ server: ServerConnection) -> ProfilePicker {
-        let connection = server.connection
-        let groups = model.showsServerNames
-            ? model.sidebarServers.map {
-                ProfilePicker.ServerProfiles(id: $0.id, name: $0.name, bots: $0.connection.bots,
-                                             isCurrent: $0.id == server.id)
-            }
-            : []
-        return ProfilePicker(bots: connection.bots, selection: connection.listProfile, servers: groups,
-                             select: { connection.selectListProfile($0) },
-                             selectOnServer: { [model] id, profile in
-                                 model.sessionsServerID = id
-                                 model.server(id)?.connection.selectListProfile(profile)
-                             })
-    }
-
-    /// Re-reads the Sessions list when its page, server, profile or connection changes.
+    /// Re-reads the session list when its server, profile or connection changes.
     private var sessionListKey: String {
         guard let server = model.sessionsServer else { return "" }
         let connection = server.connection
-        return "\(model.sidebarPage.rawValue):\(server.id):\(connection.listProfile ?? ""):\(server.isConnected)"
+        return "\(server.id):\(connection.listProfile ?? ""):\(server.isConnected)"
     }
 
-    /// Above the footer on both pages, so they never push the rows (or New chat) around.
+    /// Above the footer, so they never push the rows (or New chat) around.
     @ViewBuilder private var banners: some View {
         if let error = model.actionError {
             HStack(alignment: .top) {
@@ -227,9 +198,8 @@ struct BotSidebarView: View {
         }
     }
 
-    /// Sessions only: Bots has no New chat.
     private var newChatRow: NewChatRow? {
-        guard model.sidebarPage == .sessions, let server = model.sessionsServer else { return nil }
+        guard let server = model.sessionsServer else { return nil }
         let connection = server.connection
         return NewChatRow(isEnabled: connection.canStartListChat && !isStartingChat,
                           disabledReason: newChatDisabledReason(server)) {

@@ -222,50 +222,6 @@ private func entries(_ count: Int) -> [HistoryEntry] {
 
 @MainActor
 @Suite(.serialized) struct HoverTests {
-    // MARK: Switcher and profile picker
-
-    /// The switcher is drawn by SwiftUI, not as an AppKit pop-up button (what `.borderless`
-    /// gives a menu), so its padding, chevron and hover fill render.
-    @Test func switcherRendersItsPaddingChevronAndHoverFill() throws {
-        let size = NSHostingView(rootView: PageSwitcher(page: .constant(.sessions))).fittingSize
-        let ui = HostWindow(size: CGSize(width: 240, height: 60)) {
-            PageSwitcher(page: .constant(.sessions))
-        }
-        #expect(ui.subviews(of: NSPopUpButton.self).isEmpty)
-        // The left padding: empty until hovered.
-        let padding = CGRect(x: 1, y: 4, width: 5, height: size.height - 8)
-        // The chevron: just inside the right padding.
-        let chevron = CGRect(x: size.width - 8 - 11, y: 4, width: 10, height: size.height - 8)
-        let idle = ui.snapshot()
-        let background = ui.brightness(of: CGRect(x: 200, y: 40, width: 20, height: 10), in: idle)
-        #expect(abs(ui.brightness(of: padding, in: idle) - background) < 0.005)
-        #expect(ui.darkest(in: chevron, of: idle) < 0.8, "no chevron drawn")
-
-        ui.movePointer(to: CGPoint(x: size.width / 2, y: size.height / 2))
-        #expect(background - ui.brightness(of: padding) > visible, "no hover fill in the padding")
-        ui.pointerLeaves()
-        #expect(abs(ui.brightness(of: padding) - background) < 0.005, "the fill stays after the pointer left")
-    }
-
-    @Test func profilePickerHoversAndNotWhenDisabled() {
-        for enabled in [true, false] {
-            let size = NSHostingView(rootView: ProfilePicker(bots: bots, selection: "default") { _ in }).fittingSize
-            let ui = HostWindow(size: CGSize(width: 240, height: 60)) {
-                ProfilePicker(bots: enabled ? bots : [], selection: "default") { _ in }
-            }
-            #expect(ui.subviews(of: NSPopUpButton.self).isEmpty)
-            let padding = CGRect(x: 1, y: 3, width: 4, height: size.height - 6)
-            let background = ui.brightness(of: CGRect(x: 200, y: 40, width: 20, height: 10))
-            ui.movePointer(to: CGPoint(x: size.width / 2, y: size.height / 2))
-            let drop = background - ui.brightness(of: padding)
-            if enabled {
-                #expect(drop > visible)
-            } else {
-                #expect(abs(drop) < 0.005, "a disabled picker showed hover")
-            }
-        }
-    }
-
     // MARK: Rows
 
     /// Table rows of `Sidebar`: the "Sessions" header, then the sessions.
@@ -274,7 +230,7 @@ private func entries(_ count: Int) -> [HistoryEntry] {
     /// Where SwiftUI laid the pinned header out, in host coordinates.
     final class Frames { var header: CGRect = .zero }
 
-    /// The real sidebar's arrangement: the List, with `SidebarHeader` pinned above it.
+    /// The real session list's arrangement: the List, with `SessionListHeader` pinned above it.
     private struct Sidebar: View {
         @State var selection: String?
         var newChatEnabled = true
@@ -296,8 +252,8 @@ private func entries(_ count: Int) -> [HistoryEntry] {
             }
             .listStyle(.sidebar)
             .safeAreaBar(edge: .top) {
-                SidebarHeader(page: .constant(.sessions),
-                              newChat: NewChatRow(isEnabled: newChatEnabled, disabledReason: "Connect first.") {})
+                SessionListHeader(title: "Hermes",
+                                  newChat: NewChatRow(isEnabled: newChatEnabled, disabledReason: "Connect first.") {})
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(HostWindow.space)) } action: {
                         frames.header = $0
                     }
@@ -468,14 +424,37 @@ private func entries(_ count: Int) -> [HistoryEntry] {
 
     // MARK: Footer
 
-    /// The footer is as tall with the profile picker (Sessions) as without it (Bots).
-    @Test func footerHeightIsTheSameOnBothPages() {
-        let botsPage = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) { EmptyView() })
-        let sessionsPage = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) {
-            ProfilePicker(bots: bots, selection: "default") { _ in }
+    /// The footer is as tall with an accessory as without it.
+    @Test func footerHeightIsTheSameWithAnAccessory() {
+        let plain = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) { EmptyView() })
+        let withAccessory = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) {
+            Button("Retry") {}.hoverButtonStyle()
         })
-        #expect(botsPage.fittingSize.height == sessionsPage.fittingSize.height)
-        #expect(botsPage.fittingSize.height == SidebarFooter<EmptyView>.height + 8)
+        #expect(plain.fittingSize.height == withAccessory.fittingSize.height)
+        #expect(plain.fittingSize.height == SidebarFooter<EmptyView>.height + 8)
+    }
+
+    // MARK: Profile rail
+
+    /// A rail item fits the rail, its name included, and the selected one is filled.
+    @Test func railItemFitsTheRailAndShowsTheSelection() {
+        let bot = bots[1]
+        for selected in [false, true] {
+            let item = ProfileRailItem(bot: bot, activity: .idle, isSelected: selected) {}
+            let size = NSHostingView(rootView: item.frame(width: ProfileRailItem.width)).fittingSize
+            #expect(size.height < 86, "the name wrapped past two lines")
+            // Pinned top-left; below it, the window's white.
+            let ui = HostWindow(size: CGSize(width: ProfileRailItem.width, height: 90)) {
+                item.frame(width: ProfileRailItem.width)
+            }
+            let corner = CGRect(x: 4, y: 4, width: 3, height: 3)  // inside the fill, off the avatar
+            let drop = ui.brightness(of: CGRect(x: 0, y: 87, width: 4, height: 2)) - ui.brightness(of: corner)
+            if selected {
+                #expect(abs(drop) > visible, "no selection fill")
+            } else {
+                #expect(abs(drop) < 0.005, "an unselected item is filled")
+            }
+        }
     }
 }
 

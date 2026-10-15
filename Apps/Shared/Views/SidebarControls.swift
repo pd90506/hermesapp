@@ -4,79 +4,33 @@ import SwiftUI
 
 // The sidebar's pieces, free of `AppModel` so `HermesMacTests` can host them as they are.
 
-extension GatewayConnection.NavigationPage {
-    var title: String {
-        switch self {
-        case .bots: "Bots"
-        case .sessions: "Sessions"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .bots: "Each bot's ongoing chat"
-        case .sessions: "Browse and start chats by profile"
-        }
-    }
-}
-
-/// The page name as a title-style menu button (ChatGPT's "ChatGPT ⌄ / Codex").
-///
-/// A native menu, so it opens from the keyboard and reads well in VoiceOver. With
-/// `.plain`, SwiftUI draws the label itself; the system `.borderless`/automatic
-/// styles make it an AppKit pop-up button instead. The hover fill sits outside the
-/// menu (`hoverHighlight`), so it doesn't depend on the button style at all.
-struct PageSwitcher: View {
-    @Binding var page: GatewayConnection.NavigationPage
-
-    var body: some View {
-        Menu {
-            ForEach(GatewayConnection.NavigationPage.allCases, id: \.self) { item in
-                // A toggle shows the checkmark; the second Text is the menu item's subtitle.
-                Toggle(isOn: Binding(get: { page == item }, set: { if $0 { page = item } })) {
-                    Text(item.title)
-                    Text(item.subtitle)
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Text(page.title)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .contentShape(.rect(cornerRadius: Hover.cornerRadius))
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .hoverHighlight()
-        .accessibilityLabel("Page")
-        .accessibilityValue(page.title)
-        .accessibilityHint("Switches between Bots and Sessions")
-    }
-}
-
-/// The sidebar's pinned top, above the scrolling list (ChatGPT style): the page switcher
-/// and, on Sessions, the New chat row. It never scrolls; rows scroll under it.
-///
-/// On Bots it is one row shorter, and the list starts that much higher. The switcher
-/// and the toolbar stay put. Reserving the height on Bots would leave an empty band
-/// above the bots for no action.
-struct SidebarHeader: View {
-    @Binding var page: GatewayConnection.NavigationPage
-    /// The New chat row, or `nil` where there is none (Bots).
+/// The session list's pinned top, above the scrolling list (ChatGPT style): the
+/// selected profile's name (and, with several servers, its server) and the New chat
+/// row. It never scrolls; rows scroll under it.
+struct SessionListHeader: View {
+    let title: String
+    /// The profile's server, when there are several.
+    var subtitle: String?
+    /// The New chat row, or `nil` when no profile is selected.
     var newChat: NewChatRow?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            PageSwitcher(page: $page)
-                .padding(.horizontal, Hover.rowInset)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, Hover.rowContentInset)
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
             if let newChat {
                 newChat
             }
@@ -86,8 +40,8 @@ struct SidebarHeader: View {
     }
 }
 
-/// The Sessions page's New chat, pinned under the switcher: a chat with the profile
-/// picked in the footer. Not a List row, so it can never be selected, but drawn like
+/// The session list's New chat, pinned under its title: a chat with the profile
+/// picked in the profile rail. Not a List row, so it can never be selected, but drawn like
 /// one: the sidebar's row height and font for the user's sidebar size, the text where
 /// row text starts, and the row hover pill, inset from the edges like the selection.
 struct NewChatRow: View {
@@ -153,78 +107,68 @@ struct SettingsToolbarItem: ToolbarContent {
     }
 }
 
-/// The Sessions page's profile, unlabeled: avatar, name and an up/down chevron.
-/// With several servers, the menu lists every server's profiles under its name.
-struct ProfilePicker: View {
-    /// One server's profiles in the menu.
-    struct ServerProfiles: Identifiable {
-        let id: UUID
-        let name: String
-        let bots: [Bot]
-        /// The server the Sessions page lists.
-        let isCurrent: Bool
-    }
+/// One profile in the profile rail: its avatar (with the activity badge) over its
+/// name, on a rounded fill when selected. Narrow, like a chat app's folder rail.
+struct ProfileRailItem: View {
+    static let width: CGFloat = 76
 
-    /// The listed server's profiles.
-    let bots: [Bot]
-    let selection: String?
-    /// Every server, when there are several; empty for one server.
-    var servers: [ServerProfiles] = []
-    /// Main-actor: SwiftUI calls a `Binding`'s setter there.
-    let select: @MainActor @Sendable (String) -> Void
-    /// A profile on another server (or the same one), from the grouped menu.
-    var selectOnServer: (@MainActor @Sendable (UUID, String) -> Void)? = nil
-
-    private var selected: Bot? { bots.first { $0.name == selection } }
+    let bot: Bot
+    let activity: BotActivity
+    let isSelected: Bool
+    let action: () -> Void
 
     var body: some View {
-        Menu {
-            if servers.isEmpty {
-                Picker("Profile", selection: Binding(get: { selection ?? "" }, set: select)) {
-                    ForEach(bots) { bot in
-                        Text(bot.displayName).tag(bot.name)
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            } else {
-                ForEach(servers) { server in
-                    Section(server.name) {
-                        ForEach(server.bots) { bot in
-                            Toggle(bot.displayName, isOn: Binding(
-                                get: { server.isCurrent && bot.name == selection },
-                                set: { if $0 { selectOnServer?(server.id, bot.name) } }))
-                        }
-                    }
+        Button(action: action) {
+            VStack(spacing: 4) {
+                BotAvatar(name: bot.displayName, activity: activity, size: 40)
+                Text(bot.displayName)
+                    .font(.caption2)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: Hover.cornerRadius)
+                        .fill(.tint.opacity(0.15))
                 }
             }
-        } label: {
-            HStack(spacing: 6) {
-                if let selected {
-                    BotAvatar(name: selected.displayName, activity: .idle, size: 18)
-                    Text(selected.displayName)
-                        .lineLimit(1)
-                } else {
-                    Text("No profile")
-                        .foregroundStyle(.secondary)
-                }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .font(.callout)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
             .contentShape(.rect(cornerRadius: Hover.cornerRadius))
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .hoverHighlight()
-        .disabled(bots.isEmpty && servers.allSatisfy(\.bots.isEmpty))
-        .accessibilityLabel("Profile")
-        .accessibilityValue(selected?.displayName ?? "None")
-        .accessibilityHint("Chooses whose sessions are listed")
+        .hoverButtonStyle(.rounded, padding: 0)
+        .help(bot.displayName)
+        .accessibilityLabel(bot.displayName)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint("Lists this profile's sessions")
+    }
+}
+
+/// A server's name over its profiles in the profile rail, with several servers: a
+/// status dot and the name, small enough for the rail.
+struct RailServerHeader: View {
+    let name: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(name)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -253,9 +197,8 @@ struct ServerSectionHeader: View {
     }
 }
 
-/// The connection status, with an optional accessory (the Sessions profile picker)
-/// on the same line. A fixed height, so the footer is the same with or without it,
-/// on both pages and both platforms.
+/// The connection status, with an optional accessory on the same line. A fixed
+/// height, so the footer is the same with or without it, on both platforms.
 struct SidebarFooter<Accessory: View>: View {
     static var height: CGFloat { 28 }
 

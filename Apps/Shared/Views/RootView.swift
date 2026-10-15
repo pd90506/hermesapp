@@ -2,18 +2,22 @@ import HermesKit
 import HermesProtocol
 import SwiftUI
 
-/// Sidebar (Bots / Sessions) + detail (chat). Used by both apps; on iPhone the
-/// split view collapses into a navigation stack automatically.
+/// Profile rail + session list + chat. Used by both apps; on iPhone the split view
+/// collapses into a navigation stack automatically (profiles → sessions → chat).
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: SidebarItem?
-    /// The column shown when the split view is collapsed (iPhone). A new side chat
-    /// has no row to select until the list catches up, so it is shown through this.
-    @State private var compactColumn = NavigationSplitViewColumn.sidebar
+    /// The column shown when the split view is collapsed (iPhone). Starts on the
+    /// session list, one Back away from the profiles. A new side chat has no row to
+    /// select until the list catches up, so it is shown through this.
+    @State private var compactColumn = NavigationSplitViewColumn.content
+    @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationSplitView(preferredCompactColumn: $compactColumn) {
-            BotSidebarView(
+        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
+            ProfileRailView(showSessions: { compactColumn = .content })
+        } content: {
+            SessionListView(
                 selection: Binding(
                     get: { selection },
                     set: { item in
@@ -32,7 +36,7 @@ struct RootView: View {
             } else {
                 ContentUnavailableView(
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
-                    description: Text(model.isAnyConnected ? "Pick a bot or session to chat with." : "Connect to your Hermes gateway."))
+                    description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
             }
         }
         // The settings sheet, from the gear or because the app must connect

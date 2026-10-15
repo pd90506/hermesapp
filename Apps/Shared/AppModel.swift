@@ -98,7 +98,7 @@ final class ServerConnection: Identifiable {
 }
 
 /// Root app state shared by the macOS and iOS apps: the servers, each with its own
-/// connection, and which of them the chat on screen and the Sessions page belong to.
+/// connection, and which of them the chat on screen and the session list belong to.
 @MainActor
 @Observable
 final class AppModel {
@@ -107,13 +107,10 @@ final class AppModel {
     var selectedServerID: UUID?
     /// The server whose chat is on screen.
     var activeServerID: UUID?
-    /// The server the Sessions page lists (with its own profile picker).
+    /// The server of the profile picked in the profile rail, whose sessions the middle
+    /// column lists. Only this server reads its session list, so the others don't read
+    /// lists nobody sees.
     var sessionsServerID: UUID? {
-        didSet { syncPages() }
-    }
-    /// The sidebar's page, for every server: only the Sessions page's server lists
-    /// sessions, so the others don't read lists nobody sees.
-    var sidebarPage: GatewayConnection.NavigationPage = .bots {
         didSet { syncPages() }
     }
     /// Whether the connection settings are shown, and what may close them.
@@ -222,11 +219,22 @@ final class AppModel {
         UserDefaults.standard.set(data, forKey: ServerList.defaultsKey)
     }
 
+    /// Picks a profile in the rail: the middle column lists its sessions.
+    func selectProfile(_ profile: String, on server: ServerConnection) {
+        sessionsServerID = server.id
+        server.connection.selectListProfile(profile)
+    }
+
+    /// The profile the rail shows as selected, as (server, profile name).
+    var selectedProfile: (server: ServerConnection, profile: String)? {
+        guard let server = sessionsServer, let profile = server.connection.listProfile else { return nil }
+        return (server, profile)
+    }
+
     private func syncPages() {
         let listing = sessionsServer?.id
         for server in servers {
-            let page: GatewayConnection.NavigationPage =
-                sidebarPage == .sessions && server.id == listing ? .sessions : .bots
+            let page: GatewayConnection.NavigationPage = server.id == listing ? .sessions : .bots
             if server.connection.navigationPage != page { server.connection.navigationPage = page }
         }
     }
@@ -276,7 +284,6 @@ final class AppModel {
             syncPages()
             #if DEBUG
             if let profile = UITestLaunch.current?.profile {
-                sidebarPage = .sessions
                 server.connection.selectListProfile(profile)
             }
             #endif
@@ -414,7 +421,7 @@ final class AppModel {
 
 #if DEBUG
 /// Set by the UI tests (`Apps/UITests`) in the launch environment: connect to this
-/// dashboard with a `?token=` and open the Sessions page on this profile. With
+/// dashboard with a `?token=` and list this profile's sessions. With
 /// `HERMES_UITEST_SERVERS`, the app lists the dashboard that many times, as servers
 /// named "Test 1", "Test 2"….
 struct UITestLaunch {

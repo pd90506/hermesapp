@@ -108,9 +108,11 @@ struct SettingsToolbarItem: ToolbarContent {
 }
 
 /// One profile in the profile rail: its avatar (with the activity badge) over its
-/// name, on a rounded fill when selected. Narrow, like a chat app's folder rail.
+/// name. The selected one gets a ring round the avatar and a pill on the rail's
+/// leading edge, as in Discord's or Telegram's folder rail.
 struct ProfileRailItem: View {
     static let width: CGFloat = 76
+    static let avatarSize: CGFloat = 42
 
     let bot: Bot
     let activity: BotActivity
@@ -119,28 +121,38 @@ struct ProfileRailItem: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                BotAvatar(name: bot.displayName, activity: activity, size: 40)
+            VStack(spacing: 5) {
+                BotAvatar(name: bot.displayName, activity: activity, size: Self.avatarSize)
+                    .padding(3)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(.tint, lineWidth: 2)
+                            .opacity(isSelected ? 1 : 0)
+                    }
                 Text(bot.displayName)
                     .font(.caption2)
                     .fontWeight(isSelected ? .semibold : .regular)
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity)
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 2)
+            .padding(.vertical, 5)
+            .padding(.horizontal, 4)
             .frame(maxWidth: .infinity)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: Hover.cornerRadius)
-                        .fill(.tint.opacity(0.15))
-                }
-            }
             .contentShape(.rect(cornerRadius: Hover.cornerRadius))
         }
         .hoverButtonStyle(.rounded, padding: 0)
+        .overlay(alignment: .topLeading) {
+            // Level with the avatar's middle, against the rail's edge.
+            Capsule()
+                .fill(.tint)
+                .frame(width: 3, height: Self.avatarSize - 10)
+                .offset(y: 5 + 3 + 5)
+                .opacity(isSelected ? 1 : 0)
+                .accessibilityHidden(true)
+        }
+        .animation(.snappy(duration: 0.2), value: isSelected)
         .help(bot.displayName)
         .accessibilityLabel(bot.displayName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -158,42 +170,18 @@ struct RailServerHeader: View {
         HStack(spacing: 3) {
             Circle()
                 .fill(color)
-                .frame(width: 6, height: 6)
+                .frame(width: 5, height: 5)
             Text(name)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 9, weight: .semibold))
+                .textCase(.uppercase)
+                .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 6)
+        .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// A server's section header in the sidebar, with several servers: its name and,
-/// unless connected, its connection status.
-struct ServerSectionHeader: View {
-    let name: String
-    let status: String
-    let color: Color
-    let isConnected: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-            Text(name)
-                .lineLimit(1)
-            if !isConnected {
-                Text(status)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -320,25 +308,23 @@ struct BotAvatar: View {
     }
 }
 
+/// A session of the selected profile: its title and when it started (the profile is
+/// the list's, so it isn't repeated on every row).
 struct HistoryRow: View {
     let entry: HistoryEntry
-    let botName: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
                 .lineLimit(1)
-            HStack(spacing: 4) {
-                Text(botName)
-                if let started = entry.summary.startedAt, started > 0 {
-                    Text("·")
-                    Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
-                }
+            if let started = entry.summary.startedAt, started > 0 {
+                Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
         }
+        .padding(.vertical, 2)
     }
 }
 

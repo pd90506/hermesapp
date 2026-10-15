@@ -106,6 +106,10 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     `.env.live-remote` (URL, username, password; the user writes it).
   - Everything runs in the `hermesapp-test` profile (`test` is reserved by Hermes), never in a
     real profile. A test that creates a chat deletes it, also when it fails.
+- **Automated tests on the Mac run only in the VM** (decided by the user, 2026-10-15). The
+  user tries the app on the Mac by hand; agents don't run package live tests, UI tests or
+  window tests on the host, start a test dashboard there, or open a build on its screens.
+  Building on the host is fine.
 - **Tests in the VM use a Hermes installed in the VM** (decided by the user, 2026-10).
   - The test VM (`hermesapp-test-vm`, `scripts/vm-test.sh`) is cloned once and keeps its disk
     across runs, so Hermes is installed there once and reused. Window and UI tests in the VM

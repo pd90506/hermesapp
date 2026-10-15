@@ -58,15 +58,13 @@ struct SessionListView: View {
                               subtitle: subtitle,
                               newChat: newChatRow)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        // A bar like the header's: rows fade out under it instead of showing through the
+        // status text, and it keeps the sidebar's material (an opaque .bar did not).
+        .safeAreaBar(edge: .bottom) {
             VStack(spacing: 0) {
                 banners
                 SidebarFooter(status: statusText, color: statusColor) { EmptyView() }
             }
-            // The list scrolls under this inset; without a bar behind it, rows
-            // showed through the status text.
-            .background(.bar)
-            .overlay(alignment: .top) { Divider() }
         }
         .toolbar {
             SettingsToolbarItem(presentation: $model.settingsPresentation)

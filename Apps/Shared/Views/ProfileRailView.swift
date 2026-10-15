@@ -11,13 +11,21 @@ struct ProfileRailView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 4) {
-                ForEach(model.sidebarServers) { server in
-                    section(server)
+            VStack(spacing: 10) {
+                ForEach(Array(model.sidebarServers.enumerated()), id: \.element.id) { index, server in
+                    if index > 0 {
+                        Divider()
+                            .frame(width: 32)
+                    }
+                    // One container per server: profile names repeat across servers
+                    // ("default" on both), and a flat list keyed by name mixed them up.
+                    VStack(spacing: 2) {
+                        section(server)
+                    }
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            .padding(.vertical, 8)
         }
         .scrollIndicators(.never)
         .navigationTitle("Profiles")
@@ -38,6 +46,7 @@ struct ProfileRailView: View {
         if model.showsServerNames {
             RailServerHeader(name: server.name, color: statusColor(server))
                 .help(statusHelp(server))
+                .padding(.bottom, 2)
         }
         ForEach(connection.bots) { bot in
             ProfileRailItem(bot: bot, activity: connection.activity(for: bot),

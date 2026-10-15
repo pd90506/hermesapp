@@ -106,6 +106,17 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     `.env.live-remote` (URL, username, password; the user writes it).
   - Everything runs in the `hermesapp-test` profile (`test` is reserved by Hermes), never in a
     real profile. A test that creates a chat deletes it, also when it fails.
+- **Tests in the VM use a Hermes installed in the VM** (decided by the user, 2026-10).
+  - The test VM (`hermesapp-test-vm`, `scripts/vm-test.sh`) is cloned once and keeps its disk
+    across runs, so Hermes is installed there once and reused. Window and UI tests in the VM
+    connect to that Hermes, in the `hermesapp-test` profile, instead of tunnelling to a
+    dashboard on the Mac.
+  - The model key is the user's dedicated OpenCode Go test key, in the git-ignored
+    `.env.vm-hermes` at the repo root on the Mac (`OPENCODE_GO_API_KEY=…`, mode 600; the
+    user writes it). It is copied into the VM's `~/.hermes/.env` and nowhere else. Never put
+    it in a commit, a log, a chat message or the host's `~/.hermes`.
+  - Without that file, the VM's Hermes still serves profiles and session lists (enough for
+    layout checks) but cannot answer messages; tests that need a reply skip.
 - Fake server payloads must match what Hermes actually sends, not the contract's optional fields.
   For example, resume payloads have `session_key` and no `stored_session_id`. Cite the Hermes
   source line when adding a fixture shape.

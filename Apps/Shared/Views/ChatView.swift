@@ -12,23 +12,39 @@ struct ChatView: View {
     /// The chat's own composer: it outlives this view (`GatewayConnection.composer(for:)`).
     private var composer: ChatComposer { server.connection.composer(for: session) }
 
+    /// The row at the top of the transcript when an older page was asked for: once the
+    /// page lands, the chat scrolls it back to the top of the screen.
+    @State private var olderPageAnchor: String?
+
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                HistoryHeader(session: session)
-                TranscriptMessages(transcript: session.transcript) { item, isNewest in
-                    MessageRow(item: item, isNewest: isNewest, profile: session.profile, session: session)
-                } requests: {
-                    ForEach(session.transcript.pendingRequests) { request in
-                        RequestCardView(session: session, request: request)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    HistoryHeader(session: session, loadOlder: loadOlderMessages)
+                    TranscriptMessages(transcript: session.transcript) { item, isNewest in
+                        MessageRow(item: item, isNewest: isNewest, profile: session.profile, session: session)
+                    } requests: {
+                        ForEach(session.transcript.pendingRequests) { request in
+                            RequestCardView(session: session, request: request)
+                        }
                     }
                 }
+                .padding()
             }
-            .padding()
+            // Opens at the newest message and stays there as a reply streams in.
+            .defaultScrollAnchor(.bottom)
+            // An older page lands above the rows on screen. Left alone, the view stays
+            // at the top edge, so the header shows again and reads the next page, and
+            // so on to the beginning. Keep the row that was on top where it was: the
+            // header leaves the screen until the user scrolls up past the new page.
+            .onChange(of: session.transcript.nextOlderOffset) {
+                guard let anchor = olderPageAnchor else { return }
+                olderPageAnchor = nil
+                if let id = session.transcript.blockID(containing: anchor) {
+                    proxy.scrollTo(id, anchor: .top)
+                }
+            }
         }
-        // Bottom-anchored for size changes too: an older page prepended above
-        // keeps the rows on screen where they are.
-        .defaultScrollAnchor(.bottom)
         .safeAreaInset(edge: .bottom) {
             ComposerView(composer: composer, isConnected: server.isConnected)
                 .padding(.horizontal, 12)
@@ -40,12 +56,22 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
     }
+
+    private func loadOlderMessages() async {
+        let offset = session.transcript.nextOlderOffset
+        olderPageAnchor = session.transcript.items.first?.id
+        await session.loadOlderMessages()
+        // No page landed (failed, cancelled, nothing older): nothing to restore.
+        if session.transcript.nextOlderOffset == offset { olderPageAnchor = nil }
+    }
 }
 
 /// Top of the transcript: loads the next older page while it is on screen,
 /// offers a retry when a page failed, and marks the beginning of the chat.
 private struct HistoryHeader: View {
     let session: ChatSession
+    /// Reads the next older page, keeping the rows on screen in place.
+    let loadOlder: @MainActor @Sendable () async -> Void
     @State private var isVisible = false
 
     /// Re-runs the load when a page lands and the header is still on screen.
@@ -70,7 +96,7 @@ private struct HistoryHeader: View {
             // Leaving the screen changes the trigger and cancels this task.
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled, isVisible else { return }
-            await session.loadOlderMessages()
+            await loadOlder()
         }
     }
 
@@ -79,9 +105,9 @@ private struct HistoryHeader: View {
         case .loadingLatest, .loadingOlder:
             ProgressView().controlSize(.small)
         case .latestFailed(let message):
-            retry("Couldn't load messages: \(message)")
+            retry("Couldn't load messages: \(message)") { await session.retryHistory() }
         case .olderFailed(let message):
-            retry("Couldn't load earlier messages: \(message)")
+            retry("Couldn't load earlier messages: \(message)", action: loadOlder)
         case .unavailable(let message):
             Label(message, systemImage: "exclamationmark.triangle")
                 .multilineTextAlignment(.center)
@@ -94,12 +120,12 @@ private struct HistoryHeader: View {
         }
     }
 
-    private func retry(_ message: String) -> some View {
+    private func retry(_ message: String, action: @escaping @MainActor @Sendable () async -> Void) -> some View {
         VStack(spacing: 6) {
             Label(message, systemImage: "exclamationmark.triangle")
                 .multilineTextAlignment(.center)
             Button("Retry") {
-                Task { await session.retryHistory() }
+                Task { await action() }
             }
             .hoverButtonStyle(padding: 4)
             .foregroundStyle(.tint)

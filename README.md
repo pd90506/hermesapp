@@ -124,8 +124,9 @@ open Hermes.xcodeproj
 `scripts/live-test.sh` runs end-to-end tests against real dashboards, in the `hermesapp-test`
 profile only, then deletes the chats they made. `--ui` adds the iOS-simulator UI test (headless).
 `scripts/vm-test.sh` runs everything without touching your screens: the above here, and the macOS
-window and UI tests in a headless Tart VM (macOS 27 + Xcode 27 image). Rules and env files:
-AGENTS.md, "Testing conventions".
+window and UI tests in a headless Tart VM (macOS 27 + Xcode 27 image). The VM installs its own
+Hermes on the first run and tests against it; its model key comes from the git-ignored
+`.env.vm-hermes`. Rules and env files: AGENTS.md, "Testing conventions".
 
 ### Why XcodeGen
 

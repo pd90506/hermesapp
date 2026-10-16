@@ -70,11 +70,12 @@ struct SessionListView: View {
         #if os(macOS)
         .toolbar {
             // The column's title, in the title bar right after the window buttons. Its
-            // width is what puts New chat, which follows it, at this column's trailing
+            // width is what puts New chat, which follows it, at the sidebar's trailing
             // edge, level with the name (`titleWidth`). (Otherwise New chat landed right
             // after the name, or after a flexible spacer at the window's trailing edge;
-            // inside this item, its tooltip covered the whole title.)
-            ToolbarItem(placement: .navigation) {
+            // inside this item, its tooltip covered the whole title.) Both are primary
+            // actions: those stay over the sidebar, where `.navigation` went over the chat.
+            ToolbarItem(placement: .primaryAction) {
                 ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
                     .frame(width: titleWidth, alignment: .leading)
                     .background(WindowFrameReader { followTitleStart($0.minX) })

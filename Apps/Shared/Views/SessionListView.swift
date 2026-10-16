@@ -333,13 +333,15 @@ struct SessionListView: View {
     }
 
     /// The title starts after the window buttons, over the profile rail, so that start is
-    /// measured (`followTitleStart`). Until it is, the title takes no width: a guess that
-    /// was too wide didn't fit the sidebar's title bar, which then dropped the title
-    /// without showing it, and so never measured it.
+    /// measured (`followTitleStart`). Until it is, the title is a modest width that fits:
+    /// the title bar drops an item that doesn't fit, or has no width, without a trace,
+    /// and a dropped title is never measured.
     private var titleWidth: CGFloat {
-        guard let columnFrame, let titleMinX else { return 0 }
-        return max(0, columnFrame.maxX - titleMinX - Self.newChatSlot)
+        guard let columnFrame, let titleMinX else { return Self.unmeasuredTitleWidth }
+        return max(Self.unmeasuredTitleWidth, columnFrame.maxX - titleMinX - Self.newChatSlot)
     }
+
+    private static let unmeasuredTitleWidth: CGFloat = 100
     #endif
 
     private var newChatButton: NewChatButton? {

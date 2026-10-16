@@ -205,17 +205,10 @@ struct ComposerView: View {
     }
 
     private func handleSlashKey(_ key: ComposerTextView.SlashKey) -> Bool {
-        if key == .tab, composer.swallowsSlashTab { return true }
-        guard composer.slashIsOpen else { return false }
-        switch key {
-        case .up: composer.moveSlashSelection(-1)
-        case .down: composer.moveSlashSelection(1)
-        case .tab, .accept:
-            // False: nothing to take, so Return sends the draft as typed.
-            guard composer.acceptSlashSuggestionFromKey(isTab: key == .tab) else { return false }
-            focusRequest += 1
-        case .escape: composer.dismissSlashSuggestions()
-        }
+        let hadRows = composer.slashIsOpen
+        // False: not the list's key, so Return sends the draft as typed.
+        guard composer.handleSlashKey(key) else { return false }
+        if hadRows, key == .tab || key == .accept { focusRequest += 1 }
         return true
     }
 

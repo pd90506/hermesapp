@@ -216,8 +216,28 @@ final class LiveChatUITests: XCTestCase {
                                  "New chat is level with the title bar: \(button) vs \(close.frame)")
     }
 
-    /// The title bar reads as one band across the window: the same tone over the session
-    /// list and over the chat column, set off from the chat below it, with no chat and
+    /// The profile rail is one fixed width, and nothing in the menus hides it (a hidden
+    /// rail had no way back). Dragging the split view's dividers isn't tested here:
+    /// XCUI's synthesized drags don't move NSSplitView dividers in the VM, even on a
+    /// build whose rail a person can drag.
+    @MainActor
+    func testProfileRailIsFixed() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
+        XCTAssertEqual(rail.frame.width, 64, accuracy: 1, "the rail's width")
+        for title in ["Hide Sidebar", "Show Sidebar", "Toggle Sidebar"] {
+            XCTAssertFalse(app.menuBars.menuItems[title].exists, "the menus offer \(title)")
+        }
+        attach(app, "profile rail")
+    }
+
+    /// The title bar reads as one band across the window: the same tone over the profile
+    /// rail (where the window buttons are), the session list and the chat column, set off from the chat below it, with no chat and
     /// with one open. (The system's glass showed over the session list only.)
     @MainActor
     func testTitleBarIsOneBandAcrossTheColumns() throws {
@@ -235,6 +255,10 @@ final class LiveChatUITests: XCTestCase {
         // below it.
         let sessionX = newChat.frame.minX - 40 - frame.minX
         let chatX = list.frame.maxX + (frame.maxX - list.frame.maxX) * 0.75 - frame.minX
+        // Over the profile rail, above the window buttons: the band runs over it too.
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
+        let railX = rail.frame.midX - frame.minX
         func color(at x: CGFloat, _ y: CGFloat, in shot: XCUIScreenshot) -> [UInt8] {
             Self.pixels(of: shot.image, column: (x: x, from: y, to: y + 1), in: frame.size).first ?? []
         }
@@ -247,8 +271,10 @@ final class LiveChatUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
             let session = color(at: sessionX, 8, in: shot), chat = color(at: chatX, 8, in: shot)
-            let below = color(at: chatX, 120, in: shot)
-            XCTAssertFalse(session.isEmpty || chat.isEmpty || below.isEmpty, "read the window")
+            let over = color(at: railX, 8, in: shot), below = color(at: chatX, 120, in: shot)
+            XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
+            XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
+                          "\(state): the band over the session list \(session) and over the rail \(over) differ")
             XCTAssertTrue(zip(session, chat).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                           "\(state): the band over the session list \(session) and over the chat \(chat) differ")
             XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 8 },

@@ -3,6 +3,19 @@ import HermesKit
 import HermesProtocol
 import Observation
 
+/// A profile on one server (profile names are only unique per server).
+struct ProfileRef: Hashable {
+    var server: UUID
+    var profile: String
+}
+
+/// A profile just picked, and how many lists its server had read then: only a list
+/// read after that can show that its last chat is gone.
+struct PendingProfileChat: Equatable {
+    var profile: ProfileRef
+    var listReads: Int
+}
+
 /// The sign-in methods as the settings show them. Map 1:1 onto `GatewayCredential`.
 extension AuthMode {
     var label: String {
@@ -119,6 +132,12 @@ final class AppModel {
     var actionError: String?
     /// Sessions pinned to the top of their profile's list, kept across launches.
     private(set) var pins = SessionPins()
+    /// The chat each profile showed last, kept across launches: picking the profile
+    /// again shows it (`RootView`).
+    private(set) var profileChats = ProfileChats()
+    /// A profile picked in the rail whose last chat isn't shown yet: shown once it is
+    /// known (`RootView.restoreProfileChat`), or dropped when a row is clicked first.
+    var pendingProfileChat: PendingProfileChat?
 
     init() {
         #if DEBUG
@@ -159,6 +178,10 @@ final class AppModel {
         self.settingsPresentation = SettingsPresentation(hasServer: servers.contains { $0.hasURL })
         if let data = defaults.data(forKey: Self.pinsKey), let saved = try? JSONDecoder().decode(SessionPins.self, from: data) {
             self.pins = saved
+        }
+        if let data = defaults.data(forKey: Self.profileChatsKey),
+            let saved = try? JSONDecoder().decode(ProfileChats.self, from: data) {
+            self.profileChats = saved
         }
         if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
             saveServers()
@@ -210,9 +233,11 @@ final class AppModel {
         if activeServerID == server.id { activeServerID = nil }
         if sessionsServerID == server.id { sessionsServerID = servers.first?.id }
         pins.forgetServer(server.id)
+        profileChats.forgetServer(server.id)
         if !Self.isUITest {
             saveServers()
             savePins()
+            saveProfileChats()
             try? KeychainStore.write("", account: server.config.secretAccount)
         }
         await server.connection.disconnect()
@@ -228,6 +253,10 @@ final class AppModel {
 
     /// Picks a profile in the rail: the middle column lists its sessions.
     func selectProfile(_ profile: String, on server: ServerConnection) {
+        let picked = ProfileRef(server: server.id, profile: profile)
+        if selectedProfile.map({ ProfileRef(server: $0.server.id, profile: $0.profile) }) != picked {
+            pendingProfileChat = PendingProfileChat(profile: picked, listReads: server.connection.sessionListReads)
+        }
         sessionsServerID = server.id
         server.connection.selectListProfile(profile)
     }
@@ -236,6 +265,29 @@ final class AppModel {
     var selectedProfile: (server: ServerConnection, profile: String)? {
         guard let server = sessionsServer, let profile = server.connection.listProfile else { return nil }
         return (server, profile)
+    }
+
+    /// Remembers the chat on screen as the one its profile shows last.
+    func rememberChat(_ session: ChatSession, on server: ServerConnection) {
+        guard let profile = session.profile else { return }
+        let chat: ProfileChats.Chat
+        switch session.kind {
+        case .botChat: chat = .botChat
+        case .sideChat:
+            guard let id = session.storedSessionID else { return }
+            chat = .session(id)
+        case .session: return
+        }
+        guard profileChats.chat(of: profile, on: server.id) != chat else { return }
+        profileChats.record(chat, of: profile, on: server.id)
+        saveProfileChats()
+    }
+
+    private static let profileChatsKey = "profileChats"
+
+    private func saveProfileChats() {
+        guard !Self.isUITest, let data = try? JSONEncoder().encode(profileChats) else { return }
+        UserDefaults.standard.set(data, forKey: Self.profileChatsKey)
     }
 
     private func syncPages() {

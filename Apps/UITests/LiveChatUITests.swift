@@ -450,16 +450,27 @@ final class LiveChatUITests: XCTestCase {
         let profiles = rail.buttons.matching(NSPredicate(format: "label == %@", name))
         XCTAssertEqual(profiles.count, 2, "the test profile on both servers")
 
-        // Test 1: a new side chat.
+        // Test 1: a new side chat, with a message in it: a chat nobody wrote in isn't
+        // in the session list, so there is nothing to go back to.
         let newChat = app.buttons["New chat"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
         press(newChat)
-        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 30), "composer shown")
+        let composer = app.textViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        let marker = "PONG-\(Int.random(in: 1000...9999))"
+        composer.typeText("Reply with exactly \(marker) and nothing else. Do not use tools.")
+        press(app.buttons["Send"].firstMatch)
+        let reply = app.textViews.matching(NSPredicate(format: "value == %@", marker))
+        let deadline = Date().addingTimeInterval(150)
+        while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
+        // A side chat is titled "<title> · <bot>"; its title can change after the reply.
         let window = app.windows.firstMatch
-        let sideChat = waitForTitle(of: window, timeout: 30) { $0 != name && !$0.isEmpty }
+        let isSideChat: (String) -> Bool = { $0.hasSuffix(" · \(name)") }
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30, isSideChat), "the side chat is on screen: \(window.title)")
         attach(app, "Test 1: side chat")
-        XCTAssertNotNil(sideChat, "the side chat is on screen: \(window.title)")
 
         // Test 2 has no record: its Bot Chat, titled by the bot.
         press(profiles.element(boundBy: 1))
@@ -468,7 +479,7 @@ final class LiveChatUITests: XCTestCase {
 
         // Back on Test 1: the side chat again, not the Bot Chat just shown.
         press(profiles.element(boundBy: 0))
-        XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == sideChat }, "Test 1 shows its side chat again: \(window.title)")
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30, isSideChat), "Test 1 shows its side chat again: \(window.title)")
         attach(app, "Test 1: side chat again")
 
         // And Test 2 its Bot Chat.

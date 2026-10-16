@@ -158,6 +158,43 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertNil(Self.firstDifference(away, top), "the top of the chat under the pointer shades it")
     }
 
+    /// The session list's header (title bar, New chat) keeps one look: the same glass
+    /// whether or not the pointer is over the title bar. macOS 26 showed the toolbar's
+    /// glass only on hover (or with rows scrolled under it), so the header changed as
+    /// the pointer crossed it.
+    @MainActor
+    func testSessionListHeaderLooksTheSameUnderThePointer() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+
+        // From the top of the window to a little under New chat, at the column's
+        // trailing side, away from where the pointer goes.
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        let row = newChat.frame
+        let column = (x: row.maxX - 24 - frame.minX, from: CGFloat(4), to: row.maxY + 12 - frame.minY)
+        func shot(_ name: String) -> [[UInt8]] {
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let shot = window.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return Self.pixels(of: shot.image, column: column, in: frame.size)
+        }
+
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
+        let away = shot("pointer on the chat column")
+        XCTAssertFalse(away.isEmpty, "read the session list's header")
+        window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: row.minX + 40 - frame.minX, dy: 16)).hover()
+        let titleBar = shot("pointer on the session list's title bar")
+        XCTAssertNil(Self.firstDifference(away, titleBar), "the header changes under the pointer")
+    }
+
     /// The RGB of each pixel down a column of the screenshot, in window points
     /// (top-left origin).
     private static func pixels(of image: NSImage, column: (x: CGFloat, from: CGFloat, to: CGFloat),

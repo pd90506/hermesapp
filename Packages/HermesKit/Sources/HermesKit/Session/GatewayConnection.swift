@@ -35,6 +35,11 @@ public final class GatewayConnection {
     public internal(set) var otherSessionRequests: [ServerRequest] = []
     /// Every profile as a bot, `default` first (`GatewayConnection+Bots.swift`).
     public internal(set) var bots: [Bot] = []
+    /// Avatar images by profile name, for the bots that have one
+    /// (`GatewayConnection+Avatars.swift`).
+    public internal(set) var avatars: [String: Data] = [:]
+    /// Profiles whose avatar is being read.
+    @ObservationIgnored var avatarLoads: Set<String> = []
     public enum NavigationPage: String, CaseIterable, Sendable { case bots, sessions }
     public var navigationPage: NavigationPage = .bots
     public internal(set) var listProfile: String?
@@ -168,6 +173,8 @@ public final class GatewayConnection {
         otherSessionRequests = []
         sessions = []
         bots = []
+        avatars = [:]
+        avatarLoads = []
         history = []
         listProfile = nil
         sessionListToken += 1

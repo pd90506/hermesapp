@@ -321,6 +321,7 @@ extension GatewayConnection {
         listProfile = profile
         sessionListToken += 1
         history = []
+        historyProfile = nil
         sessionListLoading = false
         sessionListError = nil
     }
@@ -361,6 +362,8 @@ extension GatewayConnection {
                         if let bot { return !Self.isBotChat(row, of: bot) }
                         return !Bot.isChatRow(row)
                     }.map { HistoryEntry(profile: profile, summary: $0) }
+                    historyProfile = profile
+                    sessionListReads += 1
                     return
                 }
                 guard limit <= Int.max / 2 else { throw SessionListError.tooLarge }

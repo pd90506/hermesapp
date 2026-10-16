@@ -48,6 +48,17 @@ struct RootView: View {
         // A click on another server's row moves `activeServerID` before its chat opens,
         // so only a server that stopped showing anything (disconnected, removed) clears it.
         .onChange(of: model.activeServerID) { _, id in if id == nil { followActiveChat() } }
+        // Whichever way a chat came on screen (a click, a new side chat, a fork), its
+        // profile shows it next time. A new chat's stored id can come after it opens.
+        .onChange(of: activeChatKey) { _, _ in
+            if let server = model.activeServer, let session = server.connection.activeSession {
+                model.rememberChat(session, on: server)
+            }
+        }
+        // Picking another profile in the rail shows the chat it showed last: its Bot
+        // Chat, or a session once its list confirms the session is still there.
+        .onChange(of: model.pendingProfileChat) { _, _ in restoreProfileChat() }
+        .onChange(of: shownProfile) { _, _ in restoreProfileChat() }
         .task {
             // Auto-connect on launch when settings exist.
             if model.servers.contains(where: \.hasURL) {
@@ -94,7 +105,10 @@ struct RootView: View {
                 get: { selection },
                 set: { item in
                     selection = item
-                    if let item { Task { await open(item) } }
+                    if let item {
+                        model.pendingProfileChat = nil
+                        Task { await open(item) }
+                    }
                 }),
             showChat: { compactColumn = .detail })
     }
@@ -122,6 +136,42 @@ struct RootView: View {
     private func followActiveChat() {
         let shown = model.activeServer.flatMap { item(for: $0.connection.activeSession, on: $0) }
         if selection != shown { selection = shown }
+    }
+
+    private var activeChatKey: String? {
+        guard let session = model.activeServer?.connection.activeSession else { return nil }
+        return "\(session.id)/\(session.storedSessionID ?? "")"
+    }
+
+    /// The profile the session list shows, and how far its list is read.
+    private var shownProfile: ShownProfile? {
+        guard let selected = model.selectedProfile else { return nil }
+        let connection = selected.server.connection
+        return ShownProfile(server: selected.server.id, profile: selected.profile,
+                            listRead: connection.historyProfile == selected.profile,
+                            listReads: connection.sessionListReads,
+                            listFailed: connection.sessionListError != nil)
+    }
+
+    private func restoreProfileChat() {
+        guard let pending = model.pendingProfileChat, let shown = shownProfile, shown.ref == pending.profile,
+            let server = model.server(shown.server)
+        else { return }
+        let history = shown.listRead ? server.connection.history : nil
+        let item: SidebarItem
+        switch model.profileChats.restore(shown.profile, on: server.id, history: history,
+                                          isCurrent: shown.listReads > pending.listReads) {
+        case .botChat: item = .bot(server: server.id, profile: shown.profile)
+        case .session(let entry): item = .history(server: server.id, id: entry.id)
+        case .waitForList:
+            // A list that can't be read can't confirm the session: the Bot Chat meanwhile.
+            guard shown.listFailed else { return }
+            item = .bot(server: server.id, profile: shown.profile)
+        }
+        model.pendingProfileChat = nil
+        guard selection != item else { return }
+        selection = item
+        Task { await open(item) }
     }
 
     /// The sidebar row for a chat, if it has one.
@@ -182,6 +232,18 @@ struct RootView: View {
         case .session: return nil
         }
     }
+}
+
+/// A profile in the session list, by server and name.
+private struct ShownProfile: Equatable {
+    var server: UUID
+    var profile: String
+    /// Whether its session list has been read, and how many lists its server has read.
+    var listRead: Bool
+    var listReads: Int
+    var listFailed: Bool
+
+    var ref: ProfileRef { ProfileRef(server: server, profile: profile) }
 }
 
 /// The frame of a chat being opened: its title and a spinner where the transcript goes.

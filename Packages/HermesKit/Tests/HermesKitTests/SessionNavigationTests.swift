@@ -174,4 +174,32 @@ struct SessionNavigationTests {
         #expect(!connection.sessionListLoading)
         #expect(connection.history.isEmpty)
     }
+
+    /// `historyProfile` says when `history` is the selected profile's list, so an empty
+    /// one reads as "no sessions" only after the read (`ProfileChats.restore`).
+    @Test func historyProfileMarksTheListAsRead() async throws {
+        let (connection, gateway) = try await connect()
+        gateway.on("session.list") { params in
+            if params["profile"] == "coder" { return nil }
+            return .result(["sessions": []])
+        }
+        connection.selectListProfile("coder")
+        #expect(connection.historyProfile == nil)
+        let old = Task { await connection.refreshSessionList() }
+        #expect(await eventually { gateway.log.requests("session.list").contains { $0["params"]?["profile"] == "coder" } })
+        let held = try #require(gateway.log.requests("session.list").last { $0["params"]?["profile"] == "coder" })
+        #expect(connection.historyProfile == nil)
+        connection.selectListProfile("default")
+        await connection.refreshSessionList()
+        #expect(connection.historyProfile == "default")
+        #expect(connection.history.isEmpty)
+        let reads = connection.sessionListReads
+        await connection.refreshSessionList()
+        #expect(connection.sessionListReads == reads + 1)
+        // A late answer for the profile left behind marks nothing.
+        connection.selectListProfile("coder")
+        gateway.transport.respond(to: held, result: ["sessions": [sessionRow(id: "stale")]])
+        await old.value
+        #expect(connection.historyProfile == nil)
+    }
 }

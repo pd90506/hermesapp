@@ -316,3 +316,64 @@ struct SessionManagementTests {
         #expect(!pins.isPinned(row("x"), on: server))
     }
 }
+
+@Suite struct ProfileChatsTests {
+    private let server = UUID()
+    private func row(_ id: String, _ profile: String = "coder", resolved: String? = nil) -> HistoryEntry {
+        var summary = SessionSummary(id: id)
+        summary.resolvedID = resolved
+        return HistoryEntry(profile: profile, summary: summary)
+    }
+
+    @Test func noRecordShowsTheBotChat() {
+        let chats = ProfileChats()
+        #expect(chats.restore("coder", on: server, history: nil) == .botChat)
+        #expect(chats.restore("coder", on: server, history: [row("a")]) == .botChat)
+    }
+
+    @Test func aRememberedBotChatNeedsNoList() {
+        var chats = ProfileChats()
+        chats.record(.session("a"), of: "coder", on: server)
+        chats.record(.botChat, of: "coder", on: server)
+        #expect(chats.restore("coder", on: server, history: nil) == .botChat)
+    }
+
+    @Test func aRememberedSessionWaitsForTheListThenShowsIt() {
+        var chats = ProfileChats()
+        chats.record(.session("b"), of: "coder", on: server)
+        #expect(chats.restore("coder", on: server, history: nil) == .waitForList)
+        #expect(chats.restore("coder", on: server, history: [row("a"), row("b")]) == .session(row("b")))
+        // Known by the id it resolved to.
+        #expect(chats.restore("coder", on: server, history: [row("x", resolved: "b")]) == .session(row("x", resolved: "b")))
+    }
+
+    @Test func aSessionThatIsGoneShowsTheBotChat() {
+        var chats = ProfileChats()
+        chats.record(.session("b"), of: "coder", on: server)
+        #expect(chats.restore("coder", on: server, history: []) == .botChat)
+        #expect(chats.restore("coder", on: server, history: [row("b", "finance")]) == .botChat)
+    }
+
+    /// A list read before the profile was picked can be out of date.
+    @Test func anOlderListCanOnlyConfirmTheSession() {
+        var chats = ProfileChats()
+        chats.record(.session("b"), of: "coder", on: server)
+        #expect(chats.restore("coder", on: server, history: [row("b")], isCurrent: false) == .session(row("b")))
+        #expect(chats.restore("coder", on: server, history: [row("a")], isCurrent: false) == .waitForList)
+    }
+
+    /// Profile names are per server; records survive a relaunch and go with their server.
+    @Test func aRecordBelongsToOneServerAndProfile() throws {
+        var chats = ProfileChats()
+        let other = UUID()
+        chats.record(.session("b"), of: "coder", on: server)
+        #expect(chats.chat(of: "finance", on: server) == nil)
+        #expect(chats.chat(of: "coder", on: other) == nil)
+
+        let decoded = try JSONDecoder().decode(ProfileChats.self, from: JSONEncoder().encode(chats))
+        #expect(decoded.chat(of: "coder", on: server) == .session("b"))
+
+        chats.forgetServer(server)
+        #expect(chats.chat(of: "coder", on: server) == nil)
+    }
+}

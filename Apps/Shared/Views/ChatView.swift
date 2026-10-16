@@ -54,6 +54,11 @@ struct ChatView: View {
         .navigationTitle(title ?? session.title ?? "New Chat")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #else
+        // No toolbar background over the chat. Its title bar holds no controls, and
+        // macOS 26 showed that background while the pointer was over the title bar or
+        // the top of the chat: a gray band down to the first message, with a line under it.
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
     }
 

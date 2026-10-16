@@ -216,6 +216,36 @@ final class LiveChatUITests: XCTestCase {
                                  "New chat is level with the title bar: \(button) vs \(close.frame)")
     }
 
+    /// New chat holds still in the title bar, with a chat open and with none. It
+    /// jittered back and forth when its title's measured start fed back into the title's
+    /// width.
+    @MainActor
+    func testNewChatHoldsStill() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        func check(_ state: String) {
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+            var frames: [CGRect] = []
+            for _ in 0..<20 {
+                frames.append(newChat.frame)
+                RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+            }
+            let xs = frames.map(\.minX)
+            XCTAssertLessThanOrEqual((xs.max() ?? 0) - (xs.min() ?? 0), 0.5,
+                                     "\(state): New chat moved while idle: \(xs)")
+            attach(app, state)
+        }
+        check("no chat")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 30), "composer shown")
+        check("a chat open")
+    }
+
     /// The profile rail is one fixed width, and nothing in the menus hides it (a hidden
     /// rail had no way back). Dragging the split view's dividers isn't tested here:
     /// XCUI's synthesized drags don't move NSSplitView dividers in the VM, even on a

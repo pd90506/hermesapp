@@ -51,6 +51,12 @@ public final class GatewayConnection {
 
     /// Ordinary sessions for the selected list profile, in server order.
     public internal(set) var history: [HistoryEntry] = []
+    /// The profile whose sessions `history` holds: `nil` until the first read of the
+    /// selected profile's list comes back (an empty `history` is then "no sessions").
+    public internal(set) var historyProfile: String?
+    /// How many times a session list was read, to tell a list read after some moment
+    /// from one read before it.
+    public internal(set) var sessionListReads = 0
     /// A chat being opened for the first time: shown as a frame (title, loading)
     /// at once instead of the previous chat, until it is active or the open fails.
     public private(set) var opening: PendingChat?
@@ -176,6 +182,7 @@ public final class GatewayConnection {
         avatars = [:]
         avatarLoads = []
         history = []
+        historyProfile = nil
         listProfile = nil
         sessionListToken += 1
         sessionListLimits = [:]

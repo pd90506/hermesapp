@@ -425,6 +425,80 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
     }
 
+    #if os(macOS)
+    /// Each profile shows the chat it showed last: a session it was left on, else its
+    /// Bot Chat. Two servers list the same profile, so the test never leaves
+    /// `hermesapp-test`; each server's copy keeps its own record.
+    @MainActor
+    func testEachProfileReturnsToItsLastChat() throws {
+        continueAfterFailure = false
+        let app = try launchApp(servers: 2)
+        defer { app.terminate() }
+        let connected = ["Test 1", "Test 2"].map { name in
+            XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true"),
+                object: app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label == %@ AND value == %@", name, "Connected")).firstMatch)
+        }
+        XCTAssertEqual(XCTWaiter().wait(for: connected, timeout: 60), .completed, "both servers connected")
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
+        // The test profile, selected on Test 1; the same profile on Test 2 is listed after it.
+        let picked = rail.buttons.matching(NSPredicate(format: "isSelected == true")).firstMatch
+        XCTAssertTrue(picked.waitForExistence(timeout: 30), "a profile is selected")
+        let name = picked.label
+        let profiles = rail.buttons.matching(NSPredicate(format: "label == %@", name))
+        XCTAssertEqual(profiles.count, 2, "the test profile on both servers")
+
+        // Test 1: a new side chat, with a message in it: a chat nobody wrote in isn't
+        // in the session list, so there is nothing to go back to.
+        let newChat = app.buttons["New chat"]
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        let composer = app.textViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        let marker = "PONG-\(Int.random(in: 1000...9999))"
+        composer.typeText("Reply with exactly \(marker) and nothing else. Do not use tools.")
+        press(app.buttons["Send"].firstMatch)
+        let reply = app.textViews.matching(NSPredicate(format: "value == %@", marker))
+        let deadline = Date().addingTimeInterval(150)
+        while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
+        // A side chat is titled "<title> · <bot>"; its title can change after the reply.
+        let window = app.windows.firstMatch
+        let isSideChat: (String) -> Bool = { $0.hasSuffix(" · \(name)") }
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30, isSideChat), "the side chat is on screen: \(window.title)")
+        attach(app, "Test 1: side chat")
+
+        // Test 2 has no record: its Bot Chat, titled by the bot.
+        press(profiles.element(boundBy: 1))
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "Test 2 shows its Bot Chat: \(window.title)")
+        attach(app, "Test 2: Bot Chat")
+
+        // Back on Test 1: the side chat again, not the Bot Chat just shown.
+        press(profiles.element(boundBy: 0))
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30, isSideChat), "Test 1 shows its side chat again: \(window.title)")
+        attach(app, "Test 1: side chat again")
+
+        // And Test 2 its Bot Chat.
+        press(profiles.element(boundBy: 1))
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "Test 2 shows its Bot Chat again: \(window.title)")
+    }
+
+    /// The window's title (the chat's) once it passes `test`, or nil.
+    @MainActor
+    private func waitForTitle(of window: XCUIElement, timeout: TimeInterval, _ test: (String) -> Bool) -> String? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if test(window.title) { return window.title }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        return nil
+    }
+    #endif
+
     /// Whether some text containing `text` shows up: a static text (macOS keeps its
     /// string in the value, iOS in the label) or a combined element's label.
     @MainActor

@@ -140,6 +140,10 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     merged branch.
   - Every app build (macOS and iOS) happens in that main checkout, with Xcode's default
     DerivedData. Don't build from other worktrees or into a custom `-derivedDataPath`.
+  - Each build overwrites the last: the host keeps exactly one Hermes.app (bundle id
+    `com.example.hermesapp.mac`), the one in that DerivedData. Remove any stray copy (and
+    `lsregister -u` it) rather than leaving extra builds around (decided by the user,
+    2026-10-16).
   - To build a PR branch: check `git status` first (never discard uncommitted work), switch the
     main checkout to the branch, build, and switch back to `main` once the user has tried it.
   - Write code on a new branch from the latest `origin/main`, in a separate `git worktree`

@@ -170,12 +170,12 @@ final class LiveChatUITests: XCTestCase {
         let newChat = app.buttons["New chat"]
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
 
-        // From the top of the window to a little under New chat, at the column's
-        // trailing side, away from where the pointer goes.
+        // From the top of the window to a little under the title bar, just left of New
+        // chat (at the column's trailing edge), away from where the pointer goes.
         let window = app.windows.firstMatch
         let frame = window.frame
         let row = newChat.frame
-        let column = (x: row.maxX - 24 - frame.minX, from: CGFloat(4), to: row.maxY + 12 - frame.minY)
+        let column = (x: row.minX - 12 - frame.minX, from: CGFloat(4), to: row.maxY + 24 - frame.minY)
         func shot(_ name: String) -> [[UInt8]] {
             RunLoop.current.run(until: Date().addingTimeInterval(1.5))
             let shot = window.screenshot()
@@ -190,7 +190,7 @@ final class LiveChatUITests: XCTestCase {
         let away = shot("pointer on the chat column")
         XCTAssertFalse(away.isEmpty, "read the session list's header")
         window.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: row.minX + 40 - frame.minX, dy: 16)).hover()
+            .withOffset(CGVector(dx: row.minX - 60 - frame.minX, dy: 16)).hover()
         let titleBar = shot("pointer on the session list's title bar")
         XCTAssertNil(Self.firstDifference(away, titleBar), "the header changes under the pointer")
     }

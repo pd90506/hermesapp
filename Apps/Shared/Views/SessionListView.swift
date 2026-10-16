@@ -20,8 +20,9 @@ enum SidebarItem: Hashable {
 /// first, then its sessions.
 ///
 /// - On macOS the profile's name (and server) is the column's title, in the title bar
-///   level with the window buttons. Pinned at the top, New chat (`SessionListHeader`,
-///   which also shows the name on iOS); rows scroll under it.
+///   level with the window buttons, with New chat (`NewChatButton`, a compose icon) at
+///   the column's trailing edge, level with the name. On iOS both are in the pinned
+///   `SessionListHeader`; rows scroll under it.
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
 /// - Settings is at the bottom of the profile rail (on iPhone, a toolbar button here).
@@ -67,6 +68,12 @@ struct SessionListView: View {
                 ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
             }
             .sharedBackgroundVisibility(.hidden)
+            // New chat, at the column's trailing edge, level with the name.
+            if let newChatButton {
+                ToolbarItem(placement: .primaryAction) {
+                    newChatButton
+                }
+            }
         }
         .toolbar(removing: .title)
         // The hard edge style: the title bar's glass shows over the header all the
@@ -80,16 +87,14 @@ struct SessionListView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
+        #if os(iOS)
         // Pinned above the list: it never scrolls away; rows scroll under it.
         .safeAreaBar(edge: .top) {
-            #if os(macOS)
-            SessionListHeader(newChat: newChatRow)
-            #else
             SessionListHeader(title: profileName ?? "No profile",
                               subtitle: subtitle,
-                              newChat: newChatRow)
-            #endif
+                              newChat: newChatButton)
         }
+        #endif
         // A bar like the header's: rows fade out under it instead of showing through the
         // status text, and it keeps the sidebar's material (an opaque .bar did not).
         .safeAreaBar(edge: .bottom) {
@@ -307,11 +312,11 @@ struct SessionListView: View {
         }
     }
 
-    private var newChatRow: NewChatRow? {
+    private var newChatButton: NewChatButton? {
         guard let server = model.sessionsServer else { return nil }
         let connection = server.connection
-        return NewChatRow(isEnabled: connection.canStartListChat && !isStartingChat,
-                          disabledReason: newChatDisabledReason(server)) {
+        return NewChatButton(isEnabled: connection.canStartListChat && !isStartingChat,
+                             disabledReason: newChatDisabledReason(server)) {
             if let bot = connection.listProfileBot { startSideChat(with: bot, on: server) }
         }
     }

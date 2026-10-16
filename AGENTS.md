@@ -134,5 +134,15 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   small and the package green.
 - CI (`.github/workflows/package-tests.yml`) runs only on Linux. macOS runners cost 10x on a
   private repo, so app builds are checked by hand on the Mac.
+- **The Mac's main checkout and app builds** (decided by the user, 2026-10-16):
+  - The main checkout on the Mac (`~/repo/fun/hermesapp`) stays on local `main`, kept up to
+    date with `origin/main`. Don't leave it on a feature branch, and don't start new work on a
+    merged branch.
+  - Every app build (macOS and iOS) happens in that main checkout, with Xcode's default
+    DerivedData. Don't build from other worktrees or into a custom `-derivedDataPath`.
+  - To build a PR branch: check `git status` first (never discard uncommitted work), switch the
+    main checkout to the branch, build, and switch back to `main` once the user has tried it.
+  - Write code on a new branch from the latest `origin/main`, in a separate `git worktree`
+    beside the main checkout, not in the main checkout itself.
 - When you finish a task, report: changed paths, the commands you ran and their results, and
   what remains unverified (especially anything that needs the Mac).

@@ -243,7 +243,9 @@ final class LiveChatUITests: XCTestCase {
                                  "the rail's divider: \(railDivider.frame) after \(rail.frame)")
         func drag(_ splitter: XCUIElement, by dx: CGFloat) {
             let start = splitter.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            start.press(forDuration: 0.3, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)))
+            // Slowly, as a person would: a fast drag on the 1 pt divider left it in place.
+            start.press(forDuration: 0.5, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
             RunLoop.current.run(until: Date().addingTimeInterval(1))
         }
         func checkNewChat(_ state: String) {

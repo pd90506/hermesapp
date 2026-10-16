@@ -2,8 +2,7 @@ import HermesKit
 import HermesProtocol
 import SwiftUI
 
-/// Profile rail + session list + chat. Used by both apps; on iPhone the split view
-/// collapses into a navigation stack automatically (profiles → sessions → chat).
+/// Profile rail + session list + chat (`split`). Used by both apps.
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: SidebarItem?
@@ -14,39 +13,10 @@ struct RootView: View {
     @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
-            ProfileRailView(showSessions: { compactColumn = .content })
-        } content: {
-            SessionListView(
-                selection: Binding(
-                    get: { selection },
-                    set: { item in
-                        selection = item
-                        if let item { Task { await open(item) } }
-                    }),
-                showChat: { compactColumn = .detail })
-        } detail: {
-            Group {
-                if let server = model.activeServer, let opening = server.connection.opening {
-                    // A first open: the chat's frame at once, not the previous chat.
-                    OpeningChatView(title: title(of: opening, on: server))
-                } else if let server = model.activeServer, let session = server.connection.activeSession {
-                    ChatView(session: session, title: title(of: session, on: server))
-                        .id(session.id)  // a fresh composer per chat
-                        .environment(server)
-                } else {
-                    ContentUnavailableView(
-                        "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
-                        description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
-                }
-            }
-            // The whole column, so the band spans it whatever is shown.
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .titleBarBand()
-        }
+        split
         #if os(macOS)
-        // All three columns, always: dragging the rail's divider (or the sidebar
-        // shortcut) could collapse the profile rail, with nothing to bring it back.
+        // The sidebar, always: dragging its edge (or the sidebar shortcut) could collapse
+        // it, with nothing to bring the profiles back.
         .onChange(of: columns) { _, visibility in
             if visibility != .all { columns = .all }
         }
@@ -85,6 +55,68 @@ struct RootView: View {
                 if !model.isAnyConnected { model.settingsPresentation.requireConnection() }
             }
         }
+    }
+
+    /// On macOS, as in Mail: one sidebar, the profile rail beside the session list on the
+    /// same glass panel (the window buttons sit on it), and the chat. On iOS three
+    /// columns; on iPhone they collapse into a navigation stack (profiles → sessions → chat).
+    @ViewBuilder private var split: some View {
+        #if os(macOS)
+        NavigationSplitView(columnVisibility: $columns) {
+            HStack(spacing: 0) {
+                ProfileRailView()
+                Divider()
+                sessionList
+            }
+            // Always shown (`body` also undoes a collapse): the rail is the only way to
+            // switch profiles. The rail keeps its width; the session list takes the rest.
+            .toolbar(removing: .sidebarToggle)
+            .navigationSplitViewColumnWidth(min: ProfileRailItem.width + 1 + 260,
+                                            ideal: ProfileRailItem.width + 1 + 320,
+                                            max: ProfileRailItem.width + 1 + 480)
+        } detail: {
+            chat
+        }
+        #else
+        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
+            ProfileRailView(showSessions: { compactColumn = .content })
+        } content: {
+            sessionList
+        } detail: {
+            chat
+        }
+        #endif
+    }
+
+    private var sessionList: some View {
+        SessionListView(
+            selection: Binding(
+                get: { selection },
+                set: { item in
+                    selection = item
+                    if let item { Task { await open(item) } }
+                }),
+            showChat: { compactColumn = .detail })
+    }
+
+    private var chat: some View {
+        Group {
+            if let server = model.activeServer, let opening = server.connection.opening {
+                // A first open: the chat's frame at once, not the previous chat.
+                OpeningChatView(title: title(of: opening, on: server))
+            } else if let server = model.activeServer, let session = server.connection.activeSession {
+                ChatView(session: session, title: title(of: session, on: server))
+                    .id(session.id)  // a fresh composer per chat
+                    .environment(server)
+            } else {
+                ContentUnavailableView(
+                    "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
+                    description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
+            }
+        }
+        // The whole column, so the band spans it whatever is shown.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .titleBarBand()
     }
 
     private func followActiveChat() {
@@ -169,12 +201,10 @@ private struct OpeningChatView: View {
 }
 
 extension View {
-    /// On macOS, a band under the title bar: a material strip the toolbar's height, with
-    /// a hairline under it. The session list and the chat both carry it, so their title
-    /// bars read as one band across the window (where it can be dragged), the same in
-    /// every state and whether or not the pointer is over it. The system's own title bar
-    /// glass couldn't do this: the session list's (its hard scroll edge) is the sidebar's
-    /// translucent glass, and the chat showed none, or only under the pointer.
+    /// On macOS, a band under the chat's title bar: a material strip the toolbar's height,
+    /// with a hairline under it, the same in every state and whether or not the pointer
+    /// is over it (the system's showed none, or only under the pointer). The sidebar
+    /// has its own glass.
     @ViewBuilder func titleBarBand() -> some View {
         #if os(macOS)
         overlay(alignment: .top) {

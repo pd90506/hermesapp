@@ -33,6 +33,11 @@ struct ChatView: View {
             }
             // Opens at the newest message and stays there as a reply streams in.
             .defaultScrollAnchor(.bottom)
+            #if os(macOS)
+            // The title bar's glass over the chat all the time, as over the session
+            // list, so the two title bars read as one band across the window.
+            .scrollEdgeEffectStyle(.hard, for: .top)
+            #endif
             // An older page lands above the rows on screen. Left alone, the view stays
             // at the top edge, so the header shows again and reads the next page, and
             // so on to the beginning. Keep the row that was on top where it was: the
@@ -55,9 +60,10 @@ struct ChatView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #else
-        // No toolbar background over the chat. Its title bar holds no controls, and
-        // macOS 26 showed that background while the pointer was over the title bar or
-        // the top of the chat: a gray band down to the first message, with a line under it.
+        // No toolbar background over the chat: macOS 26 showed it only while the pointer
+        // was over the title bar or the top of the chat, a gray band down to the first
+        // message with a line under it. The title bar's glass is the transcript's hard
+        // scroll edge instead, which is always there.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
     }

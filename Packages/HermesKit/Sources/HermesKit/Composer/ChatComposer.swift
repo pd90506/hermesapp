@@ -2,6 +2,11 @@ import Foundation
 import HermesProtocol
 import Observation
 
+/// The keys the composer's slash list takes: arrows, Tab, plain Return, Esc.
+public enum SlashListKey: Sendable, Hashable {
+    case up, down, tab, accept, escape
+}
+
 /// State behind one chat's composer: the draft, the attached images and files,
 /// and the session's model and reasoning-effort pickers. The view owns one per chat.
 @MainActor
@@ -41,6 +46,12 @@ public final class ChatComposer {
     private var slashCompletionCache: [String: SlashCompletions] = [:]
     /// The text whose `complete.slash` failed: no answer is coming for it.
     private var slashFailedText: String?
+    /// Shown where the list would be when a command name matches nothing (Desktop's
+    /// "No matches." with "Try /help", `trigger-popover.tsx:164-185`), or when the
+    /// lookup or the catalog failed. Never with rows; cleared whenever the list closes.
+    public private(set) var slashNotice: String?
+    /// Why the last `commands.catalog` failed, for `slashNotice`.
+    private var slashCatalogFailure: String?
     /// A `/compress` (or a Bot Chat `/new`) is running, for the composer's status
     /// row: Desktop shows a notice only for a compaction (`slash.ts:703-709`). Slash
     /// commands never block the composer; Desktop sends one without waiting for it
@@ -83,14 +94,19 @@ public final class ChatComposer {
         slashCatalog = nil
         slashCompletionCache = [:]
         slashFailedText = nil
+        slashCatalogFailure = nil
         closeSlashList()
         do {
             let catalog = try await session.loadSlashCommands()
             guard request == slashLoadRequest else { return }
             slashCatalog = catalog
             await updateSlashSuggestions()
+        } catch is CancellationError {
         } catch {
-            // Keep the draft intact. A later send gives an explicit local note.
+            // Keep the draft intact. Typing `/` shows why; a send gives a local note.
+            guard request == slashLoadRequest else { return }
+            slashCatalogFailure = GatewayConnection.describe(error)
+            await updateSlashSuggestions()
         }
     }
 
@@ -104,6 +120,12 @@ public final class ChatComposer {
             slashCatalog.listsArguments(text)
         else {
             closeSlashList()
+            // Only where Desktop shows its empty state: on a command name, not in argument text.
+            if self.slashCatalog == nil, let slashCatalogFailure, SlashCommand.isCompletionCandidate(text),
+                text != suppressedSlashText, !text.contains(where: \.isWhitespace)
+            {
+                slashNotice = "Couldn't load commands: \(slashCatalogFailure)"
+            }
             return
         }
         var completions: SlashCompletions?
@@ -126,6 +148,8 @@ public final class ChatComposer {
                     if load == slashLoadRequest { slashFailedText = text }
                     guard request == slashRequest else { return }
                     closeSlashList()
+                    // Desktop shows an empty list for a failed lookup; the reason shows here.
+                    if draft == text { slashNotice = "Couldn't look up commands: \(GatewayConnection.describe(error))" }
                     return
                 }
             }
@@ -144,6 +168,9 @@ public final class ChatComposer {
             slashExplicitText = nil
         }
         slashIsOpen = !slashSuggestions.isEmpty
+        // Nothing matches a command name: Desktop's empty state. Past the name (an
+        // argument), an empty list just stays closed (`use-composer-trigger.ts:231-234`).
+        slashNotice = slashSuggestions.isEmpty && !text.contains(where: \.isWhitespace) ? "No matches. Try /help." : nil
     }
 
     /// Whether `updateSlashSuggestions()` would ask the gateway for this draft,
@@ -171,6 +198,32 @@ public final class ChatComposer {
         guard slashIsOpen, !slashSuggestions.isEmpty else { return }
         slashSelection = (slashSelection + offset + slashSuggestions.count) % slashSuggestions.count
         slashExplicitText = draft
+    }
+
+    /// A key the text view offers the slash list (`ComposerTextView.SlashKey`): only
+    /// when no input method has marked text, which keeps every key.
+    /// Returns whether the key was used; false leaves it to the text view, so
+    /// Return sends and Esc and Tab do what they would.
+    /// - With rows: arrows move, Tab and Return accept (`acceptSlashSuggestionFromKey`),
+    ///   Esc closes (Desktop, `index.tsx:800-890`).
+    /// - With no rows: Tab is swallowed while a lookup is due (`swallowsSlashTab`), and
+    ///   Esc dismisses a showing notice. Desktop leaves its empty popover up on Esc; on
+    ///   macOS, Esc dismisses transient UI. Any other key, or Esc with nothing shown,
+    ///   is not used.
+    public func handleSlashKey(_ key: SlashListKey) -> Bool {
+        if key == .tab, swallowsSlashTab { return true }
+        guard slashIsOpen else {
+            guard key == .escape, slashNotice != nil else { return false }
+            dismissSlashSuggestions()
+            return true
+        }
+        switch key {
+        case .up: moveSlashSelection(-1)
+        case .down: moveSlashSelection(1)
+        case .tab, .accept: return acceptSlashSuggestionFromKey(isTab: key == .tab)
+        case .escape: dismissSlashSuggestions()
+        }
+        return true
     }
 
     /// Return or Tab while the list shows, after Desktop (`index.tsx:829-869`,
@@ -229,6 +282,7 @@ public final class ChatComposer {
         slashSuggestions = []
         slashSelection = 0
         slashIsOpen = false
+        slashNotice = nil
     }
 
     /// Runs the draft as a slash command; the outcome shows in the transcript.

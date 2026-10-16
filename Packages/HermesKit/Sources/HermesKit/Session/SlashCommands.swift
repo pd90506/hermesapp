@@ -209,9 +209,24 @@ public struct SlashCompletions: Sendable, Hashable {
     public var text: String
 
     public init(_ result: CompleteSlashResult, text: String) {
-        self.items = result.items
-        self.replaceFrom = result.replaceFrom ?? 1
+        let replaceFrom = result.replaceFrom ?? 1
+        // The command stage replaces from column 1, after the slash, so the gateway's
+        // items are the bare name (`compress`), with a trailing space on an exact match
+        // (`compress `): `hermes_cli/commands_completion.py:60-62,338-342`. Its own extras
+        // keep the slash (`/density`, `tui_gateway/methods_complete.py:17-24,326-328`).
+        // Desktop makes both `/name` (`commandText`, `use-slash-completions.ts:52-54`).
+        self.items = replaceFrom > 1 ? result.items : result.items.map(Self.commandItem)
+        self.replaceFrom = replaceFrom
         self.text = text
+    }
+
+    /// A command-stage item as `/name`: one leading slash, no surrounding whitespace.
+    static func commandItem(_ item: SlashCompletionItem) -> SlashCompletionItem {
+        let name = item.text.trimmingCharacters(in: .whitespaces).drop { $0 == "/" }
+        var command = item
+        command.text = "/" + name
+        if command.display?.isEmpty != false { command.display = command.text }
+        return command
     }
 
     /// The composer text after accepting `item`. Argument-stage items carry
@@ -315,6 +330,8 @@ extension SlashCatalog {
     /// keeping what Desktop keeps: browsable commands, an alias only when typed
     /// exactly (`use-slash-completions.ts:239-257`), and arguments the
     /// `desktop_subcommands` gate allows (`filterDesktopSubcommandCompletions`).
+    /// Query rows group as Desktop's do, by the item's `kind`: "Commands", then
+    /// "Skills", each in the server's order (`use-slash-completions.ts:258-287`).
     public func suggestions(for text: String, completions: SlashCompletions? = nil) -> [SlashSuggestion] {
         guard SlashCommand.isCompletionCandidate(text) else { return [] }
         if text == "/" {
@@ -330,13 +347,28 @@ extension SlashCatalog {
             }
         }
         let typed = text.lowercased()
-        return completions.items.compactMap { item in
+        let rows: [SlashSuggestion] = completions.items.compactMap { item in
             let name = item.text.lowercased()
-            guard let listed = command(named: name) else { return nil }
             let isAlias = canonicalName(name) != name
-            guard isAlias ? name == typed && listed.isAvailable : isBrowsable(listed) else { return nil }
-            return SlashSuggestion(item: item, category: listed.category)
+            let listed = command(named: name)
+            if let listed {
+                guard isAlias ? name == typed && listed.isAvailable : isBrowsable(listed) else { return nil }
+            } else {
+                // Not in the catalog's list: a skill bundle, a gateway extra (`/details`), a
+                // plugin's command. Desktop lists these (`isDesktopSlashExtensionCommand`,
+                // `desktop-slash-commands.ts:672-680,752-753`); a registry command the catalog
+                // marks hidden or unavailable here stays out.
+                let entry = meta[canonicalName(name)]
+                guard entry?.desktop != "hidden", Self.unavailableReason(name, meta: entry) == nil,
+                    !isAlias || name == typed
+                else { return nil }
+            }
+            // `kind` from the backend. An older one sends none: the catalog decides, and a
+            // row it doesn't know groups with skills, as on Desktop (`slashCompletionGroup`).
+            let isSkill = item.kind.map { $0 == "skill" } ?? (listed.map { $0.kind == .skill } ?? true)
+            return SlashSuggestion(item: item, category: isSkill ? "Skills" : "Commands")
         }
+        return rows.filter { $0.category == "Commands" } + rows.filter { $0.category == "Skills" }
     }
 
     /// Argument rows the exec gate would not refuse (`desktop-slash-commands.ts:595-636`).

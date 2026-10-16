@@ -1388,7 +1388,21 @@ Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/C
   - `canon` maps aliases to canonical names.
   - `SlashCatalog` encodes all of this; `SlashCatalog.refusal(for:argument:)` is the gate.
 - **Completion.** `SlashCompletions.applying` inserts an accepted item as Desktop does:
-  - At the command stage, `replace_from` is 1 and `text` is the whole `/command`.
+  - At the command stage, `replace_from` is 1: the item replaces from after the slash, so `text`
+    is the bare name (`compress`), with `/compress` in `display`. An exact match carries a
+    trailing space (`compress `), except the picker commands `/model`, `/skin` and
+    `/personality` (`_PICKER_COMMANDS`, `commands_completion.py:263,338-342`). The gateway's own
+    extras keep their slash (`/density`, `/details`) (`commands_completion.py:60-62`;
+    `methods_complete.py:17-24,301-331`). `SlashCompletions` turns every command-stage item into
+    `/name`, as Desktop's `commandText` does (`use-slash-completions.ts:52-54`).
+  - Rows the catalog doesn't list are kept, as on Desktop (`isDesktopSlashExtensionCommand`,
+    `desktop-slash-commands.ts:672-680,752-753`): skill bundles (`kind: "skill"`, never in
+    `commands.catalog`, `methods_tools.py:444-532`), the gateway's extras, plugin commands. A
+    registry command the catalog marks `hidden` or GUI-unavailable stays out.
+    Responses captured from the real handlers pin this:
+    `Tests/HermesKitTests/RealSlashResponses.swift`.
+  - Query results group as Desktop's do: "Commands", then "Skills", by the item's `kind`
+    (`use-slash-completions.ts:258-287`). An alias shows only when typed in full.
   - At the argument stage, `replace_from` is the column after the last space and `text` is only
     the argument stub (`methods_complete.py:331`). Desktop inserts
     `text[..<replace_from] + item.text` (`use-slash-completions.ts:224-252`).

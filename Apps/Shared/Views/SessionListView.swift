@@ -37,8 +37,11 @@ struct SessionListView: View {
     /// One side chat at a time: repeated clicks while one is being created do nothing.
     @State private var isStartingChat = false
     #if os(macOS)
-    /// The column's width, which the title bar item spans (New chat at its trailing edge).
-    @State private var columnWidth: CGFloat = 0
+    /// In window coordinates: the column, and where its title starts in the title bar.
+    /// They size the title so New chat after it ends at the column's trailing edge
+    /// (`titleWidth`).
+    @State private var columnFrame: CGRect?
+    @State private var titleMinX: CGFloat?
     #endif
     /// The row being renamed, and the title typed so far.
     @State private var renaming: HistoryEntry?
@@ -66,15 +69,15 @@ struct SessionListView: View {
         .navigationTitle(profileName ?? "Sessions")
         #if os(macOS)
         .toolbar {
-            // The column's own title, at its leading edge in the title bar, level with
-            // the window buttons in the rail. As wide as the column less New chat, which
-            // follows it, so New chat sits at the column's trailing edge, level with the
-            // name. (Otherwise New chat landed right after the name, or after a flexible
-            // spacer at the window's trailing edge; inside this item, its tooltip covered
-            // the whole title.)
+            // The column's title, in the title bar right after the window buttons. Its
+            // width is what puts New chat, which follows it, at this column's trailing
+            // edge, level with the name (`titleWidth`). (Otherwise New chat landed right
+            // after the name, or after a flexible spacer at the window's trailing edge;
+            // inside this item, its tooltip covered the whole title.)
             ToolbarItem(placement: .navigation) {
                 ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
-                    .frame(width: max(0, columnWidth - Self.titleBarInsets), alignment: .leading)
+                    .frame(width: titleWidth, alignment: .leading)
+                    .background(WindowFrameReader { titleMinX = $0.minX })
             }
             .sharedBackgroundVisibility(.hidden)
             if let newChatButton {
@@ -84,7 +87,7 @@ struct SessionListView: View {
             }
         }
         .toolbar(removing: .title)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
+        .background(WindowFrameReader { columnFrame = $0 })
         // The band under the title bar, as over the chat (`titleBarBand`), with none of
         // the system's title bar glass under it: macOS 26 showed that glass (the scroll
         // edge) while the pointer was over the title bar, which showed through the band.
@@ -322,11 +325,20 @@ struct SessionListView: View {
     }
 
     #if os(macOS)
-    /// The column's width less the title's: the title starts 12 pt into the column, and
-    /// New chat (a 36 pt title bar button, 10 pt after the title) ends 7.5 pt short of
-    /// the column's trailing edge, so its centre lines up with the rows' "…" (measured on
+    /// New chat after the title: 10 pt after it, 36 pt wide, ending 7.5 pt short of the
+    /// column's trailing edge so its centre lines up with the rows' "…" (measured on
     /// macOS 26).
-    private static let titleBarInsets: CGFloat = 12 + 10 + 36 + 7.5
+    private static let newChatSlot: CGFloat = 10 + 36 + 7.5
+
+    /// From where the title starts to New chat's place at the column's trailing edge.
+    /// The title starts after the window buttons, which the fixed profile rail doesn't
+    /// line up with, so that start is measured (its own width doesn't move it). Until it
+    /// is, the title is assumed to start 12 pt into the column.
+    private var titleWidth: CGFloat {
+        guard let columnFrame else { return 0 }
+        let start = titleMinX ?? columnFrame.minX + 12
+        return max(0, columnFrame.maxX - start - Self.newChatSlot)
+    }
     #endif
 
     private var newChatButton: NewChatButton? {

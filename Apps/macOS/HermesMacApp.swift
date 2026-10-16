@@ -20,9 +20,6 @@ struct HermesMacApp: App {
         .defaultWindowPlacement { _, context in
             WindowPlacement(size: Self.defaultWindowSize(in: context.defaultDisplay.visibleRect.size))
         }
-        .commands {
-            SidebarCommands()
-        }
 
         Settings {
             NavigationStack {

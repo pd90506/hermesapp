@@ -231,11 +231,12 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
         let list = app.outlines.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
-        let window = app.windows.firstMatch
         let width = rail.frame.width
-        func drag(atX x: CGFloat, by dx: CGFloat) {
-            let y = window.frame.midY - window.frame.minY
-            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x - window.frame.minX, dy: y))
+        // The split view's dividers, left to right: the rail's, then the session list's.
+        let splitters = app.splitters
+        XCTAssertGreaterThanOrEqual(splitters.count, 2, "the rail's and the session list's dividers")
+        func drag(_ splitter: XCUIElement, by dx: CGFloat) {
+            let start = splitter.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             start.press(forDuration: 0.3, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)))
             RunLoop.current.run(until: Date().addingTimeInterval(1))
         }
@@ -248,18 +249,23 @@ final class LiveChatUITests: XCTestCase {
         checkNewChat("as launched")
 
         // The rail's divider, dragged shut and then wider.
-        drag(atX: rail.frame.maxX, by: -rail.frame.width)
+        drag(splitters.element(boundBy: 0), by: -width)
         XCTAssertTrue(rail.exists && rail.isHittable, "the rail is still shown after dragging it shut")
         XCTAssertEqual(rail.frame.width, width, accuracy: 1, "the rail kept its width")
-        drag(atX: rail.frame.maxX, by: 80)
+        drag(splitters.element(boundBy: 0), by: 80)
         XCTAssertEqual(rail.frame.width, width, accuracy: 1, "the rail didn't widen")
         checkNewChat("after dragging the rail's divider")
 
-        // The session list's divider, narrower and then wider.
-        drag(atX: list.frame.maxX, by: -60)
-        checkNewChat("session list narrowed")
-        drag(atX: list.frame.maxX, by: 120)
+        // The session list's divider, wider and then narrower (it starts near its
+        // minimum width): the list does resize, and New chat goes with it.
+        let listWidth = list.frame.width
+        drag(splitters.element(boundBy: 1), by: 120)
+        XCTAssertGreaterThan(list.frame.width, listWidth + 20, "the session list widened")
         checkNewChat("session list widened")
+        let widened = list.frame.width
+        drag(splitters.element(boundBy: 1), by: -80)
+        XCTAssertLessThan(list.frame.width, widened - 20, "the session list narrowed")
+        checkNewChat("session list narrowed")
     }
 
     /// The title bar reads as one band across the window: the same tone over the profile

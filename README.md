@@ -13,9 +13,14 @@ Status: foundation only.
   the selected profile's session list, and the chat), and a chat with approval/clarify cards.
   - The rail shows every Hermes profile as an avatar with its activity badge. Picking one lists
     its sessions in the middle column, so profiles never mix; on iPhone the columns become a
-    stack (profiles, sessions, chat).
+    stack (profiles, sessions, chat). A Settings button sits at the rail's bottom (on iPhone,
+    in the session list's toolbar).
   - The session list pins the profile's one permanent "Bot Chat" (shared with Hermes Desktop's
-    Bot Mode) above its other sessions. Its toolbar holds a Settings button.
+    Bot Mode) above its other sessions. On macOS the profile's name is the column's title, in
+    the title bar level with the window buttons.
+  - Every session has Pin, Rename, Fork, Archive and Delete, in its context menu and in a "…"
+    button at the row's end. Pinned sessions list first; pins are this app's own
+    (`docs/protocol.md` §10.9).
   - Settings is a sheet on the window, with Done (and Esc, Command-W). On macOS, opened from
     that button, a click anywhere else in the window also closes it, as Done would, and the
     click does nothing else. When the app can't connect without them (no server yet, or the

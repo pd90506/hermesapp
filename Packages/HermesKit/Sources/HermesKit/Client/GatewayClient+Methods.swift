@@ -163,6 +163,13 @@ extension GatewayClient {
                        params: SessionDeleteParams(sessionID: storedSessionID, profile: profile))
     }
 
+    /// Copies a stored session into a new one (Fork). 4008 when the parent has no
+    /// visible turns yet ("send a message first").
+    public func branchStoredSession(parentID: String, profile: String?) async throws -> SessionBranchResult {
+        try await call(GatewayMethod.sessionBranchStored,
+                       params: SessionBranchStoredParams(parentSessionID: parentID, profile: profile))
+    }
+
     /// `PROMPT_SUBMIT_REQUEST_TIMEOUT_MS` in the Desktop app.
     public static let promptSubmitTimeout: Duration = .seconds(1800)
 

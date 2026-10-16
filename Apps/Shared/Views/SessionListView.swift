@@ -19,9 +19,12 @@ enum SidebarItem: Hashable {
 /// The middle column: the profile picked in the profile rail, its Bot Chat pinned
 /// first, then its sessions.
 ///
-/// - Pinned at the top, the profile's name (and server, with several) and New chat
-///   (`SessionListHeader`); rows scroll under it.
-/// - One toolbar button (Settings).
+/// - On macOS the profile's name (and server) is the column's title, in the title bar
+///   level with the window buttons. Pinned at the top, New chat (`SessionListHeader`,
+///   which also shows the name on iOS); rows scroll under it.
+/// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
+///   "…" button; pinned sessions list first.
+/// - Settings is at the bottom of the profile rail (on iPhone, a toolbar button here).
 /// - At the bottom, the error and "waiting" banners and a fixed-height footer with the
 ///   connection status.
 /// Rows and controls are in `SidebarControls.swift`; pointer feedback in `Hover.swift`.
@@ -32,12 +35,23 @@ struct SessionListView: View {
     var showChat: () -> Void = {}
     /// One side chat at a time: repeated clicks while one is being created do nothing.
     @State private var isStartingChat = false
+    /// The row being renamed, and the title typed so far.
+    @State private var renaming: HistoryEntry?
+    @State private var newTitle = ""
+    /// The row waiting for the user to confirm its deletion.
+    @State private var deleting: HistoryEntry?
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     var body: some View {
+        #if os(iOS)
         @Bindable var model = model
+        #endif
         List(selection: $selection) {
             if let server = model.sessionsServer {
                 botChatSection(server)
+                pinnedSection(server)
                 sessionsSection(server)
             }
         }
@@ -45,18 +59,31 @@ struct SessionListView: View {
         .listStyle(.sidebar)
         #endif
         .navigationTitle(profileName ?? "Sessions")
-        // The header shows the name; the navigation title stays for the back button
-        // and the window menu.
+        #if os(macOS)
+        .toolbar {
+            // The column's own title, at its leading edge in the title bar, level with
+            // the window buttons in the rail.
+            ToolbarItem(placement: .navigation) {
+                ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
         .toolbar(removing: .title)
-        #if os(iOS)
+        #else
+        // The header shows the name; the navigation title stays for the back button.
+        .toolbar(removing: .title)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
         // Pinned above the list: it never scrolls away; rows scroll under it.
         .safeAreaBar(edge: .top) {
+            #if os(macOS)
+            SessionListHeader(newChat: newChatRow)
+            #else
             SessionListHeader(title: profileName ?? "No profile",
                               subtitle: subtitle,
                               newChat: newChatRow)
+            #endif
         }
         // A bar like the header's: rows fade out under it instead of showing through the
         // status text, and it keeps the sidebar's material (an opaque .bar did not).
@@ -66,8 +93,26 @@ struct SessionListView: View {
                 SidebarFooter(status: statusText, color: statusColor) { EmptyView() }
             }
         }
+        #if os(iOS)
+        // On iPhone the rail is a screen away; on iPad its bottom has the gear.
         .toolbar {
-            SettingsToolbarItem(presentation: $model.settingsPresentation)
+            if sizeClass == .compact {
+                SettingsToolbarItem(presentation: $model.settingsPresentation)
+            }
+        }
+        #endif
+        .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Title", text: $newTitle)
+            Button("Cancel", role: .cancel) { renaming = nil }
+            Button("Rename") { commitRename() }
+                .keyboardShortcut(.defaultAction)
+        }
+        .confirmationDialog(deleteQuestion, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { commitDelete() }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: {
+            Text("Its messages are deleted from Hermes for good.")
         }
         .task(id: sessionListKey) {
             await model.sessionsServer?.connection.refreshSessionListIfVisible()
@@ -128,15 +173,74 @@ struct SessionListView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            ForEach(connection.history) { entry in
-                let item = SidebarItem.history(server: server.id, id: entry.id)
-                HistoryRow(entry: entry)
-                    .sidebarRowHover(isSelected: selection == item)
-                    .tag(item)
+            ForEach(model.pins.split(connection.history, on: server.id).others) { entry in
+                sessionRow(entry, on: server)
             }
         } header: {
             Text("Sessions")
         }
+    }
+
+    /// Pinned sessions, above the rest, while there are any.
+    @ViewBuilder private func pinnedSection(_ server: ServerConnection) -> some View {
+        let pinned = model.pins.split(server.connection.history, on: server.id).pinned
+        if !pinned.isEmpty {
+            Section {
+                ForEach(pinned) { entry in
+                    sessionRow(entry, on: server)
+                }
+            } header: {
+                Text("Pinned")
+            }
+        }
+    }
+
+    private func sessionRow(_ entry: HistoryEntry, on server: ServerConnection) -> some View {
+        let item = SidebarItem.history(server: server.id, id: entry.id)
+        return HistoryRow(entry: entry) {
+            sessionActions(entry, on: server)
+        }
+        .sidebarRowHover(isSelected: selection == item)
+        .tag(item)
+    }
+
+    private func sessionActions(_ entry: HistoryEntry, on server: ServerConnection) -> SessionActions {
+        let isPinned = model.isPinned(entry, on: server)
+        return SessionActions(
+            isPinned: isPinned,
+            canChange: server.isConnected,
+            pin: { model.setPinned(!isPinned, entry, on: server) },
+            rename: {
+                newTitle = entry.summary.title ?? ""
+                renaming = entry
+            },
+            fork: {
+                selection = nil
+                Task {
+                    await model.fork(entry, on: server)
+                    showChat()
+                }
+            },
+            archive: { Task { await model.archive(entry, on: server) } },
+            delete: { deleting = entry })
+    }
+
+    private func commitRename() {
+        guard let entry = renaming, let server = model.sessionsServer else { return }
+        let title = newTitle
+        renaming = nil
+        Task { await model.rename(entry, to: title, on: server) }
+    }
+
+    private func commitDelete() {
+        guard let entry = deleting, let server = model.sessionsServer else { return }
+        deleting = nil
+        Task { await model.delete(entry, on: server) }
+    }
+
+    private var deleteQuestion: String {
+        let title = deleting?.summary.title.flatMap { $0.isEmpty ? nil : $0 } ?? "this chat"
+        return "Delete “\(title)”?"
     }
 
     private var profileName: String? {

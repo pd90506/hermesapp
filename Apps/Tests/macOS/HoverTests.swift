@@ -244,7 +244,9 @@ private func entries(_ count: Int) -> [HistoryEntry] {
             List(selection: $selection) {
                 Section("Sessions") {
                     ForEach(entries(sessions)) { entry in
-                        HistoryRow(entry: entry)
+                        HistoryRow(entry: entry) {
+                            Button("Pin") {}
+                        }
                             .sidebarRowHover(isSelected: selection == entry.id)
                             .tag(entry.id)
                     }
@@ -280,6 +282,17 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         }
         let rowHeight = try ui.rowRect(0).height
         #expect(abs(rowHeight - NewChatRow.metrics(for: size).height) <= 1)
+    }
+
+    /// A session row's "…" button sits at the row's trailing edge, past its text.
+    @Test func sessionRowHasItsMoreButtonAtTheTrailingEdge() throws {
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) { Sidebar() }
+        let row = try ui.rowRect(firstSessionRow)
+        let shot = ui.snapshot()
+        let trailing = CGRect(x: row.maxX - 44, y: row.minY + 4, width: 34, height: row.height - 8)
+        let gap = CGRect(x: row.maxX - 110, y: row.minY + 4, width: 50, height: row.height - 8)  // "Chat 0" is short
+        #expect(ui.darkest(in: trailing, of: shot) < 0.75)
+        #expect(ui.darkest(in: gap, of: shot) > 0.9)
     }
 
     /// Hover fills the whole row, inset from the List's edges like the selection, also

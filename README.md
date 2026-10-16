@@ -200,6 +200,10 @@ on the Mac.
   - Each server's password or token is stored in the Keychain, as this-device-only. If saving
     fails, the app says so. Removing a server deletes its item.
   - Unsigned macOS builds fall back from the data-protection keychain to the login keychain.
+  - The login keychain gives a build without a team id its saved passwords only by that
+    build's code hash, so every rebuild asks for the Keychain password again. Signing with a
+    team, even a free personal one, avoids that; a self-signed certificate does not (see
+    `Config/Local.xcconfig.example`).
   - Non-secret settings go in UserDefaults. Nothing is hard-coded.
 - **Cookies.** Dashboard session cookies live in a per-connection in-memory cookie jar, not the
   app-wide one. They are never written to disk or shared between servers, so the app logs in

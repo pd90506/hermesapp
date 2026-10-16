@@ -50,8 +50,10 @@ enum KeychainStore {
         return nil
     }
 
-    /// Replaces (or with an empty value, deletes) the secret.
+    /// Replaces (or with an empty value, deletes) the secret. An unchanged secret is left
+    /// alone: every connect saves it, and re-creating the item each time is needless churn.
     static func write(_ value: String, account: String) throws {
+        if !value.isEmpty, read(account: account) == value { return }
         var lastStatus: OSStatus = errSecSuccess
         for dataProtection in variants {
             let query = baseQuery(account: account, dataProtection: dataProtection)

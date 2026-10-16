@@ -20,8 +20,9 @@ enum SidebarItem: Hashable {
 /// first, then its sessions.
 ///
 /// - On macOS the profile's name (and server) is the column's title, in the title bar
-///   level with the window buttons. Pinned at the top, New chat (`SessionListHeader`,
-///   which also shows the name on iOS); rows scroll under it.
+///   level with the window buttons, with New chat (`NewChatButton`, a compose icon) at
+///   the column's trailing edge, level with the name. On iOS both are in the pinned
+///   `SessionListHeader`; rows scroll under it.
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
 /// - Settings is at the bottom of the profile rail (on iPhone, a toolbar button here).
@@ -35,6 +36,10 @@ struct SessionListView: View {
     var showChat: () -> Void = {}
     /// One side chat at a time: repeated clicks while one is being created do nothing.
     @State private var isStartingChat = false
+    #if os(macOS)
+    /// The column's width, which the title bar item spans (New chat at its trailing edge).
+    @State private var columnWidth: CGFloat = 0
+    #endif
     /// The row being renamed, and the title typed so far.
     @State private var renaming: HistoryEntry?
     @State private var newTitle = ""
@@ -62,34 +67,43 @@ struct SessionListView: View {
         #if os(macOS)
         .toolbar {
             // The column's own title, at its leading edge in the title bar, level with
-            // the window buttons in the rail.
+            // the window buttons in the rail. As wide as the column less New chat, which
+            // follows it, so New chat sits at the column's trailing edge, level with the
+            // name. (Otherwise New chat landed right after the name, or after a flexible
+            // spacer at the window's trailing edge; inside this item, its tooltip covered
+            // the whole title.)
             ToolbarItem(placement: .navigation) {
                 ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
+                    .frame(width: max(0, columnWidth - Self.titleBarInsets), alignment: .leading)
             }
             .sharedBackgroundVisibility(.hidden)
+            if let newChatButton {
+                ToolbarItem(placement: .primaryAction) {
+                    newChatButton
+                }
+            }
         }
         .toolbar(removing: .title)
-        // The hard edge style: the title bar's glass shows over the header all the
-        // time, down to its bottom edge, not only while the pointer is over the title
-        // bar or once rows scroll under it. (Not `toolbarBackgroundVisibility`: the
-        // window has one toolbar background, and the chat hides it.)
-        .scrollEdgeEffectStyle(.hard, for: .top)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
+        // The band under the title bar, as over the chat (`titleBarBand`), with none of
+        // the system's title bar glass under it: macOS 26 showed that glass (the scroll
+        // edge) while the pointer was over the title bar, which showed through the band.
+        .scrollEdgeEffectHidden(true, for: .top)
+        .titleBarBand()
         #else
         // The header shows the name; the navigation title stays for the back button.
         .toolbar(removing: .title)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
+        #if os(iOS)
         // Pinned above the list: it never scrolls away; rows scroll under it.
         .safeAreaBar(edge: .top) {
-            #if os(macOS)
-            SessionListHeader(newChat: newChatRow)
-            #else
             SessionListHeader(title: profileName ?? "No profile",
                               subtitle: subtitle,
-                              newChat: newChatRow)
-            #endif
+                              newChat: newChatButton)
         }
+        #endif
         // A bar like the header's: rows fade out under it instead of showing through the
         // status text, and it keeps the sidebar's material (an opaque .bar did not).
         .safeAreaBar(edge: .bottom) {
@@ -307,11 +321,19 @@ struct SessionListView: View {
         }
     }
 
-    private var newChatRow: NewChatRow? {
+    #if os(macOS)
+    /// The column's width less the title's: the title starts 12 pt into the column, and
+    /// New chat (a 36 pt title bar button, 10 pt after the title) ends 7.5 pt short of
+    /// the column's trailing edge, so its centre lines up with the rows' "…" (measured on
+    /// macOS 26).
+    private static let titleBarInsets: CGFloat = 12 + 10 + 36 + 7.5
+    #endif
+
+    private var newChatButton: NewChatButton? {
         guard let server = model.sessionsServer else { return nil }
         let connection = server.connection
-        return NewChatRow(isEnabled: connection.canStartListChat && !isStartingChat,
-                          disabledReason: newChatDisabledReason(server)) {
+        return NewChatButton(isEnabled: connection.canStartListChat && !isStartingChat,
+                             disabledReason: newChatDisabledReason(server)) {
             if let bot = connection.listProfileBot { startSideChat(with: bot, on: server) }
         }
     }

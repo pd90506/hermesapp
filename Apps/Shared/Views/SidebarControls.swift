@@ -5,29 +5,29 @@ import SwiftUI
 
 // The sidebar's pieces, free of `AppModel` so `HermesMacTests` can host them as they are.
 
-/// The session list's pinned top, above the scrolling list (ChatGPT style): the
-/// selected profile's name (and, with several servers, its server) and the New chat
-/// row. It never scrolls; rows scroll under it.
+/// The session list's pinned top on iOS, above the scrolling list (ChatGPT style): the
+/// selected profile's name (and, with several servers, its server), with the New chat
+/// button at its trailing edge, centered on the name. It never scrolls; rows scroll under
+/// it. (On macOS the name and New chat are in the title bar.)
 struct SessionListHeader: View {
-    /// The profile's name. `nil` on macOS, where it is the column's title in the title bar.
-    var title: String?
+    /// The profile's name.
+    var title: String
     /// The profile's server, when there are several.
     var subtitle: String?
-    /// The New chat row, or `nil` when no profile is selected.
-    var newChat: NewChatRow?
+    /// New chat, or `nil` when no profile is selected.
+    var newChat: NewChatButton?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let title {
-                ColumnTitle(title: title, subtitle: subtitle, font: .title3.weight(.semibold))
-                    .padding(.horizontal, Hover.rowContentInset)
-                    .padding(.vertical, 4)
-            }
+        HStack(alignment: .center, spacing: 8) {
+            ColumnTitle(title: title, subtitle: subtitle, font: .title3.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
             if let newChat {
                 newChat
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, Hover.rowContentInset)
+        .padding(.trailing, Hover.rowInset)
+        .padding(.vertical, 4)
         .padding(.bottom, 6)
     }
 }
@@ -56,54 +56,28 @@ struct ColumnTitle: View {
     }
 }
 
-/// The session list's New chat, pinned under its title: a chat with the profile
-/// picked in the profile rail. Not a List row, so it can never be selected, but drawn like
-/// one: the sidebar's row height and font for the user's sidebar size, the text where
-/// row text starts, and the row hover pill, inset from the edges like the selection.
-struct NewChatRow: View {
+/// New chat: an icon-only button (the compose glyph) beside the profile's name, that
+/// starts a chat with the profile picked in the profile rail. On macOS it is a title bar
+/// button at the column's trailing edge, so macOS 26 gives it the system glass and hover;
+/// on iOS it sits at the trailing edge of the list's header.
+struct NewChatButton: View {
     var isEnabled: Bool
-    /// Read by VoiceOver while the row is disabled.
+    /// Read by VoiceOver while the button is disabled.
     var disabledReason: String?
     var action: () -> Void
 
-    #if os(macOS)
-    @Environment(\.sidebarRowSize) private var rowSize
-    #endif
-
     var body: some View {
-        Button(action: action) {
-            Label("New chat", systemImage: "square.and.pencil")
-                .font(metrics.font)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, minHeight: metrics.height, alignment: .leading)
-                .padding(.horizontal, Hover.rowContentInset - Hover.rowInset)
-                .contentShape(.rect(cornerRadius: Hover.cornerRadius))
-        }
-        .hoverButtonStyle(.rounded, padding: 0)
-        .padding(.horizontal, Hover.rowInset)
-        .disabled(!isEnabled)
-        .accessibilityHint(isEnabled ? "Starts a new chat" : disabledReason ?? "")
+        Button("New chat", systemImage: "square.and.pencil", action: action)
+            .labelStyle(.iconOnly)
+            #if os(iOS)
+            .font(.title3)
+            .frame(width: 44, height: 44)
+            .contentShape(.rect)
+            #endif
+            .disabled(!isEnabled)
+            .help("New chat")
+            .accessibilityHint(isEnabled ? "Starts a new chat" : disabledReason ?? "")
     }
-
-    private var metrics: (height: CGFloat, font: Font) {
-        #if os(macOS)
-        Self.metrics(for: rowSize)
-        #else
-        (44, .body)
-        #endif
-    }
-
-    #if os(macOS)
-    /// A macOS sidebar List row (measured on macOS 26, checked by `HoverTests`): 24, 32
-    /// or 40 pt for the small, medium and large sidebar sizes, in the matching text size.
-    static func metrics(for size: SidebarRowSize) -> (height: CGFloat, font: Font) {
-        switch size {
-        case .small: (24, .subheadline)
-        case .large: (40, .title3)
-        default: (32, .body)
-        }
-    }
-    #endif
 }
 
 /// The sidebar's Settings button: opens the settings sheet (`RootView`).
@@ -443,14 +417,16 @@ struct HistoryRow<Actions: View>: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.secondary)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .menuStyle(.button)
-            .buttonStyle(.borderless)
+            // Plain, with the style on the menu (as the composer's menus): a borderless
+            // menu button drew its glyph black whatever the appearance.
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
+            .foregroundStyle(.secondary)
             .help("More")
             .accessibilityLabel("More actions")
         }

@@ -69,6 +69,11 @@ struct SessionListView: View {
             .sharedBackgroundVisibility(.hidden)
         }
         .toolbar(removing: .title)
+        // The hard edge style: the title bar's glass shows over the header all the
+        // time, down to its bottom edge, not only while the pointer is over the title
+        // bar or once rows scroll under it. (Not `toolbarBackgroundVisibility`: the
+        // window has one toolbar background, and the chat hides it.)
+        .scrollEdgeEffectStyle(.hard, for: .top)
         #else
         // The header shows the name; the navigation title stays for the back button.
         .toolbar(removing: .title)

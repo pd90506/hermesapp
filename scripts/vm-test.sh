@@ -147,11 +147,13 @@ vexec "launchctl remove hermesapp.dashboard 2>/dev/null; pkill -f 'hermes dashbo
 
 # 4. A writable copy of the repo in the VM (git data, secrets and build output left
 #    out), with an .env.live-local pointing at the VM's dashboard for the live tests.
-#    Times are kept (-t), so the VM's incremental builds see the real changes. Files
-#    are compared by content (-c): right after a checkout the shared folder can report
-#    a changed file with its old size and time, and a size-and-time check skipped it.
+#    Files are compared by content (-c): right after a checkout the shared folder can
+#    report a changed file with its old size and time, and a size-and-time check
+#    skipped it. Times are not copied (no -t): that old time would land on the new
+#    content, older than the VM's build output, and Xcode would not recompile it. A
+#    changed file gets the copy time instead; an unchanged one is not touched.
 step "copy the repo into the VM"
-vexec "rsync -rlptc --delete --exclude .git --exclude .build --exclude DerivedData --exclude '.env*' --exclude Hermes.xcodeproj --exclude Config/Local.xcconfig \
+vexec "rsync -rlpc --delete --exclude .git --exclude .build --exclude DerivedData --exclude '.env*' --exclude Hermes.xcodeproj --exclude Config/Local.xcconfig \
   '/Volumes/My Shared Files/hermesapp/' ~/hermesapp/
   printf 'HERMES_LIVE_URL=%s\nHERMES_LIVE_TOKEN=%s\n' '$url' '$token' >~/hermesapp/.env.live-local"
 

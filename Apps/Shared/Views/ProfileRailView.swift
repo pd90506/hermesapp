@@ -35,6 +35,7 @@ struct ProfileRailView: View {
             .padding(.vertical, 8)
         }
         .scrollIndicators(.never)
+        .accessibilityIdentifier("profileRail")
         .fileImporter(isPresented: $isPickingAvatar, allowedContentTypes: [.image]) { result in
             guard let target = avatarTarget else { return }
             avatarTarget = nil
@@ -67,10 +68,14 @@ struct ProfileRailView: View {
         #endif
         .refreshable { await model.refreshLists() }
         #if os(macOS)
-        // Always shown: hiding the rail would hide the only way to switch profiles.
+        // Always shown, at one width: hiding the rail would hide the only way to switch
+        // profiles (`RootView` also undoes a collapse), and its divider doesn't drag.
         .toolbar(removing: .sidebarToggle)
-        .navigationSplitViewColumnWidth(min: ProfileRailItem.width, ideal: ProfileRailItem.width,
-                                        max: ProfileRailItem.width + 20)
+        .navigationSplitViewColumnWidth(ProfileRailItem.width)
+        // The title bar band runs over the rail too, so the window buttons sit in the
+        // window's title bar, not on the rail's own top (`titleBarBand`).
+        .scrollEdgeEffectHidden(true, for: .top)
+        .titleBarBand()
         #endif
     }
 

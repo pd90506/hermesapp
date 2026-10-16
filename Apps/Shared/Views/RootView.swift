@@ -45,6 +45,11 @@ struct RootView: View {
             .titleBarBand()
         }
         #if os(macOS)
+        // All three columns, always: dragging the rail's divider (or the sidebar
+        // shortcut) could collapse the profile rail, with nothing to bring it back.
+        .onChange(of: columns) { _, visibility in
+            if visibility != .all { columns = .all }
+        }
         // No toolbar background anywhere: macOS 26 showed it only while the pointer was
         // over the title bar, which shaded the band (`titleBarBand`) under it.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)

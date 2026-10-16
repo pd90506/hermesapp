@@ -12,6 +12,14 @@ public enum TranscriptBlock: Sendable, Hashable, Identifiable {
         case .run(let run): run.id
         }
     }
+
+    /// The rows the block holds: its message, or the run's rows.
+    public var items: [TranscriptItem] {
+        switch self {
+        case .item(let item): [item]
+        case .run(let run): run.items
+        }
+    }
 }
 
 /// Tool calls shown as one line, as Desktop's `ToolRun` does
@@ -80,9 +88,22 @@ extension TranscriptItem {
 extension Transcript {
     /// The transcript as the chat draws it (`TranscriptGrouping.blocks`).
     public var blocks: [TranscriptBlock] { TranscriptGrouping.blocks(items, isRunning: isRunning) }
+
+    /// The id of the block that draws `itemID` now, or nil when no block holds it.
+    /// A block's id can change when an older page lands (a run is named after its
+    /// first row, and the page can hold earlier rows of the same turn), so the chat
+    /// keeps its place by a row's id and finds that row's block after the page.
+    public func blockID(containing itemID: String) -> String? {
+        TranscriptGrouping.blockID(containing: itemID, in: blocks)
+    }
 }
 
 public enum TranscriptGrouping {
+    /// The id of the block in `blocks` that holds the row `itemID`.
+    public static func blockID(containing itemID: String, in blocks: [TranscriptBlock]) -> String? {
+        blocks.first { $0.items.contains { $0.id == itemID } }?.id
+    }
+
     /// Splits the items into turns (a user row starts one; a steer joins the running
     /// turn) and groups each: the running turn's tool calls into runs, a settled
     /// turn's working rows into one run before its reply.

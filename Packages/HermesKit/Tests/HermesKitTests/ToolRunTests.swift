@@ -114,6 +114,25 @@ import Testing
         #expect(ToolCallSummary.displayDiff(diff) == " keep\n-old\n+new")
     }
 
+    /// The chat keeps its place across an older page by a row: the page can hold the
+    /// start of the turn the top row is in, which renames that row's run.
+    @Test func aRowsBlockIsFoundAfterAnOlderPageRenamesItsRun() {
+        let loaded = [
+            Self.tool("t2", "terminal"), Self.reply("a2", "Done."),
+            Self.user("u2"), Self.reply("b1", "Plain answer."),
+        ]
+        let before = TranscriptGrouping.blocks(loaded, isRunning: false)
+        #expect(Self.kinds(before) == ["[t2]", "a2", "u2", "b1"])
+        #expect(TranscriptGrouping.blockID(containing: "t2", in: before) == "turn-t2")
+
+        let older = [Self.user("u1"), Self.reply("a1", "Checking."), Self.tool("t1", "terminal")]
+        let after = TranscriptGrouping.blocks(older + loaded, isRunning: false)
+        #expect(Self.kinds(after) == ["u1", "[a1,t1,t2]", "a2", "u2", "b1"])
+        #expect(TranscriptGrouping.blockID(containing: "t2", in: after) == "turn-a1")
+        #expect(TranscriptGrouping.blockID(containing: "u2", in: after) == "u2")
+        #expect(TranscriptGrouping.blockID(containing: "gone", in: after) == nil)
+    }
+
     // MARK: Summaries
 
     @Test func summaryMatchesDesktopWording() {

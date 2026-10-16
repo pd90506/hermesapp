@@ -331,13 +331,13 @@ struct SessionListView: View {
         titleMinX = x.rounded()
     }
 
-    /// The title starts after the window buttons, which the fixed profile rail doesn't
-    /// line up with, so that start is measured (`followTitleStart`). Until it is, the
-    /// title is assumed to start 12 pt into the column.
+    /// The title starts after the window buttons, over the profile rail, so that start is
+    /// measured (`followTitleStart`). Until it is, the title takes no width: a guess that
+    /// was too wide didn't fit the sidebar's title bar, which then dropped the title
+    /// without showing it, and so never measured it.
     private var titleWidth: CGFloat {
-        guard let columnFrame else { return 0 }
-        let start = titleMinX ?? columnFrame.minX + 12
-        return max(0, columnFrame.maxX - start - Self.newChatSlot)
+        guard let columnFrame, let titleMinX else { return 0 }
+        return max(0, columnFrame.maxX - titleMinX - Self.newChatSlot)
     }
     #endif
 

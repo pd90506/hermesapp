@@ -45,7 +45,7 @@ private func botGateway(listings: [String: JSONValue] = [:]) -> ScriptedGateway 
 }
 
 private let mutating: Set<String> = ["session.title", "session.archive", "session.delete", "session.close",
-                                     "session.interrupt"]
+                                     "session.interrupt", "session.branch_stored"]
 
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
@@ -89,6 +89,7 @@ struct SessionManagementTests {
         await #expect(throws: SessionActionError.botChatProtected) { try await connection.delete(visible) }
         await #expect(throws: SessionActionError.botChatProtected) { try await connection.archive(byID) }
         await #expect(throws: SessionActionError.botChatProtected) { try await connection.unarchive(byID) }
+        await #expect(throws: SessionActionError.botChatProtected) { try await connection.fork(visible) }
 
         let launch = try await connection.open(SessionSummary(id: "coder-chat", title: "Bot Chat"))
         #expect(connection.isProtected(launch))
@@ -238,5 +239,80 @@ struct SessionManagementTests {
 
         await #expect(throws: RPCError.self) { try await connection.delete(try #require(connection.history.first)) }
         #expect(connection.history.map(\.summary.id) == ["busy"])
+    }
+
+    // MARK: Fork
+
+    /// The gateway copies the row server-side and saves the copy under the parent's
+    /// next lineage title; the app lists it and opens it.
+    @Test func forkCopiesARowAndOpensTheCopy() async throws {
+        let gateway = botGateway()
+        let branched = Mutex(false)
+        gateway.on("session.list") { params in
+            guard params["title"] == nil, params["profile"]?.stringValue == "coder" else { return .result(["sessions": []]) }
+            let copy = branched.withLock { $0 } ? [sessionRow(id: "fork-1", title: "Plan #2")] : []
+            return .result(["sessions": .array(copy + [sessionRow(id: "old", title: "Plan")])])
+        }
+        gateway.on("session.branch_stored") { _ in
+            branched.withLock { $0 = true }
+            // `_create_session(copy_parent_history=True)`: no `messages` (`methods_session.py:474-481`).
+            return .result(["session_id": "rt-fork-1", "stored_session_id": "fork-1", "message_count": 2,
+                            "messages_omitted": true, "info": ["model": "test-model"]])
+        }
+        let connection = try await connect(gateway)
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
+        let entry = try #require(connection.history.first { $0.summary.id == "old" })
+
+        let copy = try await connection.fork(entry)
+
+        #expect(gateway.params("session.branch_stored") == [["parent_session_id": "old", "profile": "coder"]])
+        #expect(gateway.params("session.resume").last?["session_id"] == "fork-1")
+        #expect(copy.storedSessionID == "fork-1" && copy.title == "Plan #2")
+        #expect(connection.activeSession === copy)
+        #expect(connection.history.map(\.summary.id) == ["fork-1", "old"])
+    }
+
+    @Test func aChatWithNothingToCopyIsNotForked() async throws {
+        let gateway = botGateway(listings: ["coder": [sessionRow(id: "empty")]])
+        gateway.on("session.branch_stored") { _ in .error(code: 4008, message: "send a message first") }
+        let connection = try await connect(gateway)
+
+        await #expect(throws: RPCError.self) { try await connection.fork(try #require(connection.history.first)) }
+        #expect(connection.activeSession == nil)
+    }
+}
+
+@Suite struct SessionPinsTests {
+    private let server = UUID()
+    private func row(_ id: String, _ profile: String = "coder") -> HistoryEntry {
+        HistoryEntry(profile: profile, summary: SessionSummary(id: id))
+    }
+
+    @Test func pinnedRowsComeFirstInListOrder() {
+        var pins = SessionPins()
+        pins.setPinned(true, row("c"), on: server)
+        pins.setPinned(true, row("a"), on: server)
+        let split = pins.split([row("a"), row("b"), row("c")], on: server)
+        #expect(split.pinned.map(\.summary.id) == ["a", "c"])
+        #expect(split.others.map(\.summary.id) == ["b"])
+
+        pins.setPinned(false, row("a"), on: server)
+        #expect(!pins.isPinned(row("a"), on: server) && pins.isPinned(row("c"), on: server))
+    }
+
+    /// Stored ids are per profile db, profile names per server.
+    @Test func aPinBelongsToOneServerAndProfile() throws {
+        var pins = SessionPins()
+        let other = UUID()
+        pins.setPinned(true, row("x"), on: server)
+        #expect(!pins.isPinned(row("x", "finance"), on: server))
+        #expect(!pins.isPinned(row("x"), on: other))
+
+        let decoded = try JSONDecoder().decode(SessionPins.self, from: JSONEncoder().encode(pins))
+        #expect(decoded.isPinned(row("x"), on: server))
+
+        pins.forgetServer(server)
+        #expect(!pins.isPinned(row("x"), on: server))
     }
 }

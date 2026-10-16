@@ -13,7 +13,7 @@ public enum SessionActionError: Error, Sendable, Equatable {
     case notOpen
 }
 
-/// Side-chat management: rename, archive, unarchive, delete (`docs/protocol.md` §10.9).
+/// Side-chat management: rename, archive, unarchive, delete, fork (`docs/protocol.md` §10.9).
 ///
 /// Everything goes through the gateway's JSON-RPC, never the dashboard REST API
 /// Desktop uses for rows it does not have open (`apps/desktop/src/api/sessions.ts:374-389,708-743`):
@@ -107,6 +107,23 @@ extension GatewayConnection {
         guard let client else { throw GatewayClientError.notConnected }
         try await client.setArchived(sessionID: entry.summary.id, archived: false, profile: entry.profile)
         refreshListsInBackground(includingSessions: true)
+    }
+
+    // MARK: Fork
+
+    /// Copies a History row into a new session (`session.branch_stored`) and opens
+    /// the copy. The gateway names it after the parent's lineage ("Title #2").
+    @discardableResult
+    public func fork(_ entry: HistoryEntry) async throws -> ChatSession {
+        guard !isProtected(entry) else { throw SessionActionError.botChatProtected }
+        guard let client else { throw GatewayClientError.notConnected }
+        let branched = try await client.branchStoredSession(parentID: entry.summary.id, profile: entry.profile)
+        // The row exists now: list it, so the copy opens with its title and selected.
+        if listProfile == entry.profile { await refreshSessionList() }
+        let row = history.first { $0.profile == entry.profile && $0.summary.id == branched.storedSessionID }
+            ?? HistoryEntry(profile: entry.profile, summary: SessionSummary(id: branched.storedSessionID))
+        // `session.resume` reuses the runtime the branch started on this socket.
+        return try await open(row)
     }
 
     // MARK: Delete

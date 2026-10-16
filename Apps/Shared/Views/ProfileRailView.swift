@@ -2,9 +2,9 @@ import HermesKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The left column: every profile as an avatar, grouped by server when there are
-/// several. Picking one lists its sessions in the middle column, so profiles never
-/// mix. Narrow on purpose; the session list is the wide column. Settings is at its
+/// Every profile as an avatar, grouped by server when there are several: on macOS the
+/// sidebar's leading strip, on iOS the left column. Picking one lists its sessions
+/// beside it, so profiles never mix. Narrow on purpose; the session list is the wide column. Settings is at its
 /// bottom, under the profiles. A profile's context menu changes its avatar, which is
 /// stored on its server (`GatewayConnection+Avatars.swift`).
 struct ProfileRailView: View {
@@ -62,27 +62,21 @@ struct ProfileRailView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
         }
+        #if os(macOS)
+        // Beside the session list in the one sidebar (`RootView`), at one width.
+        .frame(width: ProfileRailItem.width)
+        #else
         .navigationTitle("Profiles")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
-        #if os(macOS)
-        // Always shown, at one width: hiding the rail would hide the only way to switch
-        // profiles (`RootView` also undoes a collapse), and its divider doesn't drag.
-        .toolbar(removing: .sidebarToggle)
-        .navigationSplitViewColumnWidth(ProfileRailItem.width)
-        // The title bar band runs over the rail too, so the window buttons sit in the
-        // window's title bar, not on the rail's own top (`titleBarBand`).
-        .scrollEdgeEffectHidden(true, for: .top)
-        .titleBarBand()
-        #endif
     }
 
     @ViewBuilder private func section(_ server: ServerConnection) -> some View {
         let connection = server.connection
         if model.showsServerNames {
-            RailServerHeader(name: server.name, color: statusColor(server), isLocal: server.isLocal)
+            RailServerHeader(name: server.name, color: statusColor(server), isLocal: server.isLocal,
+                             status: status(server))
                 .help(statusHelp(server))
                 .padding(.bottom, 2)
         }
@@ -148,9 +142,12 @@ struct ProfileRailView: View {
         return state != .connected && server.lastError != nil ? .red : state.statusColor
     }
 
-    private func statusHelp(_ server: ServerConnection) -> String {
+    private func status(_ server: ServerConnection) -> String {
         let state = server.connection.state
-        let status = state == .connected ? state.statusText : server.lastError ?? state.statusText
-        return "\(server.name): \(status)"
+        return state == .connected ? state.statusText : server.lastError ?? state.statusText
+    }
+
+    private func statusHelp(_ server: ServerConnection) -> String {
+        "\(server.name): \(status(server))"
     }
 }

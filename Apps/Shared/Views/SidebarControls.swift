@@ -171,6 +171,8 @@ struct RailServerHeader: View {
     let name: String
     let color: Color
     var isLocal = false
+    /// What the dot means, for VoiceOver and UI tests ("Connected").
+    var status = ""
 
     var body: some View {
         Image(systemName: isLocal ? "laptopcomputer" : "server.rack")
@@ -186,6 +188,7 @@ struct RailServerHeader: View {
             .frame(maxWidth: .infinity)
             .accessibilityElement()
             .accessibilityLabel(name)
+            .accessibilityValue(status)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -256,6 +259,51 @@ struct BotRow: View {
         case .waitingForYou: "Waiting for your answer"
         case .working: bot.preview.map { "Working… \($0)" } ?? "Working…"
         case .recent, .idle: bot.preview ?? (bot.hasChat ? "No messages yet" : "Say hello")
+        }
+    }
+}
+
+/// The Bot Chat row pinned above the session list: a `BotRow` under a "Bot Chat"
+/// header, set in like the list's rows, with their hover and a selected fill (the
+/// List's own selection can't reach a row outside it).
+struct PinnedBotChat: View {
+    let bot: Bot
+    let activity: BotActivity
+    let isSelected: Bool
+    let open: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(Bot.chatTitle)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, Hover.rowContentInset)
+                .accessibilityHidden(true)
+            Button(action: open) {
+                BotRow(bot: bot, activity: activity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(Style(isSelected: isSelected))
+            .padding(.horizontal, Hover.rowInset)
+            .accessibilityIdentifier("pinnedBotChat")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+    }
+
+    private struct Style: ButtonStyle {
+        var isSelected: Bool
+
+        func makeBody(configuration: Configuration) -> some View {
+            let shape = RoundedRectangle(cornerRadius: Hover.cornerRadius)
+            configuration.label
+                .padding(.horizontal, Hover.rowContentInset - Hover.rowInset)
+                .padding(.vertical, 4)
+                .background { shape.fill(.quaternary).opacity(isSelected ? 1 : 0) }
+                .contentShape(shape)
+                .hoverHighlight(in: shape, isEnabled: !isSelected)
         }
     }
 }

@@ -216,8 +216,54 @@ final class LiveChatUITests: XCTestCase {
                                  "New chat is level with the title bar: \(button) vs \(close.frame)")
     }
 
-    /// The title bar reads as one band across the window: the same tone over the session
-    /// list and over the chat column, set off from the chat below it, with no chat and
+    /// The profile rail keeps its width: its divider doesn't drag it wider, narrower or
+    /// shut (a collapsed rail had no way back). Dragging the session list's divider
+    /// takes New chat along, so it stays at the list's trailing edge instead of drifting
+    /// over the chat.
+    @MainActor
+    func testProfileRailIsFixedAndNewChatFollowsTheSessionColumn() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
+        let list = app.outlines.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
+        let window = app.windows.firstMatch
+        let width = rail.frame.width
+        func drag(atX x: CGFloat, by dx: CGFloat) {
+            let y = window.frame.midY - window.frame.minY
+            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x - window.frame.minX, dy: y))
+            start.press(forDuration: 0.3, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)))
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
+        func checkNewChat(_ state: String) {
+            attach(app, state)
+            let button = newChat.frame, column = list.frame
+            XCTAssertLessThanOrEqual(abs(button.maxX - (column.maxX - 7.5)), 4,
+                                     "\(state): New chat ends at the column's trailing edge: \(button) in \(column)")
+        }
+        checkNewChat("as launched")
+
+        // The rail's divider, dragged shut and then wider.
+        drag(atX: rail.frame.maxX, by: -rail.frame.width)
+        XCTAssertTrue(rail.exists && rail.isHittable, "the rail is still shown after dragging it shut")
+        XCTAssertEqual(rail.frame.width, width, accuracy: 1, "the rail kept its width")
+        drag(atX: rail.frame.maxX, by: 80)
+        XCTAssertEqual(rail.frame.width, width, accuracy: 1, "the rail didn't widen")
+        checkNewChat("after dragging the rail's divider")
+
+        // The session list's divider, narrower and then wider.
+        drag(atX: list.frame.maxX, by: -60)
+        checkNewChat("session list narrowed")
+        drag(atX: list.frame.maxX, by: 120)
+        checkNewChat("session list widened")
+    }
+
+    /// The title bar reads as one band across the window: the same tone over the profile
+    /// rail (where the window buttons are), the session list and the chat column, set off from the chat below it, with no chat and
     /// with one open. (The system's glass showed over the session list only.)
     @MainActor
     func testTitleBarIsOneBandAcrossTheColumns() throws {
@@ -235,6 +281,10 @@ final class LiveChatUITests: XCTestCase {
         // below it.
         let sessionX = newChat.frame.minX - 40 - frame.minX
         let chatX = list.frame.maxX + (frame.maxX - list.frame.maxX) * 0.75 - frame.minX
+        // Over the profile rail, above the window buttons: the band runs over it too.
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
+        let railX = rail.frame.midX - frame.minX
         func color(at x: CGFloat, _ y: CGFloat, in shot: XCUIScreenshot) -> [UInt8] {
             Self.pixels(of: shot.image, column: (x: x, from: y, to: y + 1), in: frame.size).first ?? []
         }
@@ -247,8 +297,10 @@ final class LiveChatUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
             let session = color(at: sessionX, 8, in: shot), chat = color(at: chatX, 8, in: shot)
-            let below = color(at: chatX, 120, in: shot)
-            XCTAssertFalse(session.isEmpty || chat.isEmpty || below.isEmpty, "read the window")
+            let over = color(at: railX, 8, in: shot), below = color(at: chatX, 120, in: shot)
+            XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
+            XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
+                          "\(state): the band over the session list \(session) and over the rail \(over) differ")
             XCTAssertTrue(zip(session, chat).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                           "\(state): the band over the session list \(session) and over the chat \(chat) differ")
             XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 8 },

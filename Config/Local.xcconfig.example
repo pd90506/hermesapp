@@ -4,10 +4,14 @@
 DEVELOPMENT_TEAM = ABCDE12345
 HERMES_BUNDLE_ID_PREFIX = com.yourname.hermesapp
 
-// Or, on macOS without a development team (e.g. a free account with no certificate left
-// to create): a self-signed "Code Signing" certificate made in Keychain Access ▸ Certificate
-// Assistant ▸ Create a Certificate. Rebuilds then keep one identity, so the Keychain keeps
-// handing the app its saved passwords. Leave DEVELOPMENT_TEAM unset with these.
+// A free personal team works too (Xcode ▸ Settings ▸ Accounts lists its id). On macOS it is
+// what stops the Keychain password prompt after every rebuild: the login keychain lets a
+// build without a team id read its saved passwords only by its code hash, which changes on
+// each build. A team id stays the same.
+//
+// Without any team, a self-signed "Code Signing" certificate made in Keychain Access ▸
+// Certificate Assistant ▸ Create a Certificate signs the app, but it has no team id, so each
+// rebuild still asks for the Keychain password once. Leave DEVELOPMENT_TEAM unset with these.
 // CODE_SIGN_STYLE = Manual
 // CODE_SIGN_IDENTITY = Hermes Local Signing
 // No separate debug dylib: library validation refuses one without a team id.

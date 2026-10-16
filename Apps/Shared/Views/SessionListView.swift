@@ -77,7 +77,7 @@ struct SessionListView: View {
             ToolbarItem(placement: .navigation) {
                 ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
                     .frame(width: titleWidth, alignment: .leading)
-                    .background(WindowFrameReader { titleMinX = $0.minX })
+                    .background(WindowFrameReader { followTitleStart($0.minX) })
             }
             .sharedBackgroundVisibility(.hidden)
             if let newChatButton {
@@ -87,7 +87,7 @@ struct SessionListView: View {
             }
         }
         .toolbar(removing: .title)
-        .background(WindowFrameReader { columnFrame = $0 })
+        .background(WindowFrameReader { columnFrame = $0.integral })
         // The band under the title bar, as over the chat (`titleBarBand`), with none of
         // the system's title bar glass under it: macOS 26 showed that glass (the scroll
         // edge) while the pointer was over the title bar, which showed through the band.
@@ -331,9 +331,17 @@ struct SessionListView: View {
     private static let newChatSlot: CGFloat = 10 + 36 + 7.5
 
     /// From where the title starts to New chat's place at the column's trailing edge.
+    /// Takes a new start for the title only when it moved by more than a nudge, as when
+    /// the window buttons leave in full screen (about 70 pt). Following every small shift
+    /// fed back into the title's width and made New chat jitter.
+    private func followTitleStart(_ x: CGFloat) {
+        if let titleMinX, abs(x - titleMinX) <= 12 { return }
+        titleMinX = x.rounded()
+    }
+
     /// The title starts after the window buttons, which the fixed profile rail doesn't
-    /// line up with, so that start is measured (its own width doesn't move it). Until it
-    /// is, the title is assumed to start 12 pt into the column.
+    /// line up with, so that start is measured (`followTitleStart`). Until it is, the
+    /// title is assumed to start 12 pt into the column.
     private var titleWidth: CGFloat {
         guard let columnFrame else { return 0 }
         let start = titleMinX ?? columnFrame.minX + 12

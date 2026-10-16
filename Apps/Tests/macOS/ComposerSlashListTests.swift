@@ -218,7 +218,7 @@ struct ComposerSlashListTests {
         var submits = 0
         let view = ComposerTextView(
             text: .constant("/zz"), contentHeight: .constant(28), maxHeight: 170, focusRequest: 0,
-            onSubmit: { submits += 1 }, onImages: { _ in }, onImageProviders: { _ in },
+            onSubmit: { submits += 1 }, onAttach: { _ in }, onProviders: { _ in },
             onSlashKey: { composer.handleSlashKey($0) })
         let coordinator = ComposerTextView.Coordinator(view)
         let scroll = ComposerTextView.makeScrollView(coordinator: coordinator, text: "/zz")

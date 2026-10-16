@@ -266,11 +266,12 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "profile rail")
     }
 
-    /// The title bar reads as one band across the window: the same tone over the profile
-    /// rail (where the window buttons are), the session list and the chat column, set off from the chat below it, with no chat and
-    /// with one open. (The system's glass showed over the session list only.)
+    /// As in Mail, the profile rail and the session list are one sidebar: the window
+    /// buttons sit on it, and its glass has one tone across the rail and the list in the
+    /// title bar row (the rail and the list each drew their own, with a seam under the
+    /// window buttons). The chat column has its own band, set off from the chat below.
     @MainActor
-    func testTitleBarIsOneBandAcrossTheColumns() throws {
+    func testSidebarIsOnePanelUnderTheWindowButtons() throws {
         continueAfterFailure = false
         XCUIDevice.shared.appearance = .light
         let app = try launchApp()
@@ -281,32 +282,33 @@ final class LiveChatUITests: XCTestCase {
         let frame = window.frame
         let list = app.outlines.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
-        // Points in the band away from any text or button, and one in the chat well
-        // below it.
-        let sessionX = newChat.frame.minX - 40 - frame.minX
-        let chatX = list.frame.maxX + (frame.maxX - list.frame.maxX) * 0.75 - frame.minX
-        // Over the profile rail, above the window buttons: the band runs over it too.
         let rail = app.descendants(matching: .any)["profileRail"].firstMatch
         XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
+        let close = window.buttons[XCUIIdentifierCloseWindow]
+        XCTAssertTrue(close.exists, "the window's close button")
+        XCTAssertLessThan(rail.frame.maxX, list.frame.minX + 2, "the rail is beside the list: \(rail.frame) \(list.frame)")
+        XCTAssertLessThan(close.frame.maxX, list.frame.maxX, "the window buttons are on the sidebar")
+        // Points in the title bar row away from any text or button, and one in the chat
+        // well below it.
         let railX = rail.frame.midX - frame.minX
+        let sessionX = newChat.frame.minX - 40 - frame.minX
+        let chatX = list.frame.maxX + (frame.maxX - list.frame.maxX) * 0.75 - frame.minX
         func color(at x: CGFloat, _ y: CGFloat, in shot: XCUIScreenshot) -> [UInt8] {
             Self.pixels(of: shot.image, column: (x: x, from: y, to: y + 1), in: frame.size).first ?? []
         }
         func check(_ state: String) {
-            window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6)).hover()
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
             RunLoop.current.run(until: Date().addingTimeInterval(1.5))
             let shot = window.screenshot()
             let attachment = XCTAttachment(screenshot: shot)
             attachment.name = state
             attachment.lifetime = .keepAlways
             add(attachment)
-            let session = color(at: sessionX, 8, in: shot), chat = color(at: chatX, 8, in: shot)
-            let over = color(at: railX, 8, in: shot), below = color(at: chatX, 120, in: shot)
+            let over = color(at: railX, 8, in: shot), session = color(at: sessionX, 8, in: shot)
+            let chat = color(at: chatX, 8, in: shot), below = color(at: chatX, 120, in: shot)
             XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
             XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
-                          "\(state): the band over the session list \(session) and over the rail \(over) differ")
-            XCTAssertTrue(zip(session, chat).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
-                          "\(state): the band over the session list \(session) and over the chat \(chat) differ")
+                          "\(state): the sidebar over the rail \(over) and over the list \(session) differ")
             XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 8 },
                           "\(state): no band over the chat: \(chat), the same as under it \(below)")
         }
@@ -316,6 +318,33 @@ final class LiveChatUITests: XCTestCase {
         press(newChat)
         XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 30), "composer shown")
         check("a chat open")
+    }
+
+    /// The Bot Chat is pinned above the session list: scrolling the list leaves it where
+    /// it is, and a click opens it (it scrolled away with the sessions before).
+    @MainActor
+    func testBotChatStaysPinnedAboveTheSessions() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let bot = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
+        XCTAssertTrue(bot.waitForExistence(timeout: 30), "the pinned Bot Chat")
+        let list = app.outlines.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
+        XCTAssertLessThan(bot.frame.maxY, newChat.frame.maxY + 120, "the Bot Chat is at the top: \(bot.frame)")
+        let before = bot.frame
+        list.scroll(byDeltaX: 0, deltaY: -600)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "list scrolled")
+        XCTAssertEqual(bot.frame, before, "the Bot Chat moved with the list")
+        XCTAssertTrue(bot.isHittable, "the Bot Chat is still in reach")
+        press(bot)
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 30), "the Bot Chat opened")
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: bot)
+        XCTAssertEqual(XCTWaiter().wait(for: [selected], timeout: 10), .completed, "the Bot Chat shows as selected")
+        attach(app, "Bot Chat open")
     }
 
     /// The RGB of each pixel down a column of the screenshot, in window points
@@ -371,7 +400,19 @@ final class LiveChatUITests: XCTestCase {
         let back = app.navigationBars.buttons.element(boundBy: 0)
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
         #endif
-        if !waitForText(in: app, "All 2 servers connected", timeout: 60) {
+        #if os(macOS)
+        // The rail's server headers show each one's status (there is no footer).
+        let connected = ["Test 1", "Test 2"].map { name in
+            XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true"),
+                object: app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label == %@ AND value == %@", name, "Connected")).firstMatch)
+        }
+        let bothConnected = XCTWaiter().wait(for: connected, timeout: 60) == .completed
+        #else
+        let bothConnected = waitForText(in: app, "All 2 servers connected", timeout: 60)
+        #endif
+        if !bothConnected {
             let shot = XCTAttachment(screenshot: app.screenshot())
             shot.name = "not both connected"
             shot.lifetime = .keepAlways

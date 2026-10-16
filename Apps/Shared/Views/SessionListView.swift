@@ -16,8 +16,9 @@ enum SidebarItem: Hashable {
     }
 }
 
-/// The middle column: the profile picked in the profile rail, its Bot Chat pinned
-/// first, then its sessions.
+/// The profile picked in the profile rail: its Bot Chat pinned at the top, where it
+/// never scrolls away (`PinnedBotChat`), then its sessions. On macOS it shares the
+/// sidebar with the rail (`RootView`); on iOS it is the middle column.
 ///
 /// - On macOS the profile's name (and server) is the column's title, in the title bar
 ///   level with the window buttons, with New chat (`NewChatButton`, a compose icon) at
@@ -26,8 +27,8 @@ enum SidebarItem: Hashable {
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
 /// - Settings is at the bottom of the profile rail (on iPhone, a toolbar button here).
-/// - At the bottom, the error and "waiting" banners and a fixed-height footer with the
-///   connection status.
+/// - At the bottom, the error and "waiting" banners; on iOS also a fixed-height footer
+///   with the connection status (on macOS the rail beside it shows that).
 /// Rows and controls are in `SidebarControls.swift`; pointer feedback in `Hover.swift`.
 struct SessionListView: View {
     @Environment(AppModel.self) private var model
@@ -58,7 +59,6 @@ struct SessionListView: View {
         #endif
         List(selection: $selection) {
             if let server = model.sessionsServer {
-                botChatSection(server)
                 pinnedSection(server)
                 sessionsSection(server)
             }
@@ -70,11 +70,12 @@ struct SessionListView: View {
         #if os(macOS)
         .toolbar {
             // The column's title, in the title bar right after the window buttons. Its
-            // width is what puts New chat, which follows it, at this column's trailing
+            // width is what puts New chat, which follows it, at the sidebar's trailing
             // edge, level with the name (`titleWidth`). (Otherwise New chat landed right
             // after the name, or after a flexible spacer at the window's trailing edge;
-            // inside this item, its tooltip covered the whole title.)
-            ToolbarItem(placement: .navigation) {
+            // inside this item, its tooltip covered the whole title.) Both are primary
+            // actions: those stay over the sidebar, where `.navigation` went over the chat.
+            ToolbarItem(placement: .primaryAction) {
                 ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
                     .frame(width: titleWidth, alignment: .leading)
                     .background(WindowFrameReader { followTitleStart($0.minX) })
@@ -88,17 +89,14 @@ struct SessionListView: View {
         }
         .toolbar(removing: .title)
         .background(WindowFrameReader { columnFrame = $0.integral })
-        // The band under the title bar, as over the chat (`titleBarBand`), with none of
-        // the system's title bar glass under it: macOS 26 showed that glass (the scroll
-        // edge) while the pointer was over the title bar, which showed through the band.
-        .scrollEdgeEffectHidden(true, for: .top)
-        .titleBarBand()
         #else
         // The header shows the name; the navigation title stays for the back button.
         .toolbar(removing: .title)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
+        // Above the rows, always in reach: they scroll under it.
+        .safeAreaBar(edge: .top) { pinnedBotChat }
         #if os(iOS)
         // Pinned above the list: it never scrolls away; rows scroll under it.
         .safeAreaBar(edge: .top) {
@@ -112,7 +110,9 @@ struct SessionListView: View {
         .safeAreaBar(edge: .bottom) {
             VStack(spacing: 0) {
                 banners
+                #if os(iOS)
                 SidebarFooter(status: statusText, color: statusColor) { EmptyView() }
+                #endif
             }
         }
         #if os(iOS)
@@ -149,26 +149,19 @@ struct SessionListView: View {
                 }
             }
         }
-        #if os(macOS)
-        .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 480)
-        #endif
     }
 
     /// The profile's one ongoing chat, above its other sessions.
-    @ViewBuilder private func botChatSection(_ server: ServerConnection) -> some View {
-        let connection = server.connection
-        if let bot = connection.listProfileBot {
+    @ViewBuilder private var pinnedBotChat: some View {
+        if let server = model.sessionsServer, let bot = server.connection.listProfileBot {
             let item = SidebarItem.bot(server: server.id, profile: bot.name)
-            Section {
-                BotRow(bot: bot, activity: connection.activity(for: bot))
-                    .sidebarRowHover(isSelected: selection == item)
-                    .tag(item)
-                    .contextMenu {
-                        Button("New Side Chat", systemImage: "plus.bubble") { startSideChat(with: bot, on: server) }
-                            .disabled(!server.isConnected || isStartingChat)
-                    }
-            } header: {
-                Text(Bot.chatTitle)
+            PinnedBotChat(bot: bot, activity: server.connection.activity(for: bot), isSelected: selection == item) {
+                selection = item
+                showChat()
+            }
+            .contextMenu {
+                Button("New Side Chat", systemImage: "plus.bubble") { startSideChat(with: bot, on: server) }
+                    .disabled(!server.isConnected || isStartingChat)
             }
         }
     }
@@ -339,14 +332,16 @@ struct SessionListView: View {
         titleMinX = x.rounded()
     }
 
-    /// The title starts after the window buttons, which the fixed profile rail doesn't
-    /// line up with, so that start is measured (`followTitleStart`). Until it is, the
-    /// title is assumed to start 12 pt into the column.
+    /// The title starts after the window buttons, over the profile rail, so that start is
+    /// measured (`followTitleStart`). Until it is, the title is a modest width that fits:
+    /// the title bar drops an item that doesn't fit, or has no width, without a trace,
+    /// and a dropped title is never measured.
     private var titleWidth: CGFloat {
-        guard let columnFrame else { return 0 }
-        let start = titleMinX ?? columnFrame.minX + 12
-        return max(0, columnFrame.maxX - start - Self.newChatSlot)
+        guard let columnFrame, let titleMinX else { return Self.unmeasuredTitleWidth }
+        return max(Self.unmeasuredTitleWidth, columnFrame.maxX - titleMinX - Self.newChatSlot)
     }
+
+    private static let unmeasuredTitleWidth: CGFloat = 100
     #endif
 
     private var newChatButton: NewChatButton? {
@@ -365,6 +360,7 @@ struct SessionListView: View {
         return nil
     }
 
+    #if os(iOS)
     /// One server: its status as before. Several: how many are connected (each
     /// section header has its own).
     private var statusText: String {
@@ -382,6 +378,7 @@ struct SessionListView: View {
         if connected == servers.count { return .green }
         return connected > 0 ? .yellow : .red
     }
+    #endif
 
     private func startSideChat(with bot: Bot, on server: ServerConnection) {
         guard !isStartingChat else { return }

@@ -1526,13 +1526,14 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
   `selection(fromAnswer:)`; `ClarifyRequest.lockedSelection(for:)`; and
   `ChatSession.answer(_:selections:)`.
 
-### 10.9 Rename, archive, delete
+### 10.9 Rename, archive, delete, fork, pin
 
 | Method | Params | Result | Source |
 |---|---|---|---|
 | `session.title` | `{session_id:<runtime>, title}` | `{title, pending}` | §4; methods_session.py:1220-1249 |
 | `session.archive` | `{session_id:<runtime or stored id>, archived, profile?}` | `{archived, session_key}` | sessions.py:337-352; methods_session.py:1252-1279 |
 | `session.delete` | `{session_id:<stored id>, profile?}` | `{deleted:<stored id>}` | sessions.py:294-303; methods_session.py:1175-1198 |
+| `session.branch_stored` | `{parent_session_id:<stored id>, profile?, source?, idempotency_key?, …}` (`session.create`'s params) | `{session_id, stored_session_id, message_count, messages_omitted:true, info}`, no `messages` | methods_session.py:330-493 |
 
 - **Desktop uses REST for these.**
   - The endpoints are `PATCH /api/sessions/{id}` with `{title?, archived?, …}` and
@@ -1549,6 +1550,8 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
   - Resuming re-binds the row's event stream to this socket (§7), away from a Desktop window
     showing it.
   - `session.close` would then tear it down for everyone (`methods_session.py:2202-2206`).
+  - `[client choice]` The app's Rename on a row that isn't open opens it first, as a click
+    on the row would, then renames it; the user sees the chat they renamed.
 - **Archive** applies to the whole lineage (`methods_session.py:1252-1279`).
   - It takes a live runtime id first; an unpersisted chat gets `pending_archived`.
   - Otherwise it takes a stored id, key or title in `profile`'s db. A reclaimed chat's stored id
@@ -1564,6 +1567,26 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
     composer.
   - `[client choice]` 4007 counts as deleted: a chat with no first turn has no row.
   - A 4023 that remains means another client has the chat open; the error is shown.
+- **Fork** copies a whole stored session (`session.branch_stored`, as Desktop's whole-session
+  branch, `use-session-actions/index.ts:2726-2745`).
+  - The gateway reads the parent's display history server-side, keeps its visible
+    user/assistant turns (`_visible_branch_history`, `methods_session_branch.py:21-25`), and
+    answers without them (`messages_omitted`).
+  - Unlike a plain `session.create`, the copy's row is saved at once
+    (`_seed_branch_row`, `methods_session.py:283-300,461-462`), linked by `_branched_from`, and
+    titled with the parent's next lineage title: "Plan" → "Plan #2"
+    (`_branch_title`, `methods_session_branch.py:13-18`; `hermes_state_titles.py:23-35`).
+  - A parent with no visible turns is refused with 4008 "send a message first".
+  - `[client choice]` The package lists the profile again and opens the copy with
+    `session.resume`, which reuses the runtime the branch started on this socket. Bot Chats
+    aren't forked (`.botChatProtected`).
+- **Pin** is not on the JSON-RPC surface.
+  - Hermes keeps it in `sessions.pinned` and Desktop writes it through the dashboard's fenced
+    REST `PATCH /api/sessions/{id} {pinned}` (`apps/desktop/src/api/sessions.ts:374-428`).
+  - `session.list` rows don't carry it (`_session_row_summary`, `methods_session.py:110-122`).
+  - `[client choice]` The app keeps its own pins (`SessionPins`), per server, profile and stored
+    id, and lists pinned rows first. They don't sync with Desktop's, and a pinned row older than
+    the list's window doesn't show.
 - **Bot Chats are protected.**
   - A Bot Chat is (profile, hidden session titled exactly `Bot Chat`) (§8.2,
     `hermes_state.py:1602-1608`).

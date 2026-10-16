@@ -8,7 +8,8 @@ import SwiftUI
 /// selected profile's name (and, with several servers, its server) and the New chat
 /// row. It never scrolls; rows scroll under it.
 struct SessionListHeader: View {
-    let title: String
+    /// The profile's name. `nil` on macOS, where it is the column's title in the title bar.
+    var title: String?
     /// The profile's server, when there are several.
     var subtitle: String?
     /// The New chat row, or `nil` when no profile is selected.
@@ -16,27 +17,41 @@ struct SessionListHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(1)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+            if let title {
+                ColumnTitle(title: title, subtitle: subtitle, font: .title3.weight(.semibold))
+                    .padding(.horizontal, Hover.rowContentInset)
+                    .padding(.vertical, 4)
             }
-            .padding(.horizontal, Hover.rowContentInset)
-            .padding(.vertical, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
             if let newChat {
                 newChat
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 6)
+    }
+}
+
+/// The session list's title: the profile's name, and under it its server and status.
+struct ColumnTitle: View {
+    let title: String
+    var subtitle: String?
+    /// The title bar's size by default; the iOS header's is larger.
+    var font: Font = .headline
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(font)
+                .lineLimit(1)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -309,22 +324,67 @@ struct BotAvatar: View {
 }
 
 /// A session of the selected profile: its title and when it started (the profile is
-/// the list's, so it isn't repeated on every row).
-struct HistoryRow: View {
+/// the list's, so it isn't repeated on every row), and its actions behind a "…" button
+/// at the trailing edge (the same as its context menu).
+struct HistoryRow<Actions: View>: View {
     let entry: HistoryEntry
+    @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
-                .lineLimit(1)
-            if let started = entry.summary.startedAt, started > 0 {
-                Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
                     .lineLimit(1)
+                if let started = entry.summary.startedAt, started > 0 {
+                    Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Menu {
+                actions()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
+            .accessibilityLabel("More actions")
         }
         .padding(.vertical, 2)
+        .contextMenu { actions() }
+    }
+}
+
+/// A session row's actions, in its context menu and its "…" menu.
+struct SessionActions: View {
+    let isPinned: Bool
+    var canChange = true
+    let pin: () -> Void
+    let rename: () -> Void
+    let fork: () -> Void
+    let archive: () -> Void
+    let delete: () -> Void
+
+    var body: some View {
+        Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin", action: pin)
+        Button("Rename…", systemImage: "pencil", action: rename)
+            .disabled(!canChange)
+        Button("Fork", systemImage: "arrow.triangle.branch", action: fork)
+            .disabled(!canChange)
+        Button("Archive", systemImage: "archivebox", action: archive)
+            .disabled(!canChange)
+        Divider()
+        Button("Delete…", systemImage: "trash", role: .destructive, action: delete)
+            .disabled(!canChange)
     }
 }
 

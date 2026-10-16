@@ -29,6 +29,8 @@ extension GatewayMethod {
     // Side-chat management (`contracts/sessions.py:294-303,337-352`).
     public static let sessionArchive = "session.archive"
     public static let sessionDelete = "session.delete"
+    /// A copy of a stored session's whole transcript as a new session (`methods_session.py:489-493`).
+    public static let sessionBranchStored = "session.branch_stored"
     /// Provider/model inventory for the picker (`tui_gateway/methods_complete.py:357-369`).
     public static let modelOptions = "model.options"
     /// One normalised config value (`tui_gateway/methods_config.py:258-270`).
@@ -647,4 +649,41 @@ public struct SessionDeleteParams: Sendable, Hashable, Codable {
 public struct SessionDeleteResult: Sendable, Hashable, Codable {
     /// The stored id that was deleted.
     public var deleted: String
+}
+
+/// `session.branch_stored` (`methods_session.py:330-493`): the gateway copies the
+/// parent's visible user/assistant turns server-side into a new session, saves its row
+/// at once under the parent's next lineage title (`_seed_branch_row`, `_branch_title`),
+/// and answers without the transcript (`messages_omitted`).
+public struct SessionBranchStoredParams: Sendable, Hashable, Codable {
+    /// The parent's stored id, in `profile`'s db.
+    public var parentSessionID: String
+    public var profile: String?
+    public var source: String?
+
+    public init(parentSessionID: String, profile: String?, source: String? = nil) {
+        self.parentSessionID = parentSessionID
+        self.profile = profile
+        self.source = source
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case profile, source
+        case parentSessionID = "parent_session_id"
+    }
+}
+
+/// `session.branch_stored`'s answer: `session.create`'s shape without `messages`.
+public struct SessionBranchResult: Sendable, Hashable, Codable {
+    /// The new session's runtime id.
+    public var sessionID: String
+    /// The new session's stored id; its row already exists.
+    public var storedSessionID: String
+    public var messageCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case storedSessionID = "stored_session_id"
+        case messageCount = "message_count"
+    }
 }

@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The left column: every profile as an avatar, grouped by server when there are
 /// several. Picking one lists its sessions in the middle column, so profiles never
-/// mix. Narrow on purpose; the session list is the wide column.
+/// mix. Narrow on purpose; the session list is the wide column. Settings is at its
+/// bottom, under the profiles.
 struct ProfileRailView: View {
     @Environment(AppModel.self) private var model
     /// Shows the session list (on iPhone, pushes it).
@@ -28,6 +29,18 @@ struct ProfileRailView: View {
             .padding(.vertical, 8)
         }
         .scrollIndicators(.never)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Button("Settings", systemImage: "gearshape") {
+                model.settingsPresentation.toggle()
+            }
+            .labelStyle(.iconOnly)
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .hoverButtonStyle(.circle, padding: 8)
+            .help("Settings")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
         .navigationTitle("Profiles")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

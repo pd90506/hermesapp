@@ -29,6 +29,7 @@ struct RootView: View {
             if let server = model.activeServer, let opening = server.connection.opening {
                 // A first open: the chat's frame at once, not the previous chat.
                 OpeningChatView(title: title(of: opening, on: server))
+                    .titleBarBand()
             } else if let server = model.activeServer, let session = server.connection.activeSession {
                 ChatView(session: session, title: title(of: session, on: server))
                     .id(session.id)  // a fresh composer per chat
@@ -37,6 +38,7 @@ struct RootView: View {
                 ContentUnavailableView(
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
                     description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
+                .titleBarBand()
             }
         }
         // The settings sheet, from the gear or because the app must connect
@@ -150,5 +152,22 @@ private struct OpeningChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .accessibilityLabel("Opening \(title)")
+    }
+}
+
+extension View {
+    /// On macOS, the title bar's glass over a detail view that has no scroll view of its
+    /// own (no chat, a chat opening), as over the session list and the chat (their hard
+    /// scroll edge), so the title bars across the window always read as one band.
+    @ViewBuilder func titleBarBand() -> some View {
+        #if os(macOS)
+        ScrollView {
+            self.containerRelativeFrame([.horizontal, .vertical])
+        }
+        .scrollDisabled(true)
+        .scrollEdgeEffectStyle(.hard, for: .top)
+        #else
+        self
+        #endif
     }
 }

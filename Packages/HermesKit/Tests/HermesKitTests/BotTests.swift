@@ -9,13 +9,13 @@ import Testing
 /// of `_profile_ui_meta_fields` (:256-278; `ui_meta` only when non-empty).
 func profileRowPayload(_ name: String, isDefault: Bool = false, displayName: String = "",
                        canonical: JSONValue = nil, worker: JSONValue = nil, last: JSONValue = nil,
-                       uiMeta: JSONValue? = nil) -> JSONValue {
+                       uiMeta: JSONValue? = nil, hasAvatar: Bool = false) -> JSONValue {
     var row: [String: JSONValue] = [
         "name": .string(name), "path": .string("/srv/hermes/profiles/\(name)"), "is_default": .bool(isDefault),
         "model": "test-model", "provider": "test-provider", "description": "", "display_name": .string(displayName),
         "skill_count": 3, "previous_names": [], "role": nil,
         "last_session": last, "worker_session": worker, "canonical_session": canonical,
-        "ui_meta_revisions": [:], "has_avatar": false,
+        "ui_meta_revisions": [:], "has_avatar": .bool(hasAvatar),
     ]
     if let uiMeta { row["ui_meta"] = uiMeta }
     return .object(row)

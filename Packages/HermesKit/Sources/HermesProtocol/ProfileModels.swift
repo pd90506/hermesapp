@@ -40,16 +40,21 @@ public struct ProfileRow: Sendable, Hashable, Codable, Identifiable {
     public var canonicalSession: ProfileCanonicalSession?
     /// Free-form per-plugin metadata from profile.yaml (`methods_profiles.py:256-278`).
     public var uiMeta: [String: JSONValue]?
+    /// The profile has an `assets/avatar.*` image (`methods_profiles.py:278`); read it
+    /// with `profiles.get_asset`.
+    public var hasAvatar: Bool?
 
     public var id: String { name }
 
     public init(name: String, isDefault: Bool? = nil, displayName: String? = nil,
-                canonicalSession: ProfileCanonicalSession? = nil, workerSession: ProfileWorkerSession? = nil) {
+                canonicalSession: ProfileCanonicalSession? = nil, workerSession: ProfileWorkerSession? = nil,
+                hasAvatar: Bool? = nil) {
         self.name = name
         self.isDefault = isDefault
         self.displayName = displayName
         self.canonicalSession = canonicalSession
         self.workerSession = workerSession
+        self.hasAvatar = hasAvatar
     }
 
     enum CodingKeys: String, CodingKey {
@@ -60,6 +65,7 @@ public struct ProfileRow: Sendable, Hashable, Codable, Identifiable {
         case workerSession = "worker_session"
         case canonicalSession = "canonical_session"
         case uiMeta = "ui_meta"
+        case hasAvatar = "has_avatar"
     }
 }
 
@@ -129,4 +135,43 @@ public struct ProfileCanonicalSession: Sendable, Hashable, Codable {
         case messageCount = "message_count"
         case liveMessageCount = "live_message_count"
     }
+}
+
+// `profiles.set_asset` / `profiles.get_asset`: a profile's avatar image, stored on the
+// server as `<profile>/assets/avatar.<ext>` (`tui_gateway/methods_profiles.py:411-463`).
+// Hermes Desktop's Bots plugin reads and writes the same file (`plugins/hermes-bots/profile-ops.ts`).
+
+public struct ProfileAssetParams: Sendable, Hashable, Codable {
+    /// The profile name (`_resolve_profile`, `methods_profiles.py:72-84`).
+    public var name: String
+    /// `"avatar"` is the only asset (`methods_profiles.py:418-419`).
+    public var asset: String
+    /// `set_asset`: a data URL or bare base64 of a PNG, JPEG or WebP, at most 2 MB.
+    public var data: String?
+    /// `set_asset`: removes the asset instead.
+    public var clear: Bool?
+
+    public init(name: String, asset: String = "avatar", data: String? = nil, clear: Bool? = nil) {
+        self.name = name
+        self.asset = asset
+        self.data = data
+        self.clear = clear
+    }
+}
+
+public struct ProfileSetAssetResult: Sendable, Hashable, Codable {
+    public var ok: Bool?
+    public var asset: String?
+    public var size: Int?
+    /// Files removed by a `clear`.
+    public var removed: Int?
+}
+
+public struct ProfileGetAssetResult: Sendable, Hashable, Codable {
+    /// `false` when the profile has no such asset; not an error (`methods_profiles.py:451`).
+    public var found: Bool
+    public var mime: String?
+    public var size: Int?
+    /// `data:<mime>;base64,…`.
+    public var data: String?
 }

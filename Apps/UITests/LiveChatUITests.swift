@@ -216,12 +216,12 @@ final class LiveChatUITests: XCTestCase {
                                  "New chat is level with the title bar: \(button) vs \(close.frame)")
     }
 
-    /// The profile rail keeps its width: its divider doesn't drag it wider, narrower or
-    /// shut (a collapsed rail had no way back). Dragging the session list's divider
-    /// takes New chat along, so it stays at the list's trailing edge instead of drifting
-    /// over the chat.
+    /// The profile rail is one fixed width, and nothing in the menus hides it (a hidden
+    /// rail had no way back). Dragging the split view's dividers isn't tested here:
+    /// XCUI's synthesized drags don't move NSSplitView dividers in the VM, even on a
+    /// build whose rail a person can drag.
     @MainActor
-    func testProfileRailIsFixedAndNewChatFollowsTheSessionColumn() throws {
+    func testProfileRailIsFixed() throws {
         continueAfterFailure = false
         let app = try launchApp()
         defer { app.terminate() }
@@ -229,54 +229,11 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
         let rail = app.descendants(matching: .any)["profileRail"].firstMatch
         XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
-        let list = app.outlines.firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
-        let width = rail.frame.width
-        // The split view's divider at a column's trailing edge (the query's order isn't
-        // left to right).
-        func divider(after edge: CGFloat) -> XCUIElement {
-            let all = app.splitters.allElementsBoundByIndex
-            return all.min { abs($0.frame.midX - edge) < abs($1.frame.midX - edge) } ?? app.splitters.firstMatch
+        XCTAssertEqual(rail.frame.width, 64, accuracy: 1, "the rail's width")
+        for title in ["Hide Sidebar", "Show Sidebar", "Toggle Sidebar"] {
+            XCTAssertFalse(app.menuBars.menuItems[title].exists, "the menus offer \(title)")
         }
-        let railDivider = divider(after: rail.frame.maxX)
-        XCTAssertLessThanOrEqual(abs(railDivider.frame.midX - rail.frame.maxX), 12,
-                                 "the rail's divider: \(railDivider.frame) after \(rail.frame)")
-        func drag(_ splitter: XCUIElement, by dx: CGFloat) {
-            let start = splitter.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            // Slowly, as a person would: a fast drag on the 1 pt divider left it in place.
-            start.press(forDuration: 0.5, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)),
-                        withVelocity: .slow, thenHoldForDuration: 0.3)
-            RunLoop.current.run(until: Date().addingTimeInterval(1))
-        }
-        func checkNewChat(_ state: String) {
-            attach(app, state)
-            let button = newChat.frame, column = list.frame
-            XCTAssertLessThanOrEqual(abs(button.maxX - (column.maxX - 7.5)), 4,
-                                     "\(state): New chat ends at the column's trailing edge: \(button) in \(column)")
-        }
-        checkNewChat("as launched")
-
-        // The rail's divider, dragged shut and then wider.
-        drag(railDivider, by: -width)
-        XCTAssertTrue(rail.exists && rail.isHittable, "the rail is still shown after dragging it shut")
-        XCTAssertEqual(rail.frame.width, width, accuracy: 1, "the rail kept its width")
-        drag(railDivider, by: 80)
-        XCTAssertEqual(rail.frame.width, width, accuracy: 1, "the rail didn't widen")
-        checkNewChat("after dragging the rail's divider")
-
-        // The session list's divider, wider and then narrower (it starts near its
-        // minimum width): the list does resize, and New chat goes with it.
-        let listWidth = list.frame.width
-        let listDivider = divider(after: list.frame.maxX)
-        XCTAssertLessThanOrEqual(abs(listDivider.frame.midX - list.frame.maxX), 12,
-                                 "the session list's divider: \(listDivider.frame) after \(list.frame)")
-        drag(listDivider, by: 120)
-        XCTAssertGreaterThan(list.frame.width, listWidth + 20, "the session list widened")
-        checkNewChat("session list widened")
-        let widened = list.frame.width
-        drag(divider(after: list.frame.maxX), by: -80)
-        XCTAssertLessThan(list.frame.width, widened - 20, "the session list narrowed")
-        checkNewChat("session list narrowed")
+        attach(app, "profile rail")
     }
 
     /// The title bar reads as one band across the window: the same tone over the profile

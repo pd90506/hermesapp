@@ -16,6 +16,8 @@ public enum GatewayMethod {
     public static let sessionInterrupt = "session.interrupt"
     public static let sessionTitle = "session.title"
     public static let profilesList = "profiles.list"
+    public static let profilesSetAsset = "profiles.set_asset"
+    public static let profilesGetAsset = "profiles.get_asset"
     public static let promptSubmit = "prompt.submit"
     public static let approvalRespond = "approval.respond"
     public static let clarifyLock = "clarify.lock"

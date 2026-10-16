@@ -1,5 +1,6 @@
 import HermesKit
 import HermesProtocol
+import ImageIO
 import SwiftUI
 
 // The sidebar's pieces, free of `AppModel` so `HermesMacTests` can host them as they are.
@@ -96,81 +97,96 @@ struct SettingsToolbarItem: ToolbarContent {
     }
 }
 
-/// One profile in the profile rail: its avatar (with the activity badge) over its
-/// name. The selected one gets a ring round the avatar and a pill on the rail's
-/// leading edge, as in Discord's or Telegram's folder rail.
+/// One profile in the profile rail, as in Discord's server rail: on macOS only its
+/// avatar (the name is the tooltip), a circle that turns into a rounded square when
+/// selected or hovered, with a pill on the rail's leading edge, tall when selected and
+/// short on hover. iOS has no pointer, so there the name sits under the avatar.
 struct ProfileRailItem: View {
+    #if os(macOS)
+    static let width: CGFloat = 64
+    #else
     static let width: CGFloat = 76
-    static let avatarSize: CGFloat = 42
+    #endif
+    static let avatarSize: CGFloat = 40
+    /// Space above and below the avatar.
+    static let verticalPadding: CGFloat = 4
 
     let bot: Bot
     let activity: BotActivity
     let isSelected: Bool
+    /// The profile's avatar image, when it has one.
+    var image: CGImage? = nil
     let action: () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
-                BotAvatar(name: bot.displayName, activity: activity, size: Self.avatarSize)
-                    .padding(3)
-                    .overlay {
-                        Circle()
-                            .strokeBorder(.tint, lineWidth: 2)
-                            .opacity(isSelected ? 1 : 0)
-                    }
+            VStack(spacing: 4) {
+                BotAvatar(name: bot.displayName, activity: activity, size: Self.avatarSize, image: image,
+                          color: bot.avatarColor.map(Color.init(rgb:)), squared: isSelected || isHovered)
+                #if os(iOS)
                 Text(bot.displayName)
                     .font(.caption2)
                     .fontWeight(isSelected ? .semibold : .regular)
                     .foregroundStyle(isSelected ? .primary : .secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity)
+                #endif
             }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 4)
+            .padding(.vertical, Self.verticalPadding)
             .frame(maxWidth: .infinity)
-            .contentShape(.rect(cornerRadius: Hover.cornerRadius))
+            .contentShape(.rect)
         }
-        .hoverButtonStyle(.rounded, padding: 0)
+        .buttonStyle(.plain)
         .overlay(alignment: .topLeading) {
             // Level with the avatar's middle, against the rail's edge.
-            Capsule()
-                .fill(.tint)
-                .frame(width: 3, height: Self.avatarSize - 10)
-                .offset(y: 5 + 3 + 5)
-                .opacity(isSelected ? 1 : 0)
+            UnevenRoundedRectangle(cornerRadii: .init(bottomTrailing: 2, topTrailing: 2))
+                .fill(.primary)
+                .frame(width: 4, height: pillHeight)
+                .offset(y: Self.verticalPadding + (Self.avatarSize - pillHeight) / 2)
+                .opacity(pillHeight > 0 ? 1 : 0)
                 .accessibilityHidden(true)
         }
+        #if os(macOS)
+        .onHover { isHovered = $0 }
+        #endif
         .animation(.snappy(duration: 0.2), value: isSelected)
+        .animation(.snappy(duration: 0.15), value: isHovered)
         .help(bot.displayName)
         .accessibilityLabel(bot.displayName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint("Lists this profile's sessions")
     }
+
+    private var pillHeight: CGFloat {
+        isSelected ? 28 : isHovered ? 10 : 0
+    }
 }
 
-/// A server's name over its profiles in the profile rail, with several servers: a
-/// status dot and the name, small enough for the rail.
+/// A server's mark over its profiles in the profile rail, with several servers: a
+/// computer for this Mac, a server for the others, with the status dot on its corner.
+/// The name and status are the tooltip.
 struct RailServerHeader: View {
     let name: String
     let color: Color
+    var isLocal = false
 
     var body: some View {
-        HStack(spacing: 3) {
-            Circle()
-                .fill(color)
-                .frame(width: 5, height: 5)
-            Text(name)
-                .font(.system(size: 9, weight: .semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+        Image(systemName: isLocal ? "laptopcomputer" : "server.rack")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 24, height: 18)
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                    .offset(x: 2, y: 1)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement()
+            .accessibilityLabel(name)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -244,21 +260,37 @@ struct BotRow: View {
     }
 }
 
-/// Initials on a colour picked from the name, with an activity badge.
+/// The profile's avatar image, or initials on its colour (Desktop's pick, else one
+/// from the name), with an activity badge.
 struct BotAvatar: View {
     let name: String
     let activity: BotActivity
     var size: CGFloat = 32
+    var image: CGImage? = nil
+    var color: Color? = nil
+    /// A rounded square instead of a circle.
+    var squared = false
 
     private static let palette: [Color] = [.blue, .purple, .pink, .orange, .teal, .indigo, .green, .brown]
 
     var body: some View {
-        Text(initials)
-            .font(.system(size: size * 0.375, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(color.gradient, in: .circle)
-            .overlay(alignment: .bottomTrailing) { badge }
+        let shape = RoundedRectangle(cornerRadius: squared ? size * 0.3 : size / 2, style: .continuous)
+        Group {
+            if let image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Text(initials)
+                    .font(.system(size: size * 0.375, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background((color ?? fallbackColor).gradient)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(shape)
+        .overlay(alignment: .bottomTrailing) { badge }
     }
 
     @ViewBuilder private var badge: some View {
@@ -291,9 +323,72 @@ struct BotAvatar: View {
     }
 
     /// Stable across launches (`hashValue` is seeded per process).
-    private var color: Color {
+    private var fallbackColor: Color {
         let sum = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return Self.palette[sum % Self.palette.count]
+    }
+}
+
+extension Color {
+    /// A colour from 0xRRGGBB.
+    init(rgb: UInt32) {
+        self.init(red: Double((rgb >> 16) & 0xFF) / 255, green: Double((rgb >> 8) & 0xFF) / 255,
+                  blue: Double(rgb & 0xFF) / 255)
+    }
+}
+
+/// Avatar images: decoded once per image and kept small, and a picked file turned into
+/// what `profiles.set_asset` takes.
+@MainActor
+enum AvatarImages {
+    /// The side of an uploaded avatar, as Desktop's picker makes it (`normalizeAvatarImage`,
+    /// `plugins/hermes-bots/avatar-image.ts:18`).
+    nonisolated static let uploadEdge = 256
+    private static var decoded: [Data: CGImage] = [:]
+
+    /// The image in `data`, at most 128 px a side (the rail draws it at 40 pt).
+    static func image(_ data: Data?) -> CGImage? {
+        guard let data else { return nil }
+        if let cached = decoded[data] { return cached }
+        guard let image = thumbnail(of: data, maxPixels: 128) else { return nil }
+        if decoded.count > 64 { decoded.removeAll() }
+        decoded[data] = image
+        return image
+    }
+
+    /// The image in `data`, cropped to its centre square and scaled to `uploadEdge`, as a PNG.
+    nonisolated static func uploadPNG(from data: Data) -> Data? {
+        guard let image = thumbnail(of: data, maxPixels: uploadEdge * 4) else { return nil }
+        let side = min(image.width, image.height)
+        let crop = CGRect(x: (image.width - side) / 2, y: (image.height - side) / 2, width: side, height: side)
+        guard let square = image.cropping(to: crop),
+            let context = CGContext(data: nil, width: uploadEdge, height: uploadEdge, bitsPerComponent: 8,
+                                    bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(square, in: CGRect(x: 0, y: 0, width: uploadEdge, height: uploadEdge))
+        guard let scaled = context.makeImage() else { return nil }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output as CFMutableData, "public.png" as CFString,
+                                                                  1, nil)
+        else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, scaled, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
+    }
+
+    /// The image in `data`, upright, at most `maxPixels` a side.
+    nonisolated private static func thumbnail(of data: Data, maxPixels: Int) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+        ]
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }
 

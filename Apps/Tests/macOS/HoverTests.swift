@@ -362,22 +362,23 @@ private func entries(_ count: Int) -> [HistoryEntry] {
 
     // MARK: Profile rail
 
-    /// A rail item fits the rail, its name included, and the selected one has the pill on
-    /// its leading edge, level with the avatar.
+    /// A rail item is its avatar alone (the name is the tooltip), and the selected one has
+    /// the pill on its leading edge, level with the avatar.
     @Test func railItemFitsTheRailAndShowsTheSelection() {
         let bot = bots[1]
+        let height = ProfileRailItem.avatarSize + 2 * ProfileRailItem.verticalPadding
         for selected in [false, true] {
             let item = ProfileRailItem(bot: bot, activity: .idle, isSelected: selected) {}
             let size = NSHostingView(rootView: item.frame(width: ProfileRailItem.width)).fittingSize
-            #expect(size.height < 86, "the name wrapped past two lines")
+            #expect(abs(size.height - height) < 1, "the item is taller than its avatar")
             // Pinned top-left; below it, the window's white.
-            let ui = HostWindow(size: CGSize(width: ProfileRailItem.width, height: 90)) {
+            let ui = HostWindow(size: CGSize(width: ProfileRailItem.width, height: height + 20)) {
                 item.frame(width: ProfileRailItem.width)
             }
             ui.settle()  // the selection animates in
-            let middle = 5 + 3 + ProfileRailItem.avatarSize / 2
-            let pill = CGRect(x: 0.5, y: middle - 6, width: 2, height: 12)
-            let drop = ui.brightness(of: CGRect(x: 0, y: 87, width: 4, height: 2)) - ui.brightness(of: pill)
+            let middle = ProfileRailItem.verticalPadding + ProfileRailItem.avatarSize / 2
+            let pill = CGRect(x: 0.5, y: middle - 6, width: 3, height: 12)
+            let drop = ui.brightness(of: CGRect(x: 0, y: height + 14, width: 4, height: 2)) - ui.brightness(of: pill)
             if selected {
                 #expect(drop > visible, "no selection pill")
             } else {

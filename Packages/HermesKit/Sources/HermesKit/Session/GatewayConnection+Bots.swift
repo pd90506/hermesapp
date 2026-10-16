@@ -45,6 +45,7 @@ extension GatewayConnection {
         let profiles = try await client.listProfiles()
         guard gen == generation else { return }
         bots = Bot.roster(profiles)
+        loadAvatars()
         if !bots.contains(where: { $0.name == listProfile }) {
             selectListProfile(bots.first(where: \.isDefault)?.name ?? bots.first?.name)
         }

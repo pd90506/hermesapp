@@ -962,6 +962,23 @@ the same conversation.
     session and every `sessions.changed` (both throttled, §11), and every 15 s while the sidebar
     is shown. Desktop polls every 5 s
     (`methods_profiles.py:249-250`).
+  - **Avatar:** `[client choice]` the profile's image when `has_avatar` is true, else
+    initials on `ui_meta["hermes-bots"].color` (a hex colour), else a colour from the name.
+    Desktop's vector shapes and faces (`plugins/hermes-bots/avatar.tsx`) are not drawn.
+- **Avatar images** live in the profile's asset store, shared with Desktop's Bots plugin
+  (`plugins/hermes-bots/profile-ops.ts`):
+  - `profiles.get_asset {name, asset:"avatar"}` → `{found:false}` or
+    `{found:true, mime, size, data:"data:<mime>;base64,…"}` (`methods_profiles.py:450-463`).
+  - `profiles.set_asset {name, asset:"avatar", data}` stores a PNG, JPEG or WebP of at most
+    2 MB (data URL or bare base64, type sniffed) as `<profile>/assets/avatar.<ext>`;
+    `{name, asset:"avatar", clear:true}` removes it. Answers `{ok, asset, size, removed?}`
+    (`methods_profiles.py:411-447`).
+  - `[client choice]` The app reads each avatar once per connection, for rows with
+    `has_avatar`, as Desktop does (`pullServerAvatars`, `profile-ops.ts:165-215`). It uploads
+    a 256 px centre-cropped PNG, as Desktop's picker makes (`avatar-image.ts:18`).
+  - Desktop backfills a 160 px PNG of its vector face for profiles that have no image
+    (`pushLocalAvatars`, `profile-ops.ts:59-100`), so an avatar removed here can come back
+    while Desktop is running.
   - **Profile scope:** Sessions lists only the selected profile. Opening a bot or listing
     a non-launch profile may enable multi-profile hosting (`server.py:579-586`,
     `tui_gateway/launch_profile_policy.py`).

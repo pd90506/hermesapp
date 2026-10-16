@@ -1,14 +1,21 @@
 import HermesKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The left column: every profile as an avatar, grouped by server when there are
 /// several. Picking one lists its sessions in the middle column, so profiles never
 /// mix. Narrow on purpose; the session list is the wide column. Settings is at its
-/// bottom, under the profiles.
+/// bottom, under the profiles. A profile's context menu changes its avatar, which is
+/// stored on its server (`GatewayConnection+Avatars.swift`).
 struct ProfileRailView: View {
     @Environment(AppModel.self) private var model
     /// Shows the session list (on iPhone, pushes it).
     var showSessions: () -> Void = {}
+
+    /// The profile whose new avatar is being picked.
+    @State private var avatarTarget: (server: ServerConnection, profile: String)?
+    @State private var isPickingAvatar = false
+    @State private var avatarError: String?
 
     var body: some View {
         ScrollView {
@@ -16,7 +23,7 @@ struct ProfileRailView: View {
                 ForEach(Array(model.sidebarServers.enumerated()), id: \.element.id) { index, server in
                     if index > 0 {
                         Divider()
-                            .frame(width: 32)
+                            .frame(width: 28)
                     }
                     // One container per server: profile names repeat across servers
                     // ("default" on both), and a flat list keyed by name mixed them up.
@@ -25,10 +32,23 @@ struct ProfileRailView: View {
                     }
                 }
             }
-            .padding(.horizontal, 6)
             .padding(.vertical, 8)
         }
         .scrollIndicators(.never)
+        .fileImporter(isPresented: $isPickingAvatar, allowedContentTypes: [.image]) { result in
+            guard let target = avatarTarget else { return }
+            avatarTarget = nil
+            switch result {
+            case .success(let url): Task { await upload(url, for: target.profile, on: target.server) }
+            case .failure(let error): avatarError = error.localizedDescription
+            }
+        }
+        .alert("Couldn't change the avatar", isPresented: Binding(get: { avatarError != nil },
+                                                                  set: { if !$0 { avatarError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(avatarError ?? "")
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button("Settings", systemImage: "gearshape") {
                 model.settingsPresentation.toggle()
@@ -57,15 +77,27 @@ struct ProfileRailView: View {
     @ViewBuilder private func section(_ server: ServerConnection) -> some View {
         let connection = server.connection
         if model.showsServerNames {
-            RailServerHeader(name: server.name, color: statusColor(server))
+            RailServerHeader(name: server.name, color: statusColor(server), isLocal: server.isLocal)
                 .help(statusHelp(server))
                 .padding(.bottom, 2)
         }
         ForEach(connection.bots) { bot in
             ProfileRailItem(bot: bot, activity: connection.activity(for: bot),
-                            isSelected: isSelected(bot, on: server)) {
+                            isSelected: isSelected(bot, on: server),
+                            image: AvatarImages.image(connection.avatars[bot.name])) {
                 model.selectProfile(bot.name, on: server)
                 showSessions()
+            }
+            .contextMenu {
+                Button("Change Avatar…", systemImage: "photo") {
+                    avatarTarget = (server, bot.name)
+                    isPickingAvatar = true
+                }
+                if bot.hasAvatar {
+                    Button("Remove Avatar", systemImage: "trash", role: .destructive) {
+                        Task { await removeAvatar(of: bot.name, on: server) }
+                    }
+                }
             }
         }
         if connection.bots.isEmpty {
@@ -76,6 +108,28 @@ struct ProfileRailView: View {
                 .padding(.vertical, 6)
                 .help(server.isConnected ? "No profiles" : "Not connected")
                 .accessibilityLabel(server.isConnected ? "No profiles" : "Not connected")
+        }
+    }
+
+    private func upload(_ url: URL, for profile: String, on server: ServerConnection) async {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url), let png = AvatarImages.uploadPNG(from: data) else {
+            avatarError = "That file isn't an image this app can read."
+            return
+        }
+        do {
+            try await server.connection.setAvatar(png, for: profile)
+        } catch {
+            avatarError = error.localizedDescription
+        }
+    }
+
+    private func removeAvatar(of profile: String, on server: ServerConnection) async {
+        do {
+            try await server.connection.removeAvatar(for: profile)
+        } catch {
+            avatarError = error.localizedDescription
         }
     }
 

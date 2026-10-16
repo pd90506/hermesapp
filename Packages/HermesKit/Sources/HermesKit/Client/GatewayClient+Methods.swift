@@ -18,6 +18,27 @@ extension GatewayClient {
         try await call(GatewayMethod.profilesList, params: ProfilesListParams(), as: ProfilesListResult.self).profiles
     }
 
+    /// The profile's avatar image, or `nil` when it has none.
+    public func profileAvatar(profile: String) async throws -> Data? {
+        let result = try await call(GatewayMethod.profilesGetAsset, params: ProfileAssetParams(name: profile),
+                                    as: ProfileGetAssetResult.self)
+        guard result.found, let data = result.data else { return nil }
+        return ProfileAvatar.decode(dataURL: data)
+    }
+
+    /// Stores `image` (PNG, JPEG or WebP, at most 2 MB) as the profile's avatar.
+    public func setProfileAvatar(profile: String, image: Data) async throws {
+        _ = try await call(GatewayMethod.profilesSetAsset,
+                           params: ProfileAssetParams(name: profile, data: ProfileAvatar.dataURL(image)),
+                           as: ProfileSetAssetResult.self)
+    }
+
+    /// Removes the profile's avatar image.
+    public func clearProfileAvatar(profile: String) async throws {
+        _ = try await call(GatewayMethod.profilesSetAsset, params: ProfileAssetParams(name: profile, clear: true),
+                           as: ProfileSetAssetResult.self)
+    }
+
     /// Sets a live session's title; persists its row if it has none yet.
     @discardableResult
     public func setTitle(sessionID: String, title: String) async throws -> SessionTitleResult {

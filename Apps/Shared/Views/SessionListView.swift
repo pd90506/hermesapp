@@ -37,12 +37,11 @@ struct SessionListView: View {
     /// One side chat at a time: repeated clicks while one is being created do nothing.
     @State private var isStartingChat = false
     #if os(macOS)
-    /// The title's width in the title bar, so New chat after it ends at this column's
-    /// trailing edge (`alignNewChat`).
-    @State private var titleWidth: CGFloat = 0
-    /// In window coordinates: the column's trailing edge and New chat's.
-    @State private var columnMaxX: CGFloat?
-    @State private var newChatMaxX: CGFloat?
+    /// In window coordinates: the column, and where its title starts in the title bar.
+    /// They size the title so New chat after it ends at the column's trailing edge
+    /// (`titleWidth`).
+    @State private var columnFrame: CGRect?
+    @State private var titleMinX: CGFloat?
     #endif
     /// The row being renamed, and the title typed so far.
     @State private var renaming: HistoryEntry?
@@ -72,23 +71,23 @@ struct SessionListView: View {
         .toolbar {
             // The column's title, in the title bar right after the window buttons. Its
             // width is what puts New chat, which follows it, at this column's trailing
-            // edge, level with the name (`alignNewChat`). (Otherwise New chat landed right
+            // edge, level with the name (`titleWidth`). (Otherwise New chat landed right
             // after the name, or after a flexible spacer at the window's trailing edge;
             // inside this item, its tooltip covered the whole title.)
             ToolbarItem(placement: .navigation) {
                 ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
                     .frame(width: titleWidth, alignment: .leading)
+                    .background(WindowFrameReader { titleMinX = $0.minX })
             }
             .sharedBackgroundVisibility(.hidden)
             if let newChatButton {
                 ToolbarItem(placement: .primaryAction) {
                     newChatButton
-                        .background(WindowFrameReader { newChatMaxX = $0.maxX; alignNewChat() })
                 }
             }
         }
         .toolbar(removing: .title)
-        .background(WindowFrameReader { columnMaxX = $0.maxX; alignNewChat() })
+        .background(WindowFrameReader { columnFrame = $0 })
         // The band under the title bar, as over the chat (`titleBarBand`), with none of
         // the system's title bar glass under it: macOS 26 showed that glass (the scroll
         // edge) while the pointer was over the title bar, which showed through the band.
@@ -326,18 +325,19 @@ struct SessionListView: View {
     }
 
     #if os(macOS)
-    /// How far New chat ends short of the column's trailing edge, so its centre lines up
-    /// with the rows' "…" (measured on macOS 26).
-    private static let newChatTrailingInset: CGFloat = 7.5
+    /// New chat after the title: 10 pt after it, 36 pt wide, ending 7.5 pt short of the
+    /// column's trailing edge so its centre lines up with the rows' "…" (measured on
+    /// macOS 26).
+    private static let newChatSlot: CGFloat = 10 + 36 + 7.5
 
-    /// Widens or narrows the title by however far New chat is from where it belongs.
-    /// Measured, not computed from the column's width: the title starts after the window
-    /// buttons, which the fixed profile rail doesn't line up with, and a computed width
-    /// left New chat drifting over the chat as the columns changed.
-    private func alignNewChat() {
-        guard let columnMaxX, let newChatMaxX else { return }
-        let width = max(0, titleWidth + (columnMaxX - Self.newChatTrailingInset) - newChatMaxX)
-        if abs(width - titleWidth) > 0.5 { titleWidth = width }
+    /// From where the title starts to New chat's place at the column's trailing edge.
+    /// The title starts after the window buttons, which the fixed profile rail doesn't
+    /// line up with, so that start is measured (its own width doesn't move it). Until it
+    /// is, the title is assumed to start 12 pt into the column.
+    private var titleWidth: CGFloat {
+        guard let columnFrame else { return 0 }
+        let start = titleMinX ?? columnFrame.minX + 12
+        return max(0, columnFrame.maxX - start - Self.newChatSlot)
     }
     #endif
 

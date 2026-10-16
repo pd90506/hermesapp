@@ -1,4 +1,7 @@
 import XCTest
+#if os(macOS)
+import AppKit
+#endif
 
 /// Drives the real app against a live Hermes dashboard, in the `hermesapp-test`
 /// profile. Compiled into both HermesMacUITests and HermesiOSUITests.
@@ -104,6 +107,90 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "opened")
         XCTAssertGreaterThanOrEqual(rows.count, 2, "opening the summary shows each call")
     }
+
+    #if os(macOS)
+    /// The pointer over the title bar, or over the top of the chat, leaves the chat
+    /// column alone. macOS 26 showed the window toolbar's background there: a band
+    /// from the top of the window down to the first message, with a line under it
+    /// (gray in dark mode; in the VM's light mode only the line shows).
+    @MainActor
+    func testHoveringTheTitleBarDoesNotShadeTheChat() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        let composer = app.textViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+
+        // A new chat is one short line at the bottom: the top of the chat column is
+        // empty. Compared: a column of pixels from just under the title bar to the
+        // composer, away from where the pointer goes.
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        let x = composer.frame.midX - frame.minX
+        let column = (x: x + 120, from: CGFloat(56), to: composer.frame.minY - frame.minY - 16)
+        func hover(_ y: CGFloat) {
+            window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x - 120, dy: y)).hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        }
+        func pixels(_ name: String) -> [[UInt8]] {
+            let shot = window.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return Self.pixels(of: shot.image, column: column, in: frame.size)
+        }
+
+        composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let away = pixels("pointer on the composer")
+        XCTAssertFalse(away.isEmpty, "read the chat column")
+        hover(16)
+        let titleBar = pixels("pointer on the title bar")
+        hover(220)
+        let top = pixels("pointer on the top of the chat")
+        XCTAssertNil(Self.firstDifference(away, titleBar), "the title bar under the pointer shades the chat")
+        XCTAssertNil(Self.firstDifference(away, top), "the top of the chat under the pointer shades it")
+    }
+
+    /// The RGB of each pixel down a column of the screenshot, in window points
+    /// (top-left origin).
+    private static func pixels(of image: NSImage, column: (x: CGFloat, from: CGFloat, to: CGFloat),
+                               in size: CGSize) -> [[UInt8]] {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return [] }
+        let width = cg.width, height = cg.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return [] }
+        // The bitmap's first row is the image's top row.
+        let scale = CGFloat(width) / size.width
+        let px = min(width - 1, Int(column.x * scale))
+        return (Int(column.from * scale)..<min(height, Int(column.to * scale))).map { row in
+            let i = (row * width + px) * 4
+            return [bytes[i], bytes[i + 1], bytes[i + 2]]
+        }
+    }
+
+    /// Where two columns first differ by more than rounding, as "row: before -> after".
+    private static func firstDifference(_ a: [[UInt8]], _ b: [[UInt8]]) -> String? {
+        guard a.count == b.count else { return "\(a.count) rows vs \(b.count)" }
+        for (row, (p, q)) in zip(a, b).enumerated() where zip(p, q).contains(where: { abs(Int($0) - Int($1)) > 2 }) {
+            return "row \(row): \(p) -> \(q)"
+        }
+        return nil
+    }
+    #endif
 
     @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {

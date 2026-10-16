@@ -161,31 +161,30 @@ if runs live; then
   vexec "cd ~/hermesapp && HERMES_LIVE=1 swift test --package-path Packages/HermesKit --filter LiveGatewayTests -q" || status=1
 fi
 if runs window || runs ui || ((ios)); then
-step "build and run the app tests ($only$( ((ios)) && echo ,ios))"
+step "generate the Xcode project"
 vexec "sudo automationmodetool enable-automationmode-without-authentication >/dev/null 2>&1 || true
   command -v xcodegen >/dev/null || brew install xcodegen >/dev/null
   cd ~/hermesapp && xcodegen generate --quiet --use-cache
-  export TEST_RUNNER_HERMES_UITEST_URL='$url' TEST_RUNNER_HERMES_UITEST_TOKEN='$token' TEST_RUNNER_HERMES_UITEST_PROFILE=$PROFILE
-  rm -rf ~/results && mkdir -p ~/results
-  s=0
-  if $(runs window && echo true || echo false); then
-    xcodebuild test -project Hermes.xcodeproj -scheme HermesMacTests -destination 'platform=macOS' \
-      -resultBundlePath ~/results/mac-window.xcresult -quiet$(only_testing HermesMacTests) || s=1
-  fi
-  if $(runs ui && echo true || echo false); then
-    xcodebuild test -project Hermes.xcodeproj -scheme HermesMacUITests -destination 'platform=macOS' \
-      -resultBundlePath ~/results/mac-ui.xcresult -quiet$(only_testing HermesMacUITests) || s=1
-  fi
-  if (( $ios )); then
-    sim=\$(xcrun simctl list devices available | sed -n 's/^ *\\(iPhone [^(]*\\) (.*/\\1/p' | head -1 | sed 's/ *\$//')
-    xcodebuild test -project Hermes.xcodeproj -scheme HermesiOSUITests -destination \"platform=iOS Simulator,name=\$sim\" \\
-      -resultBundlePath ~/results/ios-ui.xcresult -quiet$(only_testing HermesiOSUITests) || s=1
-  fi
-  for r in ~/results/*.xcresult; do
+  rm -rf ~/results && mkdir -p ~/results" || status=1
+# One scheme per step, so the step times show the window tests and UI tests apart.
+xctest() {  # step name, scheme, result name, destination
+  step "$1"
+  vexec "cd ~/hermesapp
+    export TEST_RUNNER_HERMES_UITEST_URL='$url' TEST_RUNNER_HERMES_UITEST_TOKEN='$token' TEST_RUNNER_HERMES_UITEST_PROFILE=$PROFILE
+    xcodebuild test -project Hermes.xcodeproj -scheme $2 -destination \"$4\" \
+      -resultBundlePath ~/results/$3.xcresult -quiet$(only_testing "$2")" || status=1
+}
+if runs window; then xctest "window tests (build and run)" HermesMacTests mac-window platform=macOS; fi
+if runs ui; then xctest "macOS UI tests (build and run)" HermesMacUITests mac-ui platform=macOS; fi
+if ((ios)); then
+  sim=$(vexec "xcrun simctl list devices available" | sed -n 's/^ *\(iPhone [^(]*\) (.*/\1/p' | head -1 | sed 's/ *$//')
+  xctest "iOS UI tests (build and run)" HermesiOSUITests ios-ui "platform=iOS Simulator,name=$sim"
+fi
+vexec "for r in ~/results/*.xcresult; do
+    [[ -f \$r/Info.plist ]] || { echo \"\$(basename \$r .xcresult): no results (the run did not finish)\"; continue; }
     printf '%s: ' \"\$(basename \$r .xcresult)\"
     xcrun xcresulttool get test-results summary --path \"\$r\" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[\"result\"], d[\"passedTests\"], \"passed,\", d[\"failedTests\"], \"failed\"); [print(\"  \", f[\"testName\"], \"|\", f[\"failureText\"][:300]) for f in d.get(\"testFailures\", [])]'
-  done
-  exit \$s" || status=1
+  done" || true
 fi
 
 # 6. Remove the chats the tests left in the VM's test profile (only the live and UI

@@ -8,10 +8,18 @@ import SwiftUI
 /// indexes into the live list. When the list empties, SwiftUI lays out the rows
 /// being removed one last time, and a row that looked up its neighbour in the
 /// live list by its old index trapped (crash report `crash-slash-215700`).
+///
+/// The list is as tall as its rows, up to `maxListHeight`, then scrolls. A bare
+/// `ScrollView` has no height of its own and took the whole cap even for one row.
 struct SlashSuggestionList: View {
     let composer: ChatComposer
     /// After a row was accepted: the composer takes the keyboard back.
     var onAccept: () -> Void = {}
+
+    /// About eight rows, then the list scrolls.
+    private let maxListHeight: CGFloat = 220
+    /// The rows' laid-out height, measured inside the scroll view.
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         if composer.slashIsOpen {
@@ -31,7 +39,7 @@ struct SlashSuggestionList: View {
 
     private func list(_ rows: [SlashRow]) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
                 ForEach(rows) { row in
                     if let header = row.header {
                         Text(header)
@@ -65,8 +73,9 @@ struct SlashSuggestionList: View {
                 }
             }
             .padding(6)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
-        .frame(maxHeight: 220)
+        .frame(height: min(contentHeight, maxListHeight))
         .accessibilityIdentifier("slash-popover")
     }
 }

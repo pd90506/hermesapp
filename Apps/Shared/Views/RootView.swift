@@ -26,21 +26,29 @@ struct RootView: View {
                     }),
                 showChat: { compactColumn = .detail })
         } detail: {
-            if let server = model.activeServer, let opening = server.connection.opening {
-                // A first open: the chat's frame at once, not the previous chat.
-                OpeningChatView(title: title(of: opening, on: server))
-                    .titleBarBand()
-            } else if let server = model.activeServer, let session = server.connection.activeSession {
-                ChatView(session: session, title: title(of: session, on: server))
-                    .id(session.id)  // a fresh composer per chat
-                    .environment(server)
-            } else {
-                ContentUnavailableView(
-                    "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
-                    description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
-                .titleBarBand()
+            Group {
+                if let server = model.activeServer, let opening = server.connection.opening {
+                    // A first open: the chat's frame at once, not the previous chat.
+                    OpeningChatView(title: title(of: opening, on: server))
+                } else if let server = model.activeServer, let session = server.connection.activeSession {
+                    ChatView(session: session, title: title(of: session, on: server))
+                        .id(session.id)  // a fresh composer per chat
+                        .environment(server)
+                } else {
+                    ContentUnavailableView(
+                        "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
+                        description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
+                }
             }
+            // The whole column, so the band spans it whatever is shown.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .titleBarBand()
         }
+        #if os(macOS)
+        // No toolbar background anywhere: macOS 26 showed it only while the pointer was
+        // over the title bar, which shaded the band (`titleBarBand`) under it.
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        #endif
         // The settings sheet, from the gear or because the app must connect
         // (`SettingsPresentation`).
         .sheet(isPresented: Binding(
@@ -156,16 +164,29 @@ private struct OpeningChatView: View {
 }
 
 extension View {
-    /// On macOS, the title bar's glass over a detail view that has no scroll view of its
-    /// own (no chat, a chat opening), as over the session list and the chat (their hard
-    /// scroll edge), so the title bars across the window always read as one band.
+    /// On macOS, a band under the title bar: a material strip the toolbar's height, with
+    /// a hairline under it. The session list and the chat both carry it, so their title
+    /// bars read as one band across the window (where it can be dragged), the same in
+    /// every state and whether or not the pointer is over it. The system's own title bar
+    /// glass couldn't do this: the session list's (its hard scroll edge) is the sidebar's
+    /// translucent glass, and the chat showed none, or only under the pointer.
     @ViewBuilder func titleBarBand() -> some View {
         #if os(macOS)
-        ScrollView {
-            self.containerRelativeFrame([.horizontal, .vertical])
+        overlay(alignment: .top) {
+            GeometryReader { proxy in
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(.regularMaterial)
+                        .frame(height: proxy.safeAreaInsets.top)
+                    Divider()
+                    Spacer(minLength: 0)
+                }
+                .ignoresSafeArea(edges: .top)
+            }
+            // The title bar stays the window's: clicks and drags go through.
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-        .scrollDisabled(true)
-        .scrollEdgeEffectStyle(.hard, for: .top)
         #else
         self
         #endif

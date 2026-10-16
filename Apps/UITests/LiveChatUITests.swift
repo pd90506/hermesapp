@@ -195,6 +195,73 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertNil(Self.firstDifference(away, titleBar), "the header changes under the pointer")
     }
 
+    /// New chat is in the session column's title bar at its trailing edge (where the
+    /// rows' "…" are), level with the window buttons and the profile's name. As a
+    /// toolbar item of its own it landed right after the name instead.
+    @MainActor
+    func testNewChatSitsAtTheSessionColumnsTrailingEdge() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let list = app.outlines.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
+        let close = app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow]
+        XCTAssertTrue(close.exists, "the window's close button")
+        let button = newChat.frame, column = list.frame
+        XCTAssertLessThanOrEqual(abs(button.maxX - (column.maxX - 7.5)), 4,
+                                 "New chat ends at the column's trailing edge: \(button) in \(column)")
+        XCTAssertLessThanOrEqual(abs(button.midY - close.frame.midY), 2,
+                                 "New chat is level with the title bar: \(button) vs \(close.frame)")
+    }
+
+    /// The title bar reads as one band across the window: the same tone over the session
+    /// list and over the chat column, set off from the chat below it, with no chat and
+    /// with one open. (The system's glass showed over the session list only.)
+    @MainActor
+    func testTitleBarIsOneBandAcrossTheColumns() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.appearance = .light
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        let list = app.outlines.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
+        // Points in the band away from any text or button, and one in the chat well
+        // below it.
+        let sessionX = newChat.frame.minX - 40 - frame.minX
+        let chatX = list.frame.maxX + (frame.maxX - list.frame.maxX) * 0.75 - frame.minX
+        func color(at x: CGFloat, _ y: CGFloat, in shot: XCUIScreenshot) -> [UInt8] {
+            Self.pixels(of: shot.image, column: (x: x, from: y, to: y + 1), in: frame.size).first ?? []
+        }
+        func check(_ state: String) {
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6)).hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let shot = window.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = state
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let session = color(at: sessionX, 8, in: shot), chat = color(at: chatX, 8, in: shot)
+            let below = color(at: chatX, 120, in: shot)
+            XCTAssertFalse(session.isEmpty || chat.isEmpty || below.isEmpty, "read the window")
+            XCTAssertTrue(zip(session, chat).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
+                          "\(state): the band over the session list \(session) and over the chat \(chat) differ")
+            XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 8 },
+                          "\(state): no band over the chat: \(chat), the same as under it \(below)")
+        }
+        check("no chat")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 30), "composer shown")
+        check("a chat open")
+    }
+
     /// The RGB of each pixel down a column of the screenshot, in window points
     /// (top-left origin).
     private static func pixels(of image: NSImage, column: (x: CGFloat, from: CGFloat, to: CGFloat),

@@ -132,6 +132,10 @@ profile only, then deletes the chats they made. `--ui` adds the iOS-simulator UI
 so nothing runs on your Mac: the package live tests and the macOS window and UI tests (`--ios`
 adds the iOS-simulator UI test, slow in the VM). The VM installs its own Hermes on the first run
 and tests against it; its model key comes from the git-ignored `.env.vm-hermes`. Rules and env files: AGENTS.md, "Testing conventions".
+While iterating, `--only window` (or `live`, `ui`, comma-separated) or
+`--test HermesMacTests/HoverTests` (repeatable, down to one test) runs just that part, and
+`--keep` leaves the VM running for the next run. Runs queue for the VM one at a time, and each
+prints how long its steps took.
 
 ### Why XcodeGen
 

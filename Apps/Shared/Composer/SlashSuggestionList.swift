@@ -14,7 +14,19 @@ struct SlashSuggestionList: View {
     var onAccept: () -> Void = {}
 
     var body: some View {
-        if composer.slashIsOpen { list(composer.slashRows) }
+        if composer.slashIsOpen {
+            list(composer.slashRows)
+        } else if let notice = composer.slashNotice {
+            // No rows: Desktop's "No matches." or why the lookup failed.
+            Text(notice)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .accessibilityIdentifier("slash-notice")
+        }
     }
 
     private func list(_ rows: [SlashRow]) -> some View {

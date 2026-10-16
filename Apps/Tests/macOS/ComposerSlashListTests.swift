@@ -202,4 +202,53 @@ struct ComposerSlashListTests {
         #expect(composer.slashRows.map(\.id) == ["/stop"])
         await connection.disconnect()
     }
+
+    /// Esc through AppKit's own command routing (`doCommandBy`, as `ComposerView` wires
+    /// `onSlashKey`): it dismisses "No matches." and is not taken otherwise. Marked
+    /// text keeps it for the input method, and Return still sends.
+    @Test func escapeDismissesTheNoticeThroughTheKeyPath() async throws {
+        let gateway = SlashGateway(catalog: Self.catalog, completions: Self.completions)
+        var configuration = GatewayClient.Configuration()
+        configuration.heartbeatInterval = nil
+        let connection = GatewayConnection(configuration: configuration)
+        try await connection.connect(using: gateway)
+        let composer = ChatComposer(session: try await connection.newSession())
+        await composer.loadSlashCommands()
+
+        var submits = 0
+        let view = ComposerTextView(
+            text: .constant("/zz"), contentHeight: .constant(28), maxHeight: 170, focusRequest: 0,
+            onSubmit: { submits += 1 }, onAttach: { _ in }, onProviders: { _ in },
+            onSlashKey: { composer.handleSlashKey($0) })
+        let coordinator = ComposerTextView.Coordinator(view)
+        let scroll = ComposerTextView.makeScrollView(coordinator: coordinator, text: "/zz")
+        let field = try #require(scroll.documentView as? ComposerNSTextView)
+        let escape = #selector(NSResponder.cancelOperation(_:))
+
+        // Nothing shown: Esc is not taken.
+        composer.draft = "hello"
+        await composer.updateSlashSuggestions()
+        #expect(!coordinator.textView(field, doCommandBy: escape))
+
+        // "No matches.": the input method keeps Esc while composing, then Esc dismisses it.
+        composer.draft = "/zz"
+        await composer.updateSlashSuggestions()
+        #expect(composer.slashNotice == "No matches. Try /help.")
+        field.setMarkedText(NSMutableAttributedString(string: "ni"), selectedRange: NSRange(location: 2, length: 0),
+                            replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(!coordinator.textView(field, doCommandBy: escape))
+        #expect(composer.slashNotice != nil)
+        field.unmarkText()
+        #expect(coordinator.textView(field, doCommandBy: escape))
+        #expect(composer.slashNotice == nil)
+        #expect(!coordinator.textView(field, doCommandBy: escape))
+
+        // A notice never takes Return: it sends.
+        composer.draft = "/zzx"
+        await composer.updateSlashSuggestions()
+        #expect(composer.slashNotice != nil)
+        #expect(coordinator.textView(field, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        #expect(submits == 1)
+        await connection.disconnect()
+    }
 }

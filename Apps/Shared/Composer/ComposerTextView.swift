@@ -18,7 +18,7 @@ import SwiftUI
 /// window is focused and no other editable text has the keyboard.
 struct ComposerTextView {
     /// `accept` is plain Return; Shift-Return still inserts a newline.
-    enum SlashKey { case up, down, tab, accept, escape }
+    typealias SlashKey = SlashListKey
     @Binding var text: String
     @Binding var contentHeight: CGFloat
     /// The tallest the text area gets; past it, the text scrolls.

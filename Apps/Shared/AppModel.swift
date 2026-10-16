@@ -117,6 +117,8 @@ final class AppModel {
     var settingsPresentation: SettingsPresentation
     /// A failed sidebar action (opening a bot or a History chat), shown in the sidebar.
     var actionError: String?
+    /// Sessions pinned to the top of their profile's list, kept across launches.
+    private(set) var pins = SessionPins()
 
     init() {
         #if DEBUG
@@ -155,6 +157,9 @@ final class AppModel {
         self.selectedServerID = servers.first?.id
         self.sessionsServerID = servers.first?.id
         self.settingsPresentation = SettingsPresentation(hasServer: servers.contains { $0.hasURL })
+        if let data = defaults.data(forKey: Self.pinsKey), let saved = try? JSONDecoder().decode(SessionPins.self, from: data) {
+            self.pins = saved
+        }
         if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
             saveServers()
             if (try? KeychainStore.write(server.secret, account: migrated.secretAccount)) != nil {
@@ -204,8 +209,10 @@ final class AppModel {
         if selectedServerID == server.id { selectedServerID = servers.first?.id }
         if activeServerID == server.id { activeServerID = nil }
         if sessionsServerID == server.id { sessionsServerID = servers.first?.id }
+        pins.forgetServer(server.id)
         if !Self.isUITest {
             saveServers()
+            savePins()
             try? KeychainStore.write("", account: server.config.secretAccount)
         }
         await server.connection.disconnect()
@@ -381,6 +388,69 @@ final class AppModel {
         localServer?.backend?.terminateNow()
     }
     #endif
+
+    // MARK: Session actions
+
+    private static let pinsKey = "sessionPins"
+
+    func isPinned(_ entry: HistoryEntry, on server: ServerConnection) -> Bool {
+        pins.isPinned(entry, on: server.id)
+    }
+
+    func setPinned(_ pinned: Bool, _ entry: HistoryEntry, on server: ServerConnection) {
+        pins.setPinned(pinned, entry, on: server.id)
+        savePins()
+    }
+
+    private func savePins() {
+        guard !Self.isUITest, let data = try? JSONEncoder().encode(pins) else { return }
+        UserDefaults.standard.set(data, forKey: Self.pinsKey)
+    }
+
+    /// Renames a row. `session.title` needs the chat open, so a row that isn't is opened
+    /// first, as a click would: the user sees the chat they renamed.
+    func rename(_ entry: HistoryEntry, to title: String, on server: ServerConnection) async {
+        let connection = server.connection
+        do {
+            do {
+                try await connection.rename(entry, to: title)
+            } catch SessionActionError.notOpen {
+                activeServerID = server.id
+                try await connection.open(entry)
+                try await connection.rename(entry, to: title)
+            }
+        } catch {
+            actionError = describe(error, on: server)
+        }
+    }
+
+    func archive(_ entry: HistoryEntry, on server: ServerConnection) async {
+        await perform(on: server) {
+            try await server.connection.archive(entry)
+            setPinned(false, entry, on: server)
+        }
+    }
+
+    func delete(_ entry: HistoryEntry, on server: ServerConnection) async {
+        await perform(on: server) {
+            try await server.connection.delete(entry)
+            setPinned(false, entry, on: server)
+        }
+    }
+
+    /// Copies the row into a new session and shows the copy.
+    func fork(_ entry: HistoryEntry, on server: ServerConnection) async {
+        activeServerID = server.id
+        await perform(on: server) { _ = try await server.connection.fork(entry) }
+    }
+
+    private func perform(on server: ServerConnection, _ action: () async throws -> Void) async {
+        do {
+            try await action()
+        } catch {
+            actionError = describe(error, on: server)
+        }
+    }
 
     /// Pull-to-refresh: every roster, and the visible profile’s sessions.
     func refreshLists() async {

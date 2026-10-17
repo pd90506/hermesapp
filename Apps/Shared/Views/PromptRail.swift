@@ -45,7 +45,7 @@ private struct PromptScrolling: ViewModifier {
 /// A tick per prompt the user sent, oldest at the top, down the chat's trailing edge,
 /// like the timeline beside Time Machine's windows; the prompt the chat is at is the
 /// long dark one. Hovering the rail opens a panel over it, as Notion's outline does,
-/// listing every prompt (up to two lines each); it scrolls when the chat has more than
+/// listing every prompt (one line each); it scrolls when the chat has more than
 /// fit, and opens at the prompt the chat is at. Clicking a tick or a prompt scrolls the
 /// chat to that prompt and its reply.
 struct PromptRail: View {
@@ -70,7 +70,7 @@ struct PromptRail: View {
     /// The panel's tallest; a longer list scrolls.
     static let panelMaxHeight: CGFloat = 420
     /// About how tall a panel row is, to place the panel before it is laid out.
-    static let panelRowEstimate: CGFloat = 28
+    static let panelRowEstimate: CGFloat = 26
     static let accessibilityIdentifier = "prompt-rail-tick"
     static let rowIdentifier = "prompt-rail-row"
 
@@ -176,7 +176,7 @@ struct PromptRail: View {
     }
 }
 
-/// A prompt in the rail's panel: its label, up to two lines; the one the chat is at
+/// A prompt in the rail's panel: its label on one line; the one the chat is at
 /// in the accent color, the hovered one on a light background.
 private struct PanelRow: View {
     let mark: PromptMark
@@ -188,7 +188,7 @@ private struct PanelRow: View {
         Button(action: action) {
             Text(mark.label)
                 .font(.callout)
-                .lineLimit(2)
+                .lineLimit(1)
                 .multilineTextAlignment(.leading)
                 .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 .frame(maxWidth: .infinity, alignment: .leading)

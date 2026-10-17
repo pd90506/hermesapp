@@ -53,4 +53,43 @@ import Testing
         #expect(transcript.lastPromptID == second)
         #expect(first != second)
     }
+
+    @Test func theCurrentPromptIsTheLastOneAtOrAboveTheTopBlock() {
+        var transcript = Transcript()
+        let first = transcript.appendUserPrompt("one")
+        let second = transcript.appendUserPrompt("two")
+        let blocks = transcript.blocks
+        let firstBlock = transcript.blockID(containing: first)
+        let secondBlock = transcript.blockID(containing: second)
+        #expect(transcript.currentPromptID(topBlockID: firstBlock) == first)
+        #expect(transcript.currentPromptID(topBlockID: secondBlock) == second)
+        #expect(transcript.currentPromptID(topBlockID: nil) == nil)
+        #expect(transcript.currentPromptID(topBlockID: "gone") == nil)
+        #expect(blocks.count >= 2)
+    }
+
+    @Test func aReplyBlockBelongsToThePromptAboveIt() {
+        let items = [
+            TranscriptItem(id: "u1", role: .user, text: "one"),
+            TranscriptItem(id: "a1", role: .assistant, text: "reply one"),
+            TranscriptItem(id: "u2", role: .user, text: "two"),
+            TranscriptItem(id: "a2", role: .assistant, text: "reply two"),
+        ]
+        let blocks = TranscriptGrouping.blocks(items, isRunning: false)
+        let marks = PromptMark.marks(in: items)
+        let replyOne = TranscriptGrouping.blockID(containing: "a1", in: blocks)
+        let replyTwo = TranscriptGrouping.blockID(containing: "a2", in: blocks)
+        #expect(PromptMark.current(in: blocks, marks: marks, topBlockID: replyOne) == "u1")
+        #expect(PromptMark.current(in: blocks, marks: marks, topBlockID: replyTwo) == "u2")
+    }
+
+    @Test func aBlockAboveEveryPromptIsAtTheFirst() {
+        let items = [
+            TranscriptItem(id: "s", role: .system, text: "Session resumed"),
+            TranscriptItem(id: "u1", role: .user, text: "one"),
+        ]
+        let blocks = TranscriptGrouping.blocks(items, isRunning: false)
+        let top = TranscriptGrouping.blockID(containing: "s", in: blocks)
+        #expect(PromptMark.current(in: blocks, marks: PromptMark.marks(in: items), topBlockID: top) == "u1")
+    }
 }

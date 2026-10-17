@@ -23,26 +23,9 @@ struct HermesMacApp: App {
         }
 
         Settings {
-            TabView {
-                Tab("Connection", systemImage: "network") {
-                    NavigationStack {
-                        ConnectionSettingsView()
-                    }
-                }
-                Tab("Session Sources", systemImage: "tray.2") {
-                    NavigationStack {
-                        SessionSourcesSettingsView()
-                    }
-                }
-                Tab("Appearance", systemImage: "paintpalette") {
-                    NavigationStack {
-                        AppearanceSettingsView()
-                    }
-                }
-            }
-            .environment(model)
-            .appearance(model.appearance)
-            .frame(width: 480, height: 560)
+            MacSettingsView()
+                .environment(model)
+                .appearance(model.appearance)
         }
     }
 }

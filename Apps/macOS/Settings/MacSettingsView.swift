@@ -12,6 +12,9 @@ struct MacSettingsView: View {
             Tab("Session Sources", systemImage: "tray.2") {
                 SessionSourcesSettingsPane()
             }
+            Tab("Appearance", systemImage: "paintpalette") {
+                AppearanceSettingsPane()
+            }
         }
     }
 }
@@ -24,7 +27,7 @@ struct SettingsNote: View {
 
     var body: some View {
         Text(text)
-            .font(.callout)
+            .uiFont(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)

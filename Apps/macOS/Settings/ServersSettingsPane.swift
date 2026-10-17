@@ -95,14 +95,14 @@ private struct ServerListRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: server.isLocal ? "desktopcomputer" : "globe")
-                .font(.title2)
+                .uiFont(.title2)
                 .foregroundStyle(.tint)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 1) {
                 Text(server.name)
                     .lineLimit(1)
                 Text(server.isLocal ? "Local" : "Hermes Dashboard")
-                    .font(.callout)
+                    .uiFont(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -207,7 +207,7 @@ private struct ServerDetail: View {
                         .disabled(!server.hasURL)
                         if let probe = server.probeResult {
                             Text(probe)
-                                .font(.callout)
+                                .uiFont(.callout)
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                         }

@@ -11,8 +11,8 @@ import UIKit
 /// platform defaults. Views read them from the environment (`\.textSizes`), set at
 /// the root of each window (`appearance(_:)`).
 ///
-/// - UI text (`uiFont`) keeps the system text styles while the size is the default,
-///   so Dynamic Type and macOS's own sizes apply as before; a custom size scales
+/// - UI text (`uiFont`) keeps the system text styles at the system's size (13 pt on macOS),
+///   so Dynamic Type and macOS's own sizes apply; any other size scales
 ///   every style by the same factor.
 /// - Content (messages and the composer) and code (code blocks) are the sizes the
 ///   Markdown renderer lays out at; on iOS they still scale with Dynamic Type.
@@ -21,13 +21,23 @@ struct TextSizes: Equatable {
     var content: CGFloat
     var code: CGFloat
 
-    /// The sizes before the user changes any: the system's body text for the UI, the
-    /// transcript's body size for content, and callout (what code blocks used) for code.
+    /// The sizes before the user changes any. macOS: 14 pt for the UI and content and
+    /// 12 pt for code (the user's choice, 2026-10). iOS: the system's body text for the UI
+    /// and content, and callout (what code blocks used) for code.
     static let defaults: TextSizes = {
         #if os(macOS)
-        TextSizes(ui: 13, content: 13, code: 12)
+        TextSizes(ui: 14, content: 14, code: 12)
         #else
         TextSizes(ui: 17, content: 17, code: 16)
+        #endif
+    }()
+
+    /// The system's body text size, which the system text styles are drawn at.
+    static let systemUI: CGFloat = {
+        #if os(macOS)
+        13
+        #else
+        17
         #endif
     }()
 
@@ -52,8 +62,8 @@ struct TextSizes: Equatable {
         }
     }
 
-    /// How much bigger UI text is than the default; 1 leaves the system styles alone.
-    var uiScale: CGFloat { ui / Self.defaults.ui }
+    /// How much bigger UI text is than the system's; 1 leaves the system styles alone.
+    var uiScale: CGFloat { ui / Self.systemUI }
 
     /// A system text style at the UI size.
     func uiFont(_ style: Font.TextStyle, weight: Font.Weight? = nil, design: Font.Design? = nil) -> Font {
@@ -62,8 +72,8 @@ struct TextSizes: Equatable {
         return .system(size: size, weight: weight ?? (style == .headline ? Self.headlineWeight : nil), design: design)
     }
 
-    /// The default UI font, for text without a style of its own; nil (the system's)
-    /// while the size is the default.
+    /// The UI font for text without a style of its own; nil (the system's) at the
+    /// system's size.
     var uiBodyFont: Font? { uiScale == 1 ? nil : .system(size: ui) }
 
     #if os(macOS)
@@ -72,7 +82,7 @@ struct TextSizes: Equatable {
     private static let headlineWeight: Font.Weight = .semibold
     #endif
 
-    /// A text style's size at the default text size.
+    /// A text style's size at the system's text size.
     static func pointSize(_ style: Font.TextStyle) -> CGFloat {
         #if os(macOS)
         let native: NSFont.TextStyle

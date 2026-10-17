@@ -29,9 +29,7 @@ private struct PromptScrolling: ViewModifier {
                 let marks = transcript.promptMarks
                 if !marks.isEmpty {
                     PromptRail(marks: marks) { mark in
-                        if let id = transcript.blockID(containing: mark.id) {
-                            proxy.scrollTo(id, anchor: .top)
-                        }
+                        PromptRail.scroll(to: mark, in: transcript, with: proxy)
                     }
                     .padding(.vertical, PromptRail.verticalInset)
                     .padding(.trailing, PromptRail.trailingInset)
@@ -58,6 +56,13 @@ struct PromptRail: View {
     /// The room each tick gets at most: a long chat packs its ticks closer.
     static let maxSpacing: CGFloat = 14
     static let accessibilityIdentifier = "prompt-rail-tick"
+
+    /// What a tick does: scrolls the prompt's block (the prompt and its reply) to the top.
+    static func scroll(to mark: PromptMark, in transcript: Transcript, with proxy: ScrollViewProxy) {
+        if let id = transcript.blockID(containing: mark.id) {
+            proxy.scrollTo(id, anchor: .top)
+        }
+    }
 
     /// The height of each tick's row: `maxSpacing`, or less so `count` fit in `height`.
     static func spacing(count: Int, height: CGFloat) -> CGFloat {

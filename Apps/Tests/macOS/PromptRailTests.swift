@@ -9,7 +9,10 @@ import Testing
 ///
 /// The jump goes through `PromptRail.scroll`, what a tick's button runs: a click
 /// synthesized here does not reach a SwiftUI button (measured 2026-10-17), so the click
-/// itself is checked by hand.
+/// itself is checked by hand. So is a send after scrolling up with the wheel: wheel
+/// events sent here do not scroll the chat, and a clip view moved behind SwiftUI's back
+/// went back to the bottom within half a second (VM, 2026-10-17). The jump is SwiftUI's
+/// own scroll, and the send after it is the same path.
 @MainActor
 @Suite(.serialized) struct PromptRailTests {
     @MainActor @Observable final class Chat {
@@ -74,6 +77,18 @@ import Testing
             for _ in 0..<10 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         }
 
+        /// Runs the loop until `condition` holds, for at most `timeout` seconds. Under
+        /// load (the full VM run) a scroll can take more than `settle`'s 0.2 s to land.
+        @discardableResult
+        func waitFor(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition() {
+                if Date() > deadline { return false }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            return true
+        }
+
         var scrollView: NSScrollView? {
             func find(_ view: NSView) -> NSScrollView? {
                 (view as? NSScrollView) ?? view.subviews.lazy.compactMap(find).first
@@ -99,11 +114,14 @@ import Testing
         func jump(to index: Int) {
             chat.jump = chat.transcript.promptMarks[index]
             settle()
+            waitFor { (remainingBelow ?? 0) > 100 }
         }
 
+        /// Sends `text` and waits for the chat to reach the bottom (or the timeout).
         func send(_ text: String) {
             chat.transcript.appendUserPrompt(text)
             settle()
+            waitFor { (remainingBelow ?? .infinity) < 2 }
         }
     }
 
@@ -144,21 +162,5 @@ import Testing
         #expect(try #require(ui.remainingBelow) > 100, "the jump did not scroll up")
         ui.send("Prompt 31")
         #expect(try #require(ui.remainingBelow) < 2, "the second send left the chat scrolled up")
-    }
-
-    @Test func aSendScrollsDownAfterTheUserScrolledUp() throws {
-        let ui = UI(prompts: 30)
-        defer { ui.close() }
-        let scroll = try #require(ui.scrollView)
-        let document = try #require(scroll.documentView)
-        // As a scroll wheel would leave it: near the top.
-        let top = document.isFlipped ? 0 : document.frame.height - scroll.contentView.bounds.height
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: top))
-        scroll.reflectScrolledClipView(scroll.contentView)
-        ui.settle()
-        #expect(try #require(ui.remainingBelow) > 100, "the chat did not scroll up")
-
-        ui.send("Prompt 30")
-        #expect(try #require(ui.remainingBelow) < 2, "the send left the chat scrolled up")
     }
 }

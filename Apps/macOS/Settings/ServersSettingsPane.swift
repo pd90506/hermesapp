@@ -129,6 +129,31 @@ private struct ServerStatus: View {
     }
 }
 
+/// A server's details in a box, with a segmented control (if any) on its top edge.
+private struct DetailBox<Control: View, Content: View>: View {
+    let control: Control
+    let content: Content
+
+    init(@ViewBuilder control: () -> Control, @ViewBuilder content: () -> Content) {
+        self.control = control()
+        self.content = content()
+    }
+
+    init(@ViewBuilder content: () -> Content) where Control == EmptyView {
+        self.init(control: { EmptyView() }, content: content)
+    }
+
+    var body: some View {
+        GroupBox {
+            content
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .padding(.top, 11)
+        .overlay(alignment: .top) { control }
+    }
+}
+
 /// The error of the last connect, and the connect buttons, under a server's details.
 private struct ServerActionBar<Actions: View>: View {
     let server: ServerConnection
@@ -155,14 +180,29 @@ private struct ServerDetail: View {
     @Bindable var server: ServerConnection
     @Environment(AppModel.self) private var model
     @State private var isWorking = false
+    @State private var page = Page.information
+
+    private enum Page: Hashable {
+        case information, signIn
+    }
 
     var body: some View {
         VStack(spacing: 12) {
-            TabView {
-                information
-                    .tabItem { Text("Server Information") }
-                signIn
-                    .tabItem { Text("Sign-in") }
+            // A segmented control on a box, as Mail's account details: a nested TabView
+            // would take the Settings window's toolbar style and join its tabs.
+            DetailBox {
+                Picker("Page", selection: $page) {
+                    Text("Server Information").tag(Page.information)
+                    Text("Sign-in").tag(Page.signIn)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            } content: {
+                switch page {
+                case .information: information
+                case .signIn: signIn
+                }
             }
 
             ServerActionBar(server: server) {
@@ -264,7 +304,7 @@ private struct LocalServerDetail: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            TabView {
+            DetailBox {
                 Form {
                     ServerStatus(server: server)
                     if server.isConnected {
@@ -280,7 +320,6 @@ private struct LocalServerDetail: View {
                 .formStyle(.columns)
                 .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .tabItem { Text("This Mac") }
             }
 
             ServerActionBar(server: server) {

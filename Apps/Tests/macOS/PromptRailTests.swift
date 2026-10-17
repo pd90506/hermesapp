@@ -10,18 +10,23 @@ import Testing
 @Suite(.serialized) struct PromptRailTests {
     @MainActor @Observable final class Chat {
         var transcript = Transcript()
+        /// A row to scroll to the top with the reader, as the chat keeps its place
+        /// when an older page lands.
+        var jump: String?
     }
 
     /// `ChatView`'s scroll view, with rows of a fixed height so positions are known.
     private struct Harness: View {
         let chat: Chat
+        /// Off: the same scroll view without `promptScrolling`.
+        var prompts = true
         static let rowHeight: CGFloat = 60
         static let spacing: CGFloat = 12
         static let padding: CGFloat = 16
 
         var body: some View {
             ScrollViewReader { proxy in
-                ScrollView {
+                let scroll = ScrollView {
                     LazyVStack(alignment: .leading, spacing: Self.spacing) {
                         TranscriptMessages(transcript: chat.transcript) { item, _ in
                             Text(item.text).frame(height: Self.rowHeight)
@@ -33,7 +38,16 @@ import Testing
                     .padding(.trailing, PromptRail.width)
                 }
                 .defaultScrollAnchor(.bottom)
-                .promptScrolling(transcript: chat.transcript, proxy: proxy)
+                .onChange(of: chat.jump) {
+                    if let row = chat.jump, let id = chat.transcript.blockID(containing: row) {
+                        proxy.scrollTo(id, anchor: .top)
+                    }
+                }
+                if prompts {
+                    scroll.promptScrolling(transcript: chat.transcript, proxy: proxy)
+                } else {
+                    scroll
+                }
             }
         }
     }
@@ -51,13 +65,13 @@ import Testing
         let host: NSView
         static let size = CGSize(width: 420, height: 400)
 
-        init(prompts: Int) {
+        init(prompts: Int, rail: Bool = true) {
             chat.transcript.installLatestPage([], hasOlder: false)
             for index in 0..<prompts { chat.transcript.appendUserPrompt("Prompt \(index)") }
             window = KeyWindow(contentRect: .testArea(Self.size),
                               styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            host = NSHostingView(rootView: Harness(chat: chat))
+            host = NSHostingView(rootView: Harness(chat: chat, prompts: rail))
             window.contentView = host
             window.showInTestArea()
             settle()
@@ -124,6 +138,51 @@ import Testing
     @Test func theTicksPackCloserInALongChat() {
         #expect(PromptRail.spacing(count: 10, height: 400) == PromptRail.maxSpacing)
         #expect(PromptRail.spacing(count: 100, height: 400) == 4, "a long chat packs its ticks into the rail")
+    }
+
+    /// What the chat does when an older page lands (`ChatView`) still works beside
+    /// `promptScrolling`'s scroll position; and without it, as a baseline.
+    @Test(arguments: [true, false]) func theReaderStillScrollsToARow(rail: Bool) throws {
+        let ui = UI(prompts: 30, rail: rail)
+        defer { ui.close() }
+        ui.chat.jump = ui.chat.transcript.promptMarks[10].id
+        ui.settle()
+        let expected = Harness.padding + 10 * (Harness.rowHeight + Harness.spacing)
+        let offset = try #require(ui.offsetFromTop)
+        #expect(abs(offset - expected) <= 4, "Prompt 10 is at \(offset), expected \(expected) (rail: \(rail))")
+    }
+
+    @Test func clickingATickSelectsItsPrompt() throws {
+        @MainActor final class Picked { var ids: [String] = [] }
+        let picked = Picked()
+        let marks = (0..<5).map { PromptMark(id: "p\($0)", label: "Prompt \($0)") }
+        let size = CGSize(width: 100, height: 5 * PromptRail.maxSpacing)
+        let window = KeyWindow(contentRect: .testArea(size), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            PromptRail(marks: marks) { picked.ids.append($0.id) }
+        }
+        .frame(width: size.width, height: size.height))
+        window.contentView = host
+        window.showInTestArea()
+        defer { window.close() }
+        for _ in 0..<10 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        let y = 2.5 * PromptRail.maxSpacing
+        let location = host.convert(NSPoint(x: size.width - PromptRail.width / 2, y: host.isFlipped ? y : size.height - y), to: nil)
+        func event(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                               timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                               context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        let target = try #require(window.contentView?.superview?.hitTest(location))
+        NSApp.postEvent(event(.leftMouseUp), atStart: false)
+        target.mouseDown(with: event(.leftMouseDown))
+        if let release = NSApp.nextEvent(matching: .leftMouseUp, until: .now, inMode: .default, dequeue: true) {
+            target.mouseUp(with: release)
+        }
+        for _ in 0..<10 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        #expect(picked.ids == ["p2"], "picked \(picked.ids); the click went to \(type(of: target))")
     }
 
     @Test func aTickScrollsToItsPromptAndASendScrollsBackDown() throws {

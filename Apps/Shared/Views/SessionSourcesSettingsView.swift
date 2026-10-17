@@ -1,9 +1,10 @@
+#if os(iOS)
 import HermesKit
 import SwiftUI
 
 /// The session sources: which source sessions this app creates carry, and which
 /// sources the session list shows (`SessionSourceSettings`). Pushed from the connection
-/// settings in the sheet and on iOS; the macOS Settings window has `SessionSourcesSettingsPane`.
+/// settings on iOS; the macOS Settings window has `SessionSourcesSettingsPane`.
 struct SessionSourcesSettingsView: View {
     @Environment(AppModel.self) private var model
 
@@ -48,3 +49,4 @@ struct SessionSourcesSettingsView: View {
         .navigationTitle("Session Sources")
     }
 }
+#endif

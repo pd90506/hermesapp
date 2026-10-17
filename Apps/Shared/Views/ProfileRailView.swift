@@ -9,6 +9,9 @@ import UniformTypeIdentifiers
 /// stored on its server (`GatewayConnection+Avatars.swift`).
 struct ProfileRailView: View {
     @Environment(AppModel.self) private var model
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
     /// Shows the session list (on iPhone, pushes it).
     var showSessions: () -> Void = {}
 
@@ -52,7 +55,12 @@ struct ProfileRailView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button("Settings", systemImage: "gearshape") {
+                #if os(macOS)
+                // The Settings window, as the app menu's Settings… opens it.
+                openSettings()
+                #else
                 model.settingsPresentation.toggle()
+                #endif
             }
             .labelStyle(.iconOnly)
             .uiFont(.title3)

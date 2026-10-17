@@ -11,6 +11,9 @@ struct RootView: View {
     /// select until the list catches up, so it is shown through this.
     @State private var compactColumn = NavigationSplitViewColumn.content
     @State private var columns = NavigationSplitViewVisibility.all
+    #if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+    #endif
 
     var body: some View {
         split
@@ -24,23 +27,25 @@ struct RootView: View {
         // over the title bar, which shaded the band (`titleBarBand`) under it.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
+        #if os(macOS)
+        // The app must connect (`SettingsPresentation`): the Settings window, as the gear
+        // opens it (`ProfileRailView`). The window stays until the user closes it.
+        .onChange(of: model.settingsPresentation.isShown, initial: true) { _, isShown in
+            guard isShown else { return }
+            openSettings()
+            model.settingsPresentation.close()
+        }
+        #else
         // The settings sheet, from the gear or because the app must connect
         // (`SettingsPresentation`).
         .sheet(isPresented: Binding(
             get: { model.settingsPresentation.isShown },
             set: { if !$0 { model.settingsPresentation.close() } })) {
             NavigationStack {
-                ConnectionSettingsView(isSheet: true)
+                ConnectionSettingsView()
             }
-            #if os(macOS)
-            // Opened from the gear, a click elsewhere in the window closes it as Done
-            // would; the must-connect sheet ignores such clicks.
-            .onParentWindowClick(isEnabled: model.settingsPresentation.isTransient) {
-                model.settingsPresentation.clickedOutside()
-            }
-            .frame(minWidth: 460, minHeight: 420)
-            #endif
         }
+        #endif
         // The chat on screen can change without a click: dropped on reconnect,
         // cleared on a server switch, or a new side chat. Follow it, so the
         // highlighted row is always the one on screen and clicking a row always opens it.

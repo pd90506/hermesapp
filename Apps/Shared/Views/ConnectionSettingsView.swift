@@ -1,20 +1,14 @@
+#if os(iOS)
 import HermesKit
 import SwiftUI
 
 /// The servers, and the URL and credentials of the one picked, edited in place in
-/// `AppModel` (closing it never loses or reverts an edit; Connect saves). A sheet from
-/// the gear or on launch (`SettingsPresentation`), and iOS. The macOS Settings window has
-/// its own layout of the same settings (`MacSettingsView`).
+/// `AppModel` (closing it never loses or reverts an edit; Connect saves). A sheet from the
+/// gear or on launch (`SettingsPresentation`). The macOS Settings window has its own
+/// layout of the same settings (`MacSettingsView`).
 struct ConnectionSettingsView: View {
-    /// Shown as a sheet from the gear or on launch.
-    var isSheet = false
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    #if os(iOS)
-    private let isIOS = true
-    #else
-    private let isIOS = false
-    #endif
 
     var body: some View {
         @Bindable var model = model
@@ -31,11 +25,6 @@ struct ConnectionSettingsView: View {
                 Button("Add Server", systemImage: "plus") {
                     model.addServer()
                 }
-                #if os(macOS)
-                Toggle("Run Hermes on this Mac", isOn: Binding(
-                    get: { model.localServer != nil },
-                    set: { isOn in Task { await model.setRunsLocalBackend(isOn) } }))
-                #endif
             } header: {
                 Text("Servers")
             } footer: {
@@ -43,24 +32,16 @@ struct ConnectionSettingsView: View {
             }
 
             if let server = model.selectedServer {
-                if server.isLocal {
-                    LocalServerSection(server: server)
-                        .id(server.id)
-                } else {
-                    ServerSettingsSection(server: server, dismiss: { dismiss() })
-                        .id(server.id)
-                }
+                ServerSettingsSection(server: server, dismiss: { dismiss() })
+                    .id(server.id)
             }
 
-            // The macOS Settings window has its own tab for these.
-            if isSheet || isIOS {
-                Section {
-                    NavigationLink("Session Sources") {
-                        SessionSourcesSettingsView()
-                    }
-                    NavigationLink("Appearance") {
-                        AppearanceSettingsView()
-                    }
+            Section {
+                NavigationLink("Session Sources") {
+                    SessionSourcesSettingsView()
+                }
+                NavigationLink("Appearance") {
+                    AppearanceSettingsView()
                 }
             }
         }
@@ -72,32 +53,10 @@ struct ConnectionSettingsView: View {
             if model.selectedServer == nil { model.selectedServerID = model.servers.first?.id }
         }
         .toolbar {
-            #if os(iOS)
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }
             }
-            #else
-            if isSheet {
-                ToolbarItem(placement: .confirmationAction) {
-                    // Esc closes it too (`.cancelAction`), as before.
-                    Button("Done") { dismiss() }
-                        .keyboardShortcut(.cancelAction)
-                }
-            }
-            #endif
         }
-        #if os(macOS)
-        .background {
-            if isSheet {
-                // A sheet blocks the window's File ▸ Close, so Command-W gets its own key here.
-                Button("Close") { dismiss() }
-                    .keyboardShortcut("w", modifiers: .command)
-                    .opacity(0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        }
-        #endif
     }
 }
 
@@ -116,11 +75,9 @@ private struct ServerSettingsSection: View {
             TextField("Server URL", text: $server.config.serverURL,
                       prompt: Text("https://hermes.example.ts.net"))
                 .autocorrectionDisabled()
-                #if os(iOS)
                 .textContentType(.URL)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
-                #endif
             Button("Check Server") {
                 Task { await model.probe(server) }
             }
@@ -143,15 +100,11 @@ private struct ServerSettingsSection: View {
             if server.config.authMode == .password {
                 TextField("Provider", text: $server.config.provider)
                     .autocorrectionDisabled()
-                    #if os(iOS)
                     .textInputAutocapitalization(.never)
-                    #endif
                 TextField("Username", text: $server.config.username)
                     .textContentType(.username)
                     .autocorrectionDisabled()
-                    #if os(iOS)
                     .textInputAutocapitalization(.never)
-                    #endif
             }
             SecureField(server.config.authMode.secretLabel, text: $server.secret)
                 .textContentType(.password)
@@ -208,57 +161,4 @@ private struct ServerSettingsSection: View {
         ServerConfig(serverURL: server.config.serverURL).displayName
     }
 }
-
-/// "This Mac": the backend the app runs itself. Nothing to fill in.
-private struct LocalServerSection: View {
-    let server: ServerConnection
-    @Environment(AppModel.self) private var model
-    @State private var isWorking = false
-
-    var body: some View {
-        Section {
-            LabeledContent("Status", value: server.connection.state.statusText)
-            if server.isConnected {
-                LabeledContent("Address", value: server.config.serverURL)
-                    .textSelection(.enabled)
-            }
-        } header: {
-            Text("This Mac")
-        } footer: {
-            Text("The app runs `hermes serve` on this Mac, as Hermes Desktop does: on a free port, with a new token each time. It stops when you quit the app.")
-        }
-
-        if let error = server.lastError {
-            Section {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-        }
-
-        Section {
-            Button {
-                Task {
-                    isWorking = true
-                    if server.isConnected { await model.disconnect(server) }
-                    await model.connect(server)
-                    isWorking = false
-                }
-            } label: {
-                HStack {
-                    Text(server.isConnected ? "Restart Hermes" : "Start Hermes")
-                    if isWorking || server.isConnecting {
-                        Spacer()
-                        ProgressView().controlSize(.small)
-                    }
-                }
-            }
-            .disabled(isWorking || server.isConnecting)
-            if server.isConnected {
-                Button("Stop Hermes") {
-                    Task { await model.disconnect(server) }
-                }
-            }
-        }
-    }
-}
+#endif

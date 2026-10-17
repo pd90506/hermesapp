@@ -167,7 +167,8 @@ extension GatewayConnection {
             throw BotChatError.registryUnconfirmed(profile: profile)
         }
         let created = try await client.createSession(SessionCreateParams(
-            title: Bot.chatTitle, profile: profile, hidden: true, followProfileConfig: true))
+            title: Bot.chatTitle, source: sourceSettings.newSessionSource, profile: profile, hidden: true,
+            followProfileConfig: true))
         // Persists the row under the canonical title now, closing the window in
         // which a second open would find no "Bot Chat" (`canonical-chat.ts:493-502`).
         // Only a registered row may become the Bot Chat. An unregistered lazy session
@@ -248,7 +249,7 @@ extension GatewayConnection {
     public func newSideChat(profile: String) async throws -> ChatSession {
         let token = beginSelection()
         guard let client else { throw GatewayClientError.notConnected }
-        let created = try await client.createSession(SessionCreateParams(profile: profile))
+        let created = try await client.createSession(SessionCreateParams(source: sourceSettings.newSessionSource, profile: profile))
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: nil, profile: profile, kind: .sideChat, connection: self)
         try await show(OpenedChat(session: session, openRequests: []), token: token, client: client)

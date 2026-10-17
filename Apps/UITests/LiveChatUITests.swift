@@ -465,6 +465,60 @@ final class LiveChatUITests: XCTestCase {
         } while Date() < deadline
         return nil
     }
+
+    /// The prompt rail: a chat with three long replies gets a tick per prompt beside the
+    /// centered messages; hovering a tick opens the panel of prompts, and a prompt there
+    /// scrolls the chat back to it. Screenshots of each step are attached.
+    @MainActor
+    func testPromptRailListsThePromptsAndJumpsBack() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        let composer = app.textViews.firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+
+        // Each reply ends with its marker. The reply's text view holds it with the list;
+        // the prompt holds it too, so its wording ("bulleted list") tells them apart.
+        for round in 1...3 {
+            let marker = "RAIL\(round)-\(Int.random(in: 1000...9999))"
+            press(composer)
+            composer.typeText("Round \(round): write the numbers 1 to 25 as a bulleted list, then a blank line, then a last paragraph with exactly \(marker). Do not repeat these instructions. Do not use tools.")
+            press(app.buttons["Send"].firstMatch)
+            let reply = app.textViews.matching(NSPredicate(
+                format: "value CONTAINS %@ AND NOT (value CONTAINS %@)", marker, "bulleted list"))
+            let deadline = Date().addingTimeInterval(150)
+            while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+            XCTAssertGreaterThanOrEqual(reply.count, 1, "round \(round) answered")
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "Prompt rail: chat after three rounds")
+
+        let ticks = app.buttons.matching(identifier: "prompt-rail-tick")
+        XCTAssertEqual(ticks.count, 3, "a tick per prompt")
+        ticks.element(boundBy: 1).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        let rows = app.buttons.matching(identifier: "prompt-rail-row")
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), "hovering the rail opens the panel")
+        XCTAssertEqual(rows.count, 3, "the panel lists every prompt")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        attach(app, "Prompt rail: panel open")
+
+        press(rows.element(boundBy: 0))
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        // Away from the rail, so the panel closes and only the chat's texts remain.
+        composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "Prompt rail: after jumping to the first prompt")
+        XCTAssertEqual(rows.count, 0, "the panel closes when the pointer leaves it")
+        let isFirst = NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@", "Round 1:", "Round 1:")
+        let first = app.staticTexts.matching(isFirst).firstMatch.exists
+            ? app.staticTexts.matching(isFirst).firstMatch : app.textViews.matching(isFirst).firstMatch
+        XCTAssertTrue(first.exists && first.isHittable, "the first prompt is on screen after the jump")
+    }
     #endif
 
     /// Whether some text containing `text` shows up: a static text (macOS keeps its

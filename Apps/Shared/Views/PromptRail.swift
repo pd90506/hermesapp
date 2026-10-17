@@ -33,7 +33,7 @@ private struct PromptScrolling: ViewModifier {
                             proxy.scrollTo(id, anchor: .top)
                         }
                     }
-                    .padding(.vertical, 24)
+                    .padding(.vertical, PromptRail.verticalInset)
                     .padding(.trailing, PromptRail.trailingInset)
                 }
             }
@@ -53,6 +53,8 @@ struct PromptRail: View {
     static let width: CGFloat = 22
     /// Space between the rail and the chat's edge, clear of the scroller.
     static let trailingInset: CGFloat = 12
+    /// Space above and below the rail, clear of the title bar and the composer.
+    static let verticalInset: CGFloat = 24
     /// The room each tick gets at most: a long chat packs its ticks closer.
     static let maxSpacing: CGFloat = 14
     static let accessibilityIdentifier = "prompt-rail-tick"

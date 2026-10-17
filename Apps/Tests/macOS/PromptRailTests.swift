@@ -38,15 +38,23 @@ import Testing
         }
     }
 
+    /// Counts as key, so a first click reaches SwiftUI's button as in the app
+    /// (the test process is never the active app).
+    private final class KeyWindow: NSWindow {
+        override var isKeyWindow: Bool { true }
+        override var canBecomeKey: Bool { true }
+    }
+
     @MainActor private final class UI {
         let chat = Chat()
         let window: NSWindow
         let host: NSView
+        static let size = CGSize(width: 420, height: 400)
 
         init(prompts: Int) {
             chat.transcript.installLatestPage([], hasOlder: false)
             for index in 0..<prompts { chat.transcript.appendUserPrompt("Prompt \(index)") }
-            window = NSWindow(contentRect: .testArea(CGSize(width: 420, height: 400)),
+            window = KeyWindow(contentRect: .testArea(Self.size),
                               styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             host = NSHostingView(rootView: Harness(chat: chat))
@@ -82,22 +90,34 @@ import Testing
             return document.isFlipped ? document.frame.height - visible.maxY : visible.minY
         }
 
-        /// Clicks the rail's tick for `label` the way VoiceOver does.
-        func pressTick(_ label: String) -> Bool {
-            func search(_ element: any NSAccessibilityProtocol) -> (any NSAccessibilityProtocol)? {
-                if element.accessibilityIdentifier() == PromptRail.accessibilityIdentifier,
-                   element.accessibilityLabel() == label {
-                    return element
-                }
-                for child in element.accessibilityChildren() ?? [] {
-                    if let child = child as? any NSAccessibilityProtocol, let found = search(child) { return found }
-                }
-                return nil
+        /// Clicks the rail's tick for prompt `index` of the transcript's prompts, where
+        /// `promptScrolling` lays it out: the rail's rows split its height evenly.
+        func clickTick(_ index: Int) {
+            let count = chat.transcript.promptMarks.count
+            let size = Self.size
+            let railHeight = size.height - 2 * PromptRail.verticalInset
+            let spacing = PromptRail.spacing(count: count, height: railHeight)
+            let top = (size.height - spacing * CGFloat(count)) / 2
+            let x = size.width - PromptRail.trailingInset - PromptRail.width / 2
+            let y = top + (CGFloat(index) + 0.5) * spacing
+            let location = host.convert(NSPoint(x: x, y: host.isFlipped ? y : size.height - y), to: nil)
+            func event(_ type: NSEvent.EventType) -> NSEvent {
+                NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                                   timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                   context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
             }
-            guard let tick = search(host) else { return false }
-            let pressed = tick.accessibilityPerformPress()
+            guard let target = window.contentView?.superview?.hitTest(location) else {
+                Issue.record("Nothing to click at \(location)")
+                return
+            }
+            // As `HoverTests` clicks: the press goes to the view under the point, which
+            // then reads the release from the queue.
+            NSApp.postEvent(event(.leftMouseUp), atStart: false)
+            target.mouseDown(with: event(.leftMouseDown))
+            if let release = NSApp.nextEvent(matching: .leftMouseUp, until: .now, inMode: .default, dequeue: true) {
+                target.mouseUp(with: release)
+            }
             settle()
-            return pressed
         }
     }
 
@@ -111,7 +131,7 @@ import Testing
         defer { ui.close() }
         #expect(try #require(ui.remainingBelow) < 2, "the chat opens at the bottom")
 
-        #expect(ui.pressTick("Prompt 10"), "no rail tick for Prompt 10")
+        ui.clickTick(10)
         let expected = Harness.padding + 10 * (Harness.rowHeight + Harness.spacing)
         let offset = try #require(ui.offsetFromTop)
         #expect(abs(offset - expected) <= 4, "Prompt 10 is at \(offset), expected \(expected)")
@@ -121,7 +141,7 @@ import Testing
         #expect(try #require(ui.remainingBelow) < 2, "the send left the chat scrolled up")
 
         // Again: a second send after a jump still comes down.
-        #expect(ui.pressTick("Prompt 3"))
+        ui.clickTick(3)
         #expect(try #require(ui.remainingBelow) > 100, "the tick did not scroll up")
         ui.chat.transcript.appendUserPrompt("Prompt 31")
         ui.settle()

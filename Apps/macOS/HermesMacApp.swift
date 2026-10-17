@@ -22,8 +22,17 @@ struct HermesMacApp: App {
         }
 
         Settings {
-            NavigationStack {
-                ConnectionSettingsView()
+            TabView {
+                Tab("Connection", systemImage: "network") {
+                    NavigationStack {
+                        ConnectionSettingsView()
+                    }
+                }
+                Tab("Session Sources", systemImage: "tray.2") {
+                    NavigationStack {
+                        SessionSourcesSettingsView()
+                    }
+                }
             }
             .environment(model)
             .frame(width: 480, height: 560)

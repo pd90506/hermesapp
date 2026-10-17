@@ -42,7 +42,7 @@ struct AssistantMessageContent: View {
                         MarkdownView(text: item.reasoning, isStreaming: item.isActive, isReasoning: true)
                             .equatable()
                     }
-                    .font(.caption)
+                    .uiFont(.caption)
                 }
                 ForEach(Array(Self.segments(item).enumerated()), id: \.offset) { _, segment in
                     switch segment {
@@ -54,7 +54,7 @@ struct AssistantMessageContent: View {
                     }
                 }
                 if item.outcome == "interrupted" {
-                    Text("Interrupted").font(.caption).foregroundStyle(.secondary)
+                    Text("Interrupted").uiFont(.caption).foregroundStyle(.secondary)
                 }
             }
             // Directly under the message, so moving down onto it never leaves the row.
@@ -99,13 +99,13 @@ struct ToolMessageContent: View {
                     }
                     if hasDetail {
                         Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
+                            .uiFont(.caption2, weight: .semibold)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                             .foregroundStyle(.tertiary)
                     }
                     Spacer(minLength: 0)
                 }
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
                 .contentShape(.rect)
             }
@@ -200,16 +200,17 @@ struct ToolCallDetail: View {
     /// box stops at 12rem (`components/chat/diff-lines.tsx:67`).
     static let maxLines = 12
     @ScaledMetric(relativeTo: .caption) private var lineHeight: CGFloat = 15
+    @Environment(\.textSizes) private var sizes
 
     @ViewBuilder private func box(_ section: Section) -> some View {
         let content = text(section)
-            .font(.caption.monospaced())
+            .uiFont(.caption, design: .monospaced)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
         if Self.lineCount(Self.shown(section)) > Self.maxLines {
             ScrollView(.vertical) { content }
-                .frame(height: lineHeight * CGFloat(Self.maxLines) + 16)
+                .frame(height: lineHeight * sizes.uiScale * CGFloat(Self.maxLines) + 16)
                 .accessibilityIdentifier("toolDetailScroll")
         } else {
             content
@@ -284,13 +285,13 @@ struct BackgroundNoticeRow: View {
                         .truncationMode(.tail)
                     if !notice.detail.isEmpty {
                         Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
+                            .uiFont(.caption2, weight: .semibold)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                             .foregroundStyle(.tertiary)
                     }
                     Spacer(minLength: 0)
                 }
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
                 .contentShape(.rect)
             }
@@ -348,12 +349,12 @@ struct ToolRunView<Message: View>: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
+                    .uiFont(.caption2, weight: .semibold)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: 0)
             }
-            .font(.callout)
+            .uiFont(.callout)
             .foregroundStyle(.secondary)
             .contentShape(.rect)
         }
@@ -399,12 +400,12 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
         requests()
         if waiting == nil, let status = transcript.status, transcript.isRunning {
             Label(status, systemImage: "ellipsis")
-                .font(.caption)
+                .uiFont(.caption)
                 .foregroundStyle(.secondary)
         }
         if let lastError = transcript.lastError {
             Label(lastError, systemImage: "exclamationmark.triangle")
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.red)
         }
     }

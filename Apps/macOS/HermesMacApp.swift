@@ -9,6 +9,7 @@ struct HermesMacApp: App {
         WindowGroup(id: "main") {
             RootView()
                 .environment(model)
+                .appearance(model.appearance)
                 .frame(minWidth: 720, minHeight: 480)
                 // The size and place the window last had, across launches and updates.
                 .windowFrameAutosave("HermesMainWindow")
@@ -33,8 +34,14 @@ struct HermesMacApp: App {
                         SessionSourcesSettingsView()
                     }
                 }
+                Tab("Appearance", systemImage: "paintpalette") {
+                    NavigationStack {
+                        AppearanceSettingsView()
+                    }
+                }
             }
             .environment(model)
+            .appearance(model.appearance)
             .frame(width: 480, height: 560)
         }
     }
@@ -47,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ScrollLatching.install()
+        AppearanceTheme.apply(model.appearance.theme)
         Task { await model.watchLocalBackend() }
     }
 

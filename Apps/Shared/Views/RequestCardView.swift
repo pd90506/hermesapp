@@ -15,7 +15,7 @@ struct RequestCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             content
             if let error {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Text(error).uiFont(.caption).foregroundStyle(.red)
             }
         }
         .padding()
@@ -27,11 +27,11 @@ struct RequestCardView: View {
     private var content: some View {
         switch request.kind {
         case .approval(let approval):
-            Label("Approval needed", systemImage: "exclamationmark.shield").font(.headline)
+            Label("Approval needed", systemImage: "exclamationmark.shield").uiFont(.headline)
             if let description = approval.description { Text(description) }
             if let command = approval.command {
                 Text(command)
-                    .font(.callout.monospaced())
+                    .uiFont(.callout, design: .monospaced)
                     .textSelection(.enabled)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,7 +47,7 @@ struct RequestCardView: View {
             }
 
         case .clarify(let clarify):
-            Label("Hermes has a question", systemImage: "questionmark.bubble").font(.headline)
+            Label("Hermes has a question", systemImage: "questionmark.bubble").uiFont(.headline)
             ForEach(clarify.questions) { question in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(question.question)
@@ -77,13 +77,13 @@ struct RequestCardView: View {
             }
 
         case .sudo(let sudo):
-            Label("Sudo password requested", systemImage: "lock").font(.headline)
-            if let command = sudo.command { Text(command).font(.callout.monospaced()) }
+            Label("Sudo password requested", systemImage: "lock").uiFont(.headline)
+            if let command = sudo.command { Text(command).uiFont(.callout, design: .monospaced) }
             secretEntry
 
         case .secret(let secret):
-            Label(secret.prompt, systemImage: "key").font(.headline)
-            Text(secret.envVar).font(.caption.monospaced()).foregroundStyle(.secondary)
+            Label(secret.prompt, systemImage: "key").uiFont(.headline)
+            Text(secret.envVar).uiFont(.caption, design: .monospaced).foregroundStyle(.secondary)
             secretEntry
 
         case .unsupported:

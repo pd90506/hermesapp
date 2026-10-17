@@ -146,6 +146,10 @@ final class AppModel {
             saveSourceSettings()
         }
     }
+    /// Light or dark and the text sizes (Settings ▸ Appearance), kept across launches.
+    var appearance = AppearanceSettings() {
+        didSet { saveAppearance() }
+    }
 
     init() {
         #if DEBUG
@@ -197,6 +201,10 @@ final class AppModel {
             self.sourceSettings = saved
         }
         applySourceSettings()
+        if let data = defaults.data(forKey: Self.appearanceKey),
+            let saved = try? JSONDecoder().decode(AppearanceSettings.self, from: data) {
+            self.appearance = saved
+        }
         if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
             saveServers()
             if (try? KeychainStore.write(server.secret, account: migrated.secretAccount)) != nil {
@@ -489,6 +497,16 @@ final class AppModel {
     func setPinned(_ pinned: Bool, _ entry: HistoryEntry, on server: ServerConnection) {
         pins.setPinned(pinned, entry, on: server.id)
         savePins()
+    }
+
+    private static let appearanceKey = "appearance"
+
+    private func saveAppearance() {
+        #if os(macOS)
+        AppearanceTheme.apply(appearance.theme)
+        #endif
+        guard !Self.isUITest, let data = try? JSONEncoder().encode(appearance) else { return }
+        UserDefaults.standard.set(data, forKey: Self.appearanceKey)
     }
 
     private func savePins() {

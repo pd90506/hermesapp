@@ -160,9 +160,9 @@ struct TranscriptImageCard: View {
             } else if failed {
                 VStack(spacing: 4) {
                     Image(systemName: "photo")
-                        .font(.title3)
+                        .uiFont(.title3)
                     Text(image.name)
-                        .font(.caption2)
+                        .uiFont(.caption2)
                         .lineLimit(2)
                         .truncationMode(.middle)
                         .multilineTextAlignment(.center)

@@ -12,6 +12,8 @@ import UIKit
 struct MarkdownCodeBlock: View {
     let language: String?
     let code: String
+    /// The code's size in points (Settings ▸ Appearance ▸ Code).
+    var codeSize = TextSizes.defaults.code
     var messageSource: String? = nil
     var conversationSource: (() -> String)? = nil
 
@@ -19,20 +21,20 @@ struct MarkdownCodeBlock: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(language ?? "")
-                    .font(.caption.monospaced())
+                    .uiFont(.caption, design: .monospaced)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Copy code", systemImage: "doc.on.doc") { Clipboard.copy(code) }
                     .labelStyle(.iconOnly)
                     .hoverButtonStyle(.rounded, padding: 4)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .help("Copy code")
             }
             .padding(.horizontal, 10)
             .padding(.top, 6)
             ScrollView(.horizontal) {
                 Text(code)
-                    .font(.callout.monospaced())
+                    .font(.system(size: codeSize, design: .monospaced))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
                     .padding(.horizontal, 10)
@@ -70,7 +72,10 @@ struct MarkdownTableGrid: View {
     let table: MarkdownTable
     var messageSource: String? = nil
     var conversationSource: (() -> String)? = nil
-    @ScaledMetric(relativeTo: .body) private var bodySize = MarkdownMetrics.bodySize
+    @Environment(\.textSizes) private var sizes
+    /// Dynamic Type on iOS; 1 on macOS.
+    @ScaledMetric(relativeTo: .body) private var typeScale: CGFloat = 1
+    private var bodySize: CGFloat { sizes.content * typeScale }
     /// The width the table may fill; 0 until the first layout reports it.
     @State private var available: CGFloat = 0
 

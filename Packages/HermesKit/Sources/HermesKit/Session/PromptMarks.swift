@@ -50,23 +50,33 @@ extension Transcript {
     /// The prompts of this transcript, oldest first (`PromptMark.marks`).
     public var promptMarks: [PromptMark] { PromptMark.marks(in: items) }
 
-    /// The prompt the chat is at when `topBlockID` is the first block on screen: the
-    /// last prompt in or above that block, or the first prompt when the block is above
-    /// them all. Nil when the transcript has no prompts or no block is on screen.
-    public func currentPromptID(topBlockID: String?) -> String? {
-        PromptMark.current(in: blocks, marks: promptMarks, topBlockID: topBlockID)
+    /// The prompt the chat is at with the blocks `visibleBlockIDs` on screen
+    /// (`PromptMark.current`). Nil when the transcript has no prompts or no block is
+    /// on screen.
+    public func currentPromptID(visibleBlockIDs: Set<String>) -> String? {
+        PromptMark.current(in: blocks, marks: promptMarks, visible: visibleBlockIDs)
     }
 }
 
 extension PromptMark {
-    /// `Transcript.currentPromptID(topBlockID:)` over the chat's blocks.
-    public static func current(in blocks: [TranscriptBlock], marks: [PromptMark], topBlockID: String?) -> String? {
-        guard let topBlockID, let first = marks.first else { return nil }
+    /// The prompt the chat is at with the blocks `visible` on screen: the last prompt in
+    /// or above the first block on screen, or the first prompt when that block is above
+    /// them all. A chat scrolled to its end (its last block on screen) is at its last
+    /// prompt, even when the reply before it still fills the top of the screen.
+    public static func current(in blocks: [TranscriptBlock], marks: [PromptMark], visible: Set<String>) -> String? {
+        guard let first = marks.first else { return nil }
+        let top: String?
+        if let last = blocks.last, visible.contains(last.id) {
+            top = last.id
+        } else {
+            top = blocks.first { visible.contains($0.id) }?.id
+        }
+        guard let top else { return nil }
         let ids = Set(marks.map(\.id))
         var current: String?
         for block in blocks {
             if let prompt = block.items.last(where: { ids.contains($0.id) }) { current = prompt.id }
-            if block.id == topBlockID { return current ?? first.id }
+            if block.id == top { return current ?? first.id }
         }
         return nil
     }

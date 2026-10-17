@@ -84,11 +84,10 @@ struct ChatView: View {
         #endif
     }
 
-    /// The prompt the chat is at: the last one in or above the topmost block on screen.
+    /// The prompt the chat is at: the last one in or above the topmost block on screen,
+    /// or the last prompt once the chat is scrolled to its end.
     private var currentPromptID: String? {
-        let blocks = session.transcript.blocks
-        let top = blocks.first { visibleBlocks.ids.contains($0.id) }?.id
-        return PromptMark.current(in: blocks, marks: session.transcript.promptMarks, topBlockID: top)
+        session.transcript.currentPromptID(visibleBlockIDs: visibleBlocks.ids)
     }
 
     private func loadOlderMessages() async {

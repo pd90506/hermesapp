@@ -51,6 +51,14 @@ public final class GatewayConnection {
 
     /// Ordinary sessions for the selected list profile, in server order.
     public internal(set) var history: [HistoryEntry] = []
+    /// Which sources the lists hide and which source new sessions carry (`AppModel`).
+    public var sourceSettings = SessionSourceSettings()
+    /// `history` without the rows of hidden sources: what the session list shows.
+    public var visibleHistory: [HistoryEntry] { history.filter { sourceSettings.shows($0.summary) } }
+    /// The sources of the rows in `history`, hidden ones included.
+    public var historySources: Set<String> {
+        Set(history.compactMap { SessionSourceSettings.normalized($0.summary.source) })
+    }
     /// The profile whose sessions `history` holds: `nil` until the first read of the
     /// selected profile's list comes back (an empty `history` is then "no sessions").
     public internal(set) var historyProfile: String?
@@ -291,7 +299,7 @@ public final class GatewayConnection {
     public func newSession(title: String? = nil) async throws -> ChatSession {
         let token = beginSelection()
         guard let client else { throw GatewayClientError.notConnected }
-        let created = try await client.createSession(SessionCreateParams(title: title))
+        let created = try await client.createSession(SessionCreateParams(title: title, source: sourceSettings.newSessionSource))
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: title, connection: self)
         if token == selectionToken { activate(session) }

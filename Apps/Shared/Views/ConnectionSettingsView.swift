@@ -54,6 +54,9 @@ struct ConnectionSettingsView: View {
             // The macOS Settings window has its own tab for these.
             if isSheet || isIOS {
                 Section {
+                    NavigationLink("Session Sources") {
+                        SessionSourcesSettingsView()
+                    }
                     NavigationLink("Appearance") {
                         AppearanceSettingsView()
                     }

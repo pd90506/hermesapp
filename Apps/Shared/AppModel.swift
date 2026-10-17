@@ -138,6 +138,14 @@ final class AppModel {
     /// A profile picked in the rail whose last chat isn't shown yet: shown once it is
     /// known (`RootView.restoreProfileChat`), or dropped when a row is clicked first.
     var pendingProfileChat: PendingProfileChat?
+    /// Which session sources the lists hide and which source new sessions carry, kept
+    /// across launches and handed to every server's connection.
+    var sourceSettings = SessionSourceSettings() {
+        didSet {
+            applySourceSettings()
+            saveSourceSettings()
+        }
+    }
     /// Light or dark and the text sizes (Settings ▸ Appearance), kept across launches.
     var appearance = AppearanceSettings() {
         didSet { saveAppearance() }
@@ -158,6 +166,7 @@ final class AppModel {
             self.selectedServerID = servers.first?.id
             self.sessionsServerID = servers.first?.id
             self.settingsPresentation = SettingsPresentation(hasServer: true)
+            applySourceSettings()
             return
         }
         #endif
@@ -187,6 +196,11 @@ final class AppModel {
             let saved = try? JSONDecoder().decode(ProfileChats.self, from: data) {
             self.profileChats = saved
         }
+        if let data = defaults.data(forKey: Self.sourceSettingsKey),
+            let saved = try? JSONDecoder().decode(SessionSourceSettings.self, from: data) {
+            self.sourceSettings = saved
+        }
+        applySourceSettings()
         if let data = defaults.data(forKey: Self.appearanceKey),
             let saved = try? JSONDecoder().decode(AppearanceSettings.self, from: data) {
             self.appearance = saved
@@ -227,6 +241,7 @@ final class AppModel {
             return blank
         }
         let server = ServerConnection(config: ServerConfig(), secret: "")
+        server.connection.sourceSettings = sourceSettings
         servers.append(server)
         selectedServerID = server.id
         if sessionsServerID == nil { sessionsServerID = server.id }
@@ -413,6 +428,7 @@ final class AppModel {
         UserDefaults.standard.set(isOn, forKey: Self.localBackendKey)
         if isOn, localServer == nil {
             let server = ServerConnection(localBackend: .hermes())
+            server.connection.sourceSettings = sourceSettings
             servers.insert(server, at: 0)
             selectedServerID = server.id
             await connect(server)
@@ -448,6 +464,27 @@ final class AppModel {
         localServer?.backend?.terminateNow()
     }
     #endif
+
+    // MARK: Session sources
+
+    private static let sourceSettingsKey = "sessionSourceSettings"
+
+    /// Every source a connected server's list has shown, hidden ones included, so a
+    /// hidden source can be shown again.
+    var knownSources: [String] {
+        var sources = sourceSettings.hiddenSources
+        for server in servers { sources.formUnion(server.connection.historySources) }
+        return sources.sorted { SessionSourceSettings.label(for: $0) < SessionSourceSettings.label(for: $1) }
+    }
+
+    private func applySourceSettings() {
+        for server in servers { server.connection.sourceSettings = sourceSettings }
+    }
+
+    private func saveSourceSettings() {
+        guard !Self.isUITest, let data = try? JSONEncoder().encode(sourceSettings) else { return }
+        UserDefaults.standard.set(data, forKey: Self.sourceSettingsKey)
+    }
 
     // MARK: Session actions
 

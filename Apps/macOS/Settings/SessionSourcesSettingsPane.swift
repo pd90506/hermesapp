@@ -1,8 +1,8 @@
 import HermesKit
 import SwiftUI
 
-/// The Session Sources tab: the same settings as `SessionSourcesSettingsView` (the sheet
-/// and iOS), as a columns form.
+/// The Session Sources tab: the same settings as `SessionSourcesSettingsView` (iOS), as a
+/// columns form.
 struct SessionSourcesSettingsPane: View {
     @Environment(AppModel.self) private var model
 
@@ -50,6 +50,6 @@ struct SessionSourcesSettingsPane: View {
         }
         .formStyle(.columns)
         .padding(20)
-        .frame(width: 560)
+        .frame(width: MacSettingsView.paneWidth)
     }
 }

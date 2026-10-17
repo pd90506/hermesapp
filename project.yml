@@ -86,7 +86,6 @@ targets:
       - path: Apps/Shared/Composer/SlashSuggestionList.swift
       - path: Apps/Shared/Views/Hover.swift
       - path: Apps/Shared/Views/SidebarControls.swift
-      - path: Apps/Shared/Views/SheetOutsideClick.swift
       - path: Apps/Shared/Views/MessageCopyButton.swift
       - path: Apps/Shared/Views/MessageRowContent.swift
       - path: Apps/Shared/Views/ScrollLatching.swift

@@ -84,13 +84,13 @@ import Testing
 
         /// Clicks the rail's tick for `label` the way VoiceOver does.
         func pressTick(_ label: String) -> Bool {
-            func search(_ element: NSObject) -> NSObject? {
+            func search(_ element: any NSAccessibilityProtocol) -> (any NSAccessibilityProtocol)? {
                 if element.accessibilityIdentifier() == PromptRail.accessibilityIdentifier,
                    element.accessibilityLabel() == label {
                     return element
                 }
                 for child in element.accessibilityChildren() ?? [] {
-                    if let child = child as? NSObject, let found = search(child) { return found }
+                    if let child = child as? any NSAccessibilityProtocol, let found = search(child) { return found }
                 }
                 return nil
             }

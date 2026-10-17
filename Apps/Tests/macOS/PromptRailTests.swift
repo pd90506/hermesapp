@@ -86,14 +86,21 @@ import Testing
             return true
         }
 
-        /// Scrolls up the way a mouse wheel does: pixel wheel events to the scroll view.
-        func wheelUp(by pixels: Int32) {
-            guard let scroll = scrollView else { return }
-            for _ in 0..<(pixels / 200) {
-                let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
-                                    wheel1: 200, wheel2: 0, wheel3: 0)!
-                if let wheel = NSEvent(cgEvent: event) { scroll.scrollWheel(with: wheel) }
+        /// Moves the chat to its top, as a scroll would leave it. A fresh chat can
+        /// put itself back at the bottom while its lazy rows settle (seen once in a
+        /// full VM run), so this scrolls again until the chat stays up.
+        @discardableResult
+        func scrollToTop() -> Bool {
+            guard let scroll = scrollView, let document = scroll.documentView else { return false }
+            for _ in 0..<5 {
+                let top = document.isFlipped ? 0 : document.frame.height - scroll.contentView.bounds.height
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: top))
+                scroll.reflectScrolledClipView(scroll.contentView)
+                settle()
+                settle()
+                if (remainingBelow ?? 0) > 100 { return true }
             }
+            return false
         }
 
         var scrollView: NSScrollView? {
@@ -160,9 +167,7 @@ import Testing
     @Test func aSendScrollsDownAfterTheUserScrolledUp() throws {
         let ui = UI(prompts: 30)
         defer { ui.close() }
-        ui.wheelUp(by: 1600)
-        ui.waitFor { (ui.remainingBelow ?? 0) > 100 }
-        #expect(try #require(ui.remainingBelow) > 100, "the wheel did not scroll the chat up")
+        #expect(ui.scrollToTop(), "the chat did not stay scrolled up")
 
         ui.send("Prompt 30")
         #expect(try #require(ui.remainingBelow) < 2, "the send left the chat scrolled up")

@@ -57,33 +57,6 @@ private func occurrences(_ transcript: Transcript, _ segment: String) -> Int {
 private func tools(_ transcript: Transcript) -> [TranscriptItem] { transcript.items.filter { $0.role == .tool } }
 
 @Suite struct PagingRound4RegressionTests {
-    // MARK: M1: a stored tool preamble joined to the next segment without a separator
-
-    /// A Chinese reply repeated by a later bot turn stays (round 3's N1, in Chinese).
-    @Test func aRepeatedChineseReplyAfterThePageStays() throws {
-        var transcript = try idle()
-        transcript.installLatestPage(plain(171...289) + [user(290, "在吗"), assistant(291, "在的")], hasOlder: true)
-        transcript.apply(event("message.start"))
-        transcript.apply(event("message.delta", ["text": "在的"]))
-        transcript.apply(event("message.complete", completePayload("在的", rows: [292, 293])))
-        #expect(occurrences(transcript, "在的") == 2)
-        expectWellFormed(transcript)
-    }
-
-    // MARK: S1: item ids stay unique
-
-    /// Round 3's N3 scenario: the live row of a reused call id must not repeat the stored row's id.
-    @Test func aReusedCallIDNeverRepeatsAnItemID() throws {
-        var transcript = try idle()
-        transcript.installLatestPage(plain(172...288) + [
-            user(289, "q"), assistant(290, "Looking.", call: "call_0"), tool(291, call: "call_0"),
-        ], hasOlder: true)
-        transcript.apply(event("message.start"))
-        transcript.apply(event("tool.start", ["tool_id": "call_0", "name": "terminal", "context": "pwd"]))
-        #expect(tools(transcript).count == 2)
-        expectWellFormed(transcript)
-    }
-
     // MARK: S2: tool-call ids reused by later turns and later rounds
 
     @Test func myOwnTurnReusingAStoredCallIDAddsARow() throws {

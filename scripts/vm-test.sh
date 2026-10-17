@@ -10,7 +10,7 @@
 #   scripts/vm-test.sh --only window                           # just the window tests
 #   scripts/vm-test.sh --only live,ui                          # suites: live, window, ui
 #   scripts/vm-test.sh --test HermesMacTests/HoverTests        # one suite (repeatable;
-#   scripts/vm-test.sh --test HermesMacUITests/LiveChatUITests/testTwoServersConnectAndAreNamed
+#   scripts/vm-test.sh --test HermesMacUITests/LiveChatUITests/testEachProfileReturnsToItsLastChat
 #                                                              #  runs only its scheme)
 #
 # Only one run uses the VM at a time: a second run waits for the first (it would

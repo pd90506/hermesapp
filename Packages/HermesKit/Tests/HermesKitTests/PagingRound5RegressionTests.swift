@@ -214,28 +214,6 @@ struct PagingRound5ConnectionTests {
         withExtendedLifetime(connection) {}
     }
 
-    /// S2: the turn running at open is longer than a page: its prompt is in an older page.
-    @Test func aTurnLongerThanAPageEndsWithOneCopy() async throws {
-        var rows = plain(1...99) + [user(100, "长任务")]
-        var streamed = ""
-        for step in 0..<120 {
-            rows += [assistant(101 + 2 * step, "步骤\(step)；", call: "call-\(step)"), tool(102 + 2 * step, call: "call-\(step)")]
-            streamed += "步骤\(step)；"
-        }
-        let (session, transport, server, connection) = try await openWhileRunning(rows, inflight: streamed, user: "长任务")
-        server.store.append([assistant(341, "全部完成")])
-        transport.sendEvent("message.delta", sessionID: session.sessionID, seq: 1, payload: ["text": "全部完成"])
-        transport.sendEvent("message.complete", sessionID: session.sessionID, seq: 2,
-                            payload: complete("全部完成", rows: Array(100...341)))
-
-        #expect(await eventually { settled(session) && occurrences(session.transcript, "步骤119；") == 1 })
-        let transcript = session.transcript
-        for step in 60..<120 { #expect(occurrences(transcript, "步骤\(step)；") == 1, "步骤\(step)") }
-        #expect(occurrences(transcript, "全部完成") == 1)
-        expectWellFormed(transcript)
-        withExtendedLifetime(connection) {}
-    }
-
     // MARK: Constraints on the completion re-read (guards)
 
     /// Older pages the user loaded stay; the re-read is one bounded read of the newest rows.

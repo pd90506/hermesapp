@@ -6,19 +6,27 @@ import Testing
 /// The Appearance text sizes, as the renderer and the UI fonts use them.
 @MainActor
 @Suite struct AppearanceTests {
-    /// Untouched settings draw exactly what the app drew before the settings existed.
-    @Test func defaultsAreTheFormerSizes() {
+    /// Untouched settings: 14 pt UI and content, 12 pt code; the UI styles scale up from
+    /// the system's 13 pt.
+    @Test func defaultsAreFourteenAndTwelve() {
         let sizes = TextSizes(AppearanceSettings())
-        #expect(sizes == TextSizes(ui: 13, content: 13, code: 12))
+        #expect(sizes == TextSizes(ui: 14, content: 14, code: 12))
+        #expect(sizes.uiScale == 14.0 / 13)
+        #expect(sizes.uiBodyFont != nil)
+        #expect(TextSizes.pointSize(.callout) == NSFont.preferredFont(forTextStyle: .callout).pointSize)
+    }
+
+    /// At the system's size the UI keeps the system styles untouched.
+    @Test func systemSizeKeepsTheSystemStyles() {
+        let sizes = TextSizes(ui: 13, content: 13, code: 12)
         #expect(sizes.uiScale == 1)
         #expect(sizes.uiBodyFont == nil)
-        #expect(TextSizes.pointSize(.callout) == NSFont.preferredFont(forTextStyle: .callout).pointSize)
     }
 
     @Test func customSizesResolve() {
         var settings = AppearanceSettings()
-        settings.setSize(.ui, 16, default: 13)
-        settings.setSize(.content, 15, default: 13)
+        settings.setSize(.ui, 16, default: 14)
+        settings.setSize(.content, 15, default: 14)
         settings.setSize(.code, 14, default: 12)
         let sizes = TextSizes(settings)
         #expect(sizes == TextSizes(ui: 16, content: 15, code: 14))

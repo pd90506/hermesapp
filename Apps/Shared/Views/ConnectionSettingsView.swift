@@ -3,9 +3,10 @@ import SwiftUI
 
 /// The servers, and the URL and credentials of the one picked, edited in place in
 /// `AppModel` (closing it never loses or reverts an edit; Connect saves). A sheet from
-/// the gear or on launch (`SettingsPresentation`); also the macOS Settings window.
+/// the gear or on launch (`SettingsPresentation`), and iOS. The macOS Settings window has
+/// its own layout of the same settings (`MacSettingsView`).
 struct ConnectionSettingsView: View {
-    /// Shown as a sheet (not the macOS Settings window, which has its own close button).
+    /// Shown as a sheet from the gear or on launch.
     var isSheet = false
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss

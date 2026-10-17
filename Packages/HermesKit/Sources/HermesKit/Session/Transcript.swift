@@ -238,6 +238,9 @@ public struct Transcript: Sendable, Hashable {
     /// When the latest prompt was sent here, while its reply is pending: the waiting
     /// row counts from it (see `waiting`). Cleared when no turn runs any more.
     private var lastSentAt: Date?
+    /// The latest prompt sent here (`appendUserPrompt`), by its row's id. The chat
+    /// scrolls to the bottom when it changes. A rebuild starts without one.
+    public private(set) var lastPromptID: String?
     /// Prompts sent here for which a `message.start` is still to come (see the type's
     /// note on running). Any `message.start` empties it.
     private var expectedStarts: Set<String> = []
@@ -874,6 +877,7 @@ public struct Transcript: Sendable, Hashable {
         promptSentAtStarts[item.id] = starts
         expectedStarts.insert(item.id)
         lastSentAt = sentAt
+        lastPromptID = item.id
         outputSinceWait = false
         lastError = nil
         refreshRunning()

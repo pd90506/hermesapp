@@ -379,19 +379,24 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
     @ViewBuilder let message: (_ item: TranscriptItem, _ isNewest: Bool) -> Message
     @ViewBuilder let requests: () -> Requests
 
+    @Environment(\.blockVisibility) private var blockVisibility
+
     var body: some View {
         let newestID = ConversationMarkdown.newestMessageID(in: transcript.items)
         ForEach(transcript.blocks) { block in
-            switch block {
-            case .item(let item):
-                if !item.isBlankReply {
-                    message(item, item.id == newestID)
-                }
-            case .run(let run):
-                ToolRunView(run: run) { item in
-                    message(item, item.id == newestID)
+            Group {
+                switch block {
+                case .item(let item):
+                    if !item.isBlankReply {
+                        message(item, item.id == newestID)
+                    }
+                case .run(let run):
+                    ToolRunView(run: run) { item in
+                        message(item, item.id == newestID)
+                    }
                 }
             }
+            .modifier(BlockVisibility(id: block.id, report: blockVisibility))
         }
         let waiting = transcript.waiting
         if let waiting {
@@ -407,6 +412,28 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
             Label(lastError, systemImage: "exclamationmark.triangle")
                 .uiFont(.callout)
                 .foregroundStyle(.red)
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// Told when a block of `TranscriptMessages` comes on screen or leaves it, by the
+    /// block's id. The chat uses it for the prompt it is at (`PromptRail`).
+    @Entry var blockVisibility: (@MainActor (_ blockID: String, _ isVisible: Bool) -> Void)? = nil
+}
+
+/// Reports a block's visibility to `blockVisibility`, when one is set.
+private struct BlockVisibility: ViewModifier {
+    let id: String
+    let report: (@MainActor (String, Bool) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let report {
+            content
+                .onScrollVisibilityChange(threshold: 0.01) { report(id, $0) }
+                .onDisappear { report(id, false) }
+        } else {
+            content
         }
     }
 }

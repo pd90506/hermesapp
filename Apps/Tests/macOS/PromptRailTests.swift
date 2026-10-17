@@ -112,6 +112,20 @@ import Testing
         #expect(PromptRail.spacing(count: 100, height: 400) == 4, "a long chat packs its ticks into the rail")
     }
 
+    @Test func thePanelOpensByTheCurrentPromptInsideTheRail() {
+        let height: CGFloat = 400
+        for count in [3, 10, 100] {
+            let panel = min(PromptRail.panelMaxHeight, height, CGFloat(count) * PromptRail.panelRowEstimate + 16)
+            var last: CGFloat = -1
+            for index in [nil] + (0..<count).map(Optional.some) {
+                let top = PromptRail.panelTop(index: index, count: count, height: height)
+                #expect(top >= 0 && top + panel <= height + 0.5, "count \(count), index \(String(describing: index)): top \(top)")
+                if let index, index > 0 { #expect(top >= last, "the panel moves down with the prompt") }
+                last = top
+            }
+        }
+    }
+
     @Test func aJumpBringsItsPromptOnScreenAndASendScrollsBackDown() throws {
         let ui = UI(prompts: 30)
         defer { ui.close() }

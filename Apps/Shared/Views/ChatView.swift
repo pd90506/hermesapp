@@ -15,6 +15,13 @@ struct ChatView: View {
     /// The row at the top of the transcript when an older page was asked for: once the
     /// page lands, the chat scrolls it back to the top of the screen.
     @State private var olderPageAnchor: String?
+    /// The transcript's blocks on screen (`blockVisibility`), for the prompt the chat is at.
+    @State private var visibleBlocks: Set<String> = []
+    @Environment(\.textSizes) private var sizes
+
+    /// How wide the chat's messages and composer get, centered in a wider window:
+    /// about ChatGPT's measure (48 em) at the content text size.
+    static func contentWidth(textSize: CGFloat) -> CGFloat { (textSize * 54).rounded() }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -30,11 +37,17 @@ struct ChatView: View {
                     }
                 }
                 .padding()
+                .frame(maxWidth: Self.contentWidth(textSize: sizes.content))
+                .frame(maxWidth: .infinity)
                 #if os(macOS)
-                // Room for the prompt rail at the trailing edge.
-                .padding(.trailing, PromptRail.width)
+                // Room for the prompt rail at the trailing edge, and as much on the
+                // other side so the messages stay centered.
+                .padding(.horizontal, PromptRail.room)
                 #endif
             }
+            .environment(\.blockVisibility, { id, isVisible in
+                if isVisible { visibleBlocks.insert(id) } else { visibleBlocks.remove(id) }
+            })
             // Opens at the newest message and stays there as a reply streams in.
             .defaultScrollAnchor(.bottom)
             // An older page lands above the rows on screen. Left alone, the view stays
@@ -48,11 +61,17 @@ struct ChatView: View {
                     proxy.scrollTo(id, anchor: .top)
                 }
             }
-            .promptScrolling(transcript: session.transcript, proxy: proxy)
+            .promptScrolling(transcript: session.transcript, current: currentPromptID, proxy: proxy)
         }
         .safeAreaInset(edge: .bottom) {
+            // As wide as the messages' text (the content width less its padding).
             ComposerView(composer: composer, isConnected: server.isConnected)
-                .padding(.horizontal, 12)
+                .frame(maxWidth: Self.contentWidth(textSize: sizes.content) - 32)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
+                #if os(macOS)
+                .padding(.horizontal, PromptRail.room)
+                #endif
                 .padding(.vertical, 10)
                 .background(.bar)
         }
@@ -65,6 +84,13 @@ struct ChatView: View {
         // the top of the chat: a gray band down to the first message, with a line under it.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
+    }
+
+    /// The prompt the chat is at: the last one in or above the topmost block on screen.
+    private var currentPromptID: String? {
+        let blocks = session.transcript.blocks
+        let top = blocks.first { visibleBlocks.contains($0.id) }?.id
+        return PromptMark.current(in: blocks, marks: session.transcript.promptMarks, topBlockID: top)
     }
 
     private func loadOlderMessages() async {

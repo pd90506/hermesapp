@@ -9,6 +9,11 @@ struct ConnectionSettingsView: View {
     var isSheet = false
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    #if os(iOS)
+    private let isIOS = true
+    #else
+    private let isIOS = false
+    #endif
 
     var body: some View {
         @Bindable var model = model
@@ -43,6 +48,15 @@ struct ConnectionSettingsView: View {
                 } else {
                     ServerSettingsSection(server: server, dismiss: { dismiss() })
                         .id(server.id)
+                }
+            }
+
+            // The macOS Settings window has its own tab for these.
+            if isSheet || isIOS {
+                Section {
+                    NavigationLink("Session Sources") {
+                        SessionSourcesSettingsView()
+                    }
                 }
             }
         }

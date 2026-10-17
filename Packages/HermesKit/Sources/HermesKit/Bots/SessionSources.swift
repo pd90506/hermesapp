@@ -1,4 +1,5 @@
 import Foundation
+import HermesProtocol
 
 /// What the app does with a session row's `source`, the surface Hermes stored it under
 /// (`cli`, `tui`, `desktop`, `telegram`, `cron`, …): which sources the session lists

@@ -22,14 +22,9 @@ struct AppearanceSettingsPane: View {
 
             Divider()
 
-            sizeRow("UI text:", .ui)
-            sizeRow("Content text:", .content)
-            sizeRow("Code text:", .code)
-            LabeledContent {
-                SettingsNote("UI is the sidebar, lists, tool calls and settings. Content is the messages and the composer. Code is code blocks in replies.")
-            } label: {
-                EmptyView()
-            }
+            sizeRow("UI text:", .ui, note: "The sidebar, lists, tool calls and settings.")
+            sizeRow("Content text:", .content, note: "Messages and the composer.")
+            sizeRow("Code text:", .code, note: "Code blocks in replies.")
 
             LabeledContent("Preview:") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -55,22 +50,32 @@ struct AppearanceSettingsPane: View {
         .frame(width: 560)
     }
 
-    private func sizeRow(_ title: LocalizedStringKey, _ kind: AppearanceSettings.TextKind) -> some View {
+    /// A size as a number field, "pt" and a stepper, the same width on every row so
+    /// the three line up, with what it sizes under it.
+    private func sizeRow(_ title: LocalizedStringKey, _ kind: AppearanceSettings.TextKind,
+                         note: LocalizedStringKey) -> some View {
         let platformDefault = Double(TextSizes.default(for: kind))
         let size = Binding(
             get: { model.appearance.size(kind, default: platformDefault) },
             set: { model.appearance.setSize(kind, $0, default: platformDefault) })
         return LabeledContent(title) {
-            HStack(spacing: 6) {
-                Text("\(Int(size.wrappedValue)) pt")
-                    .monospacedDigit()
-                    .foregroundStyle(model.appearance.isCustom(kind) ? .primary : .secondary)
-                    .frame(minWidth: 40, alignment: .trailing)
-                Stepper(value: size, in: AppearanceSettings.sizeRange, step: 1) {
-                    EmptyView()
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    TextField(title, value: size, format: .number.precision(.fractionLength(0)))
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .monospacedDigit()
+                        .frame(width: 48)
+                        .accessibilityIdentifier("appearanceSizeField.\(kind.rawValue)")
+                    Text("pt")
+                        .foregroundStyle(.secondary)
+                    Stepper(value: size, in: AppearanceSettings.sizeRange, step: 1) {
+                        EmptyView()
+                    }
+                    .labelsHidden()
+                    .accessibilityIdentifier("appearanceSize.\(kind.rawValue)")
                 }
-                .labelsHidden()
-                .accessibilityIdentifier("appearanceSize.\(kind.rawValue)")
+                SettingsNote(note)
             }
         }
     }

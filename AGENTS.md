@@ -113,6 +113,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   - While iterating on a change, run only the parts it touches (`scripts/vm-test.sh --keep
     --only window`, or `--test HermesMacTests/HoverTests`). Run the whole set once, with no
     `--only`/`--test`, before reporting a PR as ready to merge (decided by the user, 2026-10-16).
+  - Run `scripts/vm-test.sh` from the PR's own worktree. It streams that worktree's files into
+    the VM, which builds and tests them; nothing is built or left on the host. Only one run uses
+    the VM at a time (a lock in `/tmp`), so a second run, from any worktree, waits its turn.
 - **Tests in the VM use a Hermes installed in the VM** (decided by the user, 2026-10).
   - The test VM (`hermesapp-test-vm`, `scripts/vm-test.sh`) is cloned once and keeps its disk
     across runs, so Hermes is installed there once and reused. Window and UI tests in the VM
@@ -137,19 +140,25 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   small and the package green.
 - CI (`.github/workflows/package-tests.yml`) runs only on Linux. macOS runners cost 10x on a
   private repo, so app builds are checked by hand on the Mac.
-- **The Mac's main checkout and app builds** (decided by the user, 2026-10-16):
+- **The Mac's main checkout and app builds** (decided by the user, 2026-10-16; PR test builds
+  moved to the VM on 2026-10-17):
   - The main checkout on the Mac (`~/repo/fun/hermesapp`) stays on local `main`, kept up to
-    date with `origin/main`. Don't leave it on a feature branch, and don't start new work on a
-    merged branch.
-  - Every app build (macOS and iOS) happens in that main checkout, with Xcode's default
-    DerivedData. Don't build from other worktrees or into a custom `-derivedDataPath`.
-  - Each build overwrites the last: the host keeps exactly one Hermes.app (bundle id
+    date with `origin/main`. Don't leave it on a feature branch, don't switch it to a PR branch
+    to test it, and don't start new work on a merged branch.
+  - Write code on a new branch from the latest `origin/main`, in a separate `git worktree`
+    beside the main checkout, not in the main checkout itself.
+  - **PR test builds** happen only in the VM: run `scripts/vm-test.sh` from the PR's worktree
+    (see [Testing conventions](#testing-conventions)). Don't build a PR on the host, from its
+    worktree or anywhere else.
+  - **The host build** happens only in the main checkout, after a merge: pull `main`, build
+    with Xcode's default DerivedData (no custom `-derivedDataPath`), and relaunch our Hermes
+    app (never the official Hermes Desktop). It never waits on a VM run.
+  - Each host build overwrites the last: the host keeps exactly one Hermes.app (bundle id
     `com.example.hermesapp.mac`), the one in that DerivedData. Remove any stray copy (and
     `lsregister -u` it) rather than leaving extra builds around (decided by the user,
     2026-10-16).
-  - To build a PR branch: check `git status` first (never discard uncommitted work), switch the
-    main checkout to the branch, build, and switch back to `main` once the user has tried it.
-  - Write code on a new branch from the latest `origin/main`, in a separate `git worktree`
-    beside the main checkout, not in the main checkout itself.
+  - Only if the user asks to try a PR on the Mac before it merges: check `git status` first
+    (never discard uncommitted work), switch the main checkout to the branch, build, and switch
+    back to `main` once they have tried it.
 - When you finish a task, report: changed paths, the commands you ran and their results, and
   what remains unverified (especially anything that needs the Mac).

@@ -45,9 +45,9 @@ private struct PromptScrolling: ViewModifier {
 /// A tick per prompt the user sent, oldest at the top, down the chat's trailing edge,
 /// like the timeline beside Time Machine's windows; the prompt the chat is at is the
 /// long dark one. Hovering the rail opens a panel over it, as Notion's outline does,
-/// listing every prompt (one line each); it scrolls when the chat has more than
-/// fit, and opens at the prompt the chat is at. Clicking a tick or a prompt scrolls the
-/// chat to that prompt and its reply.
+/// listing every prompt (one line each); it opens level with the rail's top, scrolls
+/// when the chat has more than fit, and opens scrolled to the prompt the chat is at.
+/// Clicking a tick or a prompt scrolls the chat to that prompt and its reply.
 struct PromptRail: View {
     let marks: [PromptMark]
     var current: String?
@@ -87,14 +87,13 @@ struct PromptRail: View {
         return min(maxSpacing, height / CGFloat(count))
     }
 
-    /// Where the panel's top goes in a rail `height` tall: level with the tick of the
-    /// prompt at `index` (a little above it), kept inside the rail.
-    static func panelTop(index: Int?, count: Int, height: CGFloat) -> CGFloat {
-        let spacing = spacing(count: count, height: height)
-        let ticksTop = (height - spacing * CGFloat(count)) / 2
+    /// Where the panel's top goes in a rail `height` tall: level with the first tick, so
+    /// the panel opens in place of the ticks rather than beside one of them; kept inside
+    /// the rail.
+    static func panelTop(count: Int, height: CGFloat) -> CGFloat {
+        let ticksTop = (height - spacing(count: count, height: height) * CGFloat(count)) / 2
         let panel = min(panelMaxHeight, height, CGFloat(count) * panelRowEstimate + 16)
-        let tick = ticksTop + (CGFloat(index ?? 0) + 0.5) * spacing
-        return max(0, min(tick - 24, height - panel))
+        return max(0, min(ticksTop, height - panel))
     }
 
     var body: some View {
@@ -112,8 +111,7 @@ struct PromptRail: View {
                 .onHover { overRail = $0 }
                 if isOpen {
                     panel(maxHeight: min(Self.panelMaxHeight, height))
-                        .offset(y: Self.panelTop(index: marks.firstIndex { $0.id == current },
-                                                 count: marks.count, height: height))
+                        .offset(y: Self.panelTop(count: marks.count, height: height))
                         .onHover { overPanel = $0 }
                         .transition(.opacity)
                 }

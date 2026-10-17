@@ -27,7 +27,7 @@ struct SlashSuggestionList: View {
         } else if let notice = composer.slashNotice {
             // No rows: Desktop's "No matches." or why the lookup failed.
             Text(notice)
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,7 +43,7 @@ struct SlashSuggestionList: View {
                 ForEach(rows) { row in
                     if let header = row.header {
                         Text(header)
-                            .font(.caption.weight(.semibold))
+                            .uiFont(.caption, weight: .semibold)
                             .foregroundStyle(.secondary)
                             .padding(.top, 5)
                             .accessibilityAddTraits(.isHeader)
@@ -54,9 +54,9 @@ struct SlashSuggestionList: View {
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(row.suggestion.item.display ?? row.suggestion.item.text)
-                                .font(.body.monospaced())
+                                .uiFont(.body, design: .monospaced)
                             Text(row.suggestion.item.meta ?? "")
-                                .font(.caption)
+                                .uiFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                             Spacer(minLength: 0)

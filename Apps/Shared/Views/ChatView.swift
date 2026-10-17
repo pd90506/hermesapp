@@ -30,6 +30,10 @@ struct ChatView: View {
                     }
                 }
                 .padding()
+                #if os(macOS)
+                // Room for the prompt rail at the trailing edge.
+                .padding(.trailing, PromptRail.width)
+                #endif
             }
             // Opens at the newest message and stays there as a reply streams in.
             .defaultScrollAnchor(.bottom)
@@ -44,6 +48,7 @@ struct ChatView: View {
                     proxy.scrollTo(id, anchor: .top)
                 }
             }
+            .promptScrolling(transcript: session.transcript, proxy: proxy)
         }
         .safeAreaInset(edge: .bottom) {
             ComposerView(composer: composer, isConnected: server.isConnected)

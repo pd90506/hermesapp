@@ -7,11 +7,9 @@ struct SettingsPresentationTests {
         #expect(SettingsPresentation(hasServer: true).mode == .hidden)
     }
 
-    /// Typing a URL and token into the must-connect settings can't be cut short by a click.
-    @Test func requiredSettingsIgnoreOutsideClicksAndTheGear() {
+    /// The gear can't close the must-connect settings.
+    @Test func requiredSettingsIgnoreTheGear() {
         var settings = SettingsPresentation(hasServer: false)
-        settings.clickedOutside()
-        #expect(settings.mode == .required)
         settings.toggle()
         #expect(settings.mode == .required)
         settings.close()
@@ -22,34 +20,19 @@ struct SettingsPresentationTests {
         var settings = SettingsPresentation(hasServer: true)
         settings.requireConnection()
         #expect(settings.isRequired)
-        settings.clickedOutside()
-        #expect(settings.isRequired)
     }
 
-    /// Each step from its own state: open, outside click, open, gear, open, Done.
-    @Test func theGearOpensSettingsThatAnOutsideClickCloses() {
+    /// Each step from its own state: open, gear, open, Close.
+    @Test func theGearOpensAndClosesSettings() {
         var settings = SettingsPresentation(hasServer: true)
         settings.toggle()
-        #expect(settings.isTransient)
-        settings.clickedOutside()
-        #expect(settings.mode == .hidden)
-
-        settings.toggle()
-        #expect(settings.isTransient)
+        #expect(settings.mode == .transient)
         settings.toggle()  // the gear again: transient → hidden
         #expect(settings.mode == .hidden)
 
         settings.toggle()
-        #expect(settings.isTransient)
-        settings.close()  // Done, Esc, or connected
+        #expect(settings.isShown)
+        settings.close()  // Close, or connected
         #expect(settings.mode == .hidden)
-    }
-
-    /// An outside click while hidden changes nothing, so a stray one can't open anything.
-    @Test func anOutsideClickWhileHiddenDoesNothing() {
-        var settings = SettingsPresentation(hasServer: true)
-        settings.clickedOutside()
-        #expect(settings.mode == .hidden)
-        #expect(!settings.isShown)
     }
 }

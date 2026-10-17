@@ -3,8 +3,7 @@ import SwiftUI
 
 /// The Servers tab, laid out like Mail's Accounts: the servers in a list on the left with
 /// add and remove buttons under it, and the one picked on the right, its details in tabs.
-/// The same settings as `ConnectionSettingsView` (the sheet and iOS), edited in place in
-/// `AppModel`.
+/// The same settings as `ConnectionSettingsView` (iOS), edited in place in `AppModel`.
 struct ServersSettingsPane: View {
     @Environment(AppModel.self) private var model
     @State private var confirmsRemoval = false
@@ -56,7 +55,7 @@ struct ServersSettingsPane: View {
             .id(model.selectedServerID)
         }
         .padding(20)
-        .frame(width: 760, height: 480)
+        .frame(width: MacSettingsView.paneWidth, height: 480)
         .confirmationDialog(removalTitle, isPresented: $confirmsRemoval) {
             if let server = model.selectedServer {
                 Button(server.isLocal ? "Stop and Remove" : "Remove", role: .destructive) {

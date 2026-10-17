@@ -1,11 +1,10 @@
-/// Whether the connection settings are shown, and what may close them.
+/// Whether the connection settings are shown, and what may close them. On macOS the app
+/// opens its Settings window when they are shown, and hides them again at once.
 ///
 /// - `.required`: opened by the app because it can't work without a connection (no
-///   server yet, or the launch connect failed). Clicks elsewhere don't close it, so
-///   typing or pasting a URL and token can't be cut short; Done, Esc, Command-W or a
+///   server yet, or the launch connect failed). The gear doesn't close it; Close or a
 ///   successful connect do.
-/// - `.transient`: opened by the user (the gear). A click in the window outside the
-///   settings closes it too, as Done would.
+/// - `.transient`: opened by the user (the gear, on iOS).
 ///
 /// Closing never discards anything: the fields edit the app's settings directly, so
 /// every way out leaves the same state Done does.
@@ -23,7 +22,6 @@ public struct SettingsPresentation: Sendable, Equatable {
 
     public var isShown: Bool { mode != .hidden }
     public var isRequired: Bool { mode == .required }
-    public var isTransient: Bool { mode == .transient }
 
     /// The gear: opens the settings, or closes the ones it opened. It never turns the
     /// required settings into dismissable ones.
@@ -40,12 +38,7 @@ public struct SettingsPresentation: Sendable, Equatable {
         mode = .required
     }
 
-    /// A click in the window outside the settings: closes only what the user opened.
-    public mutating func clickedOutside() {
-        if mode == .transient { mode = .hidden }
-    }
-
-    /// Done, Esc, Command-W, or connected.
+    /// Close, or connected.
     public mutating func close() {
         mode = .hidden
     }

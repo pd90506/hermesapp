@@ -1,9 +1,13 @@
 import SwiftUI
 
 /// The macOS Settings window, laid out like the system apps' (Mail, Safari): a toolbar of
-/// icon-and-label tabs, and under each a form with right-aligned labels. The window takes
-/// the size of the tab shown and its title follows the tab.
+/// icon-and-label tabs, and under each a form with right-aligned labels. Every tab has
+/// the same width, so the tabs in the toolbar stay put; the window takes the height of the
+/// tab shown, and its title follows the tab.
 struct MacSettingsView: View {
+    /// The width of every tab (the Servers tab's list and details need it all).
+    static let paneWidth: CGFloat = 760
+
     var body: some View {
         TabView {
             Tab("Servers", systemImage: "server.rack") {

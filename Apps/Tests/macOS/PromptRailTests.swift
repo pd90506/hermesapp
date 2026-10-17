@@ -86,21 +86,20 @@ import Testing
             return true
         }
 
-        /// Moves the chat to its top, as a scroll would leave it. A fresh chat can
-        /// put itself back at the bottom while its lazy rows settle (seen once in a
-        /// full VM run), so this scrolls again until the chat stays up.
-        @discardableResult
-        func scrollToTop() -> Bool {
-            guard let scroll = scrollView, let document = scroll.documentView else { return false }
-            for _ in 0..<5 {
-                let top = document.isFlipped ? 0 : document.frame.height - scroll.contentView.bounds.height
-                scroll.contentView.scroll(to: NSPoint(x: 0, y: top))
-                scroll.reflectScrolledClipView(scroll.contentView)
-                settle()
-                settle()
-                if (remainingBelow ?? 0) > 100 { return true }
+        /// Scrolls the chat up with pixel scroll-wheel events, as a mouse does. Moving
+        /// the clip view directly is not a scroll SwiftUI takes as the user's: the chat
+        /// went back to the bottom within half a second (VM, 2026-10-17).
+        func wheelUp() {
+            guard let scroll = scrollView else { return }
+            // Which sign is up depends on how the event is read; try one, then the other.
+            for delta: Int32 in [120, -120] {
+                for _ in 0..<15 {
+                    let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                                        wheel1: delta, wheel2: 0, wheel3: 0)!
+                    if let wheel = NSEvent(cgEvent: event) { scroll.scrollWheel(with: wheel) }
+                }
+                if waitFor(timeout: 0.5, { (remainingBelow ?? 0) > 100 }) { return }
             }
-            return false
         }
 
         var scrollView: NSScrollView? {
@@ -167,7 +166,11 @@ import Testing
     @Test func aSendScrollsDownAfterTheUserScrolledUp() throws {
         let ui = UI(prompts: 30)
         defer { ui.close() }
-        #expect(ui.scrollToTop(), "the chat did not stay scrolled up")
+        ui.wheelUp()
+        // Still up a moment later: the chat keeps the user's scroll.
+        ui.settle()
+        ui.settle()
+        #expect(try #require(ui.remainingBelow) > 100, "the wheel did not scroll the chat up, or it went back down")
 
         ui.send("Prompt 30")
         #expect(try #require(ui.remainingBelow) < 2, "the send left the chat scrolled up")

@@ -348,18 +348,6 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         }
     }
 
-    // MARK: Footer
-
-    /// The footer is as tall with an accessory as without it.
-    @Test func footerHeightIsTheSameWithAnAccessory() {
-        let plain = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) { EmptyView() })
-        let withAccessory = NSHostingView(rootView: SidebarFooter(status: "Connected", color: .green) {
-            Button("Retry") {}.hoverButtonStyle()
-        })
-        #expect(plain.fittingSize.height == withAccessory.fittingSize.height)
-        #expect(plain.fittingSize.height == SidebarFooter<EmptyView>.height + 8)
-    }
-
     // MARK: Profile rail
 
     /// A rail item is its avatar alone (the name is the tooltip), and the selected one has

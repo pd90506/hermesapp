@@ -53,7 +53,8 @@ struct SessionManagementTests {
     private func connect(_ gateway: ScriptedGateway) async throws -> GatewayConnection {
         let connection = try await gateway.connect()
         try await connection.refreshBots()
-        try await connection.refreshHistory()
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
         return connection
     }
 
@@ -139,7 +140,8 @@ struct SessionManagementTests {
         let gateway = botGateway(listings: ["coder": [sessionRow(id: "side-1")]])
         let connection = try await connect(gateway)
         let side = try await connection.newSideChat(profile: "coder")
-        try await connection.refreshHistory()
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
 
         try await connection.rename(side, to: "Refactor plan")
 

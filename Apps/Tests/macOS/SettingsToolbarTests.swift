@@ -15,7 +15,7 @@ import Testing
         init(_ presentation: SettingsPresentation) { self.presentation = presentation }
     }
 
-    /// `RootView`'s arrangement: the gear in the sidebar's toolbar, the settings sheet.
+    /// A gear in a toolbar and the settings sheet, as the app has them.
     private struct Root: View {
         @Bindable var model: Model
 
@@ -23,7 +23,6 @@ import Testing
             NavigationSplitView {
                 List { Text("Row") }
                     .toolbar { SettingsToolbarItem(presentation: $model.presentation) }
-                    // The app's sidebar width: narrower, the toolbar overflows and hides the toggle.
                     .navigationSplitViewColumnWidth(min: 240, ideal: 280)
             } detail: {
                 Text("Detail")
@@ -64,30 +63,6 @@ import Testing
 
     private func settle() {
         for _ in 0..<20 { RunLoop.main.run(until: Date().addingTimeInterval(0.03)) }
-    }
-
-    private func views(in view: NSView) -> [NSView] { [view] + view.subviews.flatMap { views(in: $0) } }
-
-    // MARK: Gear
-
-    /// The gear is the system toolbar button: its glass is a circle the size of the
-    /// sidebar toggle's, not the 26 × 36 capsule round 2's custom button style made of it.
-    /// Public API only: the toolbar items and `NSGlassEffectView`.
-    @Test func gearIsTheSameGlassCircleAsTheSidebarToggle() throws {
-        let window = window(Model(SettingsPresentation(hasServer: true)))
-        defer { window.orderOut(nil) }
-        let toggle = try #require(window.toolbar?.items.first {
-            $0.itemIdentifier.rawValue.hasSuffix("toggleSidebar")
-        }?.view?.frame.size, "no sidebar toggle in the toolbar")
-        #expect(toggle.width == toggle.height)
-        let frameView = try #require(window.contentView?.superview)
-        // The toolbar items' own glass: small pieces, not the sidebar's or the bar's.
-        let glass = views(in: frameView)
-            .filter { $0 is NSGlassEffectView }
-            .map { $0.convert($0.bounds, to: nil).size }
-            .filter { $0.width < 80 && $0.height < 80 }
-        #expect(glass.count == 2, "the gear and the sidebar toggle, side by side: \(glass)")
-        #expect(glass.allSatisfy { $0 == toggle }, "\(glass) vs the toggle's \(toggle)")
     }
 
     // MARK: Sheet

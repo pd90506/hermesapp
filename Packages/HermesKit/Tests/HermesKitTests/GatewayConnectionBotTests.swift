@@ -45,8 +45,6 @@ private final class BotServer: Sendable {
     /// Methods the server leaves unanswered (the test answers them);
     /// `lookUpHold` stands for the exact-title Bot Chat lookup only.
     let hold: Set<String>
-    /// Profiles whose plain (History) listing is left unanswered.
-    let heldListings = Mutex<Set<String>>([])
     /// `session.title` answers `pending: true`: the row was not written
     /// (`methods_session.py:1238-1241`).
     let titlePending: Bool
@@ -73,7 +71,6 @@ private final class BotServer: Sendable {
                 let row = botChats.withLock { $0[profile] }
                 return ["sessions": row.map { [$0] } ?? []]
             }
-            if heldListings.withLock({ $0.contains(profile) }) { return nil }
             return ["sessions": listings[profile] ?? []]
         case "session.create":
             let n = counter.withLock { $0 += 1; return $0 }
@@ -320,34 +317,11 @@ struct GatewayConnectionBotTests {
         #expect(connection.activeSession === side)
     }
 
-    @Test func historyListsEachBotsSessionsExceptItsBotChat() async throws {
-        let log = FrameLog()
-        let server = BotServer(profiles: roster, listings: [
-            // Server order = most recent activity first (`methods_session.py:149-152`), whatever started_at says.
-            "coder": [listRow(id: "coder-old", title: "Resumed today", startedAt: 1_700_000_100),
-                      listRow(id: "coder-side", title: "Refactor", startedAt: 1_700_000_300),
-                      listRow(id: "coder-chat-tip", startedAt: 1_700_000_200),  // the Bot Chat's tip, untitled
-                      listRow(id: "stray", title: "Bot Chat")],
-            "default": [listRow(id: "d1", title: "Groceries", startedAt: 1_700_000_400)],
-        ])
-        let (connection, _) = try await connect(server, log: log)
-
-        try await connection.refreshHistory()
-
-        // Grouped by bot in roster order (default first), server order within a bot.
-        #expect(connection.history.map(\.id) == ["default/d1", "coder/coder-old", "coder/coder-side"])
-        #expect(log.requests("session.list").contains { $0["params"] == ["profile": "finance", "limit": 20] })
-
-        let opened = try await connection.open(try #require(connection.history.last))
-        #expect(log.requests("session.resume").last?["params"] == ["session_id": "coder-side", "profile": "coder",
-                                                                      "omit_messages": true, "defer_history": true])
-        #expect(opened.kind == .sideChat && opened.profile == "coder")
-    }
-
     @Test func titleEventRenamesTheHistoryRow() async throws {
         let server = BotServer(profiles: roster, listings: ["coder": [listRow(id: "coder-side", title: "Refactor")]])
         let (connection, transport) = try await connect(server, log: FrameLog())
-        try await connection.refreshHistory()
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
         try await connection.open(try #require(connection.history.first))
 
         // `session.title` carries the STORED id in its payload (`prompt_turn.py:795-797`).
@@ -355,26 +329,6 @@ struct GatewayConnectionBotTests {
                             payload: ["session_id": "coder-side", "title": "Big refactor"])
 
         #expect(await eventually { connection.history.first?.summary.title == "Big refactor" })
-    }
-
-    @Test func historyKeepsABotsRowsWhenItsListingFails() async throws {
-        let log = FrameLog()
-        let server = BotServer(profiles: roster, listings: ["coder": [listRow(id: "coder-side", title: "Refactor")],
-                                                            "default": [listRow(id: "d1", title: "Groceries")]])
-        let (connection, transport) = try await connect(server, log: log)
-        try await connection.refreshHistory()
-        func coderListings() -> [JSONValue] {
-            log.requests("session.list").filter { $0["params"] == ["profile": "coder", "limit": 20] }
-        }
-        let before = coderListings().count
-        server.heldListings.withLock { _ = $0.insert("coder") }
-
-        let refresh = Task { try await connection.refreshHistory() }
-        #expect(await eventually { coderListings().count == before + 1 })
-        transport.respondError(to: try #require(coderListings().last), code: 5006, message: "database is locked")
-        try await refresh.value
-
-        #expect(connection.history.map(\.id) == ["default/d1", "coder/coder-side"])
     }
 
     // MARK: Reconnect and activity

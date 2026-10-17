@@ -51,28 +51,6 @@ extension GatewayConnection {
         }
     }
 
-    /// Explicit legacy aggregate lookup; navigation uses `refreshSessionList` instead.
-    /// Reloads `history`: each bot's sessions except its Bot Chat, grouped by
-    /// bot in roster order. Within a bot, the server's order is kept: most recent
-    /// activity first (`methods_session.py:149-152`). Listing rows carry no
-    /// activity time (`_session_row_summary`, :118-126), so bots cannot be merged
-    /// by it. A bot whose listing fails keeps its previous entries.
-    public func refreshHistory(limitPerBot: Int = 20) async throws {
-        guard let client else { throw GatewayClientError.notConnected }
-        let gen = generation
-        var entries: [HistoryEntry] = []
-        for bot in bots {
-            do {
-                let rows = try await client.listSessions(SessionListParams(limit: limitPerBot, profile: bot.name))
-                entries += rows.filter { !Self.isBotChat($0, of: bot) }.map { HistoryEntry(profile: bot.name, summary: $0) }
-            } catch {
-                entries += history.filter { $0.profile == bot.name }
-            }
-            guard gen == generation else { return }
-        }
-        history = entries
-    }
-
     /// A Bot Chat is never a History row, even if a listing shows it. Matching
     /// by title includes a *visible* row titled "Bot Chat": the registry lookup
     /// does not filter on `hidden` (`methods_session.py:526-550`), so such a row

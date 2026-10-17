@@ -312,7 +312,7 @@ private struct LocalServerDetail: View {
                             .textSelection(.enabled)
                     }
                     LabeledContent {
-                        SettingsNote("The app runs `hermes serve` on this Mac, as Hermes Desktop does: on a free port, with a new token each time. It stops when you quit the app.")
+                        SettingsNote("The app runs hermes serve on this Mac, as Hermes Desktop does: on a free port, with a new token each time. It stops when you quit the app.")
                     } label: {
                         EmptyView()
                     }

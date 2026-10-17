@@ -138,6 +138,10 @@ final class AppModel {
     /// A profile picked in the rail whose last chat isn't shown yet: shown once it is
     /// known (`RootView.restoreProfileChat`), or dropped when a row is clicked first.
     var pendingProfileChat: PendingProfileChat?
+    /// Light or dark and the text sizes (Settings ▸ Appearance), kept across launches.
+    var appearance = AppearanceSettings() {
+        didSet { saveAppearance() }
+    }
 
     init() {
         #if DEBUG
@@ -182,6 +186,10 @@ final class AppModel {
         if let data = defaults.data(forKey: Self.profileChatsKey),
             let saved = try? JSONDecoder().decode(ProfileChats.self, from: data) {
             self.profileChats = saved
+        }
+        if let data = defaults.data(forKey: Self.appearanceKey),
+            let saved = try? JSONDecoder().decode(AppearanceSettings.self, from: data) {
+            self.appearance = saved
         }
         if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
             saveServers()
@@ -452,6 +460,16 @@ final class AppModel {
     func setPinned(_ pinned: Bool, _ entry: HistoryEntry, on server: ServerConnection) {
         pins.setPinned(pinned, entry, on: server.id)
         savePins()
+    }
+
+    private static let appearanceKey = "appearance"
+
+    private func saveAppearance() {
+        #if os(macOS)
+        AppearanceTheme.apply(appearance.theme)
+        #endif
+        guard !Self.isUITest, let data = try? JSONEncoder().encode(appearance) else { return }
+        UserDefaults.standard.set(data, forKey: Self.appearanceKey)
     }
 
     private func savePins() {

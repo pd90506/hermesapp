@@ -99,8 +99,10 @@ enum MarkdownNativeText {
     }
 
     /// Renders `selection.runs[start...]`.
+    /// `codeSize` is the code block size; nil keeps it at callout's ratio to body.
     static func make(_ selection: MarkdownSelection, from start: Int = 0, bodySize: CGFloat,
-                     isReasoning: Bool = false) -> Built {
+                     codeSize: CGFloat? = nil, isReasoning: Bool = false) -> Built {
+        let code = codeSize ?? Self.codeSize(bodySize)
         let runs = selection.runs
         let result = NSMutableAttributedString()
         var starts: [Int] = []
@@ -109,7 +111,7 @@ enum MarkdownNativeText {
         var paragraphStart = start
         while paragraphStart > 0, !runs[paragraphStart - 1].text.hasSuffix("\n") { paragraphStart -= 1 }
         var paragraph = paragraphStyle(at: paragraphStart, in: runs, bodySize: bodySize)
-        var previousFont = start > 0 ? font(for: runs[start - 1], bodySize: bodySize) : font(for: runs[start], bodySize: bodySize)
+        var previousFont = font(for: runs[start > 0 ? start - 1 : start], bodySize: bodySize, codeSize: code)
         for index in start..<runs.count {
             let run = runs[index]
             if index > start, runs[index - 1].text.hasSuffix("\n") {
@@ -117,7 +119,7 @@ enum MarkdownNativeText {
             }
             starts.append(result.length)
             // A separator ends the previous paragraph, so it takes that line's font.
-            let font = run.role == .separator ? previousFont : font(for: run, bodySize: bodySize)
+            let font = run.role == .separator ? previousFont : font(for: run, bodySize: bodySize, codeSize: code)
             previousFont = font
             var attributes = selection.copyAttributes(forRunAt: index)
             attributes[.font] = font
@@ -139,7 +141,7 @@ enum MarkdownNativeText {
                     piece.addAttributes(attributes, range: NSRange(location: 0, length: piece.length))
                     result.append(piece)
                 } else {
-                    attributes[.font] = monospaced(math.isDisplay ? codeSize(bodySize) : font.pointSize)
+                    attributes[.font] = monospaced(math.isDisplay ? code : font.pointSize)
                     if math.isDisplay { attributes[.foregroundColor] = NativeColor.mdSecondary }
                     result.append(NSAttributedString(string: math.source, attributes: attributes))
                 }
@@ -232,7 +234,7 @@ enum MarkdownNativeText {
 
     private static func codeSize(_ bodySize: CGFloat) -> CGFloat { size(.callout, bodySize: bodySize) }
 
-    private static func font(for run: MarkdownSelection.Run, bodySize: CGFloat) -> NativeFont {
+    private static func font(for run: MarkdownSelection.Run, bodySize: CGFloat, codeSize: CGFloat) -> NativeFont {
         var bold = run.bold || run.role == .tableHeader
         let size: CGFloat
         switch run.role {
@@ -240,7 +242,7 @@ enum MarkdownNativeText {
             bold = true
             let styles: [Int: NativeFont.TextStyle] = [1: .title2, 2: .title3, 3: .headline]
             size = Self.size(styles[level] ?? .subheadline, bodySize: bodySize)
-        case .code: size = codeSize(bodySize)
+        case .code: size = codeSize
         case .codeLanguage: return monospaced(Self.size(.caption1, bodySize: bodySize))
         case .listMarker where run.indents.last == .list(ordered: true):
             #if os(macOS)
@@ -457,6 +459,7 @@ final class MathAttachmentCell: NSTextAttachmentCell {
 final class MarkdownSelectionTextView: NSTextView {
     private(set) var selectionModel = MarkdownSelection(document: MarkdownDocument(blocks: []))
     private(set) var appliedBodySize: CGFloat = 0
+    private var appliedCodeSize: CGFloat?
     private var appliedReasoning = false
     private var runStarts: [Int] = []
     private(set) var decorations = MarkdownDecorations()
@@ -472,24 +475,27 @@ final class MarkdownSelectionTextView: NSTextView {
     /// Where copies go; tests use a private pasteboard.
     var pasteboard = NSPasteboard.general
 
-    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, isReasoning: Bool) {
-        guard selection != selectionModel || bodySize != appliedBodySize || isReasoning != appliedReasoning,
+    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, codeSize: CGFloat? = nil, isReasoning: Bool) {
+        let sizesChanged = bodySize != appliedBodySize || codeSize != appliedCodeSize
+        guard selection != selectionModel || sizesChanged || isReasoning != appliedReasoning,
               let storage = textStorage else { return }
         let oldRange = selectedRange()
-        if bodySize == appliedBodySize, isReasoning == appliedReasoning {
+        if !sizesChanged, isReasoning == appliedReasoning {
             // Streaming appends or edits the tail: keep the unchanged leading runs.
             let prefix = zip(selectionModel.runs, selection.runs).prefix { $0 == $1 }.count
             let location = prefix < runStarts.count ? runStarts[prefix] : storage.length
-            let tail = MarkdownNativeText.make(selection, from: prefix, bodySize: bodySize, isReasoning: isReasoning)
+            let tail = MarkdownNativeText.make(selection, from: prefix, bodySize: bodySize, codeSize: codeSize,
+                                                    isReasoning: isReasoning)
             storage.replaceCharacters(in: NSRange(location: location, length: storage.length - location), with: tail.text)
             runStarts = Array(runStarts.prefix(prefix)) + tail.runStarts.map { $0 + location }
         } else {
-            let built = MarkdownNativeText.make(selection, bodySize: bodySize, isReasoning: isReasoning)
+            let built = MarkdownNativeText.make(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
             storage.setAttributedString(built.text)
             runStarts = built.runStarts
         }
         selectionModel = selection
         appliedBodySize = bodySize
+        appliedCodeSize = codeSize
         appliedReasoning = isReasoning
         decorations = MarkdownDecorations(selection, runStarts: runStarts, length: storage.length)
         let newInsets = MarkdownDecorations.insets(for: selection.runs)
@@ -703,6 +709,8 @@ struct SelectableMarkdownText: NSViewRepresentable {
     /// The width the view will be placed at, when the caller already fixes it
     /// (table cells): it measures with its own layout and never needs a second one.
     var width: CGFloat? = nil
+    /// Code blocks inside the prose (in a list or quote); nil keeps callout's ratio.
+    var codeSize: CGFloat? = nil
 
     func makeNSView(context: Context) -> MarkdownSelectionTextView {
         MarkdownSelectionTextView.make()
@@ -712,7 +720,7 @@ struct SelectableMarkdownText: NSViewRepresentable {
         view.fixedWidth = width
         view.messageSource = source
         view.conversationSource = conversationSource
-        view.apply(selection, bodySize: bodySize, isReasoning: isReasoning)
+        view.apply(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: MarkdownSelectionTextView, context: Context) -> CGSize? {
@@ -804,6 +812,7 @@ final class MarkdownSelectionTextView: UITextView {
     private var ownedStorage: NSTextStorage?
     private(set) var selectionModel = MarkdownSelection(document: MarkdownDocument(blocks: []))
     private(set) var appliedBodySize: CGFloat = 0
+    private var appliedCodeSize: CGFloat?
     private var appliedReasoning = false
     private var runStarts: [Int] = []
     private(set) var decorations = MarkdownDecorations()
@@ -812,23 +821,26 @@ final class MarkdownSelectionTextView: UITextView {
     private var quoteBars: [UIView] = []
     private var measured: (width: CGFloat, height: CGFloat)?
 
-    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, isReasoning: Bool) {
-        guard selection != selectionModel || bodySize != appliedBodySize || isReasoning != appliedReasoning else { return }
+    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, codeSize: CGFloat? = nil, isReasoning: Bool) {
+        let sizesChanged = bodySize != appliedBodySize || codeSize != appliedCodeSize
+        guard selection != selectionModel || sizesChanged || isReasoning != appliedReasoning else { return }
         let oldRange = selectedRange
-        if bodySize == appliedBodySize, isReasoning == appliedReasoning {
+        if !sizesChanged, isReasoning == appliedReasoning {
             // Streaming appends or edits the tail: keep the unchanged leading runs.
             let prefix = zip(selectionModel.runs, selection.runs).prefix { $0 == $1 }.count
             let location = prefix < runStarts.count ? runStarts[prefix] : textStorage.length
-            let tail = MarkdownNativeText.make(selection, from: prefix, bodySize: bodySize, isReasoning: isReasoning)
+            let tail = MarkdownNativeText.make(selection, from: prefix, bodySize: bodySize, codeSize: codeSize,
+                                                    isReasoning: isReasoning)
             textStorage.replaceCharacters(in: NSRange(location: location, length: textStorage.length - location), with: tail.text)
             runStarts = Array(runStarts.prefix(prefix)) + tail.runStarts.map { $0 + location }
         } else {
-            let built = MarkdownNativeText.make(selection, bodySize: bodySize, isReasoning: isReasoning)
+            let built = MarkdownNativeText.make(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
             attributedText = built.text
             runStarts = built.runStarts
         }
         selectionModel = selection
         appliedBodySize = bodySize
+        appliedCodeSize = codeSize
         appliedReasoning = isReasoning
         decorations = MarkdownDecorations(selection, runStarts: runStarts, length: textStorage.length)
         let insets = MarkdownDecorations.insets(for: selection.runs)
@@ -926,6 +938,8 @@ struct SelectableMarkdownText: UIViewRepresentable {
     let conversationSource: (() -> String)?
     /// The width the view will be placed at, when the caller already knows it.
     var width: CGFloat? = nil
+    /// Code blocks inside the prose (in a list or quote); nil keeps callout's ratio.
+    var codeSize: CGFloat? = nil
 
     func makeUIView(context: Context) -> MarkdownSelectionTextView {
         // TextKit 1 from the start: the decorations and math use NSLayoutManager.
@@ -942,7 +956,7 @@ struct SelectableMarkdownText: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MarkdownSelectionTextView, context: Context) {
-        view.apply(selection, bodySize: bodySize, isReasoning: isReasoning)
+        view.apply(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MarkdownSelectionTextView, context: Context) -> CGSize? {

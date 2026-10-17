@@ -185,7 +185,7 @@ struct SessionListView: View {
             } else if connection.history.isEmpty && !connection.sessionListLoading
                         && connection.sessionListError == nil {
                 Text("No sessions yet")
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
             ForEach(model.pins.split(connection.history, on: server.id).others) { entry in
@@ -285,7 +285,7 @@ struct SessionListView: View {
         if let error = model.actionError {
             HStack(alignment: .top) {
                 Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.callout)
+                    .uiFont(.callout)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
                 Spacer()
@@ -298,7 +298,7 @@ struct SessionListView: View {
         }
         if waitingCount > 0 {
             Label("\(waitingCount) chat(s) waiting for you", systemImage: "hand.raised.fill")
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)

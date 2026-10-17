@@ -9,6 +9,11 @@ struct ConnectionSettingsView: View {
     var isSheet = false
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    #if os(iOS)
+    private let isIOS = true
+    #else
+    private let isIOS = false
+    #endif
 
     var body: some View {
         @Bindable var model = model
@@ -43,6 +48,15 @@ struct ConnectionSettingsView: View {
                 } else {
                     ServerSettingsSection(server: server, dismiss: { dismiss() })
                         .id(server.id)
+                }
+            }
+
+            // The macOS Settings window has its own tab for these.
+            if isSheet || isIOS {
+                Section {
+                    NavigationLink("Appearance") {
+                        AppearanceSettingsView()
+                    }
                 }
             }
         }
@@ -108,7 +122,7 @@ private struct ServerSettingsSection: View {
             }
             .disabled(!server.hasURL)
             if let probe = server.probeResult {
-                Text(probe).font(.footnote).foregroundStyle(.secondary)
+                Text(probe).uiFont(.footnote).foregroundStyle(.secondary)
             }
         } header: {
             Text("Hermes Dashboard")
@@ -138,7 +152,7 @@ private struct ServerSettingsSection: View {
             SecureField(server.config.authMode.secretLabel, text: $server.secret)
                 .textContentType(.password)
             if let help = server.config.authMode.help {
-                Text(help).font(.footnote).foregroundStyle(.secondary)
+                Text(help).uiFont(.footnote).foregroundStyle(.secondary)
             }
         }
 

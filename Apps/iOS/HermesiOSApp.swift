@@ -9,6 +9,7 @@ struct HermesiOSApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
+                .appearance(model.appearance)
                 .onChange(of: scenePhase) { _, phase in
                     // iOS suspends sockets in the background; reconnect on return.
                     // The connection's replay logic restores the active session.

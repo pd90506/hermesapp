@@ -159,12 +159,10 @@ private struct ServerDetail: View {
     var body: some View {
         VStack(spacing: 12) {
             TabView {
-                Tab("Server Information") {
-                    information
-                }
-                Tab("Sign-in") {
-                    signIn
-                }
+                information
+                    .tabItem { Text("Server Information") }
+                signIn
+                    .tabItem { Text("Sign-in") }
             }
 
             ServerActionBar(server: server) {
@@ -267,23 +265,22 @@ private struct LocalServerDetail: View {
     var body: some View {
         VStack(spacing: 12) {
             TabView {
-                Tab("This Mac") {
-                    Form {
-                        ServerStatus(server: server)
-                        if server.isConnected {
-                            LabeledContent("Address:", value: server.config.serverURL)
-                                .textSelection(.enabled)
-                        }
-                        LabeledContent {
-                            SettingsNote("The app runs `hermes serve` on this Mac, as Hermes Desktop does: on a free port, with a new token each time. It stops when you quit the app.")
-                        } label: {
-                            EmptyView()
-                        }
+                Form {
+                    ServerStatus(server: server)
+                    if server.isConnected {
+                        LabeledContent("Address:", value: server.config.serverURL)
+                            .textSelection(.enabled)
                     }
-                    .formStyle(.columns)
-                    .padding(20)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    LabeledContent {
+                        SettingsNote("The app runs `hermes serve` on this Mac, as Hermes Desktop does: on a free port, with a new token each time. It stops when you quit the app.")
+                    } label: {
+                        EmptyView()
+                    }
                 }
+                .formStyle(.columns)
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .tabItem { Text("This Mac") }
             }
 
             ServerActionBar(server: server) {

@@ -74,6 +74,28 @@ import Testing
             for _ in 0..<10 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         }
 
+        /// Runs the loop until `condition` holds, for at most `timeout` seconds. Under
+        /// load (the full VM run) a scroll can take more than `settle`'s 0.2 s to land.
+        @discardableResult
+        func waitFor(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition() {
+                if Date() > deadline { return false }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            return true
+        }
+
+        /// Scrolls up the way a mouse wheel does: pixel wheel events to the scroll view.
+        func wheelUp(by pixels: Int32) {
+            guard let scroll = scrollView else { return }
+            for _ in 0..<(pixels / 200) {
+                let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                                    wheel1: 200, wheel2: 0, wheel3: 0)!
+                if let wheel = NSEvent(cgEvent: event) { scroll.scrollWheel(with: wheel) }
+            }
+        }
+
         var scrollView: NSScrollView? {
             func find(_ view: NSView) -> NSScrollView? {
                 (view as? NSScrollView) ?? view.subviews.lazy.compactMap(find).first
@@ -99,11 +121,14 @@ import Testing
         func jump(to index: Int) {
             chat.jump = chat.transcript.promptMarks[index]
             settle()
+            waitFor { (remainingBelow ?? 0) > 100 }
         }
 
+        /// Sends `text` and waits for the chat to reach the bottom (or the timeout).
         func send(_ text: String) {
             chat.transcript.appendUserPrompt(text)
             settle()
+            waitFor { (remainingBelow ?? .infinity) < 2 }
         }
     }
 
@@ -135,14 +160,9 @@ import Testing
     @Test func aSendScrollsDownAfterTheUserScrolledUp() throws {
         let ui = UI(prompts: 30)
         defer { ui.close() }
-        let scroll = try #require(ui.scrollView)
-        let document = try #require(scroll.documentView)
-        // As a scroll wheel would leave it: near the top.
-        let top = document.isFlipped ? 0 : document.frame.height - scroll.contentView.bounds.height
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: top))
-        scroll.reflectScrolledClipView(scroll.contentView)
-        ui.settle()
-        #expect(try #require(ui.remainingBelow) > 100, "the chat did not scroll up")
+        ui.wheelUp(by: 1600)
+        ui.waitFor { (ui.remainingBelow ?? 0) > 100 }
+        #expect(try #require(ui.remainingBelow) > 100, "the wheel did not scroll the chat up")
 
         ui.send("Prompt 30")
         #expect(try #require(ui.remainingBelow) < 2, "the send left the chat scrolled up")

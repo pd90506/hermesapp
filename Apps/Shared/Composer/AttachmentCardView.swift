@@ -38,11 +38,11 @@ struct AttachmentCardView: View {
             thumbnailView
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(detail)
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -119,11 +119,11 @@ struct UploadingCardView: View {
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text("Uploading…")
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

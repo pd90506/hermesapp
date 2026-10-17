@@ -26,7 +26,7 @@ struct MessageActionBar: View {
                 .help("Copy Message")
             if let timestamp {
                 Text(timestamp, format: .relative(presentation: .named))
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
             if alignment == .leading { Spacer(minLength: 0) }

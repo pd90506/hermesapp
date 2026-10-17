@@ -57,6 +57,9 @@ struct ConnectionSettingsView: View {
                     NavigationLink("Session Sources") {
                         SessionSourcesSettingsView()
                     }
+                    NavigationLink("Appearance") {
+                        AppearanceSettingsView()
+                    }
                 }
             }
         }
@@ -122,7 +125,7 @@ private struct ServerSettingsSection: View {
             }
             .disabled(!server.hasURL)
             if let probe = server.probeResult {
-                Text(probe).font(.footnote).foregroundStyle(.secondary)
+                Text(probe).uiFont(.footnote).foregroundStyle(.secondary)
             }
         } header: {
             Text("Hermes Dashboard")
@@ -152,7 +155,7 @@ private struct ServerSettingsSection: View {
             SecureField(server.config.authMode.secretLabel, text: $server.secret)
                 .textContentType(.password)
             if let help = server.config.authMode.help {
-                Text(help).font(.footnote).foregroundStyle(.secondary)
+                Text(help).uiFont(.footnote).foregroundStyle(.secondary)
             }
         }
 

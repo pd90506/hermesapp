@@ -19,7 +19,7 @@ struct SessionListHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            ColumnTitle(title: title, subtitle: subtitle, font: .title3.weight(.semibold))
+            ColumnTitle(title: title, subtitle: subtitle, style: .title3, weight: .semibold)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let newChat {
                 newChat
@@ -37,16 +37,17 @@ struct ColumnTitle: View {
     let title: String
     var subtitle: String?
     /// The title bar's size by default; the iOS header's is larger.
-    var font: Font = .headline
+    var style: Font.TextStyle = .headline
+    var weight: Font.Weight? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(font)
+                .uiFont(style, weight: weight)
                 .lineLimit(1)
             if let subtitle {
                 Text(subtitle)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -70,7 +71,7 @@ struct NewChatButton: View {
         Button("New chat", systemImage: "square.and.pencil", action: action)
             .labelStyle(.iconOnly)
             #if os(iOS)
-            .font(.title3)
+            .uiFont(.title3)
             .frame(width: 44, height: 44)
             .contentShape(.rect)
             #endif
@@ -127,7 +128,7 @@ struct ProfileRailItem: View {
                           color: bot.avatarColor.map(Color.init(rgb:)), squared: isSelected || isHovered)
                 #if os(iOS)
                 Text(bot.displayName)
-                    .font(.caption2)
+                    .uiFont(.caption2)
                     .fontWeight(isSelected ? .semibold : .regular)
                     .foregroundStyle(isSelected ? .primary : .secondary)
                     .lineLimit(1)
@@ -209,7 +210,7 @@ struct SidebarFooter<Accessory: View>: View {
                     .fill(color)
                     .frame(width: 8, height: 8)
                 Text(status)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -239,13 +240,13 @@ struct BotRow: View {
                     Spacer(minLength: 4)
                     if let lastActive = bot.lastActive {
                         Text(lastActive, format: .relative(presentation: .named))
-                            .font(.caption2)
+                            .uiFont(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
                 Text(subtitle)
-                    .font(.caption)
+                    .uiFont(.caption)
                     .foregroundStyle(activity == .waitingForYou ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
             }
@@ -275,7 +276,7 @@ struct PinnedBotChat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(Bot.chatTitle)
-                .font(.caption.weight(.semibold))
+                .uiFont(.caption, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, Hover.rowContentInset)
                 .accessibilityHidden(true)
@@ -454,7 +455,7 @@ struct HistoryRow<Actions: View>: View {
                     .lineLimit(1)
                 if let started = entry.summary.startedAt, started > 0 {
                     Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
-                        .font(.caption)
+                        .uiFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -464,7 +465,7 @@ struct HistoryRow<Actions: View>: View {
                 actions()
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.body.weight(.semibold))
+                    .uiFont(.body, weight: .semibold)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }

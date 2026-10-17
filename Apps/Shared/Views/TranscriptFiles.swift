@@ -202,12 +202,12 @@ struct FileChipView: View {
                     .frame(width: 18, height: 18)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(name)
-                            .font(.callout)
+                            .uiFont(.callout)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         if let error = actions.error {
                             Text(error)
-                                .font(.caption2)
+                                .uiFont(.caption2)
                                 .foregroundStyle(.red)
                                 .lineLimit(2)
                         }

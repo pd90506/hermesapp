@@ -103,6 +103,12 @@ extension ComposerTextView: NSViewRepresentable {
         guard let textView = coordinator.textView else { return }
         coordinator.bind(textView)
         coordinator.showDraft()
+        // The content size (Settings ▸ Appearance); 13 pt, the body style, by default.
+        let size = context.environment.textSizes.content
+        if textView.font?.pointSize != size {
+            textView.font = .systemFont(ofSize: size)
+            coordinator.measure(during: .viewUpdate)
+        }
         if coordinator.focusRequest != focusRequest {
             coordinator.focusRequest = focusRequest
             DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
@@ -429,6 +435,15 @@ extension ComposerTextView: UIViewRepresentable {
         coordinator.parent = self
         coordinator.bind(textView)
         coordinator.showDraft(in: textView)
+        // The content size (Settings ▸ Appearance), still scaled by Dynamic Type.
+        let size = context.environment.textSizes.content
+        if coordinator.contentSize != size {
+            coordinator.contentSize = size
+            textView.font = size == TextSizes.defaults.content
+                ? .preferredFont(forTextStyle: .body)
+                : UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: size))
+            coordinator.measure(textView, deferred: true)
+        }
         if coordinator.focusRequest != focusRequest {
             coordinator.focusRequest = focusRequest
             // Only on explicit requests: popping the keyboard on every chat open is intrusive on a phone.
@@ -442,6 +457,8 @@ extension ComposerTextView: UIViewRepresentable {
         var parent: ComposerTextView
         var focusRequest: Int
         var hasAppeared = false
+        /// The content size the font was last set for.
+        var contentSize: CGFloat?
 
         init(_ parent: ComposerTextView) {
             self.parent = parent

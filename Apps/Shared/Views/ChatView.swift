@@ -96,7 +96,7 @@ private struct HistoryHeader: View {
             content
             Spacer()
         }
-        .font(.caption)
+        .uiFont(.caption)
         .foregroundStyle(.secondary)
         .onScrollVisibilityChange(threshold: 0.2) { isVisible = $0 }
         .task(id: Trigger(isVisible: isVisible, offset: session.transcript.nextOlderOffset)) {
@@ -190,6 +190,7 @@ private struct MessageRow: View {
                         }
                         if !item.text.isEmpty || (item.images.isEmpty && item.attachments.isEmpty) {
                             Text(item.text)
+                                .contentFont()
                                 .textSelection(.enabled)
                                 .padding(10)
                                 .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
@@ -212,7 +213,7 @@ private struct MessageRow: View {
             ToolMessageContent(item: item)
                 .contextMenu { copyMenu }
         case .system:
-            Text(item.text).font(.caption).foregroundStyle(.secondary)
+            Text(item.text).uiFont(.caption).foregroundStyle(.secondary)
                 .contextMenu { copyMenu }
         }
     }

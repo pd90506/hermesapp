@@ -55,7 +55,7 @@ struct ProfileRailView: View {
                 model.settingsPresentation.toggle()
             }
             .labelStyle(.iconOnly)
-            .font(.title3)
+            .uiFont(.title3)
             .foregroundStyle(.secondary)
             .hoverButtonStyle(.circle, padding: 8)
             .help("Settings")
@@ -101,7 +101,7 @@ struct ProfileRailView: View {
         }
         if connection.bots.isEmpty {
             Image(systemName: server.isConnected ? "person.crop.circle.badge.questionmark" : "bolt.horizontal.circle")
-                .font(.title2)
+                .uiFont(.title2)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)

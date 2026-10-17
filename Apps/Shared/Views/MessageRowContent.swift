@@ -379,7 +379,7 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
     @ViewBuilder let message: (_ item: TranscriptItem, _ isNewest: Bool) -> Message
     @ViewBuilder let requests: () -> Requests
 
-    @Environment(\.blockVisibility) private var blockVisibility
+    @Environment(\.visibleBlocks) private var visibleBlocks
 
     var body: some View {
         let newestID = ConversationMarkdown.newestMessageID(in: transcript.items)
@@ -396,7 +396,7 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
                     }
                 }
             }
-            .modifier(BlockVisibility(id: block.id, report: blockVisibility))
+            .modifier(BlockVisibility(id: block.id, blocks: visibleBlocks))
         }
         let waiting = transcript.waiting
         if let waiting {
@@ -416,22 +416,32 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
     }
 }
 
-extension EnvironmentValues {
-    /// Told when a block of `TranscriptMessages` comes on screen or leaves it, by the
-    /// block's id. The chat uses it for the prompt it is at (`PromptRail`).
-    @Entry var blockVisibility: (@MainActor (_ blockID: String, _ isVisible: Bool) -> Void)? = nil
+/// The blocks of `TranscriptMessages` on screen, by id. The chat uses them for the
+/// prompt it is at (`PromptRail`). A class, so the environment holds one stable
+/// reference rather than a closure that changes on every update.
+@MainActor @Observable final class VisibleBlocks {
+    private(set) var ids: Set<String> = []
+
+    func set(_ id: String, visible: Bool) {
+        if visible { ids.insert(id) } else { ids.remove(id) }
+    }
 }
 
-/// Reports a block's visibility to `blockVisibility`, when one is set.
+extension EnvironmentValues {
+    /// Where `TranscriptMessages` reports which of its blocks are on screen, when set.
+    @Entry var visibleBlocks: VisibleBlocks? = nil
+}
+
+/// Reports a block's visibility to `visibleBlocks`, when one is set.
 private struct BlockVisibility: ViewModifier {
     let id: String
-    let report: (@MainActor (String, Bool) -> Void)?
+    let blocks: VisibleBlocks?
 
     func body(content: Content) -> some View {
-        if let report {
+        if let blocks {
             content
-                .onScrollVisibilityChange(threshold: 0.01) { report(id, $0) }
-                .onDisappear { report(id, false) }
+                .onScrollVisibilityChange(threshold: 0.01) { blocks.set(id, visible: $0) }
+                .onDisappear { blocks.set(id, visible: false) }
         } else {
             content
         }

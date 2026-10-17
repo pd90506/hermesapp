@@ -482,14 +482,15 @@ final class LiveChatUITests: XCTestCase {
         let composer = app.textViews.firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
 
-        // Each reply ends with its marker as a paragraph of its own: a text view holding
-        // exactly the marker (the prompt holds more).
+        // Each reply ends with its marker. The reply's text view holds it with the list;
+        // the prompt holds it too, so its wording ("bulleted list") tells them apart.
         for round in 1...3 {
             let marker = "RAIL\(round)-\(Int.random(in: 1000...9999))"
             press(composer)
-            composer.typeText("Round \(round): write the numbers 1 to 25 as a bulleted list, then a blank line, then a last paragraph with exactly \(marker). Do not use tools.")
+            composer.typeText("Round \(round): write the numbers 1 to 25 as a bulleted list, then a blank line, then a last paragraph with exactly \(marker). Do not repeat these instructions. Do not use tools.")
             press(app.buttons["Send"].firstMatch)
-            let reply = app.textViews.matching(NSPredicate(format: "value == %@", marker))
+            let reply = app.textViews.matching(NSPredicate(
+                format: "value CONTAINS %@ AND NOT (value CONTAINS %@)", marker, "bulleted list"))
             let deadline = Date().addingTimeInterval(150)
             while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
             XCTAssertGreaterThanOrEqual(reply.count, 1, "round \(round) answered")

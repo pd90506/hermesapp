@@ -29,6 +29,11 @@ struct HermesMacApp: App {
                         ConnectionSettingsView()
                     }
                 }
+                Tab("Session Sources", systemImage: "tray.2") {
+                    NavigationStack {
+                        SessionSourcesSettingsView()
+                    }
+                }
                 Tab("Appearance", systemImage: "paintpalette") {
                     NavigationStack {
                         AppearanceSettingsView()

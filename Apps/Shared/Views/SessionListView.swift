@@ -182,13 +182,13 @@ struct SessionListView: View {
             if connection.bots.isEmpty {
                 Text(server.isConnected ? "No profiles available" : "Connect to browse sessions")
                     .foregroundStyle(.secondary)
-            } else if connection.history.isEmpty && !connection.sessionListLoading
+            } else if connection.visibleHistory.isEmpty && !connection.sessionListLoading
                         && connection.sessionListError == nil {
                 Text("No sessions yet")
                     .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
-            ForEach(model.pins.split(connection.history, on: server.id).others) { entry in
+            ForEach(model.pins.split(connection.visibleHistory, on: server.id).others) { entry in
                 sessionRow(entry, on: server)
             }
         } header: {
@@ -198,7 +198,7 @@ struct SessionListView: View {
 
     /// Pinned sessions, above the rest, while there are any.
     @ViewBuilder private func pinnedSection(_ server: ServerConnection) -> some View {
-        let pinned = model.pins.split(server.connection.history, on: server.id).pinned
+        let pinned = model.pins.split(server.connection.visibleHistory, on: server.id).pinned
         if !pinned.isEmpty {
             Section {
                 ForEach(pinned) { entry in

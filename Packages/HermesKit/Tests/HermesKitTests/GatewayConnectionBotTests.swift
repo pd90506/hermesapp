@@ -317,6 +317,34 @@ struct GatewayConnectionBotTests {
         #expect(connection.activeSession === side)
     }
 
+    @Test func newSessionsCarryTheChosenSource() async throws {
+        let log = FrameLog()
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
+        connection.sourceSettings.newSessionSource = "desktop"
+
+        try await connection.newSideChat(profile: "coder")
+        try await connection.openBotChat(profile: "finance")
+
+        #expect(log.requests("session.create").map { $0["params"]?["source"] } == ["desktop", "desktop"])
+    }
+
+    @Test func listLeavesOutRowsOfHiddenSources() async throws {
+        let rows: JSONValue = [
+            listRow(id: "from-desktop"),
+            ["id": "from-telegram", "title": "", "preview": "", "started_at": 1_700_000_000,
+             "message_count": 2, "source": "telegram"],
+            ["id": "no-source", "title": "", "preview": "", "started_at": 1_700_000_000, "message_count": 2],
+        ]
+        let (connection, _) = try await connect(BotServer(profiles: roster, listings: ["coder": rows]), log: FrameLog())
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
+        connection.sourceSettings.setHidden(true, "Telegram")
+
+        #expect(connection.history.map(\.summary.id) == ["from-desktop", "from-telegram", "no-source"])
+        #expect(connection.visibleHistory.map(\.summary.id) == ["from-desktop", "no-source"])
+        #expect(connection.historySources == ["desktop", "telegram"])
+    }
+
     @Test func titleEventRenamesTheHistoryRow() async throws {
         let server = BotServer(profiles: roster, listings: ["coder": [listRow(id: "coder-side", title: "Refactor")]])
         let (connection, transport) = try await connect(server, log: FrameLog())

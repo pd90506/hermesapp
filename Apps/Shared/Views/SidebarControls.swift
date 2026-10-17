@@ -81,7 +81,7 @@ struct NewChatButton: View {
     }
 }
 
-/// The sidebar's Settings button: opens the settings sheet (`RootView`).
+/// The session list's Settings button on iPhone: opens the settings sheet (`RootView`).
 ///
 /// The system toolbar button, unstyled, so macOS 26 gives it the same glass circle,
 /// glyph weight and hover as the sidebar toggle beside it. (A custom style squeezed it

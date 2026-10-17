@@ -1,8 +1,8 @@
 import HermesKit
 import SwiftUI
 
-/// The Appearance tab: the same settings as `AppearanceSettingsView` (the sheet and
-/// iOS), as a columns form.
+/// The Appearance tab: the same settings as `AppearanceSettingsView` (iOS), as a
+/// columns form.
 struct AppearanceSettingsPane: View {
     @Environment(AppModel.self) private var model
     @Environment(\.textSizes) private var sizes
@@ -47,7 +47,7 @@ struct AppearanceSettingsPane: View {
         }
         .formStyle(.columns)
         .padding(20)
-        .frame(width: 560)
+        .frame(width: MacSettingsView.paneWidth)
     }
 
     /// A size as a number field, "pt" and a stepper, the same width on every row so

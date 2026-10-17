@@ -15,8 +15,8 @@ struct ChatView: View {
     /// The row at the top of the transcript when an older page was asked for: once the
     /// page lands, the chat scrolls it back to the top of the screen.
     @State private var olderPageAnchor: String?
-    /// The transcript's blocks on screen (`blockVisibility`), for the prompt the chat is at.
-    @State private var visibleBlocks: Set<String> = []
+    /// The transcript's blocks on screen, for the prompt the chat is at.
+    @State private var visibleBlocks = VisibleBlocks()
     @Environment(\.textSizes) private var sizes
 
     /// How wide the chat's messages and composer get, centered in a wider window:
@@ -45,9 +45,7 @@ struct ChatView: View {
                 .padding(.horizontal, PromptRail.room)
                 #endif
             }
-            .environment(\.blockVisibility, { id, isVisible in
-                if isVisible { visibleBlocks.insert(id) } else { visibleBlocks.remove(id) }
-            })
+            .environment(\.visibleBlocks, visibleBlocks)
             // Opens at the newest message and stays there as a reply streams in.
             .defaultScrollAnchor(.bottom)
             // An older page lands above the rows on screen. Left alone, the view stays
@@ -89,7 +87,7 @@ struct ChatView: View {
     /// The prompt the chat is at: the last one in or above the topmost block on screen.
     private var currentPromptID: String? {
         let blocks = session.transcript.blocks
-        let top = blocks.first { visibleBlocks.contains($0.id) }?.id
+        let top = blocks.first { visibleBlocks.ids.contains($0.id) }?.id
         return PromptMark.current(in: blocks, marks: session.transcript.promptMarks, topBlockID: top)
     }
 

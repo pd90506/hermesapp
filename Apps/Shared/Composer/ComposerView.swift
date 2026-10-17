@@ -122,7 +122,7 @@ struct ComposerView: View {
     private func errorRow(_ message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.red)
                 .textSelection(.enabled)
             Spacer(minLength: 4)
@@ -145,7 +145,7 @@ struct ComposerView: View {
             ProgressView()
                 .controlSize(.small)
             Text("Compressing context…")
-                .font(.callout)
+                .uiFont(.callout)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
@@ -194,6 +194,7 @@ struct ComposerView: View {
         .overlay(alignment: .topLeading) {
             if ComposerTextView.showsPlaceholder(draft: composer.draft, composing: isComposing) {
                 Text("Message Hermes")
+                    .contentFont()
                     .foregroundStyle(.tertiary)
                     .padding(.top, ComposerTextView.verticalInset)
                     .allowsHitTesting(false)
@@ -240,7 +241,7 @@ struct ComposerView: View {
             Button("Paste", systemImage: "doc.on.clipboard", action: paste)
         } label: {
             Image(systemName: "plus")
-                .font(.body.weight(.medium))
+                .uiFont(.body, weight: .medium)
                 .frame(width: 26, height: 26)
                 .contentShape(.rect)
         }
@@ -329,7 +330,7 @@ struct ComposerView: View {
                 .font(.system(size: 8, weight: .semibold))
                 .opacity(0.7)
         }
-        .font(.caption)
+        .uiFont(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 6)
         .frame(height: 26)

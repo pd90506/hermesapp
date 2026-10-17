@@ -15,18 +15,23 @@ struct MarkdownView: View, Equatable {
     var conversationSource: (() -> String)? = nil
     var isReasoning = false
 
-    @ScaledMetric(relativeTo: .body) private var mathSize = MarkdownMetrics.bodySize
+    @Environment(\.textSizes) private var sizes
+    /// Dynamic Type on iOS; 1 on macOS.
+    @ScaledMetric(relativeTo: .body) private var typeScale: CGFloat = 1
 
     var body: some View {
+        // Reasoning is a little smaller than the reply.
+        let scale = typeScale * (isReasoning ? 0.92 : 1)
         VStack(alignment: .leading, spacing: MarkdownLayout.blockGap) {
             ForEach(MarkdownDocumentCache.presentation(for: text, streaming: isStreaming).parts) { part in
                 switch part.content {
                 case .prose(let selection):
                     SelectableMarkdownText(selection: selection, source: text,
-                                           bodySize: mathSize * (isReasoning ? 0.92 : 1),
-                                           isReasoning: isReasoning, conversationSource: conversationSource)
+                                           bodySize: sizes.content * scale,
+                                           isReasoning: isReasoning, conversationSource: conversationSource,
+                                           codeSize: sizes.code * scale)
                 case .code(let language, let code, _):
-                    MarkdownCodeBlock(language: language, code: code,
+                    MarkdownCodeBlock(language: language, code: code, codeSize: sizes.code * scale,
                                       messageSource: text, conversationSource: conversationSource)
                 case .table(let table):
                     MarkdownTableGrid(table: table, messageSource: text,
@@ -67,13 +72,6 @@ private enum MarkdownDocumentCache {
     }
 }
 
-enum MarkdownMetrics {
-    #if os(macOS)
-    static let bodySize: CGFloat = 13
-    #else
-    static let bodySize: CGFloat = 17
-    #endif
-}
 
 enum Clipboard {
     #if os(macOS)

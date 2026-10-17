@@ -2,6 +2,11 @@
 # Runs the tests in a headless macOS VM (Tart), so nothing runs on this Mac: the
 # package live tests, the macOS window tests and the macOS UI test.
 #
+# Run it from the checkout or worktree whose code you want tested (a PR's own worktree,
+# not the main checkout). Its files (tracked and untracked, minus what .gitignore lists)
+# are streamed into the VM, which builds and tests them there. Nothing is built or left
+# on this Mac: no Hermes.app, no DerivedData, no copy of the source.
+#
 #   scripts/vm-test.sh          # all of the above
 #   scripts/vm-test.sh --ios    # also the iOS-simulator UI test, in the VM (slow)
 #   scripts/vm-test.sh --keep   # leave the VM running afterwards (faster next run)
@@ -13,8 +18,9 @@
 #   scripts/vm-test.sh --test HermesMacUITests/LiveChatUITests/testEachProfileReturnsToItsLastChat
 #                                                              #  runs only its scheme)
 #
-# Only one run uses the VM at a time: a second run waits for the first (it would
-# otherwise overwrite the VM's copy of the repo and restart its dashboard mid-run).
+# Only one run uses the VM at a time, from any worktree: a second run waits for the
+# first (it would otherwise overwrite the VM's copy of the repo and restart its
+# dashboard mid-run).
 # Each step's time is printed at the end.
 #
 # scripts/live-test.sh stays for running the live tests on this Mac by hand.
@@ -23,11 +29,14 @@
 # persists, so it keeps its own Hermes, installed here on the first run: the macOS
 # tests run against a dashboard on the VM's own 127.0.0.1, in the hermesapp-test
 # profile. The model key comes from the git-ignored .env.vm-hermes
-# (OPENCODE_GO_API_KEY=..., written by the user) and is copied into the VM only.
+# (OPENCODE_GO_API_KEY=..., written by the user) in this worktree or, failing that, the
+# main checkout, and is copied into the VM only.
 # Without it the VM's Hermes still lists profiles and sessions, but can't reply.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$PWD
+# The main checkout (the one holding .git), for the git-ignored key file.
+main=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 
 IMAGE=${HERMES_VM_IMAGE:-ghcr.io/cirruslabs/macos-golden-gate-xcode:27}
 VM=${HERMES_VM_NAME:-hermesapp-test-vm}
@@ -82,7 +91,8 @@ step() {
 report_times() { step ""; [[ -n $timings ]] && printf 'vm-test.sh step times (total %ss):%s\n' "$SECONDS" "$timings"; }
 
 # One run at a time: wait for another run's lock (taken over if its process is gone).
-lock=${TMPDIR:-/tmp}/hermesapp-vm-test.lock
+# A fixed path, so runs from any worktree or shell (whatever its TMPDIR) share it.
+lock=/tmp/hermesapp-vm-test.lock
 until mkdir "$lock" 2>/dev/null; do
   holder=$(cat "$lock/pid" 2>/dev/null || true)
   if [[ -n $holder ]] && ! kill -0 "$holder" 2>/dev/null; then
@@ -96,14 +106,14 @@ trap 'rm -rf "$lock"' EXIT
 trap 'exit 130' INT TERM HUP
 SECONDS=0
 
-# 1. The VM: cloned once, 8 cores / 8 GB, headless, the repo shared read-only.
+# 1. The VM: cloned once, headless. No folder is shared: the code is streamed in (step 4).
 step "start the VM"
 if ! tart list --quiet | grep -qx "$VM"; then
   tart clone "$IMAGE" "$VM"
   tart set "$VM" --cpu 8 --memory 8192
 fi
 if ! tart list | awk -v vm="$VM" '$2 == vm && $NF == "running"' | grep -q .; then
-  nohup tart run "$VM" --no-graphics --dir="hermesapp:$repo:ro" >"${TMPDIR:-/tmp}/hermesapp-vm.log" 2>&1 &
+  nohup tart run "$VM" --no-graphics >/tmp/hermesapp-vm.log 2>&1 &
 fi
 for _ in $(seq 1 90); do tart exec "$VM" true >/dev/null 2>&1 && break; sleep 2; done
 vexec() { tart exec "$VM" /bin/zsh -lc "export PATH=\$HOME/.local/bin:\$PATH; $1"; }
@@ -119,10 +129,12 @@ vexec "hermes profile list 2>/dev/null | grep -qw $PROFILE || hermes profile cre
       memory.memory_enabled=false memory.user_profile_enabled=false; do
     hermes -p $PROFILE config set \${kv%%=*} \${kv#*=} >/dev/null
   done"
-if [[ -f $KEY_FILE ]] && grep -q '^OPENCODE_GO_API_KEY=.' "$KEY_FILE"; then
+key_file=$repo/$KEY_FILE
+[[ -f $key_file ]] || key_file=$main/$KEY_FILE
+if [[ -f $key_file ]] && grep -q '^OPENCODE_GO_API_KEY=.' "$key_file"; then
   # The key goes through a pipe into the profile's .env (and the default one); it is
   # never echoed, logged or passed on a command line.
-  grep '^OPENCODE_GO_API_KEY=' "$KEY_FILE" | head -1 | tart exec -i "$VM" /bin/zsh -lc '
+  grep '^OPENCODE_GO_API_KEY=' "$key_file" | head -1 | tart exec -i "$VM" /bin/zsh -lc '
     export PATH=$HOME/.local/bin:$PATH
     IFS= read -r line
     for f in ~/.hermes/.env "$(hermes -p '"$PROFILE"' config env-path)"; do
@@ -145,17 +157,26 @@ vexec "launchctl remove hermesapp.dashboard 2>/dev/null; pkill -f 'hermes dashbo
   for _ in \$(seq 1 90); do curl -fsS -m 2 $url/api/status >/dev/null 2>&1 && exit 0; sleep 2; done
   echo 'The VM dashboard did not start:'; tail -20 /tmp/hermesapp-dashboard.log; exit 1" || exit 1
 
-# 4. A writable copy of the repo in the VM (git data, secrets and build output left
-#    out), with an .env.live-local pointing at the VM's dashboard for the live tests.
-#    Files are compared by content (-c): right after a checkout the shared folder can
-#    report a changed file with its old size and time, and a size-and-time check
-#    skipped it. Times are not copied (no -t): that old time would land on the new
-#    content, older than the VM's build output, and Xcode would not recompile it. A
-#    changed file gets the copy time instead; an unchanged one is not touched.
-step "copy the repo into the VM"
-vexec "rsync -rlpc --delete --exclude .git --exclude .build --exclude DerivedData --exclude '.env*' --exclude Hermes.xcodeproj --exclude Config/Local.xcconfig \
-  '/Volumes/My Shared Files/hermesapp/' ~/hermesapp/
-  printf 'HERMES_LIVE_URL=%s\nHERMES_LIVE_TOKEN=%s\n' '$url' '$token' >~/hermesapp/.env.live-local"
+# 4. A writable copy of this worktree in the VM, with an .env.live-local pointing at
+#    the VM's dashboard for the live tests. The files git would see (tracked and
+#    untracked, minus .gitignore: no .git, build output or .env secrets) go through a
+#    tar pipe into a scratch folder in the VM, then into ~/hermesapp by content (-c):
+#    tar -m and rsync without -t give a changed file the copy time and leave an
+#    unchanged one untouched, so Xcode recompiles exactly what changed, also when the
+#    last run came from another branch. The excludes keep what the VM generates itself.
+#    COPYFILE_DISABLE stops macOS tar adding ._ files.
+step "copy the worktree into the VM"
+git ls-files -z --cached --others --exclude-standard \
+  | while IFS= read -r -d '' f; do [[ -e $f || -L $f ]] && printf '%s\0' "$f"; done \
+  | COPYFILE_DISABLE=1 tar -c -f - --null -T - \
+  | tart exec -i "$VM" /bin/zsh -lc "rm -rf ~/hermesapp-incoming && mkdir ~/hermesapp-incoming
+    tar -x -m -f - -C ~/hermesapp-incoming || exit 1
+    mkdir -p ~/hermesapp
+    rsync -rlpc --delete --exclude .git --exclude .build --exclude .swiftpm --exclude DerivedData --exclude '.env*' \
+      --exclude Hermes.xcodeproj --exclude Config/Local.xcconfig --exclude Config/Generated \
+      ~/hermesapp-incoming/ ~/hermesapp/ || exit 1
+    rm -rf ~/hermesapp-incoming
+    printf 'HERMES_LIVE_URL=%s\nHERMES_LIVE_TOKEN=%s\n' '$url' '$token' >~/hermesapp/.env.live-local"
 
 # 5. Package live tests, then the macOS tests (and with --ios the iOS one). Automation
 #    mode is the VM's own setting, not this Mac's.

@@ -61,10 +61,10 @@ import Testing
         let blocks = transcript.blocks
         let firstBlock = transcript.blockID(containing: first)
         let secondBlock = transcript.blockID(containing: second)
-        #expect(transcript.currentPromptID(topBlockID: firstBlock) == first)
-        #expect(transcript.currentPromptID(topBlockID: secondBlock) == second)
-        #expect(transcript.currentPromptID(topBlockID: nil) == nil)
-        #expect(transcript.currentPromptID(topBlockID: "gone") == nil)
+        #expect(transcript.currentPromptID(visibleBlockIDs: Set([firstBlock].compactMap { $0 })) == first)
+        #expect(transcript.currentPromptID(visibleBlockIDs: Set([secondBlock].compactMap { $0 })) == second)
+        #expect(transcript.currentPromptID(visibleBlockIDs: []) == nil)
+        #expect(transcript.currentPromptID(visibleBlockIDs: ["gone"]) == nil)
         #expect(blocks.count >= 2)
     }
 
@@ -79,8 +79,8 @@ import Testing
         let marks = PromptMark.marks(in: items)
         let replyOne = TranscriptGrouping.blockID(containing: "a1", in: blocks)
         let replyTwo = TranscriptGrouping.blockID(containing: "a2", in: blocks)
-        #expect(PromptMark.current(in: blocks, marks: marks, topBlockID: replyOne) == "u1")
-        #expect(PromptMark.current(in: blocks, marks: marks, topBlockID: replyTwo) == "u2")
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: Set([replyOne].compactMap { $0 })) == "u1")
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: Set([replyTwo].compactMap { $0 })) == "u2")
     }
 
     @Test func aBlockAboveEveryPromptIsAtTheFirst() {
@@ -90,6 +90,23 @@ import Testing
         ]
         let blocks = TranscriptGrouping.blocks(items, isRunning: false)
         let top = TranscriptGrouping.blockID(containing: "s", in: blocks)
-        #expect(PromptMark.current(in: blocks, marks: PromptMark.marks(in: items), topBlockID: top) == "u1")
+        #expect(PromptMark.current(in: blocks, marks: PromptMark.marks(in: items), visible: Set([top].compactMap { $0 })) == "u1")
+    }
+
+    @Test func aChatAtItsEndIsAtItsLastPrompt() {
+        let items = [
+            TranscriptItem(id: "u1", role: .user, text: "one"),
+            TranscriptItem(id: "a1", role: .assistant, text: "reply one"),
+            TranscriptItem(id: "u2", role: .user, text: "two"),
+            TranscriptItem(id: "a2", role: .assistant, text: "reply two"),
+        ]
+        let blocks = TranscriptGrouping.blocks(items, isRunning: false)
+        let marks = PromptMark.marks(in: items)
+        let ids = ["a1", "u2", "a2"].compactMap { TranscriptGrouping.blockID(containing: $0, in: blocks) }
+        let onScreen = Set(ids)
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: onScreen) == "u2",
+                "reply one fills the top of the screen, but the chat is scrolled to its end")
+        let notAtEnd = onScreen.subtracting([ids.last!])
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: notAtEnd) == "u1")
     }
 }

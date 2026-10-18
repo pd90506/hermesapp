@@ -312,9 +312,12 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
         XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                       "\(state): the sidebar over the rail \(over) and over the list \(session) differ")
-        // The band is frosted, a little off the chat's white in light mode, over a hairline.
+        // The band is frosted, a little off the chat's white in light mode, over a hairline,
+        // and the title bar reads as one: the band in the sidebar's tone.
         XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 3 },
                       "\(state): no band over the chat: \(chat), the same as under it \(below)")
+        XCTAssertTrue(zip(chat, session).allSatisfy { abs(Int($0) - Int($1)) <= 12 },
+                      "\(state): the band over the chat \(chat) and the sidebar's title bar \(session) differ")
     }
 
     /// The Bot Chat is pinned above the session list: scrolling the list leaves it where

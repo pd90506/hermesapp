@@ -268,20 +268,24 @@ private struct OpeningChatView: View {
 }
 
 extension View {
-    /// On macOS, a band under the chat's title bar: frosted Liquid Glass the toolbar's
-    /// height, with a hairline under it, the same in every state and whether or not the
-    /// pointer is over it (the system's showed none, or only under the pointer). The chat
-    /// scrolls under it as a blur, in the window's light or dark. Clear glass showed the
-    /// rows sharp, light in dark mode, with a mirrored line along its edge; materials,
-    /// SwiftUI's and AppKit's within the window alike, drew a solid band (VM, 2026-10-18).
+    /// On macOS, a band under the chat's title bar: frosted glass the toolbar's height,
+    /// in the sidebar's tone so the title bar reads as one across the window, with a
+    /// hairline under it, the same in every state and whether or not the pointer is over
+    /// it (the system's showed none, or only under the pointer). The chat scrolls under
+    /// it as a soft blur, in the window's light or dark: Liquid Glass blurs it, and the
+    /// window's background over the glass brings it to the sidebar's tone (the glass
+    /// alone was lighter than the sidebar, and than the chat in dark mode). Clear glass
+    /// showed the rows sharp, with a mirrored line along its edge; materials, SwiftUI's
+    /// and AppKit's within the window alike, drew a solid band (VM, 2026-10-18).
     @ViewBuilder func titleBarBand() -> some View {
         #if os(macOS)
         overlay(alignment: .top) {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
-                    Color.clear
+                    Color(nsColor: .windowBackgroundColor)
+                        .opacity(0.75)
+                        .background { Color.clear.glassEffect(.regular, in: .rect) }
                         .frame(height: proxy.safeAreaInsets.top)
-                        .glassEffect(.regular, in: .rect)
                     Divider()
                     Spacer(minLength: 0)
                 }
@@ -296,4 +300,3 @@ extension View {
         #endif
     }
 }
-

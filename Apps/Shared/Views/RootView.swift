@@ -1,6 +1,3 @@
-#if os(macOS)
-import AppKit
-#endif
 import HermesKit
 import HermesProtocol
 import SwiftUI
@@ -271,19 +268,20 @@ private struct OpeningChatView: View {
 }
 
 extension View {
-    /// On macOS, a band under the chat's title bar: the title bar's own frosted glass
-    /// (`TitleBarMaterial`), the toolbar's height, with a hairline under it, the same in
-    /// every state and whether or not the pointer is over it (the system's showed none,
-    /// or only under the pointer). The chat scrolls under it, blurred, in the window's
-    /// light or dark. Liquid Glass showed the rows under it sharp, light in dark mode,
-    /// with a mirrored line along its edge (2026-10-18).
+    /// On macOS, a band under the chat's title bar: frosted Liquid Glass the toolbar's
+    /// height, with a hairline under it, the same in every state and whether or not the
+    /// pointer is over it (the system's showed none, or only under the pointer). The chat
+    /// scrolls under it as a blur, in the window's light or dark. Clear glass showed the
+    /// rows sharp, light in dark mode, with a mirrored line along its edge; materials,
+    /// SwiftUI's and AppKit's within the window alike, drew a solid band (VM, 2026-10-18).
     @ViewBuilder func titleBarBand() -> some View {
         #if os(macOS)
         overlay(alignment: .top) {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
-                    TitleBarMaterial()
+                    Color.clear
                         .frame(height: proxy.safeAreaInsets.top)
+                        .glassEffect(.regular, in: .rect)
                     Divider()
                     Spacer(minLength: 0)
                 }
@@ -299,24 +297,3 @@ extension View {
     }
 }
 
-#if os(macOS)
-/// The title bar's frosted glass over the window's own content. SwiftUI's materials
-/// blend with what is behind the window, so over the chat they showed the window's
-/// plain background: a solid band with nothing scrolling under it (VM, 2026-10-18).
-private struct TitleBarMaterial: NSViewRepresentable {
-    func makeNSView(context: Context) -> EffectView {
-        let view = EffectView()
-        view.material = .titlebar
-        view.blendingMode = .withinWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ view: EffectView, context: Context) {}
-
-    final class EffectView: NSVisualEffectView {
-        // The title bar stays the window's: clicks and drags go through.
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    }
-}
-#endif

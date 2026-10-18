@@ -181,7 +181,7 @@ struct ToolMessageContent: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!hasDetail)
-                .help(hasDetail ? "Show input and output" : "")
+                .help(hasDetail ? "Show details" : "")
                 .accessibilityIdentifier(Self.accessibilityIdentifier)
                 .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
                     // Each box scrolls inside itself past `ToolCallDetail.maxLines`.

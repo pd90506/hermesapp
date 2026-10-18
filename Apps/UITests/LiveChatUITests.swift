@@ -44,7 +44,7 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
         press(newChat)
 
-        let composer = app.textViews.firstMatch
+        let composer = app.textViews["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
         press(composer)
         let marker = "PONG-\(Int.random(in: 1000...9999))"
@@ -83,7 +83,7 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
         press(newChat)
 
-        let composer = app.textViews.firstMatch
+        let composer = app.textViews["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
         press(composer)
         composer.typeText("Use the terminal tool twice: first run `echo alpha`, then run `echo beta`. "
@@ -148,7 +148,7 @@ final class LiveChatUITests: XCTestCase {
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
         try require(XCTWaiter().wait(for: [enabled], timeout: 30) == .completed, "New chat enabled")
         press(newChat)
-        let composer = app.textViews.firstMatch
+        let composer = app.textViews["composer"]
         try require(composer.waitForExistence(timeout: 30), "composer shown")
 
         checkNewChatHoldsStill(app, newChat: newChat, "a chat open")
@@ -336,7 +336,7 @@ final class LiveChatUITests: XCTestCase {
         // Bot Chat (titled by the bot) as selected instead.
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: bot)
         XCTAssertEqual(XCTWaiter().wait(for: [selected], timeout: 10), .completed, "the Bot Chat shows as selected")
-        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 30), "the Bot Chat opened")
+        XCTAssertTrue(app.textViews["composer"].waitForExistence(timeout: 30), "the Bot Chat opened")
         attach(app, "Bot Chat open")
     }
 
@@ -435,7 +435,7 @@ final class LiveChatUITests: XCTestCase {
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
         press(newChat)
-        let composer = app.textViews.firstMatch
+        let composer = app.textViews["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
         press(composer)
         let marker = "PONG-\(Int.random(in: 1000...9999))"
@@ -490,7 +490,7 @@ final class LiveChatUITests: XCTestCase {
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
         XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
         press(newChat)
-        let composer = app.textViews.firstMatch
+        let composer = app.textViews["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
 
         // Each reply ends with its marker. The reply's text view holds it with the list;

@@ -100,7 +100,8 @@ struct ReasoningText: View {
 /// The line every fold in the chat opens with (reasoning, a tool call, a turn's work, a
 /// group of its steps, a step): its label, then a chevron. The whole line is the button.
 /// Opening or closing keeps the chat's scroll place (`ChatScroll.keepingPlace`), so the
-/// line stays under the pointer and the next click closes it again.
+/// line stays under the pointer and the next click closes it again. On the Mac the pointer
+/// over a line that opens is a pointing hand, as over a link (the user, 2026-10-18).
 struct FoldButton<Label: View>: View {
     enum Chevron {
         /// Points right, turning down while open.
@@ -117,6 +118,7 @@ struct FoldButton<Label: View>: View {
     var chevron = Chevron.disclosure
     @ViewBuilder let label: Label
     @Environment(\.chatScroll) private var chatScroll
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     init(isExpanded: Binding<Bool>, showsChevron: Bool = true, @ViewBuilder label: () -> Label) {
@@ -158,6 +160,9 @@ struct FoldButton<Label: View>: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        #if os(macOS)
+        .pointerStyle(isEnabled ? .link : nil)
+        #endif
         .onHover { isHovering = $0 }
         .accessibilityValue(isExpanded ? "expanded" : "collapsed")
     }
@@ -598,8 +603,10 @@ struct TurnWorkView<Message: View>: View {
 /// A group of a turn's steps: its kind's icon and what its calls did ("Ran commands"),
 /// a chevron only under the pointer; opened, its steps one line each. Closed until the
 /// user opens it, also while the turn works in it (the user, 2026-10-18: a working turn
-/// opens one layer, its groups and text): then a spinner stands for its icon and its
-/// name speaks in the present tense ("Running commands").
+/// opens one layer, its groups and text). While the turn works in it, its line is its
+/// newest step's ("Skill · hermes-agent", then "Bash · git status"), changing as each
+/// step starts; once the turn moves on, it reads what the calls did ("Called tools, ran
+/// commands").
 struct StepGroupView: View {
     let group: StepGroup
     @State private var isExpanded: Bool
@@ -611,22 +618,25 @@ struct StepGroupView: View {
         _isExpanded = State(initialValue: isExpanded)
     }
 
+    /// The step the group's line shows: its newest, while the turn works in it.
+    static func liveStep(of group: StepGroup) -> WorkStep? {
+        group.isLive ? group.steps.last : nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             FoldButton(isExpanded: $isExpanded, chevron: .onHover) {
-                Group {
-                    if group.isLive {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
-                            .imageScale(.small)
-                            .foregroundStyle(.tertiary)
-                    }
+                if let latest = Self.liveStep(of: group) {
+                    WorkStepLine(step: latest)
+                } else {
+                    Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
+                        .imageScale(.small)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 14)
+                    Text(group.title)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
-                .frame(width: 14)
-                Text(group.title)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
             .help(group.tools.isEmpty ? group.title : group.summary)
             .accessibilityIdentifier(Self.accessibilityIdentifier)

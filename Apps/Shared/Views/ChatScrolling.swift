@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// The chat's rows, one under the other. Every row is laid out, not only those on
 /// screen: a lazy stack guessed the height of the rows it had not laid out yet and
@@ -13,6 +16,57 @@ struct TranscriptStack<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Self.spacing) {
             content
+        }
+    }
+}
+
+extension View {
+    /// The chat's column: at most `maxWidth` wide, `sideRoom` clear of each edge, centered
+    /// in `outerWidth`, the scroll view's own width. Its width and place come from that
+    /// width alone, so they stay the same whether or not a scroller takes part of it.
+    ///
+    /// Centered in the scroll view's content instead, the column moved and rewrapped when
+    /// a fold opened or closed: with a mouse connected, macOS shows a scroller that takes
+    /// 16 pt once the content outgrows the screen, and takes it back once it fits (the
+    /// user, 2026-10-18; the content's right edge moved 16 pt in the VM). The column now
+    /// leaves that much room for a scroller always.
+    func steadyColumn(maxWidth: CGFloat, sideRoom: CGFloat, in outerWidth: CGFloat?) -> some View {
+        modifier(SteadyColumn(maxWidth: maxWidth, sideRoom: sideRoom, outerWidth: outerWidth))
+    }
+}
+
+struct SteadyColumn: ViewModifier {
+    let maxWidth: CGFloat
+    let sideRoom: CGFloat
+    let outerWidth: CGFloat?
+
+    /// What a scroller can take from the scroll view's width.
+    static var scrollerRoom: CGFloat {
+        #if os(macOS)
+        NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+        #else
+        0
+        #endif
+    }
+
+    /// The column's width in a scroll view `outerWidth` wide.
+    static func width(maxWidth: CGFloat, sideRoom: CGFloat, outerWidth: CGFloat) -> CGFloat {
+        max(0, min(maxWidth, outerWidth - 2 * sideRoom - scrollerRoom))
+    }
+
+    func body(content: Content) -> some View {
+        if let outerWidth {
+            let width = Self.width(maxWidth: maxWidth, sideRoom: sideRoom, outerWidth: outerWidth)
+            content
+                .frame(width: width)
+                .padding(.leading, max(0, (outerWidth - width) / 2))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            // Before the scroll view's width is known: centered in what it offers.
+            content
+                .frame(maxWidth: maxWidth)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, sideRoom)
         }
     }
 }

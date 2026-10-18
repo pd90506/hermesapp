@@ -24,7 +24,12 @@ struct MarkdownSettingsPane: View {
                     SettingsNote("The themes are Hermes Desktop's. Choosing one clears the colors you changed.")
                 }
 
-                colorGrid
+                // Thirteen rows outgrow a short screen: they scroll, the pane keeps its height.
+                ScrollView {
+                    colorGrid
+                        .padding(.trailing, 12)
+                }
+                .scrollIndicators(.automatic)
 
                 Button("Restore Default Colors") { model.markdownColors = MarkdownColors() }
                     .disabled(model.markdownColors == MarkdownColors())
@@ -45,8 +50,11 @@ struct MarkdownSettingsPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(20)
-        .frame(width: MacSettingsView.paneWidth)
+        .frame(width: MacSettingsView.paneWidth, height: Self.paneHeight)
     }
+
+    /// Room for the preview and most of the colors; fits a 768 pt screen with the Dock.
+    static let paneHeight: CGFloat = 560
 
     private var previewSchemeBinding: Binding<ColorScheme> {
         Binding(get: { previewScheme ?? colorScheme }, set: { previewScheme = $0 })
@@ -55,7 +63,7 @@ struct MarkdownSettingsPane: View {
     /// One row per element: its name, the light and dark wells, and a reset button
     /// while it differs from the theme.
     private var colorGrid: some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
             GridRow {
                 Color.clear.frame(width: 1, height: 1)
                 ForEach(MarkdownColors.Mode.allCases, id: \.self) { mode in
@@ -89,6 +97,7 @@ struct MarkdownSettingsPane: View {
             ForEach(MarkdownColors.Mode.allCases, id: \.self) { mode in
                 ColorPicker(MarkdownColorsLabels.label(mode), selection: model.markdownColorBinding(element, mode))
                     .labelsHidden()
+                    .controlSize(.small)
                     .accessibilityIdentifier("markdownColor.\(element.rawValue).\(mode.rawValue)")
             }
             Button("Use Theme Color", systemImage: "arrow.uturn.backward") {

@@ -723,6 +723,7 @@ public struct Transcript: Sendable, Hashable {
         let dropped = storedAtSubmit.union(eligible.intersection(quietOnce))
         quietOnce = eligible.subtracting(dropped)
         if !quietOnce.isEmpty { needsReread = true }
+        keepSentImages(of: dropped)
         prompts = prompts.filter { !dropped.contains($0.key) }
         let storedAfterAll = settleByReceipt()
         removeLiveItems { settled.contains($0.id) || dropped.contains($0.id) || storedAfterAll.contains($0.id) }
@@ -751,7 +752,16 @@ public struct Transcript: Sendable, Hashable {
             return id
         })
         guard !proven.isEmpty else { return }
-        for bubble in items[historyCount...] where proven.contains(bubble.id) && !bubble.images.isEmpty {
+        keepSentImages(of: proven)
+        prompts = prompts.filter { !proven.contains($0.key) }
+        quietOnce.subtract(proven)
+        removeLiveItems { proven.contains($0.id) }
+    }
+
+    /// Before prompt bubbles go for their stored rows (`user_row_id`): remembers their
+    /// images by row (see `sentImages`) and shows them on those rows now.
+    private mutating func keepSentImages(of ids: Set<String>) {
+        for bubble in items[historyCount...] where ids.contains(bubble.id) && !bubble.images.isEmpty {
             guard case .answered(_, let row?) = prompts[bubble.id] else { continue }
             sentImages[row] = bubble.images
             for index in items[..<historyCount].indices
@@ -759,9 +769,6 @@ public struct Transcript: Sendable, Hashable {
                 items[index].images = bubble.images
             }
         }
-        prompts = prompts.filter { !proven.contains($0.key) }
-        quietOnce.subtract(proven)
-        removeLiveItems { proven.contains($0.id) }
     }
 
     /// A stored prompt row the gateway has not given its images yet shows the ones

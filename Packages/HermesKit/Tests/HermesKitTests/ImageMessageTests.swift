@@ -127,6 +127,22 @@ import FoundationNetworking
         expectWellFormed(transcript)
     }
 
+    /// A quiet read (no turn started yet: the agent build is slow) drops the bubble by
+    /// its row too; the row keeps the image.
+    @Test func aQuietReadBeforeTheTurnStarts() {
+        var transcript = Transcript()
+        let rows = [storedRow(id: 1), storedRow(id: 2)]
+        transcript.installLatestPage(rows, hasOlder: false)
+        let image = sendWithImage(&transcript)
+        transcript.installRereadPage(rows + [storedRow(id: 3, text: "看这张图")], ticket: transcript.beginReread(),
+                                     reachesStart: true)
+        #expect(images(transcript, "看这张图") == [[image]])
+        transcript.apply(event("message.start"))
+        transcript.apply(event("message.delta", ["text": "这是一张图"]))
+        #expect(images(transcript, "看这张图") == [[image]], "while streaming")
+        expectWellFormed(transcript)
+    }
+
     /// A rebuild mid-turn (`ChatSession.reset`) keeps them too.
     @Test func aRebuildKeepsThem() throws {
         var old = Transcript()

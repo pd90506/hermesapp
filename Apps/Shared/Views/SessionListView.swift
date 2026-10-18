@@ -216,7 +216,7 @@ struct SessionListView: View {
         return HistoryRow(entry: entry) {
             sessionActions(entry, on: server)
         }
-        .sidebarRowHover(isSelected: selection == item)
+        .sidebarRowHighlight(isSelected: selection == item)
         .tag(item)
     }
 

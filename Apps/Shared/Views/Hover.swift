@@ -25,12 +25,16 @@ enum Hover {
     /// the two fills stay apart by this gap.
     static let rowGap: CGFloat = 1
 
-    /// Meant to stay lighter than the sidebar's selection, even its unfocused gray, so
-    /// a selected row reads as stronger than a hovered one. Snapshots can't draw the
-    /// selection material, so that comparison is checked by eye.
+    /// Meant to stay lighter than a selected row's fill (`selection`), so a selected
+    /// row reads as stronger than a hovered one.
     static func fill(pressed: Bool) -> Color {
         .primary.opacity(pressed ? 0.11 : 0.06)
     }
+
+    /// A selected sidebar row's fill: the accent (the theme's, else the system's), light
+    /// enough that the row's text keeps its colours, as Desktop's
+    /// `--ui-row-active-background`. The same whether or not the list has focus.
+    static var selection: some ShapeStyle { .tint.opacity(0.2) }
 }
 
 extension View {
@@ -45,14 +49,14 @@ extension View {
         #endif
     }
 
-    /// A hover fill for a sidebar List row, in the shape of the row's selection: inset
-    /// `Hover.rowInset` from the List's edges, and `Hover.rowGap` from the row's top
-    /// and bottom, so a selected row beside it stays apart from it. None on the
-    /// selected row, where it would tint the selection (the row background draws
-    /// over it). The whole row reacts, not just its text.
-    func sidebarRowHover(isSelected: Bool) -> some View {
+    /// A sidebar List row's selection and hover fills, inset `Hover.rowInset` from the
+    /// List's edges. The selection (`Hover.selection`) fills the row's height; the hover
+    /// stops `Hover.rowGap` short of its top and bottom, so a selected row beside it stays
+    /// apart from it, and the selected row has none. The whole row reacts, not just its
+    /// text. The List's own selection highlight is off (`NoTableSelectionHighlight`).
+    func sidebarRowHighlight(isSelected: Bool) -> some View {
         #if os(macOS)
-        modifier(SidebarRowHover(isSelected: isSelected))
+        modifier(SidebarRowHighlight(isSelected: isSelected))
         #else
         self
         #endif
@@ -90,12 +94,14 @@ struct HoverHighlight: ViewModifier {
     }
 }
 
-struct SidebarRowHover: ViewModifier {
+#if os(macOS)
+struct SidebarRowHighlight: ViewModifier {
     var isSelected: Bool
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Hover.cornerRadius)
         content
             .frame(maxWidth: .infinity, alignment: .leading)
             // Past the content to the cell's edges: the pointer hovers the row even
@@ -103,15 +109,50 @@ struct SidebarRowHover: ViewModifier {
             // reach into the neighbouring rows.
             .contentShape(Rectangle().inset(by: -16))
             .onHover { isHovered = $0 }
+            .background { NoTableSelectionHighlight().accessibilityHidden(true) }
             .listRowBackground(
-                RoundedRectangle(cornerRadius: Hover.cornerRadius)
-                    .fill(Hover.fill(pressed: false))
-                    .opacity(isHovered && isEnabled && !isSelected ? 1 : 0)
-                    .padding(.horizontal, Hover.rowInset)
-                    .padding(.vertical, Hover.rowGap)
-                    .accessibilityHidden(true))
+                ZStack {
+                    shape
+                        .fill(Hover.fill(pressed: false))
+                        .opacity(isHovered && isEnabled && !isSelected ? 1 : 0)
+                        .padding(.vertical, Hover.rowGap)
+                    shape
+                        .fill(Hover.selection)
+                        .opacity(isSelected ? 1 : 0)
+                }
+                .padding(.horizontal, Hover.rowInset)
+                .accessibilityHidden(true))
     }
 }
+
+/// Turns off the List's own selection highlight, which AppKit draws in the system's
+/// accent while the list has focus and in gray once focus moves on (to the composer,
+/// after a session is picked): the selected row changed colour with focus, and never
+/// took the theme's. The rows draw their selection instead (`SidebarRowHighlight`).
+/// Selection itself, keyboard included, is still the List's.
+private struct NoTableSelectionHighlight: NSViewRepresentable {
+    func makeNSView(context: Context) -> Probe { Probe() }
+    func updateNSView(_ view: Probe, context: Context) { view.apply() }
+
+    final class Probe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        /// On the table the row is in. Cells are reused and moved between tables, so
+        /// every row sets it whenever it lands in one.
+        func apply() {
+            var view = superview
+            while let candidate = view, !(candidate is NSTableView) { view = candidate.superview }
+            guard let table = view as? NSTableView, table.selectionHighlightStyle != .none else { return }
+            table.selectionHighlightStyle = .none
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+#endif
 
 /// A borderless button with the hover fill: icon buttons (`.circle`) and small
 /// text buttons (`.rounded`). Focus rings are SwiftUI's, as for any styled button.

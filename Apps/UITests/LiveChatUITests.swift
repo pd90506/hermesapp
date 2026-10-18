@@ -531,9 +531,11 @@ final class LiveChatUITests: XCTestCase {
             ? app.staticTexts.matching(isFirst).firstMatch : app.textViews.matching(isFirst).firstMatch
         XCTAssertTrue(first.exists && first.isHittable, "the first prompt is on screen after the jump")
 
-        // The band follows the appearance: dark frosted glass in dark mode.
+        // The band follows the appearance: dark frosted glass in dark mode, with the
+        // first reply scrolled under it.
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).scroll(byDeltaX: 0, deltaY: -300)
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         attach(app, "Prompt rail: dark mode")
     }

@@ -22,16 +22,26 @@ private struct PromptScrolling: ViewModifier {
     let scroll: ChatScroll
     let visibleBlocks: VisibleBlocks?
     let proxy: ScrollViewProxy
+    /// The prompt last picked on the rail, the one the chat is at until the user scrolls
+    /// it away (`PromptPick`).
+    @State private var pick: PromptPick?
 
     func body(content: Content) -> some View {
         content
             .onChange(of: transcript.lastPromptID) { _, id in
                 guard id != nil else { return }
+                pick = nil
                 scroll.position.scrollTo(edge: .bottom)
             }
             #if os(macOS)
+            // The user scrolling (a trackpad, the scroller) ends a pick. The rail's own
+            // jump is not animated, so it is no scroll phase.
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { pick = nil }
+            }
             .overlay(alignment: .trailing) {
-                PromptRailOverlay(transcript: transcript, visibleBlocks: visibleBlocks, proxy: proxy)
+                PromptRailOverlay(transcript: transcript, scroll: scroll, visibleBlocks: visibleBlocks,
+                                  pick: $pick, proxy: proxy)
             }
             #endif
     }
@@ -44,18 +54,27 @@ private struct PromptScrolling: ViewModifier {
 /// a stall in the middle of a scroll.
 private struct PromptRailOverlay: View {
     let transcript: Transcript
+    let scroll: ChatScroll
     let visibleBlocks: VisibleBlocks?
+    @Binding var pick: PromptPick?
     let proxy: ScrollViewProxy
 
     var body: some View {
         let marks = transcript.promptMarks
         if !marks.isEmpty {
-            let current = visibleBlocks.flatMap { transcript.currentPromptID(visibleBlockIDs: $0.ids) }
+            let current = visibleBlocks.flatMap {
+                transcript.currentPromptID(visibleBlockIDs: $0.ids, atEnd: scroll.isAtEnd, picked: pick?.promptID)
+            }
             PromptRail(marks: marks, current: current) { mark in
+                pick = PromptPick(promptID: mark.id).holding(visible: visibleBlocks?.ids ?? [], in: transcript)
                 PromptRail.scroll(to: mark, in: transcript, with: proxy)
             }
             .padding(.vertical, PromptRail.verticalInset)
             .padding(.trailing, PromptRail.trailingInset)
+            .onChange(of: visibleBlocks?.ids) { _, ids in
+                guard let pick, let ids else { return }
+                self.pick = pick.holding(visible: ids, in: transcript)
+            }
         }
     }
 }
@@ -66,7 +85,8 @@ private struct PromptRailOverlay: View {
 /// long dark one. Hovering the rail opens a panel over it, as Notion's outline does,
 /// listing every prompt (one line each); it opens level with the rail's top, scrolls
 /// when the chat has more than fit, and opens scrolled to the prompt the chat is at.
-/// Clicking a tick or a prompt scrolls the chat to that prompt and its reply.
+/// Clicking a tick or a prompt scrolls the chat to that prompt and its reply, and marks
+/// it until the chat is scrolled away from it (`PromptPick`).
 struct PromptRail: View {
     let marks: [PromptMark]
     var current: String?
@@ -92,6 +112,8 @@ struct PromptRail: View {
     static let panelRowEstimate: CGFloat = 26
     static let accessibilityIdentifier = "prompt-rail-tick"
     static let rowIdentifier = "prompt-rail-row"
+    /// The accessibility value of the tick of the prompt the chat is at.
+    static let currentValue = "current"
 
     /// What a tick does: scrolls the prompt's block (the prompt and its reply) to the top.
     static func scroll(to mark: PromptMark, in transcript: Transcript, with proxy: ScrollViewProxy) {
@@ -165,6 +187,7 @@ struct PromptRail: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(mark.label)
+        .accessibilityValue(isCurrent ? Self.currentValue : "")
         .accessibilityIdentifier(Self.accessibilityIdentifier)
     }
 

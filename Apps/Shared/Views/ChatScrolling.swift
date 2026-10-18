@@ -33,6 +33,9 @@ struct TranscriptStack<Content: View>: View {
     /// The content's y at the top of the visible area (under the title bar), in
     /// `position`'s terms. Not observed: it changes on every frame of a scroll.
     @ObservationIgnored private(set) var shownY: CGFloat = 0
+    /// Whether the chat's end is on screen, for the prompt it is at (`PromptRail`).
+    /// Observed, and set only when it changes.
+    private(set) var isAtEnd = true
 
     /// Makes `change` (a fold opening or closing) and keeps the content on screen where
     /// it was, in the same update.
@@ -48,7 +51,15 @@ struct TranscriptStack<Content: View>: View {
         geometry.contentOffset.y + geometry.contentInsets.top
     }
 
+    /// Whether the content's bottom is on screen, within a few points: the bottom of the
+    /// visible area (above the composer's inset) is at or past it.
+    nonisolated static func isAtEnd(_ geometry: ScrollGeometry) -> Bool {
+        let shownBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
+        return shownBottom >= geometry.contentSize.height - 8
+    }
+
     fileprivate func scrolled(to y: CGFloat) { shownY = y }
+    fileprivate func reachedEnd(_ atEnd: Bool) { isAtEnd = atEnd }
 }
 
 extension EnvironmentValues {
@@ -76,6 +87,9 @@ private struct ChatScrolling: ViewModifier {
             .scrollPosition($scroll.position)
             .onScrollGeometryChange(for: CGFloat.self, of: { ChatScroll.shownY($0) }) { _, y in
                 scroll.scrolled(to: y)
+            }
+            .onScrollGeometryChange(for: Bool.self, of: { ChatScroll.isAtEnd($0) }) { _, atEnd in
+                scroll.reachedEnd(atEnd)
             }
     }
 }

@@ -19,12 +19,12 @@ import Testing
         var transcript = Transcript()
         /// The prompt to jump to, as its tick would.
         var jump: PromptMark?
+        let scroll = ChatScroll()
     }
 
     /// `ChatView`'s scroll view, with rows of a fixed height so positions are known.
     private struct Harness: View {
         let chat: Chat
-        @State private var scroll = ChatScroll()
         static let rowHeight: CGFloat = 60
         static let spacing: CGFloat = 12
         static let padding: CGFloat = 16
@@ -43,8 +43,8 @@ import Testing
                     .padding(.trailing, PromptRail.width)
                 }
                 .defaultScrollAnchor(.bottom)
-                .chatScrolling(scroll)
-                .promptScrolling(transcript: chat.transcript, scroll: scroll, proxy: proxy)
+                .chatScrolling(chat.scroll)
+                .promptScrolling(transcript: chat.transcript, scroll: chat.scroll, proxy: proxy)
                 .onChange(of: chat.jump) {
                     if let mark = chat.jump { PromptRail.scroll(to: mark, in: chat.transcript, with: proxy) }
                 }
@@ -151,14 +151,17 @@ import Testing
         let ui = UI(prompts: 30)
         defer { ui.close() }
         #expect(try #require(ui.remainingBelow) < 2, "the chat opens at the bottom")
+        #expect(ui.chat.scroll.isAtEnd, "the chat opens at its end")
 
         ui.jump(to: 10)
         let shown = try #require(ui.visible)
         #expect(shown.contains(Harness.top(of: 10)), "Prompt 10 starts at \(Harness.top(of: 10)), the chat shows \(shown)")
         #expect(try #require(ui.remainingBelow) > 100, "the jump did not scroll up")
+        #expect(!ui.chat.scroll.isAtEnd, "scrolled up, the chat is not at its end")
 
         ui.send("Prompt 30")
         #expect(try #require(ui.remainingBelow) < 2, "the send left the chat scrolled up")
+        #expect(ui.waitFor { ui.chat.scroll.isAtEnd }, "back at the bottom, the chat is at its end")
 
         // Again: a second send after a jump still comes down.
         ui.jump(to: 3)

@@ -83,13 +83,27 @@ struct MarkdownColorsPreview: View {
 struct ThemePreview: View {
     let scheme: ColorScheme
 
+    /// Shorter than the Markdown tab's sample, so the Appearance tab fits a small screen.
+    static let sample = """
+        ### A heading
+
+        Text with **bold words**, a [link](https://example.com) and `inline code`.
+
+        > A quote stands apart from the reply.
+
+        | Name | Value |
+        |------|------:|
+        | Alpha | 1 |
+        | Beta | 2 |
+        """
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {
             Text("Show me the themes.")
                 .contentFont()
                 .padding(10)
                 .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
-            MarkdownView(text: MarkdownColorsPreview.sample, isStreaming: false)
+            MarkdownView(text: Self.sample, isStreaming: false)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)

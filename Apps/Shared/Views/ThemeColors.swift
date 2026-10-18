@@ -102,6 +102,8 @@ struct ColorThemePicker: View {
                     .overlay { Circle().strokeBorder(.black.opacity(0.12)) }
                     .frame(width: Self.size, height: Self.size)
                     .padding(3)
+                    // A form's label lines up with the swatch, not the name under it.
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     .overlay {
                         Circle()
                             .strokeBorder(isSelected ? AnyShapeStyle(.secondary) : AnyShapeStyle(.clear),

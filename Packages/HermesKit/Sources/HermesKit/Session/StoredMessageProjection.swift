@@ -71,6 +71,7 @@ enum StoredMessageProjection {
                 // whatever live rows share its call id.
                 var tool = TranscriptItem(id: rowItemID(row), role: .tool, text: "")
                 tool.rowID = row.id
+                tool.timestamp = row.timestamp.map(Date.init(timeIntervalSince1970:))
                 tool.toolCallID = row.toolCallID
                 let name = call?.name ?? row.toolName ?? "tool"
                 tool.toolName = name
@@ -115,6 +116,7 @@ enum StoredMessageProjection {
     private static func item(_ row: StoredMessage, role: TranscriptItem.Role, text: String) -> TranscriptItem {
         var item = TranscriptItem(id: rowItemID(row), role: role, text: text)
         item.rowID = row.id
+        item.timestamp = row.timestamp.map(Date.init(timeIntervalSince1970:))
         return item
     }
 

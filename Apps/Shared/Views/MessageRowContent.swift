@@ -97,15 +97,37 @@ struct ReasoningText: View {
     }
 }
 
-/// The line every fold in the chat opens with (reasoning, a tool call, a run of them):
-/// its label, then a chevron that turns down while open. The whole line is the button.
+/// The line every fold in the chat opens with (reasoning, a tool call, a turn's work, a
+/// group of its steps, a step): its label, then a chevron. The whole line is the button.
 /// Opening or closing keeps the chat's scroll place (`ChatScroll.keepingPlace`), so the
 /// line stays under the pointer and the next click closes it again.
 struct FoldButton<Label: View>: View {
+    enum Chevron {
+        /// Points right, turning down while open.
+        case disclosure
+        /// Points down, and up while open: a turn's "Completed in" line.
+        case upDown
+        /// A disclosure chevron shown only while the pointer is over the line: a turn's
+        /// groups and steps, which read as plain lines.
+        case onHover
+        case none
+    }
+
     @Binding var isExpanded: Bool
-    var showsChevron = true
+    var chevron = Chevron.disclosure
     @ViewBuilder let label: Label
     @Environment(\.chatScroll) private var chatScroll
+    @State private var isHovering = false
+
+    init(isExpanded: Binding<Bool>, showsChevron: Bool = true, @ViewBuilder label: () -> Label) {
+        self.init(isExpanded: isExpanded, chevron: showsChevron ? .disclosure : .none, label: label)
+    }
+
+    init(isExpanded: Binding<Bool>, chevron: Chevron, @ViewBuilder label: () -> Label) {
+        _isExpanded = isExpanded
+        self.chevron = chevron
+        self.label = label()
+    }
 
     var body: some View {
         Button {
@@ -115,11 +137,19 @@ struct FoldButton<Label: View>: View {
         } label: {
             HStack(spacing: 6) {
                 label
-                if showsChevron {
+                switch chevron {
+                case .disclosure, .onHover:
                     Image(systemName: "chevron.right")
                         .uiFont(.caption2, weight: .semibold)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .foregroundStyle(.tertiary)
+                        .opacity(chevron == .onHover && !isHovering ? 0 : 1)
+                case .upDown:
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .uiFont(.caption2, weight: .semibold)
+                        .foregroundStyle(.tertiary)
+                case .none:
+                    EmptyView()
                 }
                 Spacer(minLength: 0)
             }
@@ -128,6 +158,7 @@ struct FoldButton<Label: View>: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .accessibilityValue(isExpanded ? "expanded" : "collapsed")
     }
 }
@@ -246,10 +277,17 @@ struct ToolCallLine: View {
 /// the diff, then the detail (an error, a command's streams, or the output).
 struct ToolCallBody: View {
     let view: ToolCallView
+    /// False where the command is shown above the body already (`WorkStepCard`).
+    var showsCommand = true
+    /// Shows the output even where it repeats the call's line (`ToolCallView.showsDetail`):
+    /// a step's card is where its output is read.
+    var showsAllOutput = false
+    /// Output past this many lines scrolls; nil for `ToolTextBox`'s own limit.
+    var outputMaxLines: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let command = view.terminalCommand, !command.isEmpty || view.terminalExitCode != nil {
+            if showsCommand, let command = view.terminalCommand, !command.isEmpty || view.terminalExitCode != nil {
                 TerminalCommandLine(command: command, exitCode: view.terminalExitCode)
             }
             if !view.searchHits.isEmpty {
@@ -258,7 +296,7 @@ struct ToolCallBody: View {
             if !view.inlineDiff.isEmpty {
                 ToolTextBox(text: view.inlineDiff, kind: .diff)
             }
-            if view.showsDetail { detail }
+            if view.showsDetail || (showsAllOutput && view.inlineDiff.isEmpty && !view.detail.isEmpty) { detail }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -281,20 +319,20 @@ struct ToolCallBody: View {
                 ToolSectionLabel(text: view.detailLabel)
                 if let stdout = view.stdout {
                     if view.stderr != nil { ToolSectionLabel(text: "stdout") }
-                    ToolTextBox(text: ToolCallView.stripANSI(stdout), kind: .code)
+                    ToolTextBox(text: ToolCallView.stripANSI(stdout), kind: .code, maxLines: outputMaxLines)
                 }
                 if let stderr = view.stderr {
                     ToolSectionLabel(text: "stderr")
-                    ToolTextBox(text: ToolCallView.stripANSI(stderr), kind: .code, isMuted: true)
+                    ToolTextBox(text: ToolCallView.stripANSI(stderr), kind: .code, maxLines: outputMaxLines, isMuted: true)
                 }
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 ToolSectionLabel(text: view.detailLabel)
                 if view.rendersDetailAsCode {
-                    ToolTextBox(text: ToolCallView.stripANSI(view.detail), kind: .code)
+                    ToolTextBox(text: ToolCallView.stripANSI(view.detail), kind: .code, maxLines: outputMaxLines)
                 } else {
-                    ToolTextBox(text: view.detail, kind: .text)
+                    ToolTextBox(text: view.detail, kind: .text, maxLines: outputMaxLines)
                 }
             }
         }
@@ -491,50 +529,323 @@ struct BackgroundNoticeRow: View {
     }
 }
 
-/// A run of consecutive tool calls under one summary line, as Desktop's `ToolRun` draws
-/// it (`components/assistant-ui/tool/fallback.tsx:993-1048`). Closed by default; while
-/// live, the call in progress shows under the line. A run of one call is that call's
-/// row, with no summary above it. Opened, its calls are listed as they are, each one
-/// opening in place.
-struct ToolRunView<Message: View>: View {
-    let run: ToolRun
+/// A turn's work before its answer (`TurnWork`), in the three layers the user asked
+/// for: one line, "Completed in 45s" (live: "Working… 12s"), with a thin rule under it
+/// and the answer below; opened, under the rule, the turn's commentary and groups of
+/// steps, several when the model wrote between them; a group
+/// opened, its steps, each opening in place to a card. Open one layer (its groups and text,
+/// groups closed) while the turn works, closed once it is done, until the user opens or closes it.
+struct TurnWorkView<Message: View>: View {
+    let work: TurnWork
     @ViewBuilder let message: (TranscriptItem) -> Message
+    /// The user's choice; until then open exactly while the turn works.
+    @State private var toggled: Bool?
+    /// When this view saw the work end, for a turn whose rows carry no time yet.
+    @State private var settledAt: Date?
+    /// For a turn this chat did not send: count from when the line appeared.
+    @State private var appeared = Date()
+
+    static var accessibilityIdentifier: String { "turnWorkSummary" }
+
+    init(work: TurnWork, isExpanded: Bool? = nil, @ViewBuilder message: @escaping (TranscriptItem) -> Message) {
+        self.work = work
+        self.message = message
+        _toggled = State(initialValue: isExpanded)
+    }
+
+    var body: some View {
+        let isOpen = toggled ?? work.isLive
+        VStack(alignment: .leading, spacing: 8) {
+            FoldButton(isExpanded: Binding(get: { isOpen }, set: { toggled = $0 }), chevron: .upDown) {
+                title
+            }
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            Divider()
+            if isOpen {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(work.entries) { entry in
+                        switch entry {
+                        case .commentary(let item), .card(let item): message(item)
+                        case .group(let group): StepGroupView(group: group)
+                        }
+                    }
+                }
+            }
+        }
+        .onChange(of: work.isLive) { _, isLive in settledAt = isLive ? nil : Date() }
+    }
+
+    @ViewBuilder private var title: some View {
+        if work.isLive {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text("Working… \(Transcript.Waiting.elapsedText(from: work.startedAt ?? appeared, to: context.date))")
+                    .monospacedDigit()
+            }
+        } else {
+            Text(TurnWork.settledTitle(duration: duration, interrupted: work.wasInterrupted))
+                .monospacedDigit()
+        }
+    }
+
+    /// The stored rows' time, else from the prompt sent here to when the work ended here.
+    private var duration: TimeInterval? {
+        if let duration = work.duration { return duration }
+        guard let start = work.startedAt, let settledAt, settledAt >= start else { return nil }
+        return settledAt.timeIntervalSince(start)
+    }
+}
+
+/// A group of a turn's steps: its kind's icon and what its calls did ("Ran commands"),
+/// a chevron only under the pointer; opened, its steps one line each. Closed until the
+/// user opens it, also while the turn works in it (the user, 2026-10-18: a working turn
+/// opens one layer, its groups and text): then a spinner stands for its icon and its
+/// name speaks in the present tense ("Running commands").
+struct StepGroupView: View {
+    let group: StepGroup
     @State private var isExpanded: Bool
 
-    static var accessibilityIdentifier: String { "toolRunSummary" }
+    static let accessibilityIdentifier = "workGroupRow"
 
-    init(run: ToolRun, isExpanded: Bool = false, @ViewBuilder message: @escaping (TranscriptItem) -> Message) {
-        self.run = run
-        self.message = message
+    init(group: StepGroup, isExpanded: Bool = false) {
+        self.group = group
         _isExpanded = State(initialValue: isExpanded)
     }
 
     var body: some View {
-        let visible = run.visibleItems
-        if visible.count == 1, let only = visible.first {
-            message(only)
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                FoldButton(isExpanded: $isExpanded) {
-                    Text(run.summary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+        VStack(alignment: .leading, spacing: 4) {
+            FoldButton(isExpanded: $isExpanded, chevron: .onHover) {
+                Group {
+                    if group.isLive {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
+                            .imageScale(.small)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
-                .accessibilityIdentifier(Self.accessibilityIdentifier)
-                if isExpanded {
-                    ForEach(visible) { message($0) }
-                } else if run.isLive, let current = run.tools.last {
-                    message(current)
+                .frame(width: 14)
+                Text(group.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .help(group.tools.isEmpty ? group.title : group.summary)
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(group.steps) { WorkStepView(step: $0) }
                 }
+                .padding(.leading, 20)
             }
         }
     }
 }
 
+/// One step: "Bash · git status", "Think · Checking the build", opening in place to
+/// its card (`WorkStepCard`).
+struct WorkStepView: View {
+    let step: WorkStep
+    @State private var isExpanded: Bool
+
+    static let accessibilityIdentifier = "workStepRow"
+
+    init(step: WorkStep, isExpanded: Bool = false) {
+        self.step = step
+        _isExpanded = State(initialValue: isExpanded)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            FoldButton(isExpanded: $isExpanded, chevron: .onHover) {
+                WorkStepLine(step: step)
+            }
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            if isExpanded {
+                WorkStepCard(step: step)
+            }
+        }
+    }
+}
+
+/// A step's line: its icon (or its status while it runs or once it failed), its kind,
+/// a dot, and what it was about, cut short at the end.
+struct WorkStepLine: View {
+    let step: WorkStep
+
+    static let thinkIcon = "atom"
+
+    var body: some View {
+        HStack(spacing: 6) {
+            glyph.frame(width: 14)
+            Text(step.kind)
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle(failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+            if !step.summary.isEmpty {
+                Text("·").foregroundStyle(.tertiary)
+                Text(step.summary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .uiFont(.callout)
+    }
+
+    private var failed: Bool { step.item.tool?.phase == .failed }
+
+    @ViewBuilder private var glyph: some View {
+        if step.isLive {
+            ProgressView().controlSize(.mini)
+        } else if failed {
+            Image(systemName: "exclamationmark.circle").imageScale(.small).foregroundStyle(.red)
+        } else {
+            Image(systemName: step.toolName.map(ToolCallLine.icon) ?? Self.thinkIcon)
+                .imageScale(.small)
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
+
+/// An opened step, the bottom layer, as the user's screenshot draws it: a rounded card
+/// whose top holds a status dot, the working folder (or the call's title), the whole
+/// command in a monospaced font and a Copy button; under a rule, the output in a
+/// monospaced font, scrolling past a few lines. A call that is not a command shows its
+/// Desktop title and what it opens to (`ToolCallBody`); reasoning shows in full.
+struct WorkStepCard: View {
+    let step: WorkStep
+    @Environment(\.sessionFolder) private var sessionFolder
+
+    static let accessibilityIdentifier = "workStepCard"
+    /// Output past this many lines scrolls inside the card.
+    static let outputMaxLines = 12
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch step {
+            case .think(let item):
+                header { Text("Reasoning").uiFont(.caption).foregroundStyle(.tertiary) }
+                Divider()
+                ReasoningText(item: item)
+                    .padding(8)
+            case .tool(let item):
+                let view = ToolCallView(item)
+                header { toolHeading(view) }
+                if Self.hasBody(view) {
+                    Divider()
+                    ToolCallBody(view: view, showsCommand: false, showsAllOutput: true,
+                                 outputMaxLines: Self.outputMaxLines)
+                        .padding(8)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quinary.opacity(0.6), in: .rect(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(Self.accessibilityIdentifier)
+    }
+
+    private func header<Heading: View>(@ViewBuilder _ heading: () -> Heading) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            StepStatusDot(step: step)
+                .padding(.top, 4)
+            heading()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Copy", systemImage: "doc.on.doc") { Clipboard.copy(step.copyText) }
+                .labelStyle(.titleAndIcon)
+                .uiFont(.caption)
+                .foregroundStyle(.secondary)
+                .hoverButtonStyle(.rounded, padding: 3)
+                .help("Copy")
+                .accessibilityIdentifier("workStepCopy")
+        }
+        .padding(8)
+    }
+
+    @ViewBuilder private func toolHeading(_ view: ToolCallView) -> some View {
+        if let command = view.terminalCommand {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    if let folder = Self.folderName(step.workdir ?? sessionFolder) {
+                        Text(folder).uiFont(.caption).foregroundStyle(.tertiary)
+                    }
+                    if let exitCode = view.terminalExitCode, exitCode != 0 {
+                        Text("exit \(exitCode)")
+                            .uiFont(.caption2, design: .monospaced)
+                            .foregroundStyle(.orange)
+                    }
+                    if !view.isPending, let duration = view.durationLabel {
+                        Text(duration).uiFont(.caption).monospacedDigit().foregroundStyle(.tertiary)
+                    }
+                }
+                Text(command.isEmpty ? step.summary : command)
+                    .uiFont(.caption, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            HStack(spacing: 6) {
+                Text(view.title)
+                    .uiFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !view.isPending, let count = view.countLabel {
+                    Text(count).uiFont(.caption).foregroundStyle(.tertiary)
+                }
+                if !view.isPending, let duration = view.durationLabel {
+                    Text(duration).uiFont(.caption).monospacedDigit().foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    /// The call shows something under its header: output, hits, a diff or an error.
+    static func hasBody(_ view: ToolCallView) -> Bool {
+        view.showsDetail || !view.detail.isEmpty || view.stdout != nil || view.stderr != nil || !view.searchHits.isEmpty || !view.inlineDiff.isEmpty
+    }
+
+    /// The last part of a folder's path, as the card names it.
+    static func folderName(_ path: String?) -> String? {
+        guard let path = path?.trimmingCharacters(in: .whitespaces), !path.isEmpty else { return nil }
+        let parts = path.split(separator: "/")
+        return parts.last.map(String.init) ?? path
+    }
+}
+
+/// A step's status in its card: running, done, failed or a warning.
+private struct StepStatusDot: View {
+    let step: WorkStep
+
+    var body: some View {
+        if step.isLive {
+            ProgressView().controlSize(.mini)
+        } else {
+            Circle().fill(color).frame(width: 7, height: 7)
+        }
+    }
+
+    private var color: Color {
+        guard case .tool(let item) = step else { return .secondary }
+        switch ToolCallView(item).status {
+        case .error: return .red
+        case .warning: return .orange
+        case .notice: return .secondary
+        case .running, .success: return .green
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// The session's working folder (`session.info`'s `cwd`): a command's card names it
+    /// when the call did not name its own.
+    @Entry var sessionFolder: String? = nil
+}
+
 /// The transcript's rows as the chat shows them, in order:
 /// - each block (`Transcript.blocks`): a message, drawn by `message` (a reply with
-///   nothing to show yet is skipped: the waiting row stands in for it), or a run of
-///   tool calls under its summary line;
+///   nothing to show yet is skipped: the waiting row stands in for it), or a turn's
+///   work under its "Completed in" line (`TurnWorkView`);
 /// - the waiting row, in the reply's place, while one is awaited (`Transcript.waiting`);
 /// - the request cards (`requests`);
 /// - the turn's status line, except while waiting (it is the waiting row's hint);
@@ -559,8 +870,8 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
                     if !item.isBlankReply {
                         message(item, item.id == newestID)
                     }
-                case .run(let run):
-                    ToolRunView(run: run) { item in
+                case .work(let work):
+                    TurnWorkView(work: work) { item in
                         message(item, item.id == newestID)
                     }
                 }

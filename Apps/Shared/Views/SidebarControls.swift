@@ -281,7 +281,8 @@ struct SidebarSectionTitle: View {
 
 /// The Bot Chat row pinned above the session list: a `BotRow` under a "Bot Chat"
 /// header (in the Sessions header's style), set in like the list's rows, with their
-/// hover and a selected fill (the List's own selection can't reach a row outside it).
+/// hover and selected fill (`Hover.selection`; the List's selection can't reach a row
+/// outside it).
 /// A divider under it, always shown, sets it off from the sessions.
 struct PinnedBotChat: View {
     let bot: Bot
@@ -318,7 +319,7 @@ struct PinnedBotChat: View {
             configuration.label
                 .padding(.horizontal, Hover.rowContentInset - Hover.rowInset)
                 .padding(.vertical, 4)
-                .background { shape.fill(.quaternary).opacity(isSelected ? 1 : 0) }
+                .background { shape.fill(Hover.selection).opacity(isSelected ? 1 : 0) }
                 .contentShape(shape)
                 .hoverHighlight(in: shape, isEnabled: !isSelected)
         }

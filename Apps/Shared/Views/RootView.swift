@@ -23,6 +23,9 @@ struct RootView: View {
         .onChange(of: columns) { _, visibility in
             if visibility != .all { columns = .all }
         }
+        // No toolbar background anywhere: macOS 26 showed it only while the pointer was
+        // over the title bar. The chat fades under it instead (`titleBarFade`).
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         #if os(macOS)
         // The app must connect (`SettingsPresentation`): the Settings window, as the gear
@@ -130,7 +133,9 @@ struct RootView: View {
                     description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
             }
         }
+        // The whole column, so the fade spans it whatever is shown.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .titleBarFade()
     }
 
     private func followActiveChat() {
@@ -259,5 +264,46 @@ private struct OpeningChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .accessibilityLabel("Opening \(title)")
+    }
+}
+
+extension View {
+    /// On macOS, the chat fades out under its title bar, as Mail's message does: no band
+    /// of its own, the chat runs up to the window's top, and under the title it blurs
+    /// (Liquid Glass) and fades into the chat's background, more toward the top. The
+    /// same in every state and whether or not the pointer is over it (the system's
+    /// toolbar background showed only under the pointer, as a gray band with a line).
+    /// A band over the chat, glass or material, read as a slab apart from the sidebar,
+    /// light in dark mode, and clear glass showed the rows sharp (2026-10-18).
+    @ViewBuilder func titleBarFade() -> some View {
+        #if os(macOS)
+        overlay(alignment: .top) {
+            GeometryReader { proxy in
+                // The chat's background over the glass, so the fade is the chat's color
+                // with the rows blurred in it. The glass runs above the window and is cut
+                // to the fade: its top rim tinted it.
+                Color(nsColor: .windowBackgroundColor)
+                    .opacity(0.7)
+                    .background {
+                        Color.clear.glassEffect(.regular, in: .rect).padding(.top, -24)
+                    }
+                    .frame(height: proxy.safeAreaInsets.top + 24)
+                    .clipped()
+                    .mask {
+                        LinearGradient(stops: [.init(color: .black, location: 0),
+                                               .init(color: .black, location: 0.5),
+                                               .init(color: .clear, location: 1)],
+                                       startPoint: .top, endPoint: .bottom)
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea(edges: .top)
+            }
+            // The title bar stays the window's: clicks and drags go through.
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        #else
+        self
+        #endif
     }
 }

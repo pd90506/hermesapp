@@ -95,7 +95,7 @@ struct MarkdownColorsTests {
 
     /// Saved by another version: what this one doesn't know is dropped, not fatal.
     @Test func decodingToleratesUnknownValues() throws {
-        let json = #"{"preset":"neon","colors":{"link":{"light":"#FF0000","sepia":"#00FF00"},"glow":{"dark":"#FFFFFF"},"heading":{"dark":"blue"}}}"#
+        let json = ##"{"preset":"neon","colors":{"link":{"light":"#FF0000","sepia":"#00FF00"},"glow":{"dark":"#FFFFFF"},"heading":{"dark":"blue"}}}"##
         let colors = try JSONDecoder().decode(MarkdownColors.self, from: Data(json.utf8))
         #expect(colors.preset == .nous)
         #expect(colors.color(.link, .light).hex == "#FF0000")

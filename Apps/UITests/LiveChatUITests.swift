@@ -412,6 +412,55 @@ final class LiveChatUITests: XCTestCase {
     }
 
     #if os(iOS)
+    /// On iPhone the profile rail is never a page of its own: Profiles (where Back was)
+    /// slides the session list right, uncovering the rail beside it, and it rests there.
+    /// Picking a profile slides the list back; a swipe right on the list uncovers the
+    /// rail again.
+    @MainActor
+    func testProfilesSlideOutBesideTheSessions() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected, Sessions page shown")
+        // The list's top row, which slides with it.
+        let botChat = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the session list")
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertFalse(rail.exists, "the list covers the rail")
+        let restingX = botChat.frame.minX
+        attach(app, "sessions")
+
+        app.buttons["profilesButton"].tap()
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "Profiles uncovers the rail")
+        XCTAssertTrue(eventually { botChat.frame.minX > restingX + 60 }, "the list slid right, beside the rail")
+        XCTAssertTrue(botChat.exists, "the session list still shows")
+        XCTAssertEqual(rail.frame.minX, 0, accuracy: 1, "the rail at the screen's leading edge")
+        attach(app, "profiles beside the sessions")
+
+        let picked = rail.buttons.matching(NSPredicate(format: "isSelected == true")).firstMatch
+        XCTAssertTrue(picked.waitForExistence(timeout: 10), "a profile is selected")
+        picked.tap()
+        XCTAssertTrue(eventually { !rail.exists }, "picking a profile covers the rail")
+        XCTAssertEqual(botChat.frame.minX, restingX, accuracy: 1, "the list back where it rests")
+
+        botChat.swipeRight()
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "a swipe right uncovers the rail")
+        XCTAssertTrue(eventually { botChat.frame.minX > restingX + 60 }, "the list slid right after the swipe")
+    }
+
+    /// Polls a condition that settles after an animation.
+    @MainActor
+    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+        return condition()
+    }
+
     /// Two servers (the same dashboard twice): both connect, each on its own socket,
     /// and the sidebar names the server it lists. On macOS
     /// `testEachProfileReturnsToItsLastChat` starts with both servers connected.

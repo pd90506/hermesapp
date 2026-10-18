@@ -20,6 +20,10 @@ enum Hover {
     static let rowInset: CGFloat = 10
     /// Where a sidebar row's content starts, from the List's edge.
     static let rowContentInset: CGFloat = 16
+    /// The row hover fill stops this far short of the row's top and bottom, so it never
+    /// touches the selection on the row next to it (which fills its row's full height):
+    /// the two fills stay apart by this gap.
+    static let rowGap: CGFloat = 1
 
     /// Meant to stay lighter than the sidebar's selection, even its unfocused gray, so
     /// a selected row reads as stronger than a hovered one. Snapshots can't draw the
@@ -41,8 +45,9 @@ extension View {
         #endif
     }
 
-    /// A hover fill for a sidebar List row, in the shape of the row's selection: the
-    /// full row height, inset `Hover.rowInset` from the List's edges. None on the
+    /// A hover fill for a sidebar List row, in the shape of the row's selection: inset
+    /// `Hover.rowInset` from the List's edges, and `Hover.rowGap` from the row's top
+    /// and bottom, so a selected row beside it stays apart from it. None on the
     /// selected row, where it would tint the selection (the row background draws
     /// over it). The whole row reacts, not just its text.
     func sidebarRowHover(isSelected: Bool) -> some View {
@@ -103,6 +108,7 @@ struct SidebarRowHover: ViewModifier {
                     .fill(Hover.fill(pressed: false))
                     .opacity(isHovered && isEnabled && !isSelected ? 1 : 0)
                     .padding(.horizontal, Hover.rowInset)
+                    .padding(.vertical, Hover.rowGap)
                     .accessibilityHidden(true))
     }
 }

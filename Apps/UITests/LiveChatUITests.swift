@@ -495,6 +495,62 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "Test 2 shows its Bot Chat again: \(window.title)")
     }
 
+    /// What was typed in a New chat, not sent, is still there after another chat was
+    /// shown: New chat goes back to the same chat. The pinned Bot Chat has no avatar (the
+    /// rail shows it) and no New Side Chat in its context menu.
+    @MainActor
+    func testNewChatKeepsItsDraftAndBotChatIsPlain() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.appearance = .light
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        let bot = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
+        XCTAssertTrue(bot.waitForExistence(timeout: 30), "the pinned Bot Chat")
+
+        press(newChat)
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        let draft = "draft \(Int.random(in: 1000...9999)) kept"
+        composer.typeText(draft)
+        attach(app, "New chat with a draft")
+
+        press(bot)
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: bot)
+        XCTAssertEqual(XCTWaiter().wait(for: [selected], timeout: 10), .completed, "the Bot Chat shows as selected")
+        let switched = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != %@", draft),
+                                                 object: app.textViews["composer"].firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [switched], timeout: 30), .completed, "the Bot Chat's own composer")
+
+        press(newChat)
+        let kept = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", draft),
+                                             object: app.textViews["composer"].firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [kept], timeout: 30), .completed,
+                       "the draft came back: \(String(describing: app.textViews["composer"].firstMatch.value))")
+        attach(app, "New chat again, draft kept")
+
+        bot.rightClick()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertFalse(app.menuItems["New Side Chat"].exists, "the Bot Chat's context menu offers New Side Chat")
+        app.typeKey(.escape, modifierFlags: [])
+
+        // The divider under the Bot Chat, with the pointer away and over it.
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        attach(app, "sidebar, pointer away")
+        bot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        attach(app, "sidebar, pointer on the Bot Chat")
+        XCUIDevice.shared.appearance = .dark
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        attach(app, "sidebar, dark")
+        XCUIDevice.shared.appearance = .light
+    }
+
     /// A selected session row and the hovered row under it keep a gap between their two
     /// shades: the hover stopped at the row's edge, right against the selection. Checked
     /// in the real window, where the selection is drawn, down a column of pixels through

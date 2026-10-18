@@ -124,6 +124,10 @@ public final class GatewayConnection {
     /// The chats kept warm, most recent first, the active one included: the apps keep
     /// their views built while hidden, so going back to one shows it as it was left.
     public var warmSessions: [ChatSession] { warmChats }
+    /// Each profile's last New chat while nothing has been sent in it, by profile
+    /// (`""`: the launch profile). New chat goes back to it, draft and all, instead of
+    /// starting another (`newSideChat`); its composer outlives the warm cache.
+    @ObservationIgnored var unsentChats: [String: ChatSession] = [:]
     /// The composer of each warm chat (`composer(for:)`).
     @ObservationIgnored private var composers: [ObjectIdentifier: ChatComposer] = [:]
     /// The open that `opening` belongs to.
@@ -187,6 +191,7 @@ public final class GatewayConnection {
         activeSession = nil
         opening = nil
         warmChats = []
+        unsentChats = [:]
         composers = [:]
         otherSessionRequests = []
         sessions = []
@@ -455,8 +460,9 @@ public final class GatewayConnection {
         warmChats.removeAll { $0 === session }
         warmChats.insert(session, at: 0)
         if warmChats.count > Self.warmChatLimit { warmChats.removeLast(warmChats.count - Self.warmChatLimit) }
-        // A chat that left the cache takes its draft with it.
-        let warm = Set(warmChats.map { ObjectIdentifier($0) })
+        // A chat that left the cache takes its draft with it, unless it is a New chat
+        // still waiting for its first message.
+        let warm = Set((warmChats + unsentChats.values).map { ObjectIdentifier($0) })
         composers = composers.filter { warm.contains($0.key) }
         if let profile = session.profile { sessionProfiles[session.sessionID] = profile }
         track(session)

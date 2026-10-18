@@ -159,10 +159,6 @@ struct SessionListView: View {
                 selection = item
                 showChat()
             }
-            .contextMenu {
-                Button("New Side Chat", systemImage: "plus.bubble") { startSideChat(with: bot, on: server) }
-                    .disabled(!server.isConnected || isStartingChat)
-            }
         }
     }
 
@@ -192,7 +188,7 @@ struct SessionListView: View {
                 sessionRow(entry, on: server)
             }
         } header: {
-            Text("Sessions")
+            SidebarSectionTitle("Sessions")
         }
     }
 
@@ -205,7 +201,7 @@ struct SessionListView: View {
                     sessionRow(entry, on: server)
                 }
             } header: {
-                Text("Pinned")
+                SidebarSectionTitle("Pinned")
             }
         }
     }

@@ -35,17 +35,6 @@ enum MarkdownColorsLabels {
         }
     }
 
-    static func label(_ preset: MarkdownColors.Preset) -> String {
-        switch preset {
-        case .nous: "Nous (Desktop default)"
-        case .github: "GitHub"
-        case .catppuccin: "Catppuccin"
-        case .everforest: "Everforest"
-        case .solarized: "Solarized"
-        case .plain: "Plain"
-        }
-    }
-
     static func label(_ mode: MarkdownColors.Mode) -> String {
         switch mode {
         case .light: "Light"
@@ -89,6 +78,43 @@ struct MarkdownColorsPreview: View {
     }
 }
 
+/// The theme in a short exchange (Settings ▸ Appearance): the user's message in the
+/// accent's tint and a reply in the theme's Markdown colours, at the content and code sizes.
+struct ThemePreview: View {
+    let scheme: ColorScheme
+
+    /// Shorter than the Markdown tab's sample, so the Appearance tab fits a small screen.
+    static let sample = """
+        ### A heading
+
+        Text with **bold words**, a [link](https://example.com) and `inline code`.
+
+        > A quote stands apart from the reply.
+
+        | Name | Value |
+        |------|------:|
+        | Alpha | 1 |
+        | Beta | 2 |
+        """
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            Text("Show me the themes.")
+                .contentFont()
+                .padding(10)
+                .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+            MarkdownView(text: Self.sample, isStreaming: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(scheme == .dark ? Color(white: 0.12) : Color.white, in: .rect(cornerRadius: 10))
+        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.separator) }
+        .environment(\.colorScheme, scheme)
+        .environment(\.markdownPreviewScheme, scheme)
+        .accessibilityIdentifier("themePreview")
+    }
+}
+
 extension AppModel {
     /// One colour of one element, for a colour picker; a colour the preset already has
     /// is forgotten, so the element follows the preset again.
@@ -98,8 +124,9 @@ extension AppModel {
             set: { self.markdownColors.setColor(RGBAColor($0), for: element, mode) })
     }
 
-    /// The preset; choosing one forgets the colours the user changed.
-    var markdownPresetBinding: Binding<MarkdownColors.Preset> {
+    /// The app's theme, kept with the Markdown colours; choosing one forgets the colours
+    /// the user changed.
+    var colorThemeBinding: Binding<ColorTheme> {
         Binding(
             get: { self.markdownColors.preset },
             set: { self.markdownColors.choose($0) })
@@ -107,25 +134,14 @@ extension AppModel {
 }
 
 #if os(iOS)
-/// Settings ▸ Appearance ▸ Markdown on iOS: the theme, a preview, and a light and a dark
-/// colour for each element. The macOS Settings window has `MarkdownSettingsPane`.
+/// Settings ▸ Appearance ▸ Markdown on iOS: a preview, and a light and a dark colour for
+/// each element, over the app's theme. The macOS Settings window has `MarkdownSettingsPane`.
 struct MarkdownColorsSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Form {
-            Section {
-                Picker("Theme", selection: model.markdownPresetBinding) {
-                    ForEach(MarkdownColors.Preset.allCases, id: \.self) { preset in
-                        Text(MarkdownColorsLabels.label(preset)).tag(preset)
-                    }
-                }
-                .accessibilityIdentifier("markdownPreset")
-            } footer: {
-                Text("The themes are Hermes Desktop's. Choosing one clears the colors you changed.")
-            }
-
             Section("Preview") {
                 MarkdownColorsPreview(scheme: colorScheme)
             }
@@ -155,8 +171,10 @@ struct MarkdownColorsSettingsView: View {
             }
 
             Section {
-                Button("Restore Default Colors") { model.markdownColors = MarkdownColors() }
-                    .disabled(model.markdownColors == MarkdownColors())
+                Button("Restore Theme Colors") { model.markdownColors.resetColors() }
+                    .disabled(!model.markdownColors.hasCustomColors)
+            } footer: {
+                Text("The colors start from the app's theme (\(ColorThemePicker.label(model.markdownColors.preset))), set in Appearance.")
             }
         }
         .formStyle(.grouped)

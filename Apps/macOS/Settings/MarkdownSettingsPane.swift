@@ -1,7 +1,8 @@
 import HermesKit
 import SwiftUI
 
-/// The Markdown tab: a theme, a light and a dark colour for each element, and a live
+/// The Markdown tab: the theme's colours (Appearance), a light and a dark colour for each
+/// element, and a live
 /// preview of a reply in either look. The same settings as `MarkdownColorsSettingsView`
 /// (iOS).
 struct MarkdownSettingsPane: View {
@@ -14,14 +15,12 @@ struct MarkdownSettingsPane: View {
         HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Picker("Theme:", selection: model.markdownPresetBinding) {
-                        ForEach(MarkdownColors.Preset.allCases, id: \.self) { preset in
-                            Text(MarkdownColorsLabels.label(preset)).tag(preset)
-                        }
+                    LabeledContent("Theme:") {
+                        Text(ColorThemePicker.label(model.markdownColors.preset))
                     }
                     .fixedSize()
-                    .accessibilityIdentifier("markdownPreset")
-                    SettingsNote("The themes are Hermes Desktop's. Choosing one clears the colors you changed.")
+                    .accessibilityIdentifier("markdownTheme")
+                    SettingsNote("The colors start from the app's theme, set in Appearance.")
                 }
 
                 // Thirteen rows outgrow a short screen: they scroll, the pane keeps its height.
@@ -31,8 +30,8 @@ struct MarkdownSettingsPane: View {
                 }
                 .scrollIndicators(.automatic)
 
-                Button("Restore Default Colors") { model.markdownColors = MarkdownColors() }
-                    .disabled(model.markdownColors == MarkdownColors())
+                Button("Restore Theme Colors") { model.markdownColors.resetColors() }
+                    .disabled(!model.markdownColors.hasCustomColors)
             }
             .frame(width: 330, alignment: .leading)
 

@@ -22,11 +22,23 @@ struct ChatView: View {
     @State private var scroll = ChatScroll()
     /// The newest rows first, the older ones in the frames after (`TranscriptWindow`).
     @State private var window = TranscriptWindow()
+    /// The scroll view's own width, scroller included (`steadyColumn`).
+    @State private var chatWidth: CGFloat?
     @Environment(\.textSizes) private var sizes
 
     /// How wide the chat's messages and composer get, centered in a wider window:
     /// about ChatGPT's measure (48 em) at the content text size.
     static func contentWidth(textSize: CGFloat) -> CGFloat { (textSize * 54).rounded() }
+
+    /// On the Mac, room for the prompt rail at the trailing edge, and as much on the other
+    /// side so the messages stay centered.
+    static var sideRoom: CGFloat {
+        #if os(macOS)
+        PromptRail.room
+        #else
+        0
+        #endif
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -42,14 +54,10 @@ struct ChatView: View {
                     }
                 }
                 .padding()
-                .frame(maxWidth: Self.contentWidth(textSize: sizes.content))
-                .frame(maxWidth: .infinity)
-                #if os(macOS)
-                // Room for the prompt rail at the trailing edge, and as much on the
-                // other side so the messages stay centered.
-                .padding(.horizontal, PromptRail.room)
-                #endif
+                .steadyColumn(maxWidth: Self.contentWidth(textSize: sizes.content), sideRoom: Self.sideRoom,
+                              in: chatWidth)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
             .environment(\.visibleBlocks, visibleBlocks)
             .environment(\.sessionFolder, session.info?.cwd)
             .transcriptWindow(window, isEmpty: session.transcript.items.isEmpty) { [session] in

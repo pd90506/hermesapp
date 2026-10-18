@@ -98,8 +98,14 @@ final class LiveChatUITests: XCTestCase {
         let steps = app.buttons.matching(identifier: "workStepRow")
         let settled = NSPredicate(format: "label BEGINSWITH 'Completed'")
         let deadline = Date().addingTimeInterval(180)
+        var sawWorking = false
         while !(summary.exists && settled.evaluate(with: summary)), Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(1))
+            // While it works, the work is open one layer: its group lines, each the newest step's.
+            if !sawWorking, summary.exists, summary.label.hasPrefix("Working"), groups.count > 0 {
+                sawWorking = true
+                attach(app, "working")
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(sawWorking ? 1 : 0.2))
         }
         // The newest rows are read again once the turn ends; their times give the duration.
         RunLoop.current.run(until: Date().addingTimeInterval(3))

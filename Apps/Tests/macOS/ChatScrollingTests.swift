@@ -213,6 +213,60 @@ import Testing
         ui.settle()
         #expect(try #require(ui.remainingBelow) < 2, "the chat stopped following the reply")
     }
+
+    @MainActor @Observable final class Column {
+        var extra: CGFloat = 0
+        var row: CGRect = .zero
+    }
+
+    private struct ColumnHarness: View {
+        @Bindable var column: Column
+        @State private var width: CGFloat?
+
+        var body: some View {
+            ScrollView {
+                VStack(spacing: 0) {
+                    Color.gray.frame(height: 40)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { column.row = $0 }
+                    Color.clear.frame(height: column.extra)
+                }
+                .steadyColumn(maxWidth: 360, sideRoom: 20, in: width)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        }
+    }
+
+    /// Content outgrowing the screen brings a scroller where a mouse is connected; the
+    /// chat's column keeps its place and width (`steadyColumn`). Centered in the content
+    /// instead, it moved and rewrapped as a fold opened or closed (the user, 2026-10-18).
+    @Test func theColumnStaysPutWhenAScrollerShows() throws {
+        let column = Column()
+        let window = NSWindow(contentRect: .testArea(CGSize(width: 520, height: 300)),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView: ColumnHarness(column: column))
+        window.contentView = host
+        window.showInTestArea()
+        func find(_ view: NSView) -> NSScrollView? {
+            (view as? NSScrollView) ?? view.subviews.lazy.compactMap(find).first
+        }
+        func settle() { for _ in 0..<10 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) } }
+        settle()
+        let scroll = try #require(find(host))
+        // As with a mouse connected, whatever this Mac's setting.
+        scroll.scrollerStyle = .legacy
+        settle()
+        let fits = column.row
+        column.extra = 2_000
+        settle()
+        let scrolls = column.row
+        #expect(scroll.scrollerStyle == .legacy && scroll.verticalScroller?.isHidden == false,
+                "no scroller showed: the check would not mean anything")
+        #expect(abs(scrolls.minX - fits.minX) < 0.5 && abs(scrolls.width - fits.width) < 0.5,
+                "the column moved from \(fits) to \(scrolls) when the scroller showed")
+        #expect(abs(fits.midX - 260) < 1, "the column is centered in the scroll view (\(fits.midX))")
+    }
 }
 
 /// The chat's folds: a turn's work, its groups and steps, reasoning, a call.
@@ -285,6 +339,27 @@ import Testing
         let opened = host(TurnWorkView(work: Self.work(), isExpanded: true) { _ in EmptyView() }).fittingSize.height
         #expect(live > settled + 12, "live work shows its group line (\(live) pt vs \(settled) pt)")
         #expect(abs(live - opened) < 4, "live work opens one layer, as an opened settled one (\(live) vs \(opened) pt)")
+    }
+
+    /// A working group's line is its newest step, changing as each starts; settled, it
+    /// reads what its calls did.
+    @Test func aWorkingGroupShowsItsNewestStep() {
+        var skill = Self.tool("t0", command: "")
+        skill.toolName = "skill_view"
+        skill.tool?.name = "skill_view"
+        skill.tool?.args = ["name": "hermes-agent"]
+        var running = Self.tool("t2", command: "git status")
+        running.isActive = true
+        let steps: [WorkStep] = [.tool(skill), .tool(Self.tool("t1", command: "ls")), .tool(running)]
+        let live = StepGroup(id: "g", steps: steps, isLive: true)
+        #expect(StepGroupView.liveStep(of: live)?.id == "t2")
+        #expect(StepGroupView.liveStep(of: StepGroup(id: "g", steps: Array(steps.prefix(1)), isLive: true))?.summary
+            == "hermes-agent")
+        let settled = StepGroup(id: "g", steps: steps, isLive: false)
+        #expect(StepGroupView.liveStep(of: settled) == nil)
+        #expect(settled.title == "Called tools, ran commands")
+        let line = host(StepGroupView(group: live)).fittingSize.height
+        #expect(line < 24, "a working group is still one line (\(line) pt)")
     }
 
     /// A long command's output scrolls inside its card rather than growing the chat.

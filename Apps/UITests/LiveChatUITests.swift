@@ -312,9 +312,21 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
         XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                       "\(state): the sidebar over the rail \(over) and over the list \(session) differ")
-        // The band is glass, a little off the chat's white in light mode, over a hairline.
-        XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 3 },
-                      "\(state): no band over the chat: \(chat), the same as under it \(below)")
+        // The band is in the chat's own color (the App Store's look): with nothing under
+        // the title bar, it is the chat's color.
+        XCTAssertTrue(zip(chat, below).allSatisfy { abs(Int($0) - Int($1)) <= 3 },
+                      "\(state): a band over the chat: \(chat), unlike under it \(below)")
+        // Nor with the pointer over the title bar (macOS 26 shaded it then).
+        window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: chatX, dy: 8)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let hovered = window.screenshot()
+        let hoveredAttachment = XCTAttachment(screenshot: hovered)
+        hoveredAttachment.name = "title bar under the pointer, \(state)"
+        hoveredAttachment.lifetime = .keepAlways
+        add(hoveredAttachment)
+        let chatHovered = color(at: chatX, 8, in: hovered)
+        XCTAssertTrue(zip(chatHovered, below).allSatisfy { abs(Int($0) - Int($1)) <= 3 },
+                      "\(state): a band over the chat under the pointer: \(chatHovered), unlike under it \(below)")
     }
 
     /// The Bot Chat is pinned above the session list: scrolling the list leaves it where
@@ -507,7 +519,7 @@ final class LiveChatUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(reply.count, 1, "round \(round) answered")
         }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        // The first replies are under the title bar now, and show through its glass.
+        // The first replies are under the title bar now, blurred by its glass.
         attach(app, "Prompt rail: chat after three rounds")
 
         let ticks = app.buttons.matching(identifier: "prompt-rail-tick")
@@ -530,6 +542,13 @@ final class LiveChatUITests: XCTestCase {
         let first = app.staticTexts.matching(isFirst).firstMatch.exists
             ? app.staticTexts.matching(isFirst).firstMatch : app.textViews.matching(isFirst).firstMatch
         XCTAssertTrue(first.exists && first.isHittable, "the first prompt is on screen after the jump")
+
+        // The same in dark mode, with the first reply scrolled under the title bar.
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).scroll(byDeltaX: 0, deltaY: -300)
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "Prompt rail: dark mode")
     }
     #endif
 

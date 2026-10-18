@@ -506,12 +506,19 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
         let list = app.outlines.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
-        let sessions = list.outlineRows.containing(NSPredicate(format: "label == %@", "More actions"))
+        // A session's row is the one holding its "…" button.
+        let more = list.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "More actions"))
+        func sessionRows() -> [XCUIElement] {
+            let buttons = more.allElementsBoundByIndex.map(\.frame)
+            return list.outlineRows.allElementsBoundByIndex.filter { row in
+                buttons.contains { row.frame.contains(CGPoint(x: $0.midX, y: $0.midY)) }
+            }
+        }
         RunLoop.current.run(until: Date().addingTimeInterval(3))
-        while sessions.count < 2 {
+        while sessionRows().count < 2 {
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
             XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
-            let before = sessions.count
+            let before = sessionRows().count
             press(newChat)
             let composer = app.textViews["composer"]
             XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
@@ -519,11 +526,13 @@ final class LiveChatUITests: XCTestCase {
             composer.typeText("Reply with exactly OK and nothing else. Do not use tools.")
             press(app.buttons["Send"].firstMatch)
             let deadline = Date().addingTimeInterval(90)
-            while sessions.count <= before, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
-            XCTAssertGreaterThan(sessions.count, before, "the chat written in is listed")
+            while sessionRows().count <= before, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+            XCTAssertGreaterThan(sessionRows().count, before,
+                                 "the chat written in is listed: \(more.count) \"…\", \(list.outlineRows.count) rows")
         }
 
-        let selected = sessions.element(boundBy: 0), hovered = sessions.element(boundBy: 1)
+        let rows = sessionRows()
+        let selected = rows[0], hovered = rows[1]
         press(selected)
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         hovered.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)).hover()

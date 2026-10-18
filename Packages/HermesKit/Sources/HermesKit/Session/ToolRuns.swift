@@ -63,9 +63,9 @@ public enum ToolCallSummary {
             case .browse: ("Opened pages", "Opening pages")
             case .delegate: ("Delegated tasks", "Delegating tasks")
             case .edit: ("Edited files", "Editing files")
-            case .explore: ("Explored files", "Exploring files")
+            case .explore: ("Read files", "Reading files")
             case .interact: ("Used the browser", "Using the browser")
-            case .other: ("Used tools", "Using tools")
+            case .other: ("Called tools", "Calling tools")
             case .read: ("Read pages", "Reading pages")
             case .run: ("Ran commands", "Running commands")
             case .search: ("Searched", "Searching")
@@ -121,17 +121,24 @@ public enum ToolCallSummary {
         return clauses.enumerated().map { $0 == 0 ? $1 : lowerFirst($1) }.joined(separator: ", ")
     }
 
-    /// A group of steps as its row names it: what its calls did, one clause per kind and
-    /// no counts ("Ran commands, explored files"); "Thought" for reasoning alone. While
-    /// `live`, the kind of the call in progress (else the newest) speaks in the present tense.
+    /// A group of steps as its row names it, as in the user's screenshots: what its calls
+    /// did, one clause per kind in the order they came and no counts, three at most and
+    /// then "etc." ("Ran commands, called tools, read files, etc."); "Analysis completed"
+    /// for reasoning alone. While `live`, the kind of the call in progress (else the
+    /// newest) speaks in the present tense.
     public static func groupTitle(_ tools: [TranscriptItem], live: Bool) -> String {
-        guard !tools.isEmpty else { return live ? "Thinking" : "Thought" }
+        guard !tools.isEmpty else { return live ? "Analyzing" : "Analysis completed" }
         let narrating = live ? (tools.first { $0.isActive } ?? tools.last) : nil
         let liveCategory = narrating.map { category(name(of: $0)) }
-        let present = Set(tools.map { category(name(of: $0)) })
-        let clauses = Category.allCases.filter(present.contains).map { category in
-            category == liveCategory ? category.groupCopy.present : category.groupCopy.past
+        var order: [Category] = []
+        for tool in tools {
+            let kind = category(name(of: tool))
+            if !order.contains(kind) { order.append(kind) }
         }
+        var clauses = order.prefix(3).map { kind in
+            kind == liveCategory ? kind.groupCopy.present : kind.groupCopy.past
+        }
+        if order.count > 3 { clauses.append("etc.") }
         return clauses.enumerated().map { $0 == 0 ? $1 : lowerFirst($1) }.joined(separator: ", ")
     }
 

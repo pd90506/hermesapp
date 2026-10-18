@@ -98,15 +98,36 @@ struct ReasoningText: View {
 }
 
 /// The line every fold in the chat opens with (reasoning, a tool call, a turn's work, a
-/// group of its steps, a step):
-/// its label, then a chevron that turns down while open. The whole line is the button.
+/// group of its steps, a step): its label, then a chevron. The whole line is the button.
 /// Opening or closing keeps the chat's scroll place (`ChatScroll.keepingPlace`), so the
 /// line stays under the pointer and the next click closes it again.
 struct FoldButton<Label: View>: View {
+    enum Chevron {
+        /// Points right, turning down while open.
+        case disclosure
+        /// Points down, and up while open: a turn's "Completed in" line.
+        case upDown
+        /// A disclosure chevron shown only while the pointer is over the line: a turn's
+        /// groups and steps, which read as plain lines.
+        case onHover
+        case none
+    }
+
     @Binding var isExpanded: Bool
-    var showsChevron = true
+    var chevron = Chevron.disclosure
     @ViewBuilder let label: Label
     @Environment(\.chatScroll) private var chatScroll
+    @State private var isHovering = false
+
+    init(isExpanded: Binding<Bool>, showsChevron: Bool = true, @ViewBuilder label: () -> Label) {
+        self.init(isExpanded: isExpanded, chevron: showsChevron ? .disclosure : .none, label: label)
+    }
+
+    init(isExpanded: Binding<Bool>, chevron: Chevron, @ViewBuilder label: () -> Label) {
+        _isExpanded = isExpanded
+        self.chevron = chevron
+        self.label = label()
+    }
 
     var body: some View {
         Button {
@@ -116,11 +137,19 @@ struct FoldButton<Label: View>: View {
         } label: {
             HStack(spacing: 6) {
                 label
-                if showsChevron {
+                switch chevron {
+                case .disclosure, .onHover:
                     Image(systemName: "chevron.right")
                         .uiFont(.caption2, weight: .semibold)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .foregroundStyle(.tertiary)
+                        .opacity(chevron == .onHover && !isHovering ? 0 : 1)
+                case .upDown:
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .uiFont(.caption2, weight: .semibold)
+                        .foregroundStyle(.tertiary)
+                case .none:
+                    EmptyView()
                 }
                 Spacer(minLength: 0)
             }
@@ -129,6 +158,7 @@ struct FoldButton<Label: View>: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
         .accessibilityValue(isExpanded ? "expanded" : "collapsed")
     }
 }
@@ -249,6 +279,9 @@ struct ToolCallBody: View {
     let view: ToolCallView
     /// False where the command is shown above the body already (`WorkStepCard`).
     var showsCommand = true
+    /// Shows the output even where it repeats the call's line (`ToolCallView.showsDetail`):
+    /// a step's card is where its output is read.
+    var showsAllOutput = false
     /// Output past this many lines scrolls; nil for `ToolTextBox`'s own limit.
     var outputMaxLines: Int?
 
@@ -263,7 +296,7 @@ struct ToolCallBody: View {
             if !view.inlineDiff.isEmpty {
                 ToolTextBox(text: view.inlineDiff, kind: .diff)
             }
-            if view.showsDetail { detail }
+            if view.showsDetail || (showsAllOutput && view.inlineDiff.isEmpty && !view.detail.isEmpty) { detail }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -498,7 +531,8 @@ struct BackgroundNoticeRow: View {
 
 /// A turn's work before its answer (`TurnWork`), in the three layers the user asked
 /// for: one line, "Completed in 45s" (live: "Working… 12s"), with a thin rule under it
-/// and the answer below; opened, the turn's commentary and groups of steps; a group
+/// and the answer below; opened, under the rule, the turn's commentary and groups of
+/// steps, several when the model wrote between them; a group
 /// opened, its steps, each opening in place to a card. Open while the turn works, closed
 /// once it is done, until the user opens or closes it.
 struct TurnWorkView<Message: View>: View {
@@ -522,10 +556,11 @@ struct TurnWorkView<Message: View>: View {
     var body: some View {
         let isOpen = toggled ?? work.isLive
         VStack(alignment: .leading, spacing: 8) {
-            FoldButton(isExpanded: Binding(get: { isOpen }, set: { toggled = $0 })) {
+            FoldButton(isExpanded: Binding(get: { isOpen }, set: { toggled = $0 }), chevron: .upDown) {
                 title
             }
             .accessibilityIdentifier(Self.accessibilityIdentifier)
+            Divider()
             if isOpen {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(work.entries) { entry in
@@ -536,7 +571,6 @@ struct TurnWorkView<Message: View>: View {
                     }
                 }
             }
-            Divider()
         }
         .onChange(of: work.isLive) { _, isLive in settledAt = isLive ? nil : Date() }
     }
@@ -561,8 +595,8 @@ struct TurnWorkView<Message: View>: View {
     }
 }
 
-/// A group of a turn's steps: its kind's icon, what its calls did ("Ran commands"),
-/// and a chevron; opened, its steps one line each. Open while it is the group the turn
+/// A group of a turn's steps: its kind's icon and what its calls did ("Ran commands"),
+/// a chevron only under the pointer; opened, its steps one line each. Open while it is the group the turn
 /// is working in, until the user opens or closes it.
 struct StepGroupView: View {
     let group: StepGroup
@@ -578,7 +612,7 @@ struct StepGroupView: View {
     var body: some View {
         let isOpen = toggled ?? group.isLive
         VStack(alignment: .leading, spacing: 4) {
-            FoldButton(isExpanded: Binding(get: { isOpen }, set: { toggled = $0 })) {
+            FoldButton(isExpanded: Binding(get: { isOpen }, set: { toggled = $0 }), chevron: .onHover) {
                 Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
                     .imageScale(.small)
                     .foregroundStyle(.tertiary)
@@ -614,7 +648,7 @@ struct WorkStepView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            FoldButton(isExpanded: $isExpanded) {
+            FoldButton(isExpanded: $isExpanded, chevron: .onHover) {
                 WorkStepLine(step: step)
             }
             .accessibilityIdentifier(Self.accessibilityIdentifier)
@@ -630,7 +664,7 @@ struct WorkStepView: View {
 struct WorkStepLine: View {
     let step: WorkStep
 
-    static let thinkIcon = "brain"
+    static let thinkIcon = "atom"
 
     var body: some View {
         HStack(spacing: 6) {
@@ -691,7 +725,8 @@ struct WorkStepCard: View {
                 header { toolHeading(view) }
                 if Self.hasBody(view) {
                     Divider()
-                    ToolCallBody(view: view, showsCommand: false, outputMaxLines: Self.outputMaxLines)
+                    ToolCallBody(view: view, showsCommand: false, showsAllOutput: true,
+                                 outputMaxLines: Self.outputMaxLines)
                         .padding(8)
                 }
             }
@@ -760,7 +795,7 @@ struct WorkStepCard: View {
 
     /// The call shows something under its header: output, hits, a diff or an error.
     static func hasBody(_ view: ToolCallView) -> Bool {
-        view.showsDetail || view.stdout != nil || view.stderr != nil || !view.searchHits.isEmpty || !view.inlineDiff.isEmpty
+        view.showsDetail || !view.detail.isEmpty || view.stdout != nil || view.stderr != nil || !view.searchHits.isEmpty || !view.inlineDiff.isEmpty
     }
 
     /// The last part of a folder's path, as the card names it.

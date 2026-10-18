@@ -107,7 +107,7 @@ public struct StepGroup: Sendable, Hashable, Identifiable {
         steps.compactMap { if case .tool(let item) = $0 { item } else { nil } }
     }
 
-    /// "Ran commands, explored files", "Thought" (`ToolCallSummary.groupTitle`).
+    /// "Ran commands, read files", "Analysis completed" (`ToolCallSummary.groupTitle`).
     public var title: String { ToolCallSummary.groupTitle(tools, live: isLive) }
     /// The calls counted, as Desktop's run line reads: "Ran 5 commands, explored 3 files".
     public var summary: String { ToolCallSummary.run(tools, live: isLive) }

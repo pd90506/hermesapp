@@ -214,14 +214,38 @@ import Testing
     @Test func groupsAreNamedAfterWhatTheirCallsDid() {
         let read = Self.tool("t1", "read_file", args: ["path": "a.swift"])
         let build = Self.tool("t2", "terminal", args: ["command": "swift build"], phase: .running)
-        #expect(ToolCallSummary.groupTitle([build, read], live: false) == "Explored files, ran commands")
-        #expect(ToolCallSummary.groupTitle([read, build], live: true) == "Explored files, running commands")
-        #expect(ToolCallSummary.groupTitle([], live: false) == "Thought")
-        #expect(ToolCallSummary.groupTitle([], live: true) == "Thinking")
-        let group = StepGroup(id: "g", steps: [.tool(read), .tool(Self.tool("t3", "terminal"))], isLive: false)
-        #expect(group.title == "Explored files, ran commands")
+        let other = Self.tool("t3", "mystery")
+        let edit = Self.tool("t4", "patch")
+        #expect(ToolCallSummary.groupTitle([build, read], live: false) == "Ran commands, read files")
+        #expect(ToolCallSummary.groupTitle([read, build], live: true) == "Read files, running commands")
+        #expect(ToolCallSummary.groupTitle([build, other, read, edit, build], live: false)
+            == "Ran commands, called tools, read files, etc.")
+        #expect(ToolCallSummary.groupTitle([], live: false) == "Analysis completed")
+        #expect(ToolCallSummary.groupTitle([], live: true) == "Analyzing")
+        let group = StepGroup(id: "g", steps: [.tool(read), .tool(Self.tool("t5", "terminal"))], isLive: false)
+        #expect(group.title == "Read files, ran commands")
         #expect(group.iconTool == "read_file")
     }
+
+    /// Text the model writes between steps splits them: one turn's work can hold several
+    /// groups ("Analysis completed", the text, "Ran commands, …").
+    @Test func textBetweenStepsSplitsTheWorkIntoGroups() throws {
+        var thinking = Self.reply("r1", "")
+        thinking.reasoning = "Plan the upgrade."
+        let items = [
+            Self.user("u1"), thinking,
+            Self.reply("a1", "Understood — no backup.", interim: true),
+            Self.tool("t1", "terminal"), Self.tool("t2", "mystery"), Self.tool("t3", "read_file"),
+            Self.reply("a2", "Upgrade done."),
+        ]
+        let blocks = TranscriptGrouping.blocks(items, isRunning: false)
+        #expect(Self.kinds(blocks) == ["u1", "work([~r1] c:a1 [t1,t2,t3])", "a2"])
+        let groups = try #require(Self.work(blocks).first).entries.compactMap { entry -> String? in
+            if case .group(let group) = entry { group.title } else { nil }
+        }
+        #expect(groups == ["Analysis completed", "Ran commands, called tools, read files"])
+    }
+
 }
 
 @Suite struct ToolCallSummaryTests {

@@ -121,7 +121,7 @@ struct SessionListView: View {
             }
         }
         #if os(iOS)
-        // On iPhone the rail is a screen away; on iPad its bottom has the gear.
+        // On iPhone the list mostly covers the rail; on iPad the rail's bottom has the gear.
         .toolbar {
             if sizeClass == .compact {
                 SettingsToolbarItem(presentation: $model.settingsPresentation)

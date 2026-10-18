@@ -6,13 +6,17 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: SidebarItem?
-    /// The column shown when the split view is collapsed (iPhone). Starts on the
-    /// session list, one Back away from the profiles. A new side chat has no row to
-    /// select until the list catches up, so it is shown through this.
-    @State private var compactColumn = NavigationSplitViewColumn.content
     @State private var columns = NavigationSplitViewVisibility.all
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
+    #else
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The column shown when the split view is collapsed (iPhone): the session list,
+    /// with the profile rail under it (`ProfileDrawer`), or the chat. A new side chat
+    /// has no row to select until the list catches up, so it is shown through this.
+    @State private var compactColumn = NavigationSplitViewColumn.sidebar
+    /// On iPhone, whether the session list is slid aside to show the profile rail.
+    @State private var isRailOpen = false
     #endif
 
     var body: some View {
@@ -74,8 +78,10 @@ struct RootView: View {
     }
 
     /// On macOS, as in Mail: one sidebar, the profile rail beside the session list on the
-    /// same glass panel (the window buttons sit on it), and the chat. On iOS three
-    /// columns; on iPhone they collapse into a navigation stack (profiles → sessions → chat).
+    /// same glass panel (the window buttons sit on it), and the chat. On iPad three
+    /// columns. On iPhone two, which collapse into a navigation stack (sessions → chat),
+    /// with the rail under the session list: as a column of its own, Back from the list
+    /// showed it alone, stretched over the screen (2026-10-18).
     @ViewBuilder private var split: some View {
         #if os(macOS)
         NavigationSplitView(columnVisibility: $columns) {
@@ -94,12 +100,26 @@ struct RootView: View {
             chat
         }
         #else
-        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
-            ProfileRailView(showSessions: { compactColumn = .content })
-        } content: {
-            sessionList
-        } detail: {
-            chat
+        if sizeClass == .compact {
+            NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
+                ProfileDrawer(isOpen: $isRailOpen) {
+                    ProfileRailView(showSessions: { withAnimation(.snappy(duration: 0.28)) { isRailOpen = false } })
+                } content: {
+                    sessionList
+                }
+            } detail: {
+                chat
+            }
+        } else {
+            NavigationSplitView(columnVisibility: $columns) {
+                ProfileRailView()
+                    .navigationTitle("Profiles")
+                    .navigationBarTitleDisplayMode(.inline)
+            } content: {
+                sessionList
+            } detail: {
+                chat
+            }
         }
         #endif
     }
@@ -115,7 +135,11 @@ struct RootView: View {
                         Task { await open(item) }
                     }
                 }),
-            showChat: { compactColumn = .detail })
+            showChat: {
+                #if os(iOS)
+                compactColumn = .detail
+                #endif
+            })
     }
 
     /// The chat on screen, over the other warm chats of its server, which stay built

@@ -12,7 +12,7 @@ struct ProfileRailView: View {
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     #endif
-    /// Shows the session list (on iPhone, pushes it).
+    /// Shows the session list (on iPhone, slides it back over the rail).
     var showSessions: () -> Void = {}
 
     /// The profile whose new avatar is being picked.
@@ -73,9 +73,6 @@ struct ProfileRailView: View {
         #if os(macOS)
         // Beside the session list in the one sidebar (`RootView`), at one width.
         .frame(width: ProfileRailItem.width)
-        #else
-        .navigationTitle("Profiles")
-        .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
     }

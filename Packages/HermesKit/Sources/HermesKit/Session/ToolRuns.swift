@@ -22,16 +22,12 @@ public enum TranscriptBlock: Sendable, Hashable, Identifiable {
     }
 }
 
-/// Tool calls shown as one line, as Desktop's `ToolRun` does
-/// (`apps/desktop/src/components/assistant-ui/tool/fallback.tsx:950-1048`): "Explored
-/// 3 files, ran 5 commands", opened on demand.
-///
-/// A settled turn with a final reply folds all its working rows into one run: every
-/// tool call and every commentary segment before the reply. A live turn groups only
-/// consecutive tool calls, so its commentary reads in place while it streams.
+/// Consecutive tool calls shown as one line, as Desktop's `ToolRun` does
+/// (`apps/desktop/src/components/assistant-ui/tool/fallback.tsx:993-1048`): "Explored
+/// 3 files, ran 5 commands", opened on demand. A run of one call is that call's own row.
 public struct ToolRun: Sendable, Hashable, Identifiable {
     public let id: String
-    /// In transcript order: tool rows, and for a folded turn its commentary rows.
+    /// The run's tool rows, with any blank reply segments between them, in order.
     public var items: [TranscriptItem]
     /// The turn is still working and nothing has come after the run.
     public var isLive: Bool
@@ -65,23 +61,21 @@ extension TranscriptItem {
         role == .tool && ToolCallSummary.fileEditTools.contains(toolName ?? tool?.name ?? "")
     }
 
-    /// The call's diff: `inline_diff` from `tool.complete`, else the `inline_diff` or
-    /// `diff` field of a stored edit row's result (`inlineDiffFromResult`,
+    /// A tool row that keeps its own place rather than joining a run: a file edit (the
+    /// turn's deliverable), or a call Desktop draws as its own card, such as a question
+    /// for the user or delegated tasks (`isCardTool`, `apps/desktop/src/lib/tool-render-class.ts`).
+    public var isCardTool: Bool {
+        role == .tool && (isFileEdit || ToolCallSummary.cardTools.contains(toolName ?? tool?.name ?? ""))
+    }
+
+    /// The call's diff: the result's `inline_diff` or `diff`, else `tool.complete`'s
+    /// `inline_diff` (`inlineDiffFromResult(toolResultRecord(part))`,
     /// `apps/desktop/src/components/assistant-ui/tool/fallback-model/index.ts:857-869`),
     /// without the "┊ review diff" heading.
     public var toolDiff: String? {
         guard let tool else { return nil }
-        var raw = tool.inlineDiff
-        if raw?.isEmpty != false, let output = tool.output, let data = output.data(using: .utf8),
-           case .object(let result)? = try? JSONDecoder().decode(JSONValue.self, from: data) {
-            raw = result["inline_diff"]?.stringValue ?? result["diff"]?.stringValue
-        }
-        guard var diff = raw else { return nil }
-        diff = diff.replacingOccurrences(of: #"\x{1B}\[[0-9;]*[A-Za-z]"#, with: "", options: .regularExpression)
-        diff = diff.replacingOccurrences(of: #"^\s*┊\s*review diff\s*\n"#, with: "",
-                                         options: [.regularExpression, .caseInsensitive])
-        diff = diff.trimmingCharacters(in: .whitespacesAndNewlines)
-        return diff.isEmpty ? nil : diff
+        let record = ToolCallView.metadata(tool).merging(ToolCallView.record(ToolCallView.result(tool))) { $1 }
+        return ToolCallView.inlineDiff(record).nonEmpty
     }
 }
 
@@ -105,8 +99,9 @@ public enum TranscriptGrouping {
     }
 
     /// Splits the items into turns (a user row starts one; a steer joins the running
-    /// turn) and groups each: the running turn's tool calls into runs, a settled
-    /// turn's working rows into one run before its reply.
+    /// turn) and groups each turn's consecutive tool calls into runs, live or settled
+    /// alike, as Desktop groups a message's adjacent tool parts (`ToolGroupSlot`,
+    /// `tool/fallback.tsx:1060-1110`): commentary and reasoning between calls end a run.
     public static func blocks(_ items: [TranscriptItem], isRunning: Bool) -> [TranscriptBlock] {
         var turns: [[TranscriptItem]] = []
         for item in items {
@@ -117,51 +112,24 @@ public enum TranscriptGrouping {
             }
         }
         return turns.enumerated().flatMap { index, turn in
-            isRunning && index == turns.count - 1 ? runs(turn, live: true) : folded(turn)
+            runs(turn, live: isRunning && index == turns.count - 1)
         }
     }
 
-    /// A settled turn whose last row with text is a reply after every tool call: the
-    /// tool calls and the commentary before the reply become one run, where the first
-    /// of them was. File edits, user, steer and system rows keep their places: an
-    /// edit's diff is the turn's deliverable, as Desktop keeps it
-    /// (`apps/desktop/src/lib/tool-render-class.ts`, `isCardTool`).
-    static func folded(_ turn: [TranscriptItem]) -> [TranscriptBlock] {
-        guard let lastTool = turn.lastIndex(where: { $0.role == .tool }),
-              let reply = turn.lastIndex(where: { $0.role == .assistant && $0.hasReplyText && !$0.isInterim }),
-              reply > lastTool
-        else { return runs(turn, live: false) }
-        let working = turn.indices.filter {
-            $0 < reply && (turn[$0].role == .assistant || (turn[$0].role == .tool && !turn[$0].isFileEdit))
-        }
-        guard let first = working.first else { return runs(turn, live: false) }
-        let run = ToolRun(id: "turn-" + turn[first].id, items: working.map { turn[$0] }, isLive: false)
-        let folded = Set(working)
-        var blocks: [TranscriptBlock] = []
-        for index in turn.indices {
-            if index == first {
-                blocks.append(.run(run))
-            } else if !folded.contains(index) {
-                blocks.append(.item(turn[index]))
-            }
-        }
-        return blocks
-    }
-
-    /// Consecutive tool calls (with blank reply segments between them) as runs; file
-    /// edits and every other row as themselves. With `live`, the run nothing visible follows is live.
+    /// Consecutive tool calls (with blank reply segments between them) as runs; card
+    /// tools and every other row as themselves. With `live`, the run nothing visible follows is live.
     static func runs(_ turn: [TranscriptItem], live: Bool) -> [TranscriptBlock] {
         var blocks: [TranscriptBlock] = []
         var index = 0
         while index < turn.count {
-            guard turn[index].role == .tool, !turn[index].isFileEdit else {
+            guard turn[index].role == .tool, !turn[index].isCardTool else {
                 blocks.append(.item(turn[index]))
                 index += 1
                 continue
             }
             var end = index
             var scan = index + 1
-            while scan < turn.count, (turn[scan].role == .tool && !turn[scan].isFileEdit) || turn[scan].isBlankReply {
+            while scan < turn.count, (turn[scan].role == .tool && !turn[scan].isCardTool) || turn[scan].isBlankReply {
                 if turn[scan].role == .tool { end = scan }
                 scan += 1
             }
@@ -199,6 +167,10 @@ public enum ToolCallSummary {
     }
 
     public static let fileEditTools: Set<String> = ["edit_file", "patch", "write_file"]
+
+    /// Tools Desktop draws as their own card, never inside a run (`CARD_TOOL_NAMES`).
+    public static let cardTools: Set<String> = ["clarify", "delegate_task", "image_generate", "manage_catalog",
+                                                "manage_connections", "set_theme", "setup_beat"]
 
     static let toolCategories: [String: Category] = [
         "browser_navigate": .browse,
@@ -240,20 +212,6 @@ public enum ToolCallSummary {
         let failed = tools.filter { $0.tool?.phase == .failed }.count
         if failed > 0 { clauses.append("\(failed) tool call\(failed == 1 ? "" : "s") failed") }
         return clauses.enumerated().map { $0 == 0 ? $1 : lowerFirst($1) }.joined(separator: ", ")
-    }
-
-    /// One call's own line: what it did and to what ("Ran swift build",
-    /// "Edited Transcript.swift"); other tools by name.
-    public static func title(for tool: TranscriptItem) -> String {
-        let live = tool.isActive
-        if let skill = skillTitle(tool, live: live) { return skill }
-        let name = name(of: tool)
-        let category = category(name)
-        let copy = category.copy
-        let verb = live ? copy.present : copy.past
-        if category == .other || category == .interact { return name }
-        let target = target(of: tool, category: category)
-        return target.isEmpty ? "\(verb) \(copy.singular)" : "\(verb) \(target)"
     }
 
     static func clause(_ category: Category, _ tools: [TranscriptItem], live: Bool) -> String {

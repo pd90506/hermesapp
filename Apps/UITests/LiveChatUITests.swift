@@ -115,7 +115,7 @@ final class LiveChatUITests: XCTestCase {
 
         // A call opens in place: its `$ command` line and output below it, no popover.
         press(rows.firstMatch)
-        let prompt = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '$ echo'")).firstMatch
+        let prompt = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '$ echo' OR value BEGINSWITH '$ echo'")).firstMatch
         XCTAssertTrue(prompt.waitForExistence(timeout: 5), "the opened call shows its command")
         attach(app, "call opened")
         #if os(macOS)

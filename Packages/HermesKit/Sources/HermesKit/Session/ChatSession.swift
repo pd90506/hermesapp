@@ -46,7 +46,13 @@ public final class ChatSession: Identifiable {
     public private(set) var storedSessionID: String?
     public private(set) var title: String?
     public private(set) var info: SessionLiveInfo?
-    public private(set) var transcript: Transcript
+    public internal(set) var transcript: Transcript
+    /// Whether streamed text is shown a batch at a time (`StreamedTextQueue`), as its
+    /// connection says (`GatewayConnection.coalescesStreamedText`); off, each delta shows
+    /// as it comes.
+    @ObservationIgnored var coalescesStreamedText: Bool
+    /// Streamed text not shown yet (`coalescesStreamedText`).
+    @ObservationIgnored lazy var streamedText = StreamedTextQueue { [weak self] events in self?.show(events) }
     /// Highest event `seq` applied — the watermark for `session.events.since`.
     public private(set) var lastSeq: Int?
     /// The profile whose state.db holds this session (`nil` = the gateway's
@@ -118,7 +124,7 @@ public final class ChatSession: Identifiable {
     func markRuntimeGone() {
         isRuntimeGone = true
         retainRequests(ids: [])
-        transcript.reconcileRunning(false)
+        current.reconcileRunning(false)
     }
 
     public nonisolated var id: ObjectIdentifier { ObjectIdentifier(self) }
@@ -135,12 +141,14 @@ public final class ChatSession: Identifiable {
         self.profile = profile
         self.kind = kind
         self.connection = connection
+        coalescesStreamedText = connection?.coalescesStreamedText ?? false
     }
 
     /// Replaces local state with a fresh snapshot (after a cold resume).
     /// - Parameter storedSessionID: the key that was resumed, used when the
     ///   payload carries none.
     func reset(to snapshot: LiveSessionSnapshot, storedSessionID resumedKey: String? = nil) {
+        streamedText.flush()
         sessionID = snapshot.sessionID
         storedSessionID = snapshot.storedKey ?? resumedKey ?? storedSessionID
         if let info = snapshot.info {
@@ -150,7 +158,7 @@ public final class ChatSession: Identifiable {
         // Built from the snapshot and stored rows only: no bubble is carried over.
         let old = transcript
         transcript = Transcript(snapshot: snapshot, localIDsAfter: old.lastLocalID)
-        transcript.adoptSentImages(of: old)
+        current.adoptSentImages(of: old)
         returnFailedPrompts(of: old)
         lastSeq = nil
         isRuntimeGone = false
@@ -171,7 +179,7 @@ public final class ChatSession: Identifiable {
         let failed = old.failedPrompts
         guard !failed.isEmpty else { return }
         // The snapshot's own failure (a retained failed turn) is the newer news.
-        if transcript.lastError == nil, let message = old.lastError { transcript.keepError(message) }
+        if transcript.lastError == nil, let message = old.lastError { current.keepError(message) }
         // In the order they were sent, ahead of the draft, in one go.
         let texts = failed.filter { $0.images.isEmpty && $0.attachments.isEmpty }.map(\.text)
         if !texts.isEmpty { returnToDraft(texts.joined(separator: "\n")) }
@@ -236,7 +244,7 @@ public final class ChatSession: Identifiable {
                 return
             }
             guard let self, generation == self.historyGeneration else { return }
-            self.transcript.installLatestPage(latest.rows, hasOlder: latest.hasOlder, rereadable: latest.paged)
+            self.current.installLatestPage(latest.rows, hasOlder: latest.hasOlder, rereadable: latest.paged)
             self.historyLoad = .idle
             self.historyPrefetch = nil
             self.rereadIfNeeded()
@@ -263,7 +271,7 @@ public final class ChatSession: Identifiable {
             // A short page is the first one (`hermes_state_messages.py:1409`).
             let limit = page.pagination?.limit ?? query.limit
             let hasOlder = page.pagination != nil && limit > 0 && page.messages.count >= limit
-            transcript.prependOlderPage(page.messages, hasOlder: hasOlder)
+            current.prependOlderPage(page.messages, hasOlder: hasOlder)
             historyLoad = .idle
         } catch is CancellationError {
             // The header left the screen: nothing failed, scrolling back reads it again.
@@ -343,9 +351,9 @@ public final class ChatSession: Identifiable {
     /// another socket, so read the newest rows again, or the newest page if none
     /// was read yet.
     func reconcileAfterRevisit(running: Bool) {
-        transcript.reconcileRunning(running)
+        current.reconcileRunning(running)
         if transcript.paging.isLoaded {
-            transcript.requestReread()
+            current.requestReread()
             rereadIfNeeded()
         } else if historyLoad != .loadingLatest {
             historyLoad = .idle
@@ -356,20 +364,47 @@ public final class ChatSession: Identifiable {
     /// Drops pending requests the server no longer lists as open.
     func retainRequests(ids: Set<String>) {
         for request in transcript.pendingRequests where !ids.contains(request.id) {
-            transcript.removeRequest(id: request.id)
+            current.removeRequest(id: request.id)
         }
     }
 
     func apply(_ event: GatewayEvent) {
         if let seq = event.seq, event.sessionID == sessionID { lastSeq = max(lastSeq ?? 0, seq) }
         switch event.kind {
+        case .messageDelta, .reasoningDelta:
+            if coalescesStreamedText {
+                streamedText.append(event)
+                return
+            }
+        default:
+            // After the text streamed before it, as Desktop flushes its queue first
+            // (`use-message-stream/index.ts:527,560`).
+            streamedText.flush()
+        }
+        switch event.kind {
         case .sessionTitle(let change):
             if change.sessionID == storedSessionID || change.sessionID == sessionID { title = change.title }
         case .sessionInfo(let newInfo):
             applyInfo(newInfo)
         default:
-            transcript.apply(event)
+            applyToTranscript(event)
             rereadIfNeeded()
+        }
+    }
+
+    /// The chat reads the transcript whole, so every change to it updates the chat.
+    /// Streamed text always changes it and goes in place; any other event goes to a copy,
+    /// kept only when it changed something. Some change nothing, and each one updated the
+    /// whole chat: a `thinking.delta` frame of the wait line (`tui_gateway/agent_callbacks.py:117-123`)
+    /// that leaves `Transcript.providerWait` as it was, a `status.update` repeating the status.
+    private func applyToTranscript(_ event: GatewayEvent) {
+        switch event.kind {
+        case .messageDelta, .reasoningDelta:
+            transcript.apply(event)
+        default:
+            var next = transcript
+            next.apply(event)
+            if next != transcript { transcript = next }
         }
     }
 
@@ -378,9 +413,9 @@ public final class ChatSession: Identifiable {
         // A turn that ended without `message.complete` (a refused `@` context) ends here
         // too: every turn body closes with `running: false` (`Transcript.serverReportsIdle`).
         if newInfo.running == false, transcript.isRunning {
-            transcript.serverReportsIdle()
+            current.serverReportsIdle()
             if !transcript.isRunning {
-                transcript.requestReread()
+                current.requestReread()
                 rereadIfNeeded()
             }
         }
@@ -409,7 +444,7 @@ public final class ChatSession: Identifiable {
         guard transcript.needsReread, rereadTask == nil, let source = connection?.messagesSource,
             let key = historyKey ?? storedSessionID
         else { return }
-        let ticket = transcript.beginReread()
+        let ticket = current.beginReread()
         let generation = historyGeneration
         // A read asked for by anything but a retry (a turn's end, a revisit, a reconnect)
         // starts a new streak: it gets every retry again, also after a long outage.
@@ -434,7 +469,7 @@ public final class ChatSession: Identifiable {
             }
             guard let self, generation == self.historyGeneration else { return }
             self.rereadTask = nil
-            self.transcript.installRereadPage(rows, ticket: ticket, reachesStart: reachesStart)
+            self.current.installRereadPage(rows, ticket: ticket, reachesStart: reachesStart)
             if failed { self.retryReread(generation: generation) } else { self.rereadFailures = 0 }
             self.rereadIfNeeded()
         }
@@ -457,7 +492,7 @@ public final class ChatSession: Identifiable {
             do { try await Task.sleep(for: delay) } catch { return }
             guard let self, generation == self.historyGeneration else { return }
             self.rereadRetry = nil
-            self.transcript.requestReread()
+            self.current.requestReread()
             self.rereadIsRetry = true
             self.rereadIfNeeded()
             self.rereadIsRetry = false
@@ -476,7 +511,7 @@ public final class ChatSession: Identifiable {
     nonisolated static let rereadPageLimit = 4
 
     func receive(_ request: ServerRequest) {
-        transcript.addRequest(request)
+        current.addRequest(request)
     }
 
     // MARK: - Actions
@@ -530,7 +565,7 @@ public final class ChatSession: Identifiable {
         if reviveError == nil, let client = connection?.client {
             try await clearStrandedImages(using: client)
         }
-        let itemID = transcript.appendUserPrompt(trimmed, attachments: names, attachmentPaths: paths)
+        let itemID = current.appendUserPrompt(trimmed, attachments: names, attachmentPaths: paths)
         do {
             if let reviveError { throw reviveError }
             let client = try currentClient()
@@ -539,11 +574,11 @@ public final class ChatSession: Identifiable {
         } catch {
             let message = GatewayConnection.describe(error)
             if transcript.holdsPrompt(itemID) {
-                transcript.submitFailed(message, itemID: itemID)
+                current.submitFailed(message, itemID: itemID)
             } else {
                 // A rebuild replaced the bubble meanwhile: its text goes back to the draft
                 // (with files, the composer already keeps the cards and the text).
-                transcript.keepError(message)
+                current.keepError(message)
                 if files.isEmpty { returnToDraft(trimmed) }
             }
             throw error
@@ -578,7 +613,7 @@ public final class ChatSession: Identifiable {
         } catch GatewayClientError.notConnected {
             throw ComposerError.notConnected
         } catch {
-            transcript.keepError(GatewayConnection.describe(error))
+            current.keepError(GatewayConnection.describe(error))
             throw error
         }
         let sid = sessionID
@@ -614,7 +649,7 @@ public final class ChatSession: Identifiable {
         let shown = zip(images, queued).enumerated().map { position, pair in
             TranscriptImage(name: pair.0.filename, path: pair.1, localID: pair.0.id, position: position)
         }
-        let itemID = transcript.appendUserPrompt(trimmed, images: shown, attachments: files, attachmentPaths: filePaths)
+        let itemID = current.appendUserPrompt(trimmed, images: shown, attachments: files, attachmentPaths: filePaths)
         do {
             let result = try await Self.submitUncancellably(client, sessionID: sid, text: prompt)
             // The bubble settles like any prompt (and like a row-less `streaming`
@@ -628,9 +663,9 @@ public final class ChatSession: Identifiable {
             // Bubble gone (a rebuild): the composer takes back the text and cards.
             let message = GatewayConnection.describe(error)
             if transcript.holdsPrompt(itemID) {
-                transcript.submitFailed(message, itemID: itemID)
+                current.submitFailed(message, itemID: itemID)
             } else {
-                transcript.keepError(message)
+                current.keepError(message)
             }
             await detach(queued, using: client, sessionID: sid)
             throw error
@@ -645,9 +680,9 @@ public final class ChatSession: Identifiable {
     /// re-read of the newest rows instead.
     private func promptAnswered(itemID: String, status: String?, userRowID: Int? = nil) {
         if transcript.holdsPrompt(itemID) {
-            transcript.promptAnswered(itemID: itemID, status: status, userRowID: userRowID)
+            current.promptAnswered(itemID: itemID, status: status, userRowID: userRowID)
         } else {
-            transcript.requestReread()
+            current.requestReread()
         }
         rereadIfNeeded()
     }
@@ -781,7 +816,7 @@ public final class ChatSession: Identifiable {
         let result = try await client.interrupt(sessionID: sessionID)
         // Hermes cleared its queue with the Stop (`session_lifecycle.py:708-712`). Only a
         // hosted-task check answers `not_interrupted`, before touching it.
-        if result.status != "not_interrupted" { transcript.serverClearedQueue(sentBeforeStop: sentBeforeStop) }
+        if result.status != "not_interrupted" { current.serverClearedQueue(sentBeforeStop: sentBeforeStop) }
     }
 
     // MARK: - Steering a running turn
@@ -802,7 +837,7 @@ public final class ChatSession: Identifiable {
             try await send(trimmed)
             return .sentAsPrompt
         }
-        let itemID = transcript.appendUserPrompt(trimmed, displayKind: "steer")
+        let itemID = current.appendUserPrompt(trimmed, displayKind: "steer")
         promptAnswered(itemID: itemID, status: "steered")
         return .steered
     }
@@ -821,12 +856,12 @@ public final class ChatSession: Identifiable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .ignored }
         let client = try await liveClient()
-        let itemID = transcript.appendUserPrompt(trimmed)
+        let itemID = current.appendUserPrompt(trimmed)
         let result: SessionCorrectionResult
         do {
             result = try await client.redirect(sessionID: sessionID, text: trimmed)
         } catch {
-            transcript.withdrawPrompt(itemID)
+            current.withdrawPrompt(itemID)
             throw error
         }
         switch result.status {
@@ -834,11 +869,11 @@ public final class ChatSession: Identifiable {
             promptAnswered(itemID: itemID, status: "redirected")
             return .redirected
         case "queued":
-            transcript.movePromptToEnd(itemID)
+            current.movePromptToEnd(itemID)
             promptAnswered(itemID: itemID, status: "queued")
             return .queuedForNextTurn
         default:
-            transcript.withdrawPrompt(itemID)
+            current.withdrawPrompt(itemID)
             try await send(trimmed)
             return .sentAsPrompt
         }
@@ -853,7 +888,7 @@ public final class ChatSession: Identifiable {
         guard !trimmed.isEmpty else { return }
         let client = try await liveClient()
         let taskID = try await client.askBTW(sessionID: sessionID, text: trimmed)
-        transcript.beginSideQuestion(taskID: taskID, question: trimmed)
+        current.beginSideQuestion(taskID: taskID, question: trimmed)
     }
 
     /// Runs `prompt` on a fresh agent in the background (`prompt.background`,
@@ -864,7 +899,7 @@ public final class ChatSession: Identifiable {
         guard !trimmed.isEmpty else { return }
         let client = try await liveClient()
         let taskID = try await client.startBackgroundTask(sessionID: sessionID, text: trimmed)
-        transcript.beginSideQuestion(taskID: taskID, question: trimmed, kind: .background)
+        current.beginSideQuestion(taskID: taskID, question: trimmed, kind: .background)
     }
 
     /// Compresses the conversation context (`session.compress`, `/compress`),
@@ -889,7 +924,7 @@ public final class ChatSession: Identifiable {
         } else {
             message = "nothing to compress"
         }
-        transcript.appendNote(message)
+        current.appendNote(message)
         return message
     }
 
@@ -937,7 +972,7 @@ public final class ChatSession: Identifiable {
         func isOne(of names: Set<String>) -> Bool { names.contains(typed) || known.map(names.contains) == true }
 
         if kind == .botChat, isOne(of: ["new", "reset", "clear"]) {
-            transcript.appendNote("Bot chats are one continuous conversation — compacting instead.")
+            current.appendNote("Bot chats are one continuous conversation — compacting instead.")
             return .output(try await compress())
         }
         if isOne(of: ["btw"]) {
@@ -1030,7 +1065,7 @@ public final class ChatSession: Identifiable {
         if let notice = result.notice?.trimmingCharacters(in: .whitespacesAndNewlines), !notice.isEmpty,
             type == "send" || type == "prefill"
         {
-            transcript.appendNote(notice)
+            current.appendNote(notice)
         }
         let message = (result.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if type == "prefill" { return .prefill(message) }
@@ -1045,15 +1080,15 @@ public final class ChatSession: Identifiable {
         // Images a failed send left queued would ride with this prompt, as with `send`.
         try await clearStrandedImages(using: client)
         let running = transcript.isRunning
-        let itemID = transcript.appendUserPrompt(display)
+        let itemID = current.appendUserPrompt(display)
         do {
             let answer = try await Self.submitUncancellably(client, sessionID: sessionID, text: message,
                                                             queued: running ? true : nil)
             promptAnswered(itemID: itemID, status: answer.status, userRowID: answer.userRowID)
         } catch {
             let failure = GatewayConnection.describe(error)
-            if transcript.holdsPrompt(itemID) { transcript.submitFailed(failure, itemID: itemID) } else {
-                transcript.keepError(failure)
+            if transcript.holdsPrompt(itemID) { current.submitFailed(failure, itemID: itemID) } else {
+                current.keepError(failure)
             }
             throw error
         }
@@ -1061,26 +1096,26 @@ public final class ChatSession: Identifiable {
     }
 
     private func note(_ text: String) -> SlashOutcome {
-        transcript.appendNote(text)
+        current.appendNote(text)
         return .output(text)
     }
 
     /// Device-local feedback for client actions and unavailable commands.
     public func appendLocalNote(_ text: String) {
-        transcript.appendNote(text)
+        current.appendNote(text)
     }
 
     // MARK: - Server requests
 
     public func answer(_ request: ServerRequest, approval choice: ApprovalChoice, all: Bool = false) async throws {
         try await currentClient().answer(request, approval: ApprovalAnswer(choice: choice, all: all ? true : nil))
-        transcript.removeRequest(id: request.id)
+        current.removeRequest(id: request.id)
     }
 
     /// `answers == nil` cancels the clarify request.
     public func answer(_ request: ServerRequest, clarify answers: [String: String?]?) async throws {
         try await currentClient().answer(request, clarify: ClarifyAnswer(answers: answers))
-        transcript.removeRequest(id: request.id)
+        current.removeRequest(id: request.id)
     }
 
     /// Answers a clarify request from per-question selections (multi-select
@@ -1094,7 +1129,7 @@ public final class ChatSession: Identifiable {
     /// sudo / secret prompts. An empty string means "skip".
     public func answer(_ request: ServerRequest, value: String) async throws {
         try await currentClient().answer(request, value: ValueAnswer(value: value))
-        transcript.removeRequest(id: request.id)
+        current.removeRequest(id: request.id)
     }
 
     // MARK: - Clients

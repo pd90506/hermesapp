@@ -134,7 +134,7 @@ import FoundationNetworking
         old.installLatestPage(rows, hasOlder: false)
         let image = sendWithImage(&old)
         old.installRereadPage(rows + [storedRow(id: 3, text: "看这张图")], ticket: old.beginReread(), reachesStart: true)
-        let payload: JSONValue = ["session_id": "sid-1", "message_count": 3, "messages_omitted": true]
+        let payload: JSONValue = ["session_id": "sid-1", "message_count": 3, "messages": [], "messages_omitted": true]
         var rebuilt = Transcript(snapshot: try payload.decode(LiveSessionSnapshot.self))
         rebuilt.adoptSentImages(of: old)
         rebuilt.installLatestPage(rows + [storedRow(id: 3, text: "看这张图")], hasOlder: false)

@@ -312,7 +312,7 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
         XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                       "\(state): the sidebar over the rail \(over) and over the list \(session) differ")
-        // The band is glass, a little off the chat's white in light mode, over a hairline.
+        // The band is frosted, a little off the chat's white in light mode, over a hairline.
         XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 3 },
                       "\(state): no band over the chat: \(chat), the same as under it \(below)")
     }
@@ -507,7 +507,7 @@ final class LiveChatUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(reply.count, 1, "round \(round) answered")
         }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        // The first replies are under the title bar now, and show through its glass.
+        // The first replies are under the title bar now, blurred by its frosted band.
         attach(app, "Prompt rail: chat after three rounds")
 
         let ticks = app.buttons.matching(identifier: "prompt-rail-tick")
@@ -530,6 +530,12 @@ final class LiveChatUITests: XCTestCase {
         let first = app.staticTexts.matching(isFirst).firstMatch.exists
             ? app.staticTexts.matching(isFirst).firstMatch : app.textViews.matching(isFirst).firstMatch
         XCTAssertTrue(first.exists && first.isHittable, "the first prompt is on screen after the jump")
+
+        // The band follows the appearance: dark frosted glass in dark mode.
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "Prompt rail: dark mode")
     }
     #endif
 

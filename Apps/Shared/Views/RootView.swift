@@ -268,21 +268,20 @@ private struct OpeningChatView: View {
 }
 
 extension View {
-    /// On macOS, a band under the chat's title bar: a strip of Liquid Glass the toolbar's
-    /// height, with a hairline under it, the same in every state and whether or not the
-    /// pointer is over it (the system's showed none, or only under the pointer). The
-    /// chat scrolls under it and shows through. Clear glass: a material, and even the
-    /// regular glass, frosted the rows under it almost to white (VM, 2026-10-18). A
-    /// faint tint so the band has a tone of its own over an empty chat, which untinted
-    /// clear glass did not.
+    /// On macOS, a band under the chat's title bar: frosted glass the toolbar's height,
+    /// with a hairline under it, the same in every state and whether or not the pointer
+    /// is over it (the system's showed none, or only under the pointer). The chat scrolls
+    /// under it, blurred, in the window's light or dark. The thinnest material: the
+    /// regular one looked opaque, and Liquid Glass showed the rows under it sharp, light
+    /// in dark mode, with a mirrored line along its edge (2026-10-18).
     @ViewBuilder func titleBarBand() -> some View {
         #if os(macOS)
         overlay(alignment: .top) {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
-                    Color.clear
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
                         .frame(height: proxy.safeAreaInsets.top)
-                        .glassEffect(.clear.tint(.primary.opacity(0.06)), in: .rect)
                     Divider()
                     Spacer(minLength: 0)
                 }

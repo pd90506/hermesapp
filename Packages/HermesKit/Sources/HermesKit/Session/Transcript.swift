@@ -22,6 +22,10 @@ public struct TranscriptItem: Sendable, Hashable, Identifiable {
     public var outcome: String?
     /// The stored row this item shows (`messages.id`), when it came from a stored page.
     public var rowID: Int?
+    /// When the row was written: a stored row's `timestamp` (stamped as Hermes appends
+    /// it, `agent/message_metadata.py:250-262`), or when a prompt was sent here. Other
+    /// live rows have none.
+    public var timestamp: Date?
     /// Tool rows: the call id (`tool_call_id`, `tool.start.tool_id`).
     public var toolCallID: String?
     /// User rows: the images sent with the prompt (`text` is then its caption).
@@ -932,6 +936,7 @@ public struct Transcript: Sendable, Hashable {
         item.attachments = attachments
         item.attachmentPaths = attachmentPaths
         item.displayKind = displayKind
+        item.timestamp = sentAt
         items.append(item)
         prompts[item.id] = .sent
         promptSentAtStarts[item.id] = starts

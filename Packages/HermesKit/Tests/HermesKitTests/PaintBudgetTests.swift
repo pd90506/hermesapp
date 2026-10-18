@@ -41,7 +41,7 @@ import Testing
         #expect(steps >= 2 && steps < blocks.count / 2, "\(steps) steps")
     }
 
-    /// Line breaks count (code, lists, tables are many short lines); a tool run is one
+    /// Line breaks count (code, lists, tables are many short lines); a turn's work is one
     /// closed line whatever it holds.
     @Test func weights() {
         let prose = reply(0, characters: 600)
@@ -49,6 +49,6 @@ import Testing
                                                        text: String(repeating: "let x = 1\n", count: 60)))
         #expect(PaintBudget.weight(of: code) > 2 * PaintBudget.weight(of: prose))
         let tools = (0..<30).map { TranscriptItem(id: "t\($0)", role: .tool, text: String(repeating: "y", count: 5_000)) }
-        #expect(PaintBudget.weight(of: .run(ToolRun(id: "r", items: tools, isLive: false))) < 500)
+        #expect(PaintBudget.weight(of: .work(TurnWork(id: "w", items: tools, entries: [], isLive: false))) < 500)
     }
 }

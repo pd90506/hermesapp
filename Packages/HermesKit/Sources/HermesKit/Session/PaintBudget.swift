@@ -17,7 +17,7 @@ public enum PaintBudget {
     /// The first frame builds at least this many blocks, however heavy.
     public static let minimumBlocks = 4
 
-    /// What `block` costs to build, in characters. A tool run and a reasoning fold are
+    /// What `block` costs to build, in characters. A turn's work and a reasoning fold are
     /// closed (one line) until opened, so their content costs nothing yet; a line break
     /// counts as a short line (code, lists, tables).
     public static func weight(of block: TranscriptBlock) -> Int {
@@ -27,7 +27,7 @@ public enum PaintBudget {
             var newlines = 0
             for unit in item.text.utf8 where unit == 0x0A { newlines += 1 }
             return 150 + item.text.utf8.count + 60 * newlines
-        case .run:
+        case .work:
             return 150
         }
     }

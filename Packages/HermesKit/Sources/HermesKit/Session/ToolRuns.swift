@@ -1,51 +1,6 @@
 import Foundation
 import HermesProtocol
 
-/// One thing the chat draws: a message, or a run of tool calls under one summary line.
-public enum TranscriptBlock: Sendable, Hashable, Identifiable {
-    case item(TranscriptItem)
-    case run(ToolRun)
-
-    public var id: String {
-        switch self {
-        case .item(let item): item.id
-        case .run(let run): run.id
-        }
-    }
-
-    /// The rows the block holds: its message, or the run's rows.
-    public var items: [TranscriptItem] {
-        switch self {
-        case .item(let item): [item]
-        case .run(let run): run.items
-        }
-    }
-}
-
-/// Consecutive tool calls shown as one line, as Desktop's `ToolRun` does
-/// (`apps/desktop/src/components/assistant-ui/tool/fallback.tsx:993-1048`): "Explored
-/// 3 files, ran 5 commands", opened on demand. A run of one call is that call's own row.
-public struct ToolRun: Sendable, Hashable, Identifiable {
-    public let id: String
-    /// The run's tool rows, with any blank reply segments between them, in order.
-    public var items: [TranscriptItem]
-    /// The turn is still working and nothing has come after the run.
-    public var isLive: Bool
-
-    public init(id: String, items: [TranscriptItem], isLive: Bool) {
-        self.id = id
-        self.items = items
-        self.isLive = isLive
-    }
-
-    public var tools: [TranscriptItem] { items.filter { $0.role == .tool } }
-
-    /// The rows the run shows when opened: blank reply segments draw nothing.
-    public var visibleItems: [TranscriptItem] { items.filter { !$0.isBlankReply } }
-
-    public var summary: String { ToolCallSummary.run(tools, live: isLive) }
-}
-
 extension TranscriptItem {
     /// An assistant row with nothing to show yet: no text (whitespace counts as none),
     /// no reasoning and no outcome. The waiting row stands in for it.
@@ -55,17 +10,16 @@ extension TranscriptItem {
 
     public var hasReplyText: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    /// A tool row for a file edit (`edit_file`, `patch`, `write_file`): its diff is shown
-    /// in place, never folded into a summary.
+    /// A tool row for a file edit (`edit_file`, `patch`, `write_file`).
     public var isFileEdit: Bool {
         role == .tool && ToolCallSummary.fileEditTools.contains(toolName ?? tool?.name ?? "")
     }
 
-    /// A tool row that keeps its own place rather than joining a run: a file edit (the
-    /// turn's deliverable), or a call Desktop draws as its own card, such as a question
-    /// for the user or delegated tasks (`isCardTool`, `apps/desktop/src/lib/tool-render-class.ts`).
+    /// A call Desktop draws as its own card, such as a question for the user or delegated
+    /// tasks (`isCardTool`, `apps/desktop/src/lib/tool-render-class.ts`): it keeps its own
+    /// row in a turn's work rather than joining a group of steps.
     public var isCardTool: Bool {
-        role == .tool && (isFileEdit || ToolCallSummary.cardTools.contains(toolName ?? tool?.name ?? ""))
+        role == .tool && ToolCallSummary.cardTools.contains(toolName ?? tool?.name ?? "")
     }
 
     /// The call's diff: the result's `inline_diff` or `diff`, else `tool.complete`'s
@@ -76,69 +30,6 @@ extension TranscriptItem {
         guard let tool else { return nil }
         let record = ToolCallView.metadata(tool).merging(ToolCallView.record(ToolCallView.result(tool))) { $1 }
         return ToolCallView.inlineDiff(record).nonEmpty
-    }
-}
-
-extension Transcript {
-    /// The transcript as the chat draws it (`TranscriptGrouping.blocks`).
-    public var blocks: [TranscriptBlock] { TranscriptGrouping.blocks(items, isRunning: isRunning) }
-
-    /// The id of the block that draws `itemID` now, or nil when no block holds it.
-    /// A block's id can change when an older page lands (a run is named after its
-    /// first row, and the page can hold earlier rows of the same turn), so the chat
-    /// keeps its place by a row's id and finds that row's block after the page.
-    public func blockID(containing itemID: String) -> String? {
-        TranscriptGrouping.blockID(containing: itemID, in: blocks)
-    }
-}
-
-public enum TranscriptGrouping {
-    /// The id of the block in `blocks` that holds the row `itemID`.
-    public static func blockID(containing itemID: String, in blocks: [TranscriptBlock]) -> String? {
-        blocks.first { $0.items.contains { $0.id == itemID } }?.id
-    }
-
-    /// Splits the items into turns (a user row starts one; a steer joins the running
-    /// turn) and groups each turn's consecutive tool calls into runs, live or settled
-    /// alike, as Desktop groups a message's adjacent tool parts (`ToolGroupSlot`,
-    /// `tool/fallback.tsx:1060-1110`): commentary and reasoning between calls end a run.
-    public static func blocks(_ items: [TranscriptItem], isRunning: Bool) -> [TranscriptBlock] {
-        var turns: [[TranscriptItem]] = []
-        for item in items {
-            if turns.isEmpty || (item.role == .user && !item.isSteer) {
-                turns.append([item])
-            } else {
-                turns[turns.count - 1].append(item)
-            }
-        }
-        return turns.enumerated().flatMap { index, turn in
-            runs(turn, live: isRunning && index == turns.count - 1)
-        }
-    }
-
-    /// Consecutive tool calls (with blank reply segments between them) as runs; card
-    /// tools and every other row as themselves. With `live`, the run nothing visible follows is live.
-    static func runs(_ turn: [TranscriptItem], live: Bool) -> [TranscriptBlock] {
-        var blocks: [TranscriptBlock] = []
-        var index = 0
-        while index < turn.count {
-            guard turn[index].role == .tool, !turn[index].isCardTool else {
-                blocks.append(.item(turn[index]))
-                index += 1
-                continue
-            }
-            var end = index
-            var scan = index + 1
-            while scan < turn.count, (turn[scan].role == .tool && !turn[scan].isCardTool) || turn[scan].isBlankReply {
-                if turn[scan].role == .tool { end = scan }
-                scan += 1
-            }
-            let isLast = !turn[(end + 1)...].contains { !$0.isBlankReply }
-            blocks.append(.run(ToolRun(id: "run-" + turn[index].id, items: Array(turn[index...end]),
-                                       isLive: live && isLast)))
-            index = end + 1
-        }
-        return blocks
     }
 }
 
@@ -162,6 +53,22 @@ public enum ToolCallSummary {
             case .read: ("page", "pages", "Read", "Reading")
             case .run: ("command", "commands", "Ran", "Running")
             case .search: ("query", "queries", "Searched", "Searching")
+            }
+        }
+
+        /// A group row's words for this kind, without a count.
+        var groupCopy: (past: String, present: String) {
+            switch self {
+            case .analyze: ("Analyzed images", "Analyzing images")
+            case .browse: ("Opened pages", "Opening pages")
+            case .delegate: ("Delegated tasks", "Delegating tasks")
+            case .edit: ("Edited files", "Editing files")
+            case .explore: ("Explored files", "Exploring files")
+            case .interact: ("Used the browser", "Using the browser")
+            case .other: ("Used tools", "Using tools")
+            case .read: ("Read pages", "Reading pages")
+            case .run: ("Ran commands", "Running commands")
+            case .search: ("Searched", "Searching")
             }
         }
     }
@@ -211,6 +118,20 @@ public enum ToolCallSummary {
         }
         let failed = tools.filter { $0.tool?.phase == .failed }.count
         if failed > 0 { clauses.append("\(failed) tool call\(failed == 1 ? "" : "s") failed") }
+        return clauses.enumerated().map { $0 == 0 ? $1 : lowerFirst($1) }.joined(separator: ", ")
+    }
+
+    /// A group of steps as its row names it: what its calls did, one clause per kind and
+    /// no counts ("Ran commands, explored files"); "Thought" for reasoning alone. While
+    /// `live`, the kind of the call in progress (else the newest) speaks in the present tense.
+    public static func groupTitle(_ tools: [TranscriptItem], live: Bool) -> String {
+        guard !tools.isEmpty else { return live ? "Thinking" : "Thought" }
+        let narrating = live ? (tools.first { $0.isActive } ?? tools.last) : nil
+        let liveCategory = narrating.map { category(name(of: $0)) }
+        let present = Set(tools.map { category(name(of: $0)) })
+        let clauses = Category.allCases.filter(present.contains).map { category in
+            category == liveCategory ? category.groupCopy.present : category.groupCopy.past
+        }
         return clauses.enumerated().map { $0 == 0 ? $1 : lowerFirst($1) }.joined(separator: ", ")
     }
 

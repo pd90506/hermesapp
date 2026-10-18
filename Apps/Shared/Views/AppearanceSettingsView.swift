@@ -6,7 +6,7 @@ import SwiftUI
 /// iOS; the macOS Settings window has `AppearanceSettingsPane`.
 struct AppearanceSettingsView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.textSizes) private var sizes
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         @Bindable var model = model
@@ -29,7 +29,7 @@ struct AppearanceSettingsView: View {
             } header: {
                 Text("Theme")
             } footer: {
-                Text("Hermes Desktop's themes: the accent of buttons, your messages and selections, and the Markdown colors of replies. Choosing one clears the Markdown colors you changed.")
+                Text("Hermes Desktop's themes. The accent colors buttons, your messages and selections; replies take the theme's Markdown colors.")
             }
 
             Section {
@@ -43,22 +43,11 @@ struct AppearanceSettingsView: View {
             }
 
             Section("Preview") {
-                Text("The quick brown fox jumps over the lazy dog.")
-                    .contentFont()
-                Text("let answer = 42")
-                    .font(.system(size: sizes.code, design: .monospaced))
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
+                ThemePreview(scheme: colorScheme)
             }
 
-            #if os(iOS)
-            Section {
-                NavigationLink("Markdown Colors") { MarkdownColorsSettingsView() }
-            } footer: {
-                Text("Headings, links, code, quotes and tables in replies.")
-            }
-            #endif
+            // Markdown Colors (`MarkdownColorsSettingsView`, a colour per element) is hidden
+            // for now (user, 2026-10): the theme sets the Markdown colours.
 
             Section {
                 Button("Restore Defaults") { model.appearance.reset() }

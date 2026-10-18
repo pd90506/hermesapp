@@ -2,10 +2,10 @@ import HermesKit
 import SwiftUI
 
 /// The Appearance tab: the same settings as `AppearanceSettingsView` (iOS), as a
-/// columns form: light or dark, the theme, and the text sizes.
+/// columns form: light or dark, the theme, the text sizes, and a preview of them all.
 struct AppearanceSettingsPane: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.textSizes) private var sizes
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         @Bindable var model = model
@@ -23,7 +23,7 @@ struct AppearanceSettingsPane: View {
             LabeledContent("Theme:") {
                 VStack(alignment: .leading, spacing: 6) {
                     ColorThemePicker(selection: model.colorThemeBinding)
-                    SettingsNote("Hermes Desktop's themes: the accent of buttons, your messages and selections, and the Markdown colors of replies. Choosing one clears the Markdown colors you changed.")
+                    SettingsNote("Hermes Desktop's themes. The accent colors buttons, your messages and selections; replies take the theme's Markdown colors.")
                 }
             }
 
@@ -34,15 +34,7 @@ struct AppearanceSettingsPane: View {
             sizeRow("Code text:", .code, note: "Code blocks in replies.")
 
             LabeledContent("Preview:") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("The quick brown fox jumps over the lazy dog.")
-                        .contentFont()
-                    Text("let answer = 42")
-                        .font(.system(size: sizes.code, design: .monospaced))
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 6))
-                }
+                ThemePreview(scheme: colorScheme)
             }
 
             LabeledContent {

@@ -489,6 +489,72 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "Test 2 shows its Bot Chat again: \(window.title)")
     }
 
+    /// A selected session row and the hovered row under it keep a gap between their two
+    /// shades: the hover stopped at the row's edge, right against the selection. Checked
+    /// in the real window, where the selection is drawn, down a column of pixels through
+    /// both fills (past their rounded corners, which would read as a gap), against the
+    /// bare sidebar just outside them. Writes in chats until the list has two sessions.
+    @MainActor
+    func testSelectedAndHoveredSessionRowsStayApart() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.appearance = .light
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
+        let list = app.outlines.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
+        let sessions = list.outlineRows.containing(NSPredicate(format: "label == %@", "More actions"))
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        while sessions.count < 2 {
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+            XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+            let before = sessions.count
+            press(newChat)
+            let composer = app.textViews["composer"]
+            XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+            press(composer)
+            composer.typeText("Reply with exactly OK and nothing else. Do not use tools.")
+            press(app.buttons["Send"].firstMatch)
+            let deadline = Date().addingTimeInterval(90)
+            while sessions.count <= before, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+            XCTAssertGreaterThan(sessions.count, before, "the chat written in is listed")
+        }
+
+        let selected = sessions.element(boundBy: 0), hovered = sessions.element(boundBy: 1)
+        press(selected)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        hovered.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        let shot = window.screenshot()
+        let attachment = XCTAttachment(screenshot: shot)
+        attachment.name = "selected row above a hovered row"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        // The fills start 10 pt in from the list's edge (`Hover.rowInset`), with 8 pt corners.
+        // Text there only adds shade, so it can't fake a gap.
+        let from = selected.frame.minY - frame.minY, to = hovered.frame.maxY - frame.minY
+        let fills = Self.pixels(of: shot.image, column: (x: list.frame.minX + 24 - frame.minX, from: from, to: to),
+                                in: frame.size)
+        let bare = Self.pixels(of: shot.image, column: (x: list.frame.minX + 4 - frame.minX, from: from, to: to),
+                               in: frame.size)
+        XCTAssertFalse(fills.isEmpty, "read the rows")
+        let shaded = zip(fills, bare).map { p, q in zip(p, q).contains { abs(Int($0) - Int($1)) > 3 } }
+        // Pixels down from the selection's top: the selection, the gap, the hover.
+        let scale = CGFloat(fills.count) / (to - from)
+        let boundary = Int((hovered.frame.minY - selected.frame.minY) * scale)
+        let span = max(0, boundary - Int(6 * scale))..<min(shaded.count, boundary + Int(6 * scale))
+        let around = shaded[span].map { $0 ? "#" : "." }.joined()
+        XCTAssertTrue(shaded[..<boundary].contains(true), "the selected row is shaded")
+        XCTAssertTrue(shaded[boundary...].contains(true), "the hovered row is shaded")
+        let gap = shaded[span].split(separator: true, omittingEmptySubsequences: true).map(\.count).max() ?? 0
+        XCTAssertGreaterThanOrEqual(gap, 1, "no gap between the selection and the hover, around their edge: \(around)")
+        print("selection/hover edge, \(scale) px per pt: \(around)")
+    }
+
     /// The window's title (the chat's) once it passes `test`, or nil.
     @MainActor
     private func waitForTitle(of window: XCUIElement, timeout: TimeInterval, _ test: (String) -> Bool) -> String? {

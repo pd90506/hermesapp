@@ -2,7 +2,7 @@ import HermesKit
 import SwiftUI
 
 /// Light, dark or the system's look, the theme (`ColorTheme`), and the UI, content and
-/// code text sizes (`AppearanceSettings`, kept by `AppModel`). Pushed from the connection settings on
+/// code text sizes (`AppearanceSettings`, kept by `AppModel`). Settings ▸ Appearance on
 /// iOS; the macOS Settings window has `AppearanceSettingsPane`.
 struct AppearanceSettingsView: View {
     @Environment(AppModel.self) private var model

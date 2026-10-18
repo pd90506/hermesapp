@@ -21,10 +21,18 @@ struct ChatView: View {
     /// The chat's scroll position: a send scrolls to the end, a fold keeps its place.
     @State private var scroll = ChatScroll()
     /// The newest rows first, the older ones in the frames after (`TranscriptWindow`).
-    @State private var window = TranscriptWindow()
+    @State private var window: TranscriptWindow
     /// The scroll view's own width, scroller included (`steadyColumn`).
     @State private var chatWidth: CGFloat?
     @Environment(\.textSizes) private var sizes
+
+    /// `pushed`: the chat is a page pushed over the session list (iPhone), whose rows
+    /// wait for the push to end (`TranscriptWindow`).
+    init(session: ChatSession, isShown: Bool = true, pushed: Bool = false) {
+        self.session = session
+        self.isShown = isShown
+        _window = State(initialValue: TranscriptWindow(pushed: pushed))
+    }
 
     /// How wide the chat's messages and composer get, centered in a wider window:
     /// about ChatGPT's measure (48 em) at the content text size.
@@ -130,7 +138,12 @@ private struct HistoryHeader: View {
         // Not above a transcript still being built (`TranscriptWindow`): on screen over
         // the first frame's rows, it would read an older page before the rest of this
         // one is built. A chat with no rows yet shows its spinner.
-        if window?.isComplete != false || session.transcript.items.isEmpty {
+        if window?.isWaitingForPush == true, !session.transcript.items.isEmpty {
+            // The rows come once the page is pushed (iPhone).
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+        } else if window?.isComplete != false || session.transcript.items.isEmpty {
             header
         }
     }

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Servers tab, laid out like Mail's Accounts: the servers in a list on the left with
 /// add and remove buttons under it, and the one picked on the right, its details in tabs.
-/// The same settings as `ConnectionSettingsView` (iOS), edited in place in `AppModel`.
+/// The same settings as `ConnectionsSettingsView` (iOS), edited in place in `AppModel`.
 struct ServersSettingsPane: View {
     @Environment(AppModel.self) private var model
     @State private var confirmsRemoval = false

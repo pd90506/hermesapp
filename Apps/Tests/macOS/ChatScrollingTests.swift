@@ -215,7 +215,7 @@ import Testing
     }
 }
 
-/// The chat folds once: reasoning and tool calls inside an opened run don't fold again.
+/// The chat's folds: a turn's work, its groups and steps, reasoning, a call.
 ///
 /// Checked by what is laid out: SwiftUI's accessibility elements are not built for a
 /// window test, and a click synthesized here does not reach a SwiftUI button
@@ -243,16 +243,60 @@ import Testing
         return item
     }
 
-    /// An opened run lists its calls; each is its own line that opens in place, below
-    /// itself, as Desktop's rows do. Reasoning never sits inside a run.
-    @Test func anOpenedRunListsItsCallsAndACallOpensBelowItsLine() {
-        let run = ToolRun(id: "run", items: [Self.tool("t1", command: "echo alpha"),
-                                              Self.tool("t2", command: "echo beta")], isLive: false)
-        let closed = host(ToolRunView(run: run) { ToolMessageContent(item: $0) }).fittingSize.height
-        let opened = host(ToolRunView(run: run, isExpanded: true) { ToolMessageContent(item: $0) }).fittingSize.height
-        #expect(closed < 24, "a closed run is one line, not \(closed) pt")
-        #expect(opened > closed * 2, "an opened run shows each call (\(opened) pt)")
+    static func work(live: Bool = false) -> TurnWork {
+        var thinking = TranscriptItem(id: "r1", role: .assistant, text: "")
+        thinking.reasoning = "Checking both commands.\nThen the table."
+        let steps: [WorkStep] = [.think(thinking), .tool(tool("t1", command: "echo alpha")),
+                                 .tool(tool("t2", command: "echo beta"))]
+        return TurnWork(id: "work", items: [thinking] + steps.dropFirst().map(\.item),
+                        entries: [.group(StepGroup(id: "g", steps: steps, isLive: live))], isLive: live,
+                        startedAt: Date(timeIntervalSince1970: 0), endedAt: Date(timeIntervalSince1970: 45))
+    }
 
+    /// The three layers the user asked for: a settled turn's work is one line ("Completed
+    /// in 45s") until opened; opened, its groups are a line each; a group opened lists its
+    /// steps a line each; a step opens in place below its line into its card.
+    @Test func aTurnsWorkOpensLayerByLayer() {
+        let work = Self.work()
+        let closed = host(TurnWorkView(work: work) { _ in EmptyView() }).fittingSize.height
+        let opened = host(TurnWorkView(work: work, isExpanded: true) { _ in EmptyView() }).fittingSize.height
+        #expect(closed < 30, "a settled turn's work is one line and its rule, not \(closed) pt")
+        #expect(opened > closed + 12 && opened < closed + 40, "opened, the work shows its one group line (\(opened) pt)")
+
+        let group = StepGroup(id: "g", steps: [.tool(Self.tool("t1", command: "echo alpha")),
+                                               .tool(Self.tool("t2", command: "echo beta"))], isLive: false)
+        let groupLine = host(StepGroupView(group: group)).fittingSize.height
+        let groupOpen = host(StepGroupView(group: group, isExpanded: true)).fittingSize.height
+        #expect(groupLine < 24, "a group is one line until opened (\(groupLine) pt)")
+        #expect(groupOpen > groupLine * 2.5, "an opened group shows each step (\(groupOpen) pt)")
+
+        let step = WorkStep.tool(Self.tool("t1", command: "echo alpha"))
+        let line = host(WorkStepView(step: step)).fittingSize.height
+        let card = host(WorkStepView(step: step, isExpanded: true)).fittingSize.height
+        #expect(line < 24, "a step is one line until opened (\(line) pt)")
+        #expect(card > line + 40, "an opened step shows its card: the command, a rule, the output (\(card) pt)")
+    }
+
+    /// While the turn works, its work is open one layer: its group lines show, not their
+    /// steps (the user, 2026-10-18).
+    @Test func liveWorkShowsItsGroupsClosed() {
+        let live = host(TurnWorkView(work: Self.work(live: true)) { _ in EmptyView() }).fittingSize.height
+        let settled = host(TurnWorkView(work: Self.work()) { _ in EmptyView() }).fittingSize.height
+        let opened = host(TurnWorkView(work: Self.work(), isExpanded: true) { _ in EmptyView() }).fittingSize.height
+        #expect(live > settled + 12, "live work shows its group line (\(live) pt vs \(settled) pt)")
+        #expect(abs(live - opened) < 4, "live work opens one layer, as an opened settled one (\(live) vs \(opened) pt)")
+    }
+
+    /// A long command's output scrolls inside its card rather than growing the chat.
+    @Test func aStepsOutputScrollsPastAFewLines() {
+        var item = Self.tool("t1", command: "seq 200")
+        item.tool?.output = (1...200).map(String.init).joined(separator: "\n")
+        let card = host(WorkStepCard(step: .tool(item))).fittingSize.height
+        #expect(card < 320, "the output scrolls inside the card (\(card) pt)")
+    }
+
+    /// A call outside a turn's work (a card tool) is still its own line that opens in place.
+    @Test func aCallOpensBelowItsLine() {
         let call = Self.tool("t1", command: "echo alpha")
         let line = host(ToolMessageContent(item: call)).fittingSize.height
         let card = host(ToolMessageContent(item: call, isExpanded: true)).fittingSize.height

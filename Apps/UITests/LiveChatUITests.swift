@@ -66,12 +66,12 @@ final class LiveChatUITests: XCTestCase {
     }
     #endif
 
-    /// A turn that runs tools and answers with a table: consecutive calls are one closed
-    /// summary line ("Ran 2 commands"), which opens to the calls, and a call opens in
-    /// place to its `$` command and output, as Desktop draws them. Commentary between the
-    /// calls would end the run, so the calls may also stand as rows of their own.
+    /// A turn that runs tools and answers with a table, drawn in the three layers the user
+    /// asked for: once the turn is done its work is one closed "Completed in …" line above
+    /// the answer; opened, a group line ("Ran commands"); a group opened, a line per step
+    /// ("Bash · echo alpha"); a step opened, its card in place, with its command and Copy.
     @MainActor
-    func testToolCallsGroupAndOpenInPlace() throws {
+    func testTurnWorkOpensLayerByLayer() throws {
         continueAfterFailure = false
         let app = try launchApp()
         defer { app.terminate() }
@@ -93,33 +93,43 @@ final class LiveChatUITests: XCTestCase {
             + "one row per command.")
         press(app.buttons["Send"].firstMatch)
 
-        let summary = app.buttons.matching(identifier: "toolRunSummary").firstMatch
-        let rows = app.buttons.matching(identifier: "toolCallRow")
-        let settled = NSPredicate(format: "label MATCHES 'Ran [2-9] commands.*'")
+        let summary = app.buttons.matching(identifier: "turnWorkSummary").firstMatch
+        let groups = app.buttons.matching(identifier: "workGroupRow")
+        let steps = app.buttons.matching(identifier: "workStepRow")
+        let settled = NSPredicate(format: "label BEGINSWITH 'Completed'")
         let deadline = Date().addingTimeInterval(180)
-        while !((summary.exists && settled.evaluate(with: summary)) || (!summary.exists && rows.count >= 2)),
-              Date() < deadline {
+        while !(summary.exists && settled.evaluate(with: summary)), Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(1))
         }
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        // The newest rows are read again once the turn ends; their times give the duration.
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
         attach(app, "settled")
-        if summary.exists {
-            XCTAssertTrue(settled.evaluate(with: summary), "the run's line counts its commands, got \(summary.label)")
-            XCTAssertEqual(rows.count, 0, "the run is closed")
-            press(summary)
-            let opened = Date().addingTimeInterval(10)
-            while rows.count < 2, Date() < opened { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
-            attach(app, "run opened")
-        }
-        XCTAssertGreaterThanOrEqual(rows.count, 2, "each call has its row")
+        XCTAssertTrue(settled.evaluate(with: summary), "the work's line says the turn completed, got \(summary.label)")
+        XCTAssertEqual(groups.count, 0, "a settled turn's work is closed")
 
-        // A call opens in place: its `$ command` line and output below it, no popover.
-        press(rows.firstMatch)
-        let prompt = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '$ echo' OR value BEGINSWITH '$ echo'")).firstMatch
-        XCTAssertTrue(prompt.waitForExistence(timeout: 5), "the opened call shows its command")
-        attach(app, "call opened")
+        press(summary)
+        XCTAssertTrue(groups.firstMatch.waitForExistence(timeout: 10), "opened, the work shows its groups")
+        let ran = groups.matching(NSPredicate(format: "label CONTAINS 'Ran commands'")).firstMatch
+        XCTAssertTrue(ran.exists, "a group of commands reads \"Ran commands\", got \(groups.allElementsBoundByIndex.map(\.label))")
+        attach(app, "work opened")
+
+        press(ran)
+        let opened = Date().addingTimeInterval(10)
+        while steps.count < 2, Date() < opened { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
+        XCTAssertGreaterThanOrEqual(steps.count, 2, "each command has its step")
+        let bash = steps.matching(NSPredicate(format: "label CONTAINS 'Bash'")).firstMatch
+        XCTAssertTrue(bash.exists, "a command's step starts with Bash")
+        attach(app, "group opened")
+
+        // A step opens in place into its card: the command and a Copy button, no popover.
+        press(bash)
+        XCTAssertTrue(app.buttons.matching(identifier: "workStepCopy").firstMatch.waitForExistence(timeout: 5),
+                      "the opened step shows its card")
+        let command = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'echo' OR value BEGINSWITH 'echo'")).firstMatch
+        XCTAssertTrue(command.exists, "the card shows the command")
+        attach(app, "step opened")
         #if os(macOS)
-        XCTAssertEqual(app.popovers.count, 0, "a call opens in place, not in a popover")
+        XCTAssertEqual(app.popovers.count, 0, "a step opens in place, not in a popover")
         #endif
     }
 

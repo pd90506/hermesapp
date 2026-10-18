@@ -51,6 +51,7 @@ struct ChatView: View {
                 #endif
             }
             .environment(\.visibleBlocks, visibleBlocks)
+            .environment(\.sessionFolder, session.info?.cwd)
             .transcriptWindow(window, isEmpty: session.transcript.items.isEmpty) { [session] in
                 session.transcript.blocks
             }

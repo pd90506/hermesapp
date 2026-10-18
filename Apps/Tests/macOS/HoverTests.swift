@@ -395,7 +395,7 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         let table = try #require(ui.subviews(of: NSTableView.self).first)
         let row = try ui.rowRect(firstSessionRow)
         let spot = CGRect(x: Hover.rowInset + 2, y: row.midY - 2, width: 3, height: 4)
-        let title = CGRect(x: Hover.rowContentInset, y: row.minY + 2, width: 40, height: row.height / 2)
+        let title = CGRect(x: Hover.rowContentInset, y: row.minY + 2, width: 40, height: row.height - 4)
         ui.window.makeFirstResponder(nil)
         ui.settle()
         let unfocused = ui.snapshot()
@@ -407,7 +407,9 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         let before = try #require(ui.color(of: spot, in: unfocused)), after = try #require(ui.color(of: spot, in: focused))
         #expect(abs(before.red - after.red) + abs(before.green - after.green) + abs(before.blue - after.blue) < 0.02,
                 "the fill changed with focus: \(before) → \(after)")
-        #expect(ui.darkest(in: title, of: focused) < 0.4, "the title turned light with focus")
+        // White text on the accent, as AppKit drew it, would be far lighter.
+        let ink = (unfocused: ui.darkest(in: title, of: unfocused), focused: ui.darkest(in: title, of: focused))
+        #expect(ink.focused - ink.unfocused < 0.1, "the title turned light with focus: \(ink)")
     }
 
     // MARK: Buttons

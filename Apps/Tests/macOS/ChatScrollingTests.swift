@@ -277,11 +277,14 @@ import Testing
         #expect(card > line + 40, "an opened step shows its card: the command, a rule, the output (\(card) pt)")
     }
 
-    /// While the turn works, its work and its newest group are open, so the steps show live.
-    @Test func liveWorkShowsItsSteps() {
+    /// While the turn works, its work is open one layer: its group lines show, not their
+    /// steps (the user, 2026-10-18).
+    @Test func liveWorkShowsItsGroupsClosed() {
         let live = host(TurnWorkView(work: Self.work(live: true)) { _ in EmptyView() }).fittingSize.height
         let settled = host(TurnWorkView(work: Self.work()) { _ in EmptyView() }).fittingSize.height
-        #expect(live > settled + 50, "live work shows its group and steps (\(live) pt vs \(settled) pt)")
+        let opened = host(TurnWorkView(work: Self.work(), isExpanded: true) { _ in EmptyView() }).fittingSize.height
+        #expect(live > settled + 12, "live work shows its group line (\(live) pt vs \(settled) pt)")
+        #expect(abs(live - opened) < 4, "live work opens one layer, as an opened settled one (\(live) vs \(opened) pt)")
     }
 
     /// A long command's output scrolls inside its card rather than growing the chat.

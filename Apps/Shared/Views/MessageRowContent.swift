@@ -533,8 +533,8 @@ struct BackgroundNoticeRow: View {
 /// for: one line, "Completed in 45s" (live: "Working… 12s"), with a thin rule under it
 /// and the answer below; opened, under the rule, the turn's commentary and groups of
 /// steps, several when the model wrote between them; a group
-/// opened, its steps, each opening in place to a card. Open while the turn works, closed
-/// once it is done, until the user opens or closes it.
+/// opened, its steps, each opening in place to a card. Open one layer (its groups and text,
+/// groups closed) while the turn works, closed once it is done, until the user opens or closes it.
 struct TurnWorkView<Message: View>: View {
     let work: TurnWork
     @ViewBuilder let message: (TranscriptItem) -> Message
@@ -596,34 +596,41 @@ struct TurnWorkView<Message: View>: View {
 }
 
 /// A group of a turn's steps: its kind's icon and what its calls did ("Ran commands"),
-/// a chevron only under the pointer; opened, its steps one line each. Open while it is the group the turn
-/// is working in, until the user opens or closes it.
+/// a chevron only under the pointer; opened, its steps one line each. Closed until the
+/// user opens it, also while the turn works in it (the user, 2026-10-18: a working turn
+/// opens one layer, its groups and text): then a spinner stands for its icon and its
+/// name speaks in the present tense ("Running commands").
 struct StepGroupView: View {
     let group: StepGroup
-    @State private var toggled: Bool?
+    @State private var isExpanded: Bool
 
     static let accessibilityIdentifier = "workGroupRow"
 
-    init(group: StepGroup, isExpanded: Bool? = nil) {
+    init(group: StepGroup, isExpanded: Bool = false) {
         self.group = group
-        _toggled = State(initialValue: isExpanded)
+        _isExpanded = State(initialValue: isExpanded)
     }
 
     var body: some View {
-        let isOpen = toggled ?? group.isLive
         VStack(alignment: .leading, spacing: 4) {
-            FoldButton(isExpanded: Binding(get: { isOpen }, set: { toggled = $0 }), chevron: .onHover) {
-                Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
-                    .imageScale(.small)
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 14)
+            FoldButton(isExpanded: $isExpanded, chevron: .onHover) {
+                Group {
+                    if group.isLive {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
+                            .imageScale(.small)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(width: 14)
                 Text(group.title)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             .help(group.tools.isEmpty ? group.title : group.summary)
             .accessibilityIdentifier(Self.accessibilityIdentifier)
-            if isOpen {
+            if isExpanded {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(group.steps) { WorkStepView(step: $0) }
                 }

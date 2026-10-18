@@ -19,6 +19,9 @@ struct MacSettingsView: View {
             Tab("Appearance", systemImage: "paintpalette") {
                 AppearanceSettingsPane()
             }
+            Tab("Markdown", systemImage: "textformat") {
+                MarkdownSettingsPane()
+            }
         }
     }
 }

@@ -412,42 +412,81 @@ final class LiveChatUITests: XCTestCase {
     }
 
     #if os(iOS)
-    /// On iPhone the profile rail is never a page of its own: Profiles (where Back was)
-    /// slides the session list right, uncovering the rail beside it, and it rests there.
-    /// Picking a profile slides the list back; a swipe right on the list uncovers the
-    /// rail again.
+    /// On iPhone the Bot Chat is the session list's first group, a row in the list that
+    /// scrolls with the sessions (no longer pinned above it), and the list's header leads
+    /// with the profile's avatar, as Slack's workspace icon. The avatar, or a swipe right
+    /// on the list, opens the profiles in a drawer, as Slack's workspaces: a wide panel
+    /// over the list, which stays where it is under a shade. Picking a profile or a tap on
+    /// the shade closes it.
     @MainActor
-    func testProfilesSlideOutBesideTheSessions() throws {
+    func testBotChatScrollsWithTheSessionsAndTheAvatarShowsProfiles() throws {
         continueAfterFailure = false
         let app = try launchApp()
         defer { app.terminate() }
         let back = app.navigationBars.buttons.element(boundBy: 0)
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
-        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected, Sessions page shown")
-        // The list's top row, which slides with it.
-        let botChat = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
-        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the session list")
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        XCTAssertFalse(app.tabBars.firstMatch.exists, "no tabs")
+        XCTAssertFalse(app.descendants(matching: .any)["pinnedBotChat"].exists, "no Bot Chat pinned above the list")
+        let list = app.collectionViews.firstMatch
+        let botChat = list.descendants(matching: .any)["botChatRow"].firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the Bot Chat is a row of the list")
+        let sessionsTitle = list.staticTexts["Sessions"].firstMatch
+        if sessionsTitle.exists {
+            XCTAssertLessThan(botChat.frame.maxY, sessionsTitle.frame.minY + 1, "the Bot Chat above the sessions")
+        }
+        let avatar = app.buttons["profilesButton"].firstMatch
+        XCTAssertTrue(avatar.exists, "the profile's avatar")
+        XCTAssertLessThan(avatar.frame.minX, 40, "the avatar at the leading edge: \(avatar.frame)")
+        XCTAssertEqual(avatar.frame.midY, newChat.frame.midY, accuracy: 4, "the avatar level with New chat")
+        XCTAssertLessThan(avatar.frame.maxY, botChat.frame.minY, "the avatar above the list")
         let rail = app.descendants(matching: .any)["profileRail"].firstMatch
-        XCTAssertFalse(rail.exists, "the list covers the rail")
-        let restingX = botChat.frame.minX
-        attach(app, "sessions")
+        XCTAssertFalse(rail.exists, "the drawer is closed")
+        let restingX = newChat.frame.minX
+        let screen = app.windows.firstMatch.frame
+        attach(app, "session list")
 
-        app.buttons["profilesButton"].tap()
-        XCTAssertTrue(rail.waitForExistence(timeout: 5), "Profiles uncovers the rail")
-        XCTAssertTrue(eventually { botChat.frame.minX > restingX + 60 }, "the list slid right, beside the rail")
-        XCTAssertTrue(botChat.exists, "the session list still shows")
-        XCTAssertEqual(rail.frame.minX, 0, accuracy: 1, "the rail at the screen's leading edge")
-        attach(app, "profiles beside the sessions")
+        // Scrolled, the Bot Chat goes up with the sessions (when there are enough of them
+        // to scroll).
+        let botY = botChat.frame.minY
+        list.swipeUp()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        if !botChat.exists || botChat.frame.minY < botY - 1 {
+            attach(app, "scrolled")
+        }
+        list.swipeDown()
+        XCTAssertTrue(eventually { botChat.exists && abs(botChat.frame.minY - botY) < 1 }, "back at the top")
 
+        avatar.tap()
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "the avatar opens the drawer")
+        XCTAssertTrue(eventually { abs(rail.frame.minX) < 1 }, "the drawer at the screen's leading edge: \(rail.frame)")
+        XCTAssertGreaterThan(rail.frame.width, screen.width * 0.7, "a wide drawer: \(rail.frame)")
+        XCTAssertLessThan(rail.frame.width, screen.width - 30, "the list's edge shows beside it: \(rail.frame)")
+        XCTAssertTrue(rail.staticTexts["Profiles"].exists, "titled Profiles")
+        XCTAssertTrue(app.buttons["Settings"].exists, "Settings at the drawer's bottom")
         let picked = rail.buttons.matching(NSPredicate(format: "isSelected == true")).firstMatch
         XCTAssertTrue(picked.waitForExistence(timeout: 10), "a profile is selected")
-        picked.tap()
-        XCTAssertTrue(eventually { !rail.exists }, "picking a profile covers the rail")
-        XCTAssertEqual(botChat.frame.minX, restingX, accuracy: 1, "the list back where it rests")
+        XCTAssertGreaterThan(picked.frame.width, screen.width * 0.5, "a profile is a wide row: \(picked.frame)")
+        attach(app, "profiles drawer")
 
-        botChat.swipeRight()
-        XCTAssertTrue(rail.waitForExistence(timeout: 5), "a swipe right uncovers the rail")
-        XCTAssertTrue(eventually { botChat.frame.minX > restingX + 60 }, "the list slid right after the swipe")
+        picked.tap()
+        XCTAssertTrue(eventually { !rail.exists }, "picking a profile closes the drawer")
+        XCTAssertEqual(newChat.frame.minX, restingX, accuracy: 1, "the list never moved")
+
+        list.swipeRight()
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "a swipe right opens the drawer")
+        XCTAssertTrue(eventually { abs(rail.frame.minX) < 1 }, "fully open after the swipe: \(rail.frame)")
+        // A tap on the shade, beside the drawer, closes it.
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+        XCTAssertTrue(eventually { !rail.exists }, "a tap beside the drawer closes it")
+
+        // The Bot Chat opens like any session: pushed, and Back returns to the list.
+        botChat.tap()
+        XCTAssertTrue(app.textViews["composer"].waitForExistence(timeout: 30), "the Bot Chat opened")
+        attach(app, "Bot Chat open")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(botChat.waitForExistence(timeout: 10), "Back returns to the list")
     }
 
     /// The session list has no Settings button of its own: the gear is the rail's, a
@@ -522,7 +561,7 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
 
         // The profile's Bot Chat, so it is the chat the profile showed last.
-        let botChat = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
+        let botChat = app.descendants(matching: .any)["botChatRow"].firstMatch
         XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the session list")
         botChat.tap()
         let composer = app.textViews["composer"]
@@ -532,14 +571,15 @@ final class LiveChatUITests: XCTestCase {
 
         let rail = app.descendants(matching: .any)["profileRail"].firstMatch
         app.buttons["profilesButton"].tap()
-        XCTAssertTrue(rail.waitForExistence(timeout: 5), "Profiles uncovers the rail")
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "the avatar opens the profiles' drawer")
         let picked = rail.buttons.matching(NSPredicate(format: "isSelected == true")).firstMatch
         XCTAssertTrue(picked.waitForExistence(timeout: 10), "a profile is selected")
-        let others = rail.buttons.matching(NSPredicate(format: "isSelected == false AND identifier != 'settingsButton'"))
+        let others = rail.buttons.matching(NSPredicate(
+            format: "isSelected == false AND identifier != 'settingsButton' AND NOT (label BEGINSWITH 'Avatar options')"))
         guard others.count > 0 else { throw XCTSkip("Only one profile in the VM's Hermes") }
         let pickedLabel = picked.label
         others.firstMatch.tap()
-        XCTAssertTrue(eventually { !rail.exists }, "picking a profile covers the rail")
+        XCTAssertTrue(eventually { !rail.exists }, "picking a profile closes the drawer")
         RunLoop.current.run(until: Date().addingTimeInterval(3))
         XCTAssertFalse(composer.exists, "another profile shows its sessions, not a chat")
         XCTAssertTrue(newChat.exists, "the session list stays")
@@ -547,7 +587,7 @@ final class LiveChatUITests: XCTestCase {
         app.buttons["profilesButton"].tap()
         XCTAssertTrue(rail.waitForExistence(timeout: 5))
         rail.buttons[pickedLabel].firstMatch.tap()
-        XCTAssertTrue(eventually { !rail.exists }, "picking a profile covers the rail")
+        XCTAssertTrue(eventually { !rail.exists }, "picking a profile closes the drawer")
         RunLoop.current.run(until: Date().addingTimeInterval(3))
         XCTAssertFalse(composer.exists, "back on the first profile: its sessions, not its Bot Chat")
         XCTAssertTrue(newChat.exists, "the session list stays")

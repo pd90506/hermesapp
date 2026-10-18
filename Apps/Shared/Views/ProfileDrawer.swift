@@ -2,73 +2,89 @@
 import SwiftUI
 import UIKit
 
-/// On iPhone, the profile rail under the session list, as Discord's server rail: the
-/// list covers the screen, and the Profiles button (where Back was) or a swipe right
-/// slides it right, uncovering the rail beside it, where it rests. Picking a profile,
-/// a tap on the list, the button again or a swipe left slides it back.
+/// On iPhone, the profiles in a drawer over the session list, as Slack's workspaces:
+/// the profile's avatar at the list's top left (`CurrentProfileAvatar`) or a swipe right
+/// on the list slides a wide panel in from the leading edge, over the list, which stays
+/// where it is under a shade. Picking a profile, a tap on the shade, the avatar again or
+/// a swipe left slides it back out (asked for by the user, 2026-10-18; it was a narrow
+/// rail under the list, uncovered by sliding the list aside).
 ///
-/// The rail is never a screen of its own. As the split view's first column it was one
-/// Back away from the list, and showed alone, stretched over the screen (2026-10-18).
+/// The profiles are never a screen of their own. As the split view's first column they
+/// were one Back away from the list, and showed alone, stretched over the screen.
 struct ProfileDrawer<Rail: View, Content: View>: View {
     @Binding var isOpen: Bool
     @ViewBuilder var rail: Rail
     @ViewBuilder var content: Content
-    /// How far a drag in progress has moved the list from where it rests.
+    /// How far a drag in progress has moved the panel from where it rests.
     @State private var drag: CGFloat = 0
 
-    /// How far the list slides: the rail and the line after it.
-    static var railWidth: CGFloat { ProfileRailItem.width + 1 }
+    /// The panel's width on a screen this wide: most of it, the list's edge showing
+    /// beside it, as Slack's.
+    static func width(in screen: CGFloat) -> CGFloat { min((screen * 0.85).rounded(), 360) }
+
+    /// The panel's trailing corners, about the screen's.
+    private static var cornerRadius: CGFloat { 36 }
 
     var body: some View {
-        let shift = min(max((isOpen ? Self.railWidth : 0) + drag, 0), Self.railWidth)
-        ZStack(alignment: .leading) {
-            // Only while uncovered, so nothing reaches it under the list (VoiceOver too).
-            if shift > 0 {
-                HStack(spacing: 0) {
-                    rail
-                        .frame(width: ProfileRailItem.width)
-                    Divider()
-                }
-                .allowsHitTesting(isOpen)
-            }
+        GeometryReader { proxy in
+            let width = Self.width(in: proxy.size.width)
+            let shown = min(max((isOpen ? width : 0) + drag, 0), width)
+            ZStack(alignment: .leading) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Nothing under the panel and its shade answers (VoiceOver too).
+                    .accessibilityHidden(shown > 0)
 
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Over the rail: the list's header and Bot Chat draw no background.
-                .background(.background)
-                .overlay {
-                    // While the rail shows, the list only slides back.
-                    if isOpen {
-                        Color.clear
-                            .contentShape(.rect)
-                            .onTapGesture { slide(open: false) }
-                            .gesture(closingDrag)
-                            .accessibilityHidden(true)
-                    }
+                // Only while it shows, so nothing reaches it when it is away.
+                if shown > 0 {
+                    Color.black
+                        .opacity(0.35 * shown / width)
+                        .ignoresSafeArea()
+                        .contentShape(.rect)
+                        .onTapGesture { slide(open: false) }
+                        .gesture(closingDrag(width: width))
+                        .accessibilityLabel("Close profiles")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { slide(open: false) }
+
+                    rail
+                        .frame(width: width)
+                        .frame(maxHeight: .infinity)
+                        .background {
+                            UnevenRoundedRectangle(bottomTrailingRadius: Self.cornerRadius,
+                                                   topTrailingRadius: Self.cornerRadius, style: .continuous)
+                                .fill(.background)
+                                .shadow(color: .black.opacity(0.15), radius: 12)
+                                .ignoresSafeArea()
+                        }
+                        // A swipe left closes it; the profiles still scroll up and down.
+                        .simultaneousGesture(closingDrag(width: width))
+                        .offset(x: shown - width)
+                        .allowsHitTesting(isOpen)
                 }
-                .offset(x: shift)
-        }
-        // Anywhere on the list, as iOS 26's Back swipe works anywhere on a page.
-        .gesture(OpeningPan(isEnabled: !isOpen,
-                            changed: { drag = $0 },
-                            ended: { translation, velocity in
-                                slide(open: translation + velocity * 0.15 > Self.railWidth / 2)
-                            }))
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Profiles", systemImage: "sidebar.leading") { slide(open: !isOpen) }
-                    .accessibilityIdentifier("profilesButton")
             }
+            // Anywhere on the list, as iOS 26's Back swipe works anywhere on a page.
+            .gesture(OpeningPan(isEnabled: !isOpen,
+                                changed: { drag = $0 },
+                                ended: { translation, velocity in
+                                    slide(open: translation + velocity * 0.15 > width / 2)
+                                }))
         }
+        .environment(\.toggleProfiles, ToggleProfiles { slide(open: !isOpen) })
     }
 
-    /// A swipe left on the list while the rail shows.
-    private var closingDrag: some Gesture {
+    /// A swipe left on the panel or the shade while it shows. Only a sideways one, so a
+    /// scroll through the profiles never moves the panel.
+    private func closingDrag(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 8)
-            .onChanged { drag = min($0.translation.width, 0) }
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                drag = min(value.translation.width, 0)
+            }
             .onEnded { value in
+                guard drag != 0 else { return }
                 let moved = value.translation.width + (value.predictedEndTranslation.width - value.translation.width) * 0.15
-                slide(open: moved > -Self.railWidth / 2)
+                slide(open: moved > -width / 2)
             }
     }
 
@@ -76,6 +92,55 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
         withAnimation(.snappy(duration: 0.28)) {
             isOpen = open
             drag = 0
+        }
+    }
+}
+
+/// Opens the profiles' drawer over the session list, or closes it (`ProfileDrawer`).
+/// Set only on iPhone.
+struct ToggleProfiles {
+    let action: @MainActor () -> Void
+
+    @MainActor func callAsFunction() { action() }
+}
+
+extension EnvironmentValues {
+    @Entry var toggleProfiles: ToggleProfiles?
+}
+
+/// The picked profile's avatar at the session list's top left, as Slack's workspace
+/// icon: a tap opens the profiles' drawer over the list (`ProfileDrawer`), as a swipe
+/// right does. Nothing where there is no drawer (iPad).
+struct CurrentProfileAvatar: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.toggleProfiles) private var toggleProfiles
+
+    static let size: CGFloat = 34
+
+    var body: some View {
+        if let toggleProfiles {
+            Button { toggleProfiles() } label: {
+                avatar
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Profiles")
+            .accessibilityHint("Shows the profiles")
+            .accessibilityIdentifier("profilesButton")
+        }
+    }
+
+    @ViewBuilder private var avatar: some View {
+        if let server = model.sessionsServer, let bot = server.connection.listProfileBot {
+            let connection = server.connection
+            BotAvatar(name: bot.displayName, activity: connection.activity(for: bot), size: Self.size,
+                      image: AvatarImages.image(connection.avatars[bot.name]),
+                      color: bot.avatarColor.map(Color.init(rgb:)))
+        } else {
+            Image(systemName: "person.crop.circle")
+                .font(.system(size: Self.size))
+                .foregroundStyle(.secondary)
         }
     }
 }

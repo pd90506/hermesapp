@@ -60,6 +60,88 @@ import FoundationNetworking
     }
 }
 
+/// A prompt with a caption and images is stored at submit with the caption alone
+/// (`_write_submit_user_row`, `tui_gateway/session_workdir.py:673-704`); the turn's
+/// prologue adds its `@image:` lines later (`_adopt_submit_user_row`, :726-752). The
+/// stored row that replaces the bubble mid-turn keeps showing the images until then.
+@Suite struct SentImagesWhileStreamingTests {
+    private static let path = "/h/images/upload_1.png"
+
+    private func event(_ type: String, _ payload: JSONValue? = nil) -> GatewayEvent {
+        GatewayEvent(type: type, sessionID: "sid-1", payload: payload)
+    }
+
+    private func images(_ transcript: Transcript, _ caption: String) -> [[TranscriptImage]] {
+        transcript.items.filter { $0.role == .user && $0.text == caption }.map(\.images)
+    }
+
+    private func sendWithImage(_ transcript: inout Transcript) -> TranscriptImage {
+        let image = TranscriptImage(name: "upload_1.png", path: Self.path, localID: UUID(), position: 0)
+        let prompt = transcript.appendUserPrompt("看这张图", images: [image])
+        transcript.promptAnswered(itemID: prompt, status: "streaming", userRowID: 3)
+        return image
+    }
+
+    @Test func theStoredRowShowsTheImagesUntilItHasThemItself() {
+        var transcript = Transcript()
+        var rows = [storedRow(id: 1), storedRow(id: 2)]
+        transcript.installLatestPage(rows, hasOlder: false)
+        let image = sendWithImage(&transcript)
+        // The read the answer asks for holds the caption-only row written at submit.
+        let ticket = transcript.beginReread()
+        transcript.apply(event("message.start"))
+        rows.append(storedRow(id: 3, text: "看这张图"))
+        transcript.installRereadPage(rows, ticket: ticket, reachesStart: true)
+        #expect(images(transcript, "看这张图") == [[image]], "one row, with the image sent")
+        #expect(transcript.items.first { $0.text == "看这张图" }?.rowID == 3)
+
+        transcript.apply(event("message.delta", ["text": "这是一张图"]))
+        #expect(images(transcript, "看这张图") == [[image]], "while streaming")
+
+        // Another read mid-turn, still before the rewrite.
+        transcript.installRereadPage(rows, ticket: transcript.beginReread(), reachesStart: true)
+        #expect(images(transcript, "看这张图") == [[image]], "after another read")
+
+        // The turn rewrote the row with its `@image:` line: the stored image shows.
+        transcript.apply(event("message.complete", completePayload("这是一张图", rows: [3, 4])))
+        rows[2] = storedRow(id: 3, text: "看这张图\n@image:\(Self.path)")
+        rows.append(storedRow(id: 4, text: "这是一张图"))
+        transcript.installRereadPage(rows, ticket: transcript.beginReread(), reachesStart: true)
+        #expect(images(transcript, "看这张图").map { $0.map(\.path) } == [[Self.path]])
+        #expect(images(transcript, "看这张图").first?.first?.id == image.id, "the same card: nothing reloads")
+        expectWellFormed(transcript)
+    }
+
+    /// The read lands before the answer: the row shows beside the bubble until the
+    /// answer proves it is this prompt; then the row takes the bubble's images.
+    @Test func aReadBeforeTheAnswer() {
+        var transcript = Transcript()
+        transcript.installLatestPage([storedRow(id: 1), storedRow(id: 2)], hasOlder: false)
+        let image = TranscriptImage(name: "upload_1.png", path: Self.path, localID: UUID(), position: 0)
+        let prompt = transcript.appendUserPrompt("看这张图", images: [image])
+        transcript.apply(event("message.start"))
+        transcript.installRereadPage([storedRow(id: 1), storedRow(id: 2), storedRow(id: 3, text: "看这张图")],
+                                     ticket: transcript.beginReread(), reachesStart: true)
+        transcript.promptAnswered(itemID: prompt, status: "streaming", userRowID: 3)
+        #expect(images(transcript, "看这张图") == [[image]])
+        expectWellFormed(transcript)
+    }
+
+    /// A rebuild mid-turn (`ChatSession.reset`) keeps them too.
+    @Test func aRebuildKeepsThem() throws {
+        var old = Transcript()
+        let rows = [storedRow(id: 1), storedRow(id: 2)]
+        old.installLatestPage(rows, hasOlder: false)
+        let image = sendWithImage(&old)
+        old.installRereadPage(rows + [storedRow(id: 3, text: "看这张图")], ticket: old.beginReread(), reachesStart: true)
+        let payload: JSONValue = ["session_id": "sid-1", "message_count": 3, "messages_omitted": true]
+        var rebuilt = Transcript(snapshot: try payload.decode(LiveSessionSnapshot.self))
+        rebuilt.adoptSentImages(of: old)
+        rebuilt.installLatestPage(rows + [storedRow(id: 3, text: "看这张图")], hasOlder: false)
+        #expect(images(rebuilt, "看这张图") == [[image]])
+    }
+}
+
 @Suite(.timeLimit(.minutes(1)))
 struct GatewayMediaTests {
     private static let png = Data([0x89, 0x50, 0x4E, 0x47])

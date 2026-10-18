@@ -18,7 +18,6 @@ struct AssistantMessageContent: View {
     /// files are left out.
     var deliveredFiles: (([DeliveredFile]) -> AnyView)?
     let copy: () -> Void
-    @Environment(\.isInToolRun) private var isInToolRun
 
     /// No text (whitespace counts as none, as for the waiting row and the action bar),
     /// no reasoning and no outcome to show: the row has no content yet.
@@ -37,12 +36,7 @@ struct AssistantMessageContent: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 if !item.reasoning.isEmpty {
-                    // Inside an opened run it is shown as it is: the run is the fold.
-                    if isInToolRun {
-                        ReasoningText(item: item)
-                    } else {
-                        ReasoningFold(item: item)
-                    }
+                    ReasoningFold(item: item)
                 }
                 ForEach(Array(Self.segments(item).enumerated()), id: \.offset) { _, segment in
                     switch segment {
@@ -138,213 +132,310 @@ struct FoldButton<Label: View>: View {
     }
 }
 
-extension EnvironmentValues {
-    /// Drawn inside an opened run of tool calls (`ToolRunView`): the run is the one
-    /// fold, so nothing in it folds again. Reasoning shows as it is, and a tool call's
-    /// input and output open in a popover rather than below its line.
-    @Entry var isInToolRun = false
-}
-
-/// One tool call, as Desktop draws it: a single line (status, what it did, chevron)
-/// that opens on demand to the call's input, output, diff or error. A file edit
-/// with a diff opens by default, with its +/− counts on the line. No action bar
-/// (Copy Message is in its context menu), so a run of tool calls stays compact.
-///
-/// Inside an opened run (`isInToolRun`) the line doesn't fold: a click shows the
-/// call's input and output in a popover beside it, so a run never opens into folds
-/// of its own.
+/// One tool call, as Desktop's `ToolEntry` draws it (`components/assistant-ui/tool/fallback.tsx:309-760`):
+/// a line (status or tool glyph, what it did, counts and duration, chevron) that opens
+/// in place into a bordered card: a command's `$` line and output, a file's lines, search
+/// hits, a diff or an error. An edit with a diff opens by default; a settled edit with
+/// no diff draws nothing. What each part says comes from `ToolCallView`.
 struct ToolMessageContent: View {
     let item: TranscriptItem
     /// The user's choice; until then an edit with a diff is open and the rest closed.
     @State private var toggled: Bool?
-    @State private var showsPopover = false
-    @Environment(\.isInToolRun) private var isInToolRun
-
-    private var isExpanded: Bool { toggled ?? (item.isFileEdit && item.toolDiff != nil) }
 
     static let accessibilityIdentifier = "toolCallRow"
-    static let popoverWidth: CGFloat = 520
+
+    init(item: TranscriptItem, isExpanded: Bool? = nil) {
+        self.item = item
+        _toggled = State(initialValue: isExpanded)
+    }
 
     var body: some View {
-        if isInToolRun {
-            HStack(spacing: 0) {
-                Button {
-                    showsPopover = true
-                } label: {
-                    line
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .hoverHighlight(isEnabled: hasDetail)
-                        .padding(.horizontal, -4)
-                        .padding(.vertical, -1)
-                        .contentShape(.rect)
+        let view = ToolCallView(item)
+        let isOpen = (toggled ?? view.opensByDefault) && view.isExpandable
+        if !view.isHidden {
+            VStack(alignment: .leading, spacing: 0) {
+                FoldButton(isExpanded: Binding(get: { isOpen }, set: { toggled = $0 }),
+                           showsChevron: view.isExpandable) {
+                    ToolCallLine(view: view)
                 }
-                .buttonStyle(.plain)
-                .disabled(!hasDetail)
-                .help(hasDetail ? "Show details" : "")
+                .disabled(!view.isExpandable)
                 .accessibilityIdentifier(Self.accessibilityIdentifier)
-                .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
-                    // Each box scrolls inside itself past `ToolCallDetail.maxLines`.
-                    ToolCallDetail(item: item)
-                        .padding(12)
-                        .frame(width: Self.popoverWidth)
-                        .presentationCompactAdaptation(.popover)
-                }
-                Spacer(minLength: 0)
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                FoldButton(isExpanded: Binding(get: { isExpanded }, set: { toggled = $0 }),
-                           showsChevron: hasDetail) {
-                    line
-                }
-                .disabled(!hasDetail)
-                .accessibilityIdentifier(Self.accessibilityIdentifier)
-                if isExpanded {
-                    ToolCallDetail(item: item)
-                        .padding(.leading, 20)
+                .padding(.horizontal, isOpen ? 8 : 0)
+                .padding(.vertical, isOpen ? 5 : 0)
+                if isOpen {
+                    Divider()
+                    ToolCallBody(view: view)
+                        .padding(6)
                 }
             }
-        }
-    }
-
-    /// Status, what the call did, and its counts and duration.
-    private var line: some View {
-        HStack(spacing: 6) {
-            statusIcon.frame(width: 14)
-            Text(ToolCallSummary.title(for: item))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if item.isFileEdit, let diff = item.toolDiff {
-                let stats = ToolCallDetail.stats(diff)
-                if stats.added > 0 { Text("+\(stats.added)").monospacedDigit().foregroundStyle(.green) }
-                if stats.removed > 0 { Text("−\(stats.removed)").monospacedDigit().foregroundStyle(.red) }
-            }
-            if let duration = item.tool?.durationSeconds, !item.isActive {
-                Text(Self.duration(duration)).monospacedDigit().foregroundStyle(.tertiary)
+            .overlay {
+                if isOpen { RoundedRectangle(cornerRadius: 5).strokeBorder(.quaternary) }
             }
         }
-        .uiFont(.callout)
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder private var statusIcon: some View {
-        if item.isActive {
-            ProgressView().controlSize(.mini)
-        } else if item.tool?.phase == .failed {
-            Image(systemName: "xmark.circle").foregroundStyle(.red)
-        } else {
-            Image(systemName: "wrench.and.screwdriver").imageScale(.small)
-        }
-    }
-
-    private var hasDetail: Bool { !ToolCallDetail.sections(for: item).isEmpty }
-
-    static func duration(_ seconds: Double) -> String {
-        seconds < 10 ? String(format: "%.1fs", seconds) : "\(Int(seconds.rounded()))s"
     }
 }
 
-/// What an opened tool call shows: its input, then its diff, output or error, each
-/// capped so a huge result never lays out in full.
-struct ToolCallDetail: View {
-    let sections: [Section]
+/// A tool call's line: its glyph, title, result count, diff counts and duration.
+struct ToolCallLine: View {
+    let view: ToolCallView
 
-    init(item: TranscriptItem) { sections = Self.sections(for: item) }
-    init(sections: [Section]) { self.sections = sections }
-
-    struct Section: Identifiable {
-        enum Kind { case input, output, diff, error }
-        let kind: Kind
-        let text: String
-        var id: Kind { kind }
-    }
-
-    static let maxCharacters = 6000
-
-    static func sections(for item: TranscriptItem) -> [Section] {
-        let tool = item.tool
-        var sections: [Section] = []
-        // An edit's diff says what its arguments would, more readably.
-        let input = tool?.args.map(inputText) ?? tool?.context ?? item.detail
-        if let input, !input.isEmpty, !(item.isFileEdit && item.toolDiff != nil) {
-            sections.append(Section(kind: .input, text: input))
-        }
-        if let error = tool?.error, !error.isEmpty {
-            sections.append(Section(kind: .error, text: error))
-        } else if let diff = item.toolDiff {
-            sections.append(Section(kind: .diff, text: diff))
-        } else if let output = tool?.output ?? tool?.summary, !output.isEmpty {
-            sections.append(Section(kind: .output, text: output))
-        }
-        return sections
-    }
-
-    /// A single command or path reads as itself; anything else as its JSON.
-    static func inputText(_ args: JSONValue) -> String {
-        if case .object(let object) = args {
-            for key in ["command", "code", "path", "query", "url"] {
-                if let value = object[key]?.stringValue, object.count == 1 || key == "command" || key == "code" {
-                    return value
-                }
+    var body: some View {
+        HStack(spacing: 6) {
+            glyph.frame(width: 14)
+            Text(view.title)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(titleStyle)
+            if !view.isPending, let count = view.countLabel {
+                Text(count).foregroundStyle(.tertiary)
+            }
+            if view.isFileEdit, !view.isPending, !view.inlineDiff.isEmpty {
+                let stats = ToolTextBox.stats(view.inlineDiff)
+                if stats.added > 0 { Text("+\(stats.added)").monospacedDigit().foregroundStyle(.green) }
+                if stats.removed > 0 { Text("−\(stats.removed)").monospacedDigit().foregroundStyle(.red) }
+            }
+            if !view.isFileEdit, !view.isPending, let duration = view.durationLabel {
+                Text(duration).monospacedDigit().foregroundStyle(.tertiary)
             }
         }
-        if case .string(let text) = args { return text }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return (try? encoder.encode(args)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        .uiFont(.callout)
     }
+
+    private var titleStyle: AnyShapeStyle {
+        if view.isPending { return AnyShapeStyle(.tertiary) }
+        switch view.status {
+        case .error: return AnyShapeStyle(.red)
+        case .warning: return AnyShapeStyle(.orange)
+        default: return AnyShapeStyle(.secondary)
+        }
+    }
+
+    /// A running, failed or unfinished call shows its status; any other its tool's icon.
+    @ViewBuilder private var glyph: some View {
+        if view.isPending {
+            ProgressView().controlSize(.mini)
+        } else if view.status == .error {
+            Image(systemName: "exclamationmark.circle").imageScale(.small).foregroundStyle(.red)
+        } else if view.status == .warning {
+            Image(systemName: "exclamationmark.circle").imageScale(.small).foregroundStyle(.orange)
+        } else {
+            Image(systemName: Self.icon(view.toolName)).imageScale(.small).foregroundStyle(.tertiary)
+        }
+    }
+
+    /// Desktop's tool icons (`TOOL_META`, `fallback-model/index.ts:144-219`) as SF Symbols.
+    static func icon(_ name: String) -> String {
+        switch name {
+        case "read_file": "doc"
+        case "list_files": "folder"
+        case "search_files", "web_search", "session_search_recall": "magnifyingglass"
+        case "terminal", "execute_code": "terminal"
+        case "edit_file", "patch", "write_file": "doc.text"
+        case "browser_take_screenshot", "image_generate": "photo"
+        case "clarify": "questionmark.circle"
+        case "cronjob": "clock"
+        case "memory": "brain"
+        case "todo": "checklist"
+        case "vision_analyze": "eye"
+        default: name.hasPrefix("browser_") || name.hasPrefix("web_") ? "globe" : "wrench.and.screwdriver"
+        }
+    }
+}
+
+/// What an opened tool call shows, in Desktop's order: the `$` command, search hits,
+/// the diff, then the detail (an error, a command's streams, or the output).
+struct ToolCallBody: View {
+    let view: ToolCallView
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(sections) { section in
-                box(section)
-                    .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
+            if let command = view.terminalCommand, !command.isEmpty || view.terminalExitCode != nil {
+                TerminalCommandLine(command: command, exitCode: view.terminalExitCode)
+            }
+            if !view.searchHits.isEmpty {
+                SearchHitList(query: view.searchQuery, hits: view.searchHits)
+            }
+            if !view.inlineDiff.isEmpty {
+                ToolTextBox(text: view.inlineDiff, kind: .diff)
+            }
+            if view.showsDetail { detail }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var detail: some View {
+        if view.status == .error {
+            VStack(alignment: .leading, spacing: 4) {
+                if !view.errorSummary.isEmpty {
+                    Text(view.errorSummary)
+                        .uiFont(.caption, weight: .medium)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
+                if !view.detailBody.isEmpty {
+                    ToolTextBox(text: view.detailBody, kind: .code, maxLines: ToolTextBox.errorMaxLines)
+                }
+            }
+        } else if view.stdout != nil || view.stderr != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                ToolSectionLabel(text: view.detailLabel)
+                if let stdout = view.stdout {
+                    if view.stderr != nil { ToolSectionLabel(text: "stdout") }
+                    ToolTextBox(text: ToolCallView.stripANSI(stdout), kind: .code)
+                }
+                if let stderr = view.stderr {
+                    ToolSectionLabel(text: "stderr")
+                    ToolTextBox(text: ToolCallView.stripANSI(stderr), kind: .code, isMuted: true)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                ToolSectionLabel(text: view.detailLabel)
+                if view.rendersDetailAsCode {
+                    ToolTextBox(text: ToolCallView.stripANSI(view.detail), kind: .code)
+                } else {
+                    ToolTextBox(text: view.detail, kind: .text)
+                }
             }
         }
     }
+}
 
-    /// The most lines a box shows before it scrolls inside itself, as Desktop's diff
-    /// box stops at 12rem (`components/chat/diff-lines.tsx:67`).
-    static let maxLines = 12
+/// A small heading over a section of an opened call ("stdout", "Error details").
+struct ToolSectionLabel: View {
+    let text: String
+
+    var body: some View {
+        if !text.isEmpty {
+            Text(text.uppercased())
+                .uiFont(.caption2, weight: .medium)
+                .tracking(0.6)
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
+
+/// `$ command` and its exit code, above a terminal call's output.
+struct TerminalCommandLine: View {
+    let command: String
+    let exitCode: Int?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if !command.isEmpty {
+                Text("\(Text("$").foregroundStyle(.tint)) \(Text(command).foregroundStyle(.secondary))")
+                    .uiFont(.caption, design: .monospaced)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let exitCode {
+                Text("exit \(exitCode)")
+                    .uiFont(.caption2, design: .monospaced)
+                    .monospacedDigit()
+                    .foregroundStyle(exitCode == 0 ? .green : .orange)
+                    .padding(.horizontal, 4)
+                    .background(.quaternary, in: .rect(cornerRadius: 3))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quinary, in: .rect(cornerRadius: 4))
+        .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary) }
+    }
+}
+
+/// A web search's hits: the query, then each hit's title (a link) and snippet.
+struct SearchHitList: View {
+    let query: String?
+    let hits: [ToolCallView.SearchHit]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let query {
+                Text("\(Text("Search").foregroundStyle(.tertiary)) \(query)")
+                    .uiFont(.caption)
+            }
+            ToolSectionLabel(text: "Search results")
+            ForEach(Array(hits.enumerated()), id: \.offset) { _, hit in
+                VStack(alignment: .leading, spacing: 1) {
+                    if let url = URL(string: hit.url), !hit.url.isEmpty {
+                        Link(hit.title.isEmpty ? hit.url : hit.title, destination: url)
+                            .uiFont(.caption, weight: .medium)
+                            .lineLimit(1)
+                    } else {
+                        Text(hit.title).uiFont(.caption, weight: .medium)
+                    }
+                    if !hit.snippet.isEmpty {
+                        Text(hit.snippet).uiFont(.caption2).foregroundStyle(.tertiary).lineLimit(3)
+                    }
+                }
+            }
+        }
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// A block of a call's text: code or output in a monospaced font, a diff in its colors,
+/// other details as text. Past `maxLines` it scrolls inside itself: Desktop stops a
+/// payload at 5rem (`TOOL_SECTION_SURFACE_CLASS`, `fallback.tsx:107-110`), a diff at
+/// 12rem (`components/chat/diff-lines.tsx:67`) and an error at 14rem.
+struct ToolTextBox: View {
+    enum Kind { case code, text, diff }
+
+    let text: String
+    let kind: Kind
+    var maxLines: Int?
+    var isMuted = false
+
+    static let outputMaxLines = 5
+    static let diffMaxLines = 12
+    static let errorMaxLines = 14
+
     @ScaledMetric(relativeTo: .caption) private var lineHeight: CGFloat = 15
     @Environment(\.textSizes) private var sizes
 
-    @ViewBuilder private func box(_ section: Section) -> some View {
-        let content = text(section)
-            .uiFont(.caption, design: .monospaced)
+    init(text: String, kind: Kind, maxLines: Int? = nil, isMuted: Bool = false) {
+        self.text = text
+        self.kind = kind
+        self.maxLines = maxLines
+        self.isMuted = isMuted
+    }
+
+    private var limit: Int { maxLines ?? (kind == .diff ? Self.diffMaxLines : Self.outputMaxLines) }
+
+    private var shown: String {
+        ToolCallView.clampForDisplay(kind == .diff ? ToolCallSummary.displayDiff(text) : text)
+    }
+
+    var body: some View {
+        let shown = self.shown
+        let content = styled(shown)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
-        if Self.lineCount(Self.shown(section)) > Self.maxLines {
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+        if Self.lineCount(shown) > limit {
             ScrollView(.vertical) { content }
-                .frame(height: lineHeight * sizes.uiScale * CGFloat(Self.maxLines) + 16)
+                .frame(height: lineHeight * sizes.uiScale * CGFloat(limit) + 8)
                 .accessibilityIdentifier("toolDetailScroll")
         } else {
             content
         }
     }
 
+    @ViewBuilder private func styled(_ shown: String) -> some View {
+        switch kind {
+        case .code:
+            Text(shown).uiFont(.caption, design: .monospaced).foregroundStyle(isMuted ? .tertiary : .secondary)
+        case .text:
+            Text(shown).uiFont(.caption).foregroundStyle(.secondary)
+        case .diff:
+            Text(Self.diff(shown)).uiFont(.caption, design: .monospaced)
+        }
+    }
+
     static func lineCount(_ text: String) -> Int {
         text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
-    }
-
-    /// What a section shows: a diff without its headers.
-    static func shown(_ section: Section) -> String {
-        section.kind == .diff ? ToolCallSummary.displayDiff(section.text) : section.text
-    }
-
-    @ViewBuilder private func text(_ section: Section) -> some View {
-        let shown = Self.shown(section)
-        let capped = shown.count > Self.maxCharacters
-            ? String(shown.prefix(Self.maxCharacters)) + "\n…"
-            : shown
-        switch section.kind {
-        case .input: Text(capped).foregroundStyle(.primary)
-        case .output: Text(capped).foregroundStyle(.secondary)
-        case .error: Text(capped).foregroundStyle(.red)
-        case .diff: Text(Self.diff(capped))
-        }
     }
 
     static func stats(_ diff: String) -> (added: Int, removed: Int) {
@@ -392,19 +483,19 @@ struct BackgroundNoticeRow: View {
             .disabled(notice.detail.isEmpty)
             .accessibilityIdentifier(Self.accessibilityIdentifier)
             if isExpanded {
-                ToolCallDetail(sections: [.init(kind: .output, text: notice.detail)])
+                ToolTextBox(text: notice.detail, kind: .code, maxLines: ToolTextBox.diffMaxLines)
+                    .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
                     .padding(.leading, 20)
             }
         }
     }
 }
 
-/// A run of tool calls under one summary line, as Desktop's `ToolRun` draws it
-/// (`components/assistant-ui/tool/fallback.tsx:950-1048`). Closed by default; while
+/// A run of consecutive tool calls under one summary line, as Desktop's `ToolRun` draws
+/// it (`components/assistant-ui/tool/fallback.tsx:993-1048`). Closed by default; while
 /// live, the call in progress shows under the line. A run of one call is that call's
-/// row, with no summary above it.
-///
-/// The run is the one fold: what it opens to doesn't fold again (`isInToolRun`).
+/// row, with no summary above it. Opened, its calls are listed as they are, each one
+/// opening in place.
 struct ToolRunView<Message: View>: View {
     let run: ToolRun
     @ViewBuilder let message: (TranscriptItem) -> Message
@@ -430,20 +521,11 @@ struct ToolRunView<Message: View>: View {
                         .truncationMode(.tail)
                 }
                 .accessibilityIdentifier(Self.accessibilityIdentifier)
-                Group {
-                    if isExpanded {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(visible) { message($0) }
-                        }
-                        .padding(.leading, 10)
-                        .overlay(alignment: .leading) {
-                            Rectangle().fill(.quaternary).frame(width: 1)
-                        }
-                    } else if run.isLive, let current = run.tools.last {
-                        message(current)
-                    }
+                if isExpanded {
+                    ForEach(visible) { message($0) }
+                } else if run.isLive, let current = run.tools.last {
+                    message(current)
                 }
-                .environment(\.isInToolRun, true)
             }
         }
     }

@@ -243,32 +243,21 @@ import Testing
         return item
     }
 
-    @Test func anOpenedRunShowsItsReasoningWithoutAFoldOfItsOwn() {
-        var commentary = TranscriptItem(id: "c", role: .assistant, text: "")
-        commentary.reasoning = "Thinking about which command to run."
-        let run = ToolRun(id: "run", items: [commentary, Self.tool("t1", command: "echo alpha"),
+    /// An opened run lists its calls; each is its own line that opens in place, below
+    /// itself, as Desktop's rows do. Reasoning never sits inside a run.
+    @Test func anOpenedRunListsItsCallsAndACallOpensBelowItsLine() {
+        let run = ToolRun(id: "run", items: [Self.tool("t1", command: "echo alpha"),
                                               Self.tool("t2", command: "echo beta")], isLive: false)
-        let view = host(ToolRunView(run: run, isExpanded: true) { item in
-            if item.role == .tool {
-                ToolMessageContent(item: item)
-            } else {
-                AssistantMessageContent(item: item) {}
-            }
-        })
-        #expect(texts(in: view).contains { $0.contains("Thinking about which command") },
-                "the reasoning is shown in the opened run")
-        // Outside a run the same reply keeps its reasoning closed.
-        #expect(!texts(in: host(AssistantMessageContent(item: commentary) {})).contains { $0.contains("Thinking") })
-    }
+        let closed = host(ToolRunView(run: run) { ToolMessageContent(item: $0) }).fittingSize.height
+        let opened = host(ToolRunView(run: run, isExpanded: true) { ToolMessageContent(item: $0) }).fittingSize.height
+        #expect(closed < 24, "a closed run is one line, not \(closed) pt")
+        #expect(opened > closed * 2, "an opened run shows each call (\(opened) pt)")
 
-    /// An edit's diff opens below its line by default; inside a run, nothing opens below
-    /// a call's line (its detail is a popover).
-    @Test func aCallInARunNeverOpensBelowItsLine() {
-        let edit = ToolRowTests.edit(lines: 3)
-        let alone = host(ToolMessageContent(item: edit)).fittingSize.height
-        let inRun = host(ToolMessageContent(item: edit).environment(\.isInToolRun, true)).fittingSize.height
-        #expect(alone > 40, "an edit with a diff opens by default (\(alone) pt)")
-        #expect(inRun < 24, "a call in a run is one line, not \(inRun) pt")
+        let call = Self.tool("t1", command: "echo alpha")
+        let line = host(ToolMessageContent(item: call)).fittingSize.height
+        let card = host(ToolMessageContent(item: call, isExpanded: true)).fittingSize.height
+        #expect(line < 24, "a call is one line until opened (\(line) pt)")
+        #expect(card > line + 20, "an opened call shows its command and output below its line (\(card) pt)")
     }
 
     @Test func aClosedReasoningIsOneLineThatOpensBelowIt() {

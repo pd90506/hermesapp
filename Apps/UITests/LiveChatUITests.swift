@@ -66,10 +66,12 @@ final class LiveChatUITests: XCTestCase {
     }
     #endif
 
-    /// A turn that runs tools and answers with a table: once the reply is in, its tool
-    /// calls are one closed summary line ("Ran 2 commands"), which opens to the calls.
+    /// A turn that runs tools and answers with a table: consecutive calls are one closed
+    /// summary line ("Ran 2 commands"), which opens to the calls, and a call opens in
+    /// place to its `$` command and output, as Desktop draws them. Commentary between the
+    /// calls would end the run, so the calls may also stand as rows of their own.
     @MainActor
-    func testToolCallsFoldIntoOneSummary() throws {
+    func testToolCallsGroupAndOpenInPlace() throws {
         continueAfterFailure = false
         let app = try launchApp()
         defer { app.terminate() }
@@ -86,39 +88,38 @@ final class LiveChatUITests: XCTestCase {
         let composer = app.textViews["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
         press(composer)
-        composer.typeText("Use the terminal tool twice: first run `echo alpha`, then run `echo beta`. "
-            + "Then reply with only a Markdown table with the columns Command and Output, one row per command.")
+        composer.typeText("Use the terminal tool twice, with no text between the calls: first run `echo alpha`, "
+            + "then run `echo beta`. Then reply with only a Markdown table with the columns Command and Output, "
+            + "one row per command.")
         press(app.buttons["Send"].firstMatch)
 
         let summary = app.buttons.matching(identifier: "toolRunSummary").firstMatch
+        let rows = app.buttons.matching(identifier: "toolCallRow")
         let settled = NSPredicate(format: "label MATCHES 'Ran [2-9] commands.*'")
         let deadline = Date().addingTimeInterval(180)
-        while !(summary.exists && settled.evaluate(with: summary)), Date() < deadline {
+        while !((summary.exists && settled.evaluate(with: summary)) || (!summary.exists && rows.count >= 2)),
+              Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(1))
         }
-        attach(app, "settled")
-        XCTAssertTrue(summary.exists && settled.evaluate(with: summary),
-                      "one summary line for the turn's tool calls, got \(summary.exists ? summary.label : "none")")
-        XCTAssertEqual(app.buttons.matching(identifier: "toolCallRow").count, 0, "the calls are folded")
-
-        // The live run's line becomes the turn's line as the reply lands: let it
-        // settle before clicking it.
         RunLoop.current.run(until: Date().addingTimeInterval(2))
-        press(summary)
-        let rows = app.buttons.matching(identifier: "toolCallRow")
-        let opened = Date().addingTimeInterval(10)
-        while rows.count < 2, Date() < opened { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
-        attach(app, "opened")
-        XCTAssertGreaterThanOrEqual(rows.count, 2, "opening the summary shows each call")
+        attach(app, "settled")
+        if summary.exists {
+            XCTAssertTrue(settled.evaluate(with: summary), "the run's line counts its commands, got \(summary.label)")
+            XCTAssertEqual(rows.count, 0, "the run is closed")
+            press(summary)
+            let opened = Date().addingTimeInterval(10)
+            while rows.count < 2, Date() < opened { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
+            attach(app, "run opened")
+        }
+        XCTAssertGreaterThanOrEqual(rows.count, 2, "each call has its row")
 
-        #if os(macOS)
-        // The run is the one fold: a call in it opens its input and output in a
-        // popover, not below its line.
+        // A call opens in place: its `$ command` line and output below it, no popover.
         press(rows.firstMatch)
-        let popover = app.popovers.firstMatch
-        XCTAssertTrue(popover.waitForExistence(timeout: 5), "a call in the run opens a popover")
-        attach(app, "call popover")
-        app.typeKey(.escape, modifierFlags: [])
+        let prompt = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '$ echo' OR value BEGINSWITH '$ echo'")).firstMatch
+        XCTAssertTrue(prompt.waitForExistence(timeout: 5), "the opened call shows its command")
+        attach(app, "call opened")
+        #if os(macOS)
+        XCTAssertEqual(app.popovers.count, 0, "a call opens in place, not in a popover")
         #endif
     }
 

@@ -125,7 +125,7 @@ final class LiveChatUITests: XCTestCase {
         press(composer)
         composer.typeText("Reply with the numbers 1 to 80, one per line, nothing else. Do not use tools.")
         press(app.buttons["Send"].firstMatch)
-        let last = app.textViews.matching(NSPredicate(format: "value CONTAINS '\n80'"))
+        let last = app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "\n80"))
         let replied = Date().addingTimeInterval(150)
         while last.count < 1, Date() < replied { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
         RunLoop.current.run(until: Date().addingTimeInterval(2))

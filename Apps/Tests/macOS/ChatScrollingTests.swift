@@ -18,7 +18,6 @@ import Testing
         /// How tall the last row's extra part is: a fold opening, or a reply streaming.
         var extra: CGFloat = 0
         let anchor = ChatScrollAnchor()
-        var lazy = false
     }
 
     private struct Harness: View {
@@ -26,13 +25,8 @@ import Testing
 
         var body: some View {
             ScrollView {
-                if chat.lazy {
-                    LazyVStack(alignment: .leading, spacing: TranscriptStack<EmptyView>.spacing) { rows }
-                        .padding()
-                } else {
-                    TranscriptStack { rows }
-                        .padding()
-                }
+                TranscriptStack { rows }
+                    .padding()
             }
             .chatScrollAnchoring(chat.anchor)
             .scrollPosition($chat.position)
@@ -74,9 +68,8 @@ import Testing
         let window: NSWindow
         let host: NSView
 
-        init(turns: Int, lazy: Bool = false) {
+        init(turns: Int) {
             chat.items = ChatScrollingTests.conversation(turns: turns)
-            chat.lazy = lazy
             window = NSWindow(contentRect: .testArea(Self.size),
                               styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -140,22 +133,6 @@ import Testing
         #expect(abs((heights.last ?? 0) - height) < 1, "opened at \(height), \(heights.last ?? 0) at the top")
     }
 
-    /// Diagnosis only: the lazy stack the chat used, which changed its height as rows
-    /// scrolled in.
-    @Test func aLazyStackChangesHeightWhileScrolling() throws {
-        let ui = UI(turns: 40, lazy: true)
-        defer { ui.close() }
-        var heights: [CGFloat] = [try #require(ui.contentHeight)]
-        var y = heights[0]
-        while y > 0 {
-            y -= 140
-            ui.scroll(toY: max(y, 0))
-            heights.append(try #require(ui.contentHeight))
-        }
-        print("lazy stack heights while scrolling up: \(heights.map { Int($0) })")
-        #expect(Set(heights.map { Int($0) }).count > 1, "the lazy stack kept one height: \(heights)")
-    }
-
     /// A fold opened at the end of the chat opens below its line, which stays put; it
     /// moved up by the fold's height when the bottom stayed put instead.
     @Test func aFoldOpenedAtTheEndKeepsItsLine() throws {
@@ -163,9 +140,9 @@ import Testing
         defer { ui.close() }
         #expect(try #require(ui.remainingBelow) < 2, "the chat opens at its end")
         let top = try #require(ui.shownTop)
-        ui.chat.anchor.hold()
-        ui.chat.extra = 300
-        ui.settle()
+        // As a fold's button does.
+        ui.chat.anchor.hold { ui.chat.extra = 300 }
+        ui.settle(20)
         let after = try #require(ui.shownTop)
         #expect(abs(after - top) < 1, "the rows on screen moved from \(top) to \(after)")
         #expect(try #require(ui.remainingBelow) > 250, "the fold opened below the screen")
@@ -198,34 +175,19 @@ import Testing
     }
 }
 
-/// The chat folds once: reasoning and tool calls inside an opened run don't fold again,
-/// and a fold's whole line (its word as well as its chevron) is its button.
+/// The chat folds once: reasoning and tool calls inside an opened run don't fold again.
+///
+/// Checked by what is laid out: SwiftUI's accessibility elements are not built for a
+/// window test, and a click synthesized here does not reach a SwiftUI button
+/// (`PromptRailTests`), so pressing a fold's line is checked by hand.
 @MainActor
-@Suite(.serialized) struct FoldTests {
-    private func host(_ view: some View, width: CGFloat = 420) -> (NSWindow, NSHostingView<AnyView>) {
-        let host = NSHostingView(rootView: AnyView(view.frame(width: width).fixedSize(horizontal: false, vertical: true)))
-        let window = NSWindow(contentRect: .testArea(CGSize(width: width, height: 400)),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        window.showInTestArea()
-        settle()
-        return (window, host)
+@Suite struct FoldTests {
+    private func host(_ view: some View, width: CGFloat = 420) -> NSHostingView<AnyView> {
+        let host = NSHostingView(rootView: AnyView(view.frame(width: width)))
+        host.frame.size = host.fittingSize
+        host.layoutSubtreeIfNeeded()
+        return host
     }
-
-    private func settle() {
-        for _ in 0..<10 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
-    }
-
-    /// Every accessibility element under `root`, depth first. SwiftUI's elements are
-    /// private classes, so their accessibility methods are looked up dynamically.
-    private func elements(in root: Any) -> [AnyObject] {
-        let object = root as AnyObject
-        let children: [Any] = (object.accessibilityChildren?() ?? nil) ?? []
-        return [object] + children.flatMap { elements(in: $0) }
-    }
-
-    private func identifier(_ element: AnyObject) -> String { element.accessibilityIdentifier?() ?? "" }
 
     private func texts(in view: NSView) -> [String] {
         ((view as? NSTextView).map { [$0.string] } ?? []) + view.subviews.flatMap(texts)
@@ -241,45 +203,41 @@ import Testing
         return item
     }
 
-    @Test func anOpenedRunShowsItsReasoningAndCallsWithoutFoldsOfTheirOwn() throws {
+    @Test func anOpenedRunShowsItsReasoningWithoutAFoldOfItsOwn() {
         var commentary = TranscriptItem(id: "c", role: .assistant, text: "")
         commentary.reasoning = "Thinking about which command to run."
         let run = ToolRun(id: "run", items: [commentary, Self.tool("t1", command: "echo alpha"),
                                               Self.tool("t2", command: "echo beta")], isLive: false)
-        let (window, view) = host(ToolRunView(run: run, isExpanded: true) { item in
+        let view = host(ToolRunView(run: run, isExpanded: true) { item in
             if item.role == .tool {
                 ToolMessageContent(item: item)
             } else {
                 AssistantMessageContent(item: item) {}
             }
         })
-        defer { window.close() }
         #expect(texts(in: view).contains { $0.contains("Thinking about which command") },
                 "the reasoning is shown in the opened run")
-        let all = elements(in: view)
-        #expect(!all.contains { identifier($0) == ReasoningFold.accessibilityIdentifier },
-                "the reasoning folds again inside the run")
-        let calls = all.filter { identifier($0) == ToolMessageContent.accessibilityIdentifier }
-        #expect(calls.count == 2, "the run's calls: \(calls.count)")
-        let folds = calls.filter { call in
-            let raw: Any? = (call as? NSAccessibilityProtocol)?.accessibilityValue ?? nil
-            let value = raw as? String
-            return ["expanded", "collapsed"].contains(value ?? "")
-        }
-        #expect(folds.isEmpty, "a call folds inside the run")
+        // Outside a run the same reply keeps its reasoning closed.
+        #expect(!texts(in: host(AssistantMessageContent(item: commentary) {})).contains { $0.contains("Thinking") })
     }
 
-    @Test func theReasoningLineIsOneButtonThatOpensBelowIt() throws {
+    /// An edit's diff opens below its line by default; inside a run, nothing opens below
+    /// a call's line (its detail is a popover).
+    @Test func aCallInARunNeverOpensBelowItsLine() {
+        let edit = ToolRowTests.edit(lines: 3)
+        let alone = host(ToolMessageContent(item: edit)).fittingSize.height
+        let inRun = host(ToolMessageContent(item: edit).environment(\.isInToolRun, true)).fittingSize.height
+        #expect(alone > 40, "an edit with a diff opens by default (\(alone) pt)")
+        #expect(inRun < 24, "a call in a run is one line, not \(inRun) pt")
+    }
+
+    @Test func aClosedReasoningIsOneLineThatOpensBelowIt() {
         var reply = TranscriptItem(id: "a", role: .assistant, text: "The answer.")
         reply.reasoning = "Weighing the options."
-        let (window, view) = host(AssistantMessageContent(item: reply) {})
-        defer { window.close() }
-        #expect(!texts(in: view).contains { $0.contains("Weighing") }, "the reasoning starts closed")
-        let toggle = try #require(elements(in: view).first { identifier($0) == ReasoningFold.accessibilityIdentifier })
-        let frame = toggle.accessibilityFrame?() ?? .zero
-        #expect(frame.width > 60, "the button is the chevron alone: \(frame)")
-        #expect(toggle.accessibilityPerformPress?() == true)
-        settle()
-        #expect(texts(in: view).contains { $0.contains("Weighing") }, "pressing the line opens the reasoning")
+        let closed = host(ReasoningFold(item: reply))
+        let open = host(ReasoningFold(item: reply, isExpanded: true))
+        #expect(closed.fittingSize.height < 24, "closed: \(closed.fittingSize.height) pt")
+        #expect(!texts(in: closed).contains { $0.contains("Weighing") })
+        #expect(texts(in: open).contains { $0.contains("Weighing") })
     }
 }

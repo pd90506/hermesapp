@@ -42,16 +42,24 @@ struct TranscriptStack<Content: View>: View {
         return isAtEnd || readingOlderPage ? .bottom : .top
     }
 
-    /// Keeps the rows on screen where they are while a fold opens or closes.
-    func hold() {
+    /// Keeps the rows on screen where they are while a fold opens or closes: anchors
+    /// the top, then makes `change` a moment later. Made in the same update as the
+    /// change, the new anchor came too late for it: the chat still kept its bottom
+    /// (measured in the VM, 2026-10-18).
+    func hold(then change: @escaping @MainActor () -> Void) {
         holds += 1
         let hold = holds
         isHeld = true
         Task { @MainActor in
+            try? await Task.sleep(for: Self.anchorLead)
+            change()
             try? await Task.sleep(for: Self.holdDuration)
             if holds == hold { isHeld = false }
         }
     }
+
+    /// About a frame: the anchor reaches the scroll view before the content changes.
+    static let anchorLead: Duration = .milliseconds(20)
 
     /// Whether `geometry` shows the end of the content (the composer's inset aside).
     nonisolated static func isAtEnd(_ geometry: ScrollGeometry) -> Bool {
@@ -61,7 +69,7 @@ struct TranscriptStack<Content: View>: View {
 }
 
 extension EnvironmentValues {
-    /// The chat's scroll anchor, for the folds in it to hold (`ChatScrollAnchor.hold`).
+    /// The chat's scroll anchor, for the folds in it to hold (`ChatScrollAnchor.hold(then:)`).
     @Entry var chatScrollAnchor: ChatScrollAnchor? = nil
 }
 

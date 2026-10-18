@@ -92,6 +92,7 @@ targets:
       - path: Apps/Shared/Views/ScrollLatching.swift
       - path: Apps/Shared/Views/PromptRail.swift
       - path: Apps/Shared/Views/TextSizes.swift
+      - path: Apps/Shared/Views/ThemeColors.swift
       - path: Apps/Shared/Views/Markdown
       - path: Apps/macOS/WindowFrameAutosave.swift
     dependencies:

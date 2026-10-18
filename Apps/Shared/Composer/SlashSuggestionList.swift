@@ -64,7 +64,7 @@ struct SlashSuggestionList: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(row.isSelected ? Color.accentColor.opacity(0.15) : .clear,
+                        .background(row.isSelected ? AnyShapeStyle(.tint.opacity(0.15)) : AnyShapeStyle(.clear),
                                     in: .rect(cornerRadius: 5))
                     }
                     .buttonStyle(.plain)

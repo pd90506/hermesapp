@@ -11,6 +11,7 @@ struct HermesMacApp: App {
                 .environment(model)
                 .appearance(model.appearance)
                 .markdownColors(model.markdownColors)
+                .colorTheme(model.markdownColors.preset)
                 .frame(minWidth: 720, minHeight: 480)
                 // The size and place the window last had, across launches and updates.
                 .windowFrameAutosave("HermesMainWindow")
@@ -28,6 +29,7 @@ struct HermesMacApp: App {
                 .environment(model)
                 .appearance(model.appearance)
                 .markdownColors(model.markdownColors)
+                .colorTheme(model.markdownColors.preset)
         }
     }
 }

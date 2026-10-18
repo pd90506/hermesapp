@@ -150,6 +150,7 @@ public final class ChatSession: Identifiable {
         // Built from the snapshot and stored rows only: no bubble is carried over.
         let old = transcript
         transcript = Transcript(snapshot: snapshot, localIDsAfter: old.lastLocalID)
+        transcript.adoptSentImages(of: old)
         returnFailedPrompts(of: old)
         lastSeq = nil
         isRuntimeGone = false

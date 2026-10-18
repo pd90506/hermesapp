@@ -277,6 +277,14 @@ public struct Transcript: Sendable, Hashable {
     private var buildingHistory = false
     /// Ids of local rows (see the type's note).
     private var localIDs: Set<String> = []
+    /// Images of prompts sent here, by the stored row that holds the prompt
+    /// (`user_row_id`). That row is written at submit with the text alone
+    /// (`_write_submit_user_row`, `tui_gateway/session_workdir.py:673-704`); its
+    /// `@image:` lines join it only when the turn's prologue rewrites it
+    /// (`_adopt_submit_user_row`, :726-752), after the agent build. Until a read shows
+    /// them, the row shows the images sent with it, as the bubble it replaced did.
+    /// An entry goes once a read of its row shows images.
+    private var sentImages: [Int: [TranscriptImage]] = [:]
     /// For each local row in the history part: the id of the stored row it follows
     /// (absent: it comes before every stored row).
     private var localAnchors: [String: Int] = [:]
@@ -715,6 +723,7 @@ public struct Transcript: Sendable, Hashable {
         let dropped = storedAtSubmit.union(eligible.intersection(quietOnce))
         quietOnce = eligible.subtracting(dropped)
         if !quietOnce.isEmpty { needsReread = true }
+        keepSentImages(of: dropped)
         prompts = prompts.filter { !dropped.contains($0.key) }
         let storedAfterAll = settleByReceipt()
         removeLiveItems { settled.contains($0.id) || dropped.contains($0.id) || storedAfterAll.contains($0.id) }
@@ -743,16 +752,58 @@ public struct Transcript: Sendable, Hashable {
             return id
         })
         guard !proven.isEmpty else { return }
+        keepSentImages(of: proven)
         prompts = prompts.filter { !proven.contains($0.key) }
         quietOnce.subtract(proven)
         removeLiveItems { proven.contains($0.id) }
+    }
+
+    /// Before prompt bubbles go for their stored rows (`user_row_id`): remembers their
+    /// images by row (see `sentImages`) and shows them on those rows now.
+    private mutating func keepSentImages(of ids: Set<String>) {
+        for bubble in items[historyCount...] where ids.contains(bubble.id) && !bubble.images.isEmpty {
+            guard case .answered(_, let row?) = prompts[bubble.id] else { continue }
+            sentImages[row] = bubble.images
+            for index in items[..<historyCount].indices
+            where items[index].role == .user && items[index].rowID == row && items[index].images.isEmpty {
+                items[index].images = bubble.images
+            }
+        }
+    }
+
+    /// A stored prompt row the gateway has not given its images yet shows the ones
+    /// sent with it (see `sentImages`); one that has them settles the entry.
+    private mutating func withSentImages(_ item: TranscriptItem) -> TranscriptItem {
+        guard item.role == .user, let row = item.rowID, let images = sentImages[row] else { return item }
+        guard item.images.isEmpty else {
+            sentImages[row] = nil
+            return item
+        }
+        var shown = item
+        shown.images = images
+        return shown
+    }
+
+    /// Takes over the images of prompts the transcript this one replaces sent (a
+    /// rebuild while their rows still wait for them, `ChatSession.reset`).
+    mutating func adoptSentImages(of old: Transcript) {
+        sentImages.merge(old.sentImages) { mine, _ in mine }
+        guard !sentImages.isEmpty else { return }
+        for index in items[..<historyCount].indices {
+            let item = withSentImages(items[index])
+            items[index] = item
+        }
     }
 
     /// Projects `rows` into the history from `start` on, replacing what was there.
     /// Local rows in that range go back after the stored row they followed.
     private mutating func replaceHistory(from start: Int, with rows: [StoredMessage], startsSession: Bool) {
         var toolCalls: StoredMessageProjection.ToolCalls = [:]
-        let stored = StoredMessageProjection.items(from: rows, toolCalls: &toolCalls, startsSession: startsSession)
+        var stored = StoredMessageProjection.items(from: rows, toolCalls: &toolCalls, startsSession: startsSession)
+        for index in stored.indices where !sentImages.isEmpty {
+            let item = withSentImages(stored[index])
+            stored[index] = item
+        }
         let locals = items[start..<historyCount].filter { localIDs.contains($0.id) }
         items.removeSubrange(start..<historyCount)
         historyCount = start

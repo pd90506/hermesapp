@@ -282,9 +282,14 @@ extension View {
         overlay(alignment: .top) {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
+                    // The glass runs past the band and is cut to it: its rims drew a
+                    // bright line along the band's bottom and tinted its top.
                     titleBarTone
-                        .background { Color.clear.glassEffect(.regular, in: .rect) }
+                        .background {
+                            Color.clear.glassEffect(.regular, in: .rect).padding(.vertical, -24)
+                        }
                         .frame(height: proxy.safeAreaInsets.top)
+                        .clipped()
                     Spacer(minLength: 0)
                 }
                 .ignoresSafeArea(edges: .top)
@@ -301,10 +306,11 @@ extension View {
 
 #if os(macOS)
 /// Over the band's glass, the tone that brings it to the sidebar's (about 236 in light,
-/// 50 in dark, VM 2026-10-18). The window's background is the chat's white (or its dark)
-/// on macOS 26, not the sidebar's tone. Half see-through, so the chat's blur shows.
+/// 50 in dark; the glass under it about 252 and 73, VM 2026-10-18). The window's
+/// background is the chat's white (or its dark) on macOS 26, not the sidebar's tone.
+/// Half see-through, so the chat's blur shows.
 private let titleBarTone = Color(nsColor: NSColor(name: nil) { appearance in
     appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        ? NSColor(white: 0.18, alpha: 0.55) : NSColor(white: 0.875, alpha: 0.55)
+        ? NSColor(white: 0.125, alpha: 0.55) : NSColor(white: 0.875, alpha: 0.55)
 })
 #endif

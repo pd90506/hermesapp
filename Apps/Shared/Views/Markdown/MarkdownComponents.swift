@@ -16,6 +16,8 @@ struct MarkdownCodeBlock: View {
     var codeSize = TextSizes.defaults.code
     var messageSource: String? = nil
     var conversationSource: (() -> String)? = nil
+    @Environment(\.markdownPalette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -45,7 +47,7 @@ struct MarkdownCodeBlock: View {
             .accessibilityIdentifier("markdownCodeScroll")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
+        .background(palette.color(.codeBlockBackground, colorScheme), in: .rect(cornerRadius: 8))
         #if os(macOS)
         .contextMenu { messageMenu }
         #endif
@@ -63,7 +65,8 @@ struct MarkdownCodeBlock: View {
 
 /// Laid out as Desktop's transcript tables are (`components/assistant-ui/markdown-table.tsx`):
 /// the full width of the column, a rounded border, a tinted header row and a 1 pt
-/// rule between rows. Columns start at the widest cell's rendered width (bold
+/// rule between rows. The tints, rules and every other row's stripe take the Markdown
+/// colours (Settings ▸ Markdown). Columns start at the widest cell's rendered width (bold
 /// header, inline code, links and math included) and share the room left over in
 /// proportion to it. Cells whose content is unusually long cap at 300 pt and wrap
 /// when the column has no room for them; a grid wider than the column scrolls
@@ -73,6 +76,8 @@ struct MarkdownTableGrid: View {
     var messageSource: String? = nil
     var conversationSource: (() -> String)? = nil
     @Environment(\.textSizes) private var sizes
+    @Environment(\.markdownPalette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     /// Dynamic Type on iOS; 1 on macOS.
     @ScaledMetric(relativeTo: .body) private var typeScale: CGFloat = 1
     private var bodySize: CGFloat { sizes.content * typeScale }
@@ -91,10 +96,10 @@ struct MarkdownTableGrid: View {
                 ForEach(layout.cells.indices, id: \.self) { row in
                     GridRow {
                         ForEach(table.header.indices, id: \.self) { column in
-                            cell(layout.cells[row][column], width: widths[column], column: column)
-                                .background(row == 0 ? AnyShapeStyle(.quaternary.opacity(0.6)) : AnyShapeStyle(.clear))
+                            cell(layout.cells[row][column], width: widths[column], column: column, header: row == 0)
+                                .background(background(row: row))
                                 .overlay(alignment: .bottom) {
-                                    if row < layout.cells.count - 1 { Rectangle().fill(.quaternary).frame(height: 1) }
+                                    if row < layout.cells.count - 1 { Rectangle().fill(border).frame(height: 1) }
                                 }
                         }
                     }
@@ -106,7 +111,7 @@ struct MarkdownTableGrid: View {
             // last row and bottom border below it.
             .fixedSize(horizontal: false, vertical: true)
             .clipShape(.rect(cornerRadius: Self.cornerRadius))
-            .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius).strokeBorder(.quaternary, lineWidth: 1) }
+            .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius).strokeBorder(border, lineWidth: 1) }
             .padding(1)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -126,7 +131,15 @@ struct MarkdownTableGrid: View {
         }
     }
 
-    private func cell(_ selection: MarkdownSelection, width: CGFloat, column: Int) -> some View {
+    private var border: Color { palette.color(.tableBorder, colorScheme) }
+
+    /// The header's tint, and a stripe on every other body row (the second, fourth, …).
+    private func background(row: Int) -> Color {
+        if row == 0 { return palette.color(.tableHeaderBackground, colorScheme) }
+        return row.isMultiple(of: 2) ? palette.color(.tableStripe, colorScheme) : .clear
+    }
+
+    private func cell(_ selection: MarkdownSelection, width: CGFloat, column: Int, header: Bool) -> some View {
         let alignment: HorizontalAlignment = switch table.alignments[column] {
         case .center: .center
         case .trailing: .trailing
@@ -136,7 +149,7 @@ struct MarkdownTableGrid: View {
         // message's Copy Message / Copy Conversation like prose does.
         return SelectableMarkdownText(selection: selection, source: messageSource ?? selection.plainText,
                                       bodySize: bodySize, isReasoning: false,
-                                      conversationSource: conversationSource, width: width)
+                                      conversationSource: conversationSource, width: width, tableHeader: header)
             .frame(width: width, alignment: Alignment(horizontal: alignment, vertical: .center))
             .padding(.horizontal, Self.cellPadding)
             .padding(.vertical, 6)

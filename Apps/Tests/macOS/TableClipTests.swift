@@ -356,7 +356,9 @@ import Testing
         let scale = CGFloat(rep.pixelsWide) / host.bounds.width
         func dark(_ x: CGFloat, _ y: CGFloat) -> Bool {
             let color = rep.colorAt(x: Int((x * scale).rounded(.down)), y: Int((y * scale).rounded(.down)))
-            return (color?.usingColorSpace(.sRGB)?.brightnessComponent ?? 1) < 0.97
+            // Luma, not HSB brightness, which is 1 for the blue border on white.
+            guard let rgb = color?.usingColorSpace(.sRGB) else { return false }
+            return 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent < 0.97
         }
         // The border's top and bottom, met walking down 20 pt in; its sides, met
         // walking across the header's top padding.

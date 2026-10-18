@@ -19,32 +19,11 @@ private extension NativeColor {
         .label
         #endif
     }
-    static var mdLink: NativeColor {
-        #if os(macOS)
-        .linkColor
-        #else
-        .link
-        #endif
-    }
     static var mdSecondary: NativeColor {
         #if os(macOS)
         .secondaryLabelColor
         #else
         .secondaryLabel
-        #endif
-    }
-    static var mdTertiary: NativeColor {
-        #if os(macOS)
-        .tertiaryLabelColor
-        #else
-        .tertiaryLabel
-        #endif
-    }
-    static var mdQuaternary: NativeColor {
-        #if os(macOS)
-        .quaternaryLabelColor
-        #else
-        .quaternaryLabel
         #endif
     }
 }
@@ -100,8 +79,10 @@ enum MarkdownNativeText {
 
     /// Renders `selection.runs[start...]`.
     /// `codeSize` is the code block size; nil keeps it at callout's ratio to body.
+    /// `tableHeader` colours the text as a table's header row.
     static func make(_ selection: MarkdownSelection, from start: Int = 0, bodySize: CGFloat,
-                     codeSize: CGFloat? = nil, isReasoning: Bool = false) -> Built {
+                     codeSize: CGFloat? = nil, isReasoning: Bool = false,
+                     palette: MarkdownPalette = MarkdownPalette(), tableHeader: Bool = false) -> Built {
         let code = codeSize ?? Self.codeSize(bodySize)
         let runs = selection.runs
         let result = NSMutableAttributedString()
@@ -123,16 +104,19 @@ enum MarkdownNativeText {
             previousFont = font
             var attributes = selection.copyAttributes(forRunAt: index)
             attributes[.font] = font
-            attributes[.foregroundColor] = color(for: run, isReasoning: isReasoning)
+            attributes[.foregroundColor] = color(for: run, isReasoning: isReasoning, palette: palette,
+                                                 tableHeader: tableHeader)
             attributes[.paragraphStyle] = paragraph
             if run.strike { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
             if let link = run.link, let url = URL(string: link),
                ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
                 attributes[.link] = url
-                attributes[.foregroundColor] = NativeColor.mdLink
+                attributes[.foregroundColor] = palette.native(.link)
+            } else if run.inlineCode, !isReasoning {
+                attributes[.foregroundColor] = palette.native(.inlineCode)
             }
             // Code blocks get a full-width background instead.
-            if run.inlineCode { attributes[.backgroundColor] = NativeColor.mdQuaternary.withAlphaComponent(0.15) }
+            if run.inlineCode { attributes[.backgroundColor] = palette.native(.inlineCodeBackground) }
             if let math = run.math {
                 let size = math.isDisplay ? bodySize * 1.1 : font.pointSize
                 if let rendered = renderedMath(math, fontSize: size) {
@@ -152,11 +136,19 @@ enum MarkdownNativeText {
         return Built(text: result, runStarts: starts)
     }
 
-    private static func color(for run: MarkdownSelection.Run, isReasoning: Bool) -> NativeColor {
+    /// Reasoning keeps the secondary grey throughout; a reply takes the palette's colours.
+    private static func color(for run: MarkdownSelection.Run, isReasoning: Bool, palette: MarkdownPalette,
+                              tableHeader: Bool) -> NativeColor {
         switch run.role {
         case .codeLanguage: return .mdSecondary
         case .listMarker where run.indents.last != .list(ordered: true): return .mdSecondary
-        default: return isReasoning || run.isQuoted ? .mdSecondary : .mdLabel
+        default:
+            if isReasoning { return .mdSecondary }
+            if run.isQuoted { return palette.native(.quoteText) }
+            if tableHeader || run.role == .tableHeader { return palette.native(.tableHeaderText) }
+            if case .heading = run.role { return palette.native(.heading) }
+            if run.bold { return palette.native(.bold) }
+            return .mdLabel
         }
     }
 
@@ -390,6 +382,14 @@ struct MarkdownDecorations {
         }
     }
 
+    /// Each quote's tint, from its bar to the end of the line.
+    @MainActor
+    func quoteBackgroundRects(layoutManager: NSLayoutManager, width: CGFloat) -> [CGRect] {
+        quoteBarRects(layoutManager: layoutManager).map { bar in
+            CGRect(x: bar.minX, y: bar.minY, width: max(width - bar.minX, 0), height: bar.height)
+        }
+    }
+
     /// Room for code padding above a message that starts with a code block, and
     /// below one that ends with it; paragraph spacing cannot provide either.
     static func insets(for runs: [MarkdownSelection.Run]) -> (top: CGFloat, bottom: CGFloat) {
@@ -461,6 +461,8 @@ final class MarkdownSelectionTextView: NSTextView {
     private(set) var appliedBodySize: CGFloat = 0
     private var appliedCodeSize: CGFloat?
     private var appliedReasoning = false
+    private(set) var appliedPalette = MarkdownPalette()
+    private var appliedTableHeader = false
     private var runStarts: [Int] = []
     private(set) var decorations = MarkdownDecorations()
     private(set) var codeButtons: [NSButton] = []
@@ -475,21 +477,24 @@ final class MarkdownSelectionTextView: NSTextView {
     /// Where copies go; tests use a private pasteboard.
     var pasteboard = NSPasteboard.general
 
-    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, codeSize: CGFloat? = nil, isReasoning: Bool) {
+    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, codeSize: CGFloat? = nil, isReasoning: Bool,
+               palette: MarkdownPalette = MarkdownPalette(), tableHeader: Bool = false) {
         let sizesChanged = bodySize != appliedBodySize || codeSize != appliedCodeSize
-        guard selection != selectionModel || sizesChanged || isReasoning != appliedReasoning,
+        let styleChanged = isReasoning != appliedReasoning || palette != appliedPalette || tableHeader != appliedTableHeader
+        guard selection != selectionModel || sizesChanged || styleChanged,
               let storage = textStorage else { return }
         let oldRange = selectedRange()
-        if !sizesChanged, isReasoning == appliedReasoning {
+        if !sizesChanged, !styleChanged {
             // Streaming appends or edits the tail: keep the unchanged leading runs.
             let prefix = zip(selectionModel.runs, selection.runs).prefix { $0 == $1 }.count
             let location = prefix < runStarts.count ? runStarts[prefix] : storage.length
             let tail = MarkdownNativeText.make(selection, from: prefix, bodySize: bodySize, codeSize: codeSize,
-                                                    isReasoning: isReasoning)
+                                                    isReasoning: isReasoning, palette: palette, tableHeader: tableHeader)
             storage.replaceCharacters(in: NSRange(location: location, length: storage.length - location), with: tail.text)
             runStarts = Array(runStarts.prefix(prefix)) + tail.runStarts.map { $0 + location }
         } else {
-            let built = MarkdownNativeText.make(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
+            let built = MarkdownNativeText.make(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning,
+                                                palette: palette, tableHeader: tableHeader)
             storage.setAttributedString(built.text)
             runStarts = built.runStarts
         }
@@ -497,9 +502,12 @@ final class MarkdownSelectionTextView: NSTextView {
         appliedBodySize = bodySize
         appliedCodeSize = codeSize
         appliedReasoning = isReasoning
+        let paletteChanged = palette != appliedPalette
+        appliedPalette = palette
+        appliedTableHeader = tableHeader
         decorations = MarkdownDecorations(selection, runStarts: runStarts, length: storage.length)
         let newInsets = MarkdownDecorations.insets(for: selection.runs)
-        let originMoved = newInsets.top != insets.top
+        let originMoved = newInsets.top != insets.top || paletteChanged
         insets = newInsets
         measured = nil
         updateCodeButtons()
@@ -522,13 +530,14 @@ final class MarkdownSelectionTextView: NSTextView {
     /// and laying out then would wrap the message one character per line.
     private var hasLayoutWidth: Bool { (textContainer?.size.width ?? 0) > 1 }
 
-    /// Code backgrounds and quote bars, in view coordinates.
+    /// Code backgrounds, then quote backgrounds, then quote bars, in view coordinates.
     private func currentDecorationRects() -> [CGRect] {
         guard hasLayoutWidth, let layoutManager, let textContainer,
               !(decorations.code.isEmpty && decorations.quotes.isEmpty) else { return [] }
         layoutManager.ensureLayout(for: textContainer)
         let origin = textContainerOrigin
         return (decorations.codeRects(layoutManager: layoutManager, width: bounds.width)
+            + decorations.quoteBackgroundRects(layoutManager: layoutManager, width: bounds.width)
             + decorations.quoteBarRects(layoutManager: layoutManager)).map { $0.offsetBy(dx: origin.x, dy: origin.y) }
     }
 
@@ -660,16 +669,20 @@ final class MarkdownSelectionTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         decorationRects = currentDecorationRects()
         if !decorationRects.isEmpty {
-            let codeCount = decorations.code.count
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current?.cgContext.setAlpha(0.4)
-            NSColor.quaternaryLabelColor.setFill()
-            for rect in decorationRects.prefix(codeCount) where rect.intersects(dirtyRect) {
+            let codeCount = decorations.code.count, quoteCount = decorations.quotes.count
+            let code = decorationRects.prefix(codeCount)
+            let quoteBackgrounds = decorationRects.dropFirst(codeCount).prefix(quoteCount)
+            let quoteBars = decorationRects.dropFirst(codeCount + quoteCount)
+            appliedPalette.native(.codeBlockBackground).setFill()
+            for rect in code where rect.intersects(dirtyRect) {
                 NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill()
             }
-            NSGraphicsContext.restoreGraphicsState()
-            NSColor.tertiaryLabelColor.setFill()
-            for rect in decorationRects.dropFirst(codeCount) where rect.intersects(dirtyRect) {
+            appliedPalette.native(.quoteBackground).setFill()
+            for rect in quoteBackgrounds where rect.intersects(dirtyRect) {
+                NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
+            }
+            appliedPalette.native(.quoteBar).setFill()
+            for rect in quoteBars where rect.intersects(dirtyRect) {
                 NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
             }
         }
@@ -711,6 +724,10 @@ struct SelectableMarkdownText: NSViewRepresentable {
     var width: CGFloat? = nil
     /// Code blocks inside the prose (in a list or quote); nil keeps callout's ratio.
     var codeSize: CGFloat? = nil
+    /// A table's header row, in the palette's header colour.
+    var tableHeader = false
+    @Environment(\.markdownPalette) private var palette
+    @Environment(\.markdownPreviewScheme) private var previewScheme
 
     func makeNSView(context: Context) -> MarkdownSelectionTextView {
         MarkdownSelectionTextView.make()
@@ -720,7 +737,10 @@ struct SelectableMarkdownText: NSViewRepresentable {
         view.fixedWidth = width
         view.messageSource = source
         view.conversationSource = conversationSource
-        view.apply(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
+        let appearance = previewScheme.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
+        if view.appearance?.name != appearance?.name { view.appearance = appearance }
+        view.apply(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning,
+                   palette: palette, tableHeader: tableHeader)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: MarkdownSelectionTextView, context: Context) -> CGSize? {
@@ -814,27 +834,33 @@ final class MarkdownSelectionTextView: UITextView {
     private(set) var appliedBodySize: CGFloat = 0
     private var appliedCodeSize: CGFloat?
     private var appliedReasoning = false
+    private var appliedPalette = MarkdownPalette()
+    private var appliedTableHeader = false
     private var runStarts: [Int] = []
     private(set) var decorations = MarkdownDecorations()
     private var codeButtons: [UIButton] = []
     private var codeBackgrounds: [UIView] = []
+    private var quoteBackgrounds: [UIView] = []
     private var quoteBars: [UIView] = []
     private var measured: (width: CGFloat, height: CGFloat)?
 
-    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, codeSize: CGFloat? = nil, isReasoning: Bool) {
+    func apply(_ selection: MarkdownSelection, bodySize: CGFloat, codeSize: CGFloat? = nil, isReasoning: Bool,
+               palette: MarkdownPalette = MarkdownPalette(), tableHeader: Bool = false) {
         let sizesChanged = bodySize != appliedBodySize || codeSize != appliedCodeSize
-        guard selection != selectionModel || sizesChanged || isReasoning != appliedReasoning else { return }
+        let styleChanged = isReasoning != appliedReasoning || palette != appliedPalette || tableHeader != appliedTableHeader
+        guard selection != selectionModel || sizesChanged || styleChanged else { return }
         let oldRange = selectedRange
-        if !sizesChanged, isReasoning == appliedReasoning {
+        if !sizesChanged, !styleChanged {
             // Streaming appends or edits the tail: keep the unchanged leading runs.
             let prefix = zip(selectionModel.runs, selection.runs).prefix { $0 == $1 }.count
             let location = prefix < runStarts.count ? runStarts[prefix] : textStorage.length
             let tail = MarkdownNativeText.make(selection, from: prefix, bodySize: bodySize, codeSize: codeSize,
-                                                    isReasoning: isReasoning)
+                                                    isReasoning: isReasoning, palette: palette, tableHeader: tableHeader)
             textStorage.replaceCharacters(in: NSRange(location: location, length: textStorage.length - location), with: tail.text)
             runStarts = Array(runStarts.prefix(prefix)) + tail.runStarts.map { $0 + location }
         } else {
-            let built = MarkdownNativeText.make(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
+            let built = MarkdownNativeText.make(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning,
+                                                palette: palette, tableHeader: tableHeader)
             attributedText = built.text
             runStarts = built.runStarts
         }
@@ -842,6 +868,8 @@ final class MarkdownSelectionTextView: UITextView {
         appliedBodySize = bodySize
         appliedCodeSize = codeSize
         appliedReasoning = isReasoning
+        appliedPalette = palette
+        appliedTableHeader = tableHeader
         decorations = MarkdownDecorations(selection, runStarts: runStarts, length: textStorage.length)
         let insets = MarkdownDecorations.insets(for: selection.runs)
         textContainerInset = UIEdgeInsets(top: insets.top, left: 0, bottom: insets.bottom, right: 0)
@@ -872,8 +900,6 @@ final class MarkdownSelectionTextView: UITextView {
         }
         resize(&codeBackgrounds, to: decorations.code.count) {
             let view = UIView()
-            view.backgroundColor = UIColor.quaternaryLabel
-            view.alpha = 0.4
             view.layer.cornerRadius = 8
             view.isUserInteractionEnabled = false
             insertSubview(view, at: 0)
@@ -881,12 +907,21 @@ final class MarkdownSelectionTextView: UITextView {
         }
         resize(&quoteBars, to: decorations.quotes.count) {
             let view = UIView()
-            view.backgroundColor = UIColor.tertiaryLabel
             view.layer.cornerRadius = 1.5
             view.isUserInteractionEnabled = false
             insertSubview(view, at: 0)
             return view
         }
+        resize(&quoteBackgrounds, to: decorations.quotes.count) {
+            let view = UIView()
+            view.layer.cornerRadius = 1.5
+            view.isUserInteractionEnabled = false
+            insertSubview(view, at: 0)
+            return view
+        }
+        for view in codeBackgrounds { view.backgroundColor = appliedPalette.native(.codeBlockBackground) }
+        for view in quoteBackgrounds { view.backgroundColor = appliedPalette.native(.quoteBackground) }
+        for view in quoteBars { view.backgroundColor = appliedPalette.native(.quoteBar) }
         resize(&codeButtons, to: decorations.code.count) {
             var configuration = UIButton.Configuration.plain()
             configuration.image = UIImage(systemName: "doc.on.doc")
@@ -920,6 +955,9 @@ final class MarkdownSelectionTextView: UITextView {
         for (view, rect) in zip(quoteBars, decorations.quoteBarRects(layoutManager: layoutManager)) {
             view.frame = rect.offsetBy(dx: 0, dy: top)
         }
+        for (view, rect) in zip(quoteBackgrounds, decorations.quoteBackgroundRects(layoutManager: layoutManager, width: bounds.width)) {
+            view.frame = rect.offsetBy(dx: 0, dy: top)
+        }
     }
 
     override func copy(_ sender: Any?) {
@@ -940,6 +978,10 @@ struct SelectableMarkdownText: UIViewRepresentable {
     var width: CGFloat? = nil
     /// Code blocks inside the prose (in a list or quote); nil keeps callout's ratio.
     var codeSize: CGFloat? = nil
+    /// A table's header row, in the palette's header colour.
+    var tableHeader = false
+    @Environment(\.markdownPalette) private var palette
+    @Environment(\.markdownPreviewScheme) private var previewScheme
 
     func makeUIView(context: Context) -> MarkdownSelectionTextView {
         // TextKit 1 from the start: the decorations and math use NSLayoutManager.
@@ -956,7 +998,14 @@ struct SelectableMarkdownText: UIViewRepresentable {
     }
 
     func updateUIView(_ view: MarkdownSelectionTextView, context: Context) {
-        view.apply(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning)
+        let style: UIUserInterfaceStyle = switch previewScheme {
+        case .dark?: .dark
+        case .light?: .light
+        default: .unspecified
+        }
+        if view.overrideUserInterfaceStyle != style { view.overrideUserInterfaceStyle = style }
+        view.apply(selection, bodySize: bodySize, codeSize: codeSize, isReasoning: isReasoning,
+                   palette: palette, tableHeader: tableHeader)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MarkdownSelectionTextView, context: Context) -> CGSize? {

@@ -75,12 +75,14 @@ enum StoredMessageProjection {
                 let name = call?.name ?? row.toolName ?? "tool"
                 tool.toolName = name
                 tool.detail = call.flatMap { preview($0.args) }
-                // A stored tool row is a finished call. Its output is kept for edit
-                // tools only, as `_history_to_messages` does (`session_history.py:331`).
+                // A stored tool row is a finished call, with its result: Desktop shows
+                // it (`applyStoredToolResult`, `lib/chat-messages/tool-parts.ts:832-892`),
+                // unlike `_history_to_messages`, which keeps only edit tools' (`session_history.py:331`).
                 var activity = ToolActivity(toolID: row.toolCallID ?? tool.id, name: name, phase: .complete)
                 activity.context = tool.detail
                 if let args = call?.args, !args.isEmpty { activity.args = .object(args) }
-                if Self.toolsKeepingOutput.contains(name) { activity.output = Self.text(of: row.content) }
+                activity.output = Self.text(of: row.content)
+                activity.result = Self.result(of: row.content)
                 tool.tool = activity
                 items.append(tool)
             case "system":
@@ -93,8 +95,18 @@ enum StoredMessageProjection {
         return items
     }
 
-    /// Edit cards need the original result (`session_history.py:329-331`).
-    static let toolsKeepingOutput: Set<String> = ["write_file", "patch", "skill_manage"]
+    /// A stored tool row's content as its result: JSON text as that JSON, other text
+    /// as itself, no content as an empty result (`parseStoredToolResult`,
+    /// `apps/desktop/src/lib/chat-messages/tool-parts.ts:774-793`).
+    static func result(of content: JSONValue?) -> JSONValue {
+        switch content {
+        case nil, .null?: return .object([:])
+        case .string(let text)?:
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .string("") }
+            return ToolCallView.parseJSON(text) ?? .string(text)
+        case let value?: return value
+        }
+    }
 
     static func rowItemID(_ row: StoredMessage) -> String {
         row.id.map { "row-\($0)" } ?? "row-\(UUID().uuidString)"

@@ -38,26 +38,24 @@ import Testing
 
     // MARK: Grouping
 
-    @Test func settledTurnFoldsToolsAndCommentaryBeforeTheReply() {
+    /// Desktop groups a message's adjacent tool parts (`ToolGroupSlot`): commentary or
+    /// reasoning between calls ends a run, settled or live alike.
+    @Test func settledTurnGroupsOnlyConsecutiveToolCalls() {
+        var thinking = Self.reply("r1", "")
+        thinking.reasoning = "Which file next?"
         let items = [
             Self.user("u1"),
             Self.reply("a1", "Let me look.", interim: true),
             Self.tool("t1", "terminal", args: ["command": "ls"]),
+            Self.tool("t2", "read_file", args: ["path": "a.md"]),
             Self.reply("a2", "Now the image.", interim: true),
-            Self.tool("t2", "vision_analyze"),
+            Self.tool("t3", "vision_analyze"),
+            thinking,
+            Self.tool("t4", "read_file", args: ["path": "b.md"]),
             Self.reply("a3", "| a | b |\n|---|---|\n| 1 | 2 |"),
         ]
         let blocks = TranscriptGrouping.blocks(items, isRunning: false)
-        #expect(Self.kinds(blocks) == ["u1", "[a1,t1,a2,t2]", "a3"])
-    }
-
-    @Test func storedTurnsWithoutInterimMarksFoldTheSameWay() {
-        let items = [
-            Self.user("u1"), Self.reply("a1", "Checking."), Self.tool("t1", "terminal"), Self.reply("a2", "Done."),
-            Self.user("u2"), Self.reply("b1", "Plain answer."),
-        ]
-        let blocks = TranscriptGrouping.blocks(items, isRunning: false)
-        #expect(Self.kinds(blocks) == ["u1", "[a1,t1]", "a2", "u2", "b1"])
+        #expect(Self.kinds(blocks) == ["u1", "a1", "[t1,t2]", "a2", "[t3]", "r1", "[t4]", "a3"])
     }
 
     @Test func runningTurnGroupsOnlyConsecutiveToolCalls() {
@@ -90,13 +88,15 @@ import Testing
         #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: false)) == ["u1", "[t1,t2]", "s1", "sys", "a1"])
     }
 
-    @Test func fileEditsStayOutOfTheSummary() {
+    @Test func fileEditsAndCardsStayOutOfTheSummary() {
         let items = [
             Self.user("u1"), Self.tool("t1", "read_file"), Self.tool("e1", "patch"),
-            Self.tool("t2", "terminal"), Self.reply("a1", "Done."),
+            Self.tool("t2", "terminal"), Self.tool("d1", "delegate_task"), Self.tool("t3", "terminal"),
+            Self.reply("a1", "Done."),
         ]
-        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: false)) == ["u1", "[t1,t2]", "e1", "a1"])
-        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: true)) == ["u1", "[t1]", "e1", "[t2]", "a1"])
+        let expected = ["u1", "[t1]", "e1", "[t2]", "d1", "[t3]", "a1"]
+        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: false)) == expected)
+        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: true)) == expected)
     }
 
     @Test func diffsComeFromTheEventOrTheStoredResult() {
@@ -115,7 +115,7 @@ import Testing
     }
 
     /// The chat keeps its place across an older page by a row: the page can hold the
-    /// start of the turn the top row is in, which renames that row's run.
+    /// start of the run the top row is in, which renames that run.
     @Test func aRowsBlockIsFoundAfterAnOlderPageRenamesItsRun() {
         let loaded = [
             Self.tool("t2", "terminal"), Self.reply("a2", "Done."),
@@ -123,12 +123,12 @@ import Testing
         ]
         let before = TranscriptGrouping.blocks(loaded, isRunning: false)
         #expect(Self.kinds(before) == ["[t2]", "a2", "u2", "b1"])
-        #expect(TranscriptGrouping.blockID(containing: "t2", in: before) == "turn-t2")
+        #expect(TranscriptGrouping.blockID(containing: "t2", in: before) == "run-t2")
 
         let older = [Self.user("u1"), Self.reply("a1", "Checking."), Self.tool("t1", "terminal")]
         let after = TranscriptGrouping.blocks(older + loaded, isRunning: false)
-        #expect(Self.kinds(after) == ["u1", "[a1,t1,t2]", "a2", "u2", "b1"])
-        #expect(TranscriptGrouping.blockID(containing: "t2", in: after) == "turn-a1")
+        #expect(Self.kinds(after) == ["u1", "a1", "[t1,t2]", "a2", "u2", "b1"])
+        #expect(TranscriptGrouping.blockID(containing: "t2", in: after) == "run-t1")
         #expect(TranscriptGrouping.blockID(containing: "u2", in: after) == "u2")
         #expect(TranscriptGrouping.blockID(containing: "gone", in: after) == nil)
     }
@@ -166,13 +166,20 @@ import Testing
     }
 
     @Test func rowTitles() {
-        #expect(ToolCallSummary.title(for: Self.tool("t", "terminal", args: ["command": "git status"])) == "Ran git status")
-        #expect(ToolCallSummary.title(for: Self.tool("t", "terminal", context: "make test")) == "Ran make test")
-        #expect(ToolCallSummary.title(for: Self.tool("t", "memory")) == "memory")
-        #expect(ToolCallSummary.title(for: Self.tool("t", "read_file", args: .string("{\"path\":\"x/y.md\"}")))
-            == "Explored y.md")
-        #expect(ToolCallSummary.title(for: Self.tool("t", "web_extract", args: ["urls": ["https://example.com/docs"]]))
+        func title(_ item: TranscriptItem, result: JSONValue? = ["output": "", "exit_code": 0]) -> String {
+            var item = item
+            item.tool?.result = result
+            return ToolCallView(item).title
+        }
+        #expect(title(Self.tool("t", "terminal", args: ["command": "git status"])) == "Ran git status")
+        #expect(title(Self.tool("t", "terminal", context: "make test")) == "Ran make test")
+        #expect(title(Self.tool("t", "memory"), result: ["success": true]) == "Saved to memory")
+        #expect(title(Self.tool("t", "read_file", args: .string("{\"path\":\"x/y.md\"}")), result: ["content": "1|a"])
+            == "Read y.md")
+        #expect(title(Self.tool("t", "web_extract", args: ["urls": ["https://example.com/docs"]]), result: ["results": []])
             == "Read example.com/docs")
+        #expect(title(Self.tool("t", "terminal", args: ["command": "ls"]), result: nil) == "Result unavailable")
+        #expect(title(Self.tool("t", "terminal", args: ["command": "ls"], phase: .running), result: nil) == "Running ls")
     }
 
     @Test func shellCommandsLoseTheirPlumbing() {

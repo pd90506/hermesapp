@@ -78,9 +78,12 @@ public struct ToolActivity: Sendable, Hashable {
     public var context: String?
     public var args: JSONValue?
     public var summary: String?
-    /// The tool's output: `result_text`, else the JSON `result`, as text. Stored
-    /// rows keep it only for edit tools (`session_history.py:331`).
+    /// The tool's output: `result_text`, else the JSON `result`, as text.
     public var output: String?
+    /// The tool's result as the gateway sent it (`tool.complete`'s `result`, a stored
+    /// row's content read as JSON). What `ToolCallView` reads, as Desktop reads its
+    /// tool part's `result`; nil while the call runs or when it ended without one.
+    public var result: JSONValue?
     /// Edit tools: a unified diff.
     public var inlineDiff: String?
     public var durationSeconds: Double?
@@ -325,12 +328,18 @@ public struct Transcript: Sendable, Hashable {
                 item.rowID = message.rowID
                 item.toolCallID = message.toolCallID
                 // `_history_to_messages` tool rows: name, context, args; content only
-                // for edit tools (`session_history.py:322-334`).
+                // for edit tools (`session_history.py:322-334`). A row without content
+                // stands for a finished call, as Desktop's `storedToolMessagePart` reads it.
                 var tool = ToolActivity(toolID: message.toolCallID ?? item.id, name: message.name ?? "tool",
                                         phase: .complete)
                 tool.context = message.context
                 tool.args = message.args
-                if case .string(let output)? = message.content { tool.output = output }
+                if case .string(let output)? = message.content {
+                    tool.output = output
+                    tool.result = StoredMessageProjection.result(of: .string(output))
+                } else {
+                    tool.result = .object(message.context.map { ["context": .string($0)] } ?? [:])
+                }
                 item.tool = tool
                 items.append(item)
             case "system": append(.system, message.plainText, rowID: message.rowID)
@@ -1124,6 +1133,7 @@ public struct Transcript: Sendable, Hashable {
             if let args = complete.args { tool.args = args }
             tool.summary = complete.summary
             tool.output = complete.resultText ?? Self.text(of: complete.result) ?? tool.output
+            tool.result = complete.result ?? tool.result
             tool.inlineDiff = complete.inlineDiff
             tool.durationSeconds = complete.durationS
             items[index].tool = tool

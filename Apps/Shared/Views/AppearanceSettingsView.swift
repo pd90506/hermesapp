@@ -43,6 +43,14 @@ struct AppearanceSettingsView: View {
                     .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
             }
 
+            #if os(iOS)
+            Section {
+                NavigationLink("Markdown Colors") { MarkdownColorsSettingsView() }
+            } footer: {
+                Text("Headings, links, code, quotes and tables in replies.")
+            }
+            #endif
+
             Section {
                 Button("Restore Defaults") { model.appearance.reset() }
                     .disabled(model.appearance == AppearanceSettings())

@@ -10,6 +10,7 @@ struct HermesiOSApp: App {
             RootView()
                 .environment(model)
                 .appearance(model.appearance)
+                .markdownColors(model.markdownColors)
                 .onChange(of: scenePhase) { _, phase in
                     // iOS suspends sockets in the background; reconnect on return.
                     // The connection's replay logic restores the active session.

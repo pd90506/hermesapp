@@ -215,11 +215,11 @@ import Testing
         // Sample in points, converted with the bitmap's own scale (2x on Retina).
         let scale = CGFloat(rendered.rep.pixelsWide) / rendered.host.bounds.width
         func level(_ x: CGFloat, _ y: CGFloat) -> CGFloat {
-            brightness(rendered.rep, Int((x * scale).rounded(.down)), Int((y * scale).rounded(.down)))
+            lightness(rendered.rep, Int((x * scale).rounded(.down)), Int((y * scale).rounded(.down)))
         }
         func isLine(_ x: CGFloat, _ y: CGFloat) -> Bool { level(x, y) < 0.97 }
         let grid = try #require(box(rendered.rep, width: rendered.host.bounds.width) { x, y in
-            brightness(rendered.rep, x, y) < 0.97
+            lightness(rendered.rep, x, y) < 0.97
         }, "the table draws nothing")
         #expect(grid.width > 240, "the table is \(grid.width) pt wide in a 260 pt column")
         func linesCrossed(from start: CGPoint, to end: CGPoint) -> Int {
@@ -490,13 +490,13 @@ import Testing
         }
         let scale = CGFloat(rendered.rep.pixelsWide) / rendered.host.bounds.width
         let grid = try #require(box(rendered.rep, width: rendered.host.bounds.width) { x, y in
-            brightness(rendered.rep, x, y) < 0.97
+            lightness(rendered.rep, x, y) < 0.97
         })
         /// Lengths, in pixels, of the line stretches met along a pixel row or column.
         func runs(along pixels: [(Int, Int)]) -> [Int] {
             var lengths: [Int] = [], current = 0
             for (x, y) in pixels {
-                if brightness(rendered.rep, x, y) < 0.97 { current += 1 } else if current > 0 { lengths.append(current); current = 0 }
+                if lightness(rendered.rep, x, y) < 0.97 { current += 1 } else if current > 0 { lengths.append(current); current = 0 }
             }
             if current > 0 { lengths.append(current) }
             return lengths
@@ -733,6 +733,13 @@ import Testing
 
     private func brightness(_ rep: NSBitmapImageRep, _ x: Int, _ y: Int) -> CGFloat {
         rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)?.brightnessComponent ?? 1
+    }
+
+    /// How light a pixel looks (Rec. 709 luma of its sRGB components): 1 is white. Unlike
+    /// HSB brightness it sees a tint, such as the blue table border on white (brightness 1).
+    private func lightness(_ rep: NSBitmapImageRep, _ x: Int, _ y: Int) -> CGFloat {
+        guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return 1 }
+        return 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent
     }
 
     /// Where the visible copy button is drawn (hover on against hover off), and

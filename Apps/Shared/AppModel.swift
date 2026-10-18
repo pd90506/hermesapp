@@ -150,6 +150,10 @@ final class AppModel {
     var appearance = AppearanceSettings() {
         didSet { saveAppearance() }
     }
+    /// The colours of Markdown in messages (Settings ▸ Markdown), kept across launches.
+    var markdownColors = MarkdownColors() {
+        didSet { saveMarkdownColors() }
+    }
 
     init() {
         #if DEBUG
@@ -204,6 +208,10 @@ final class AppModel {
         if let data = defaults.data(forKey: Self.appearanceKey),
             let saved = try? JSONDecoder().decode(AppearanceSettings.self, from: data) {
             self.appearance = saved
+        }
+        if let data = defaults.data(forKey: Self.markdownColorsKey),
+            let saved = try? JSONDecoder().decode(MarkdownColors.self, from: data) {
+            self.markdownColors = saved
         }
         if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
             saveServers()
@@ -500,6 +508,7 @@ final class AppModel {
     }
 
     private static let appearanceKey = "appearance"
+    private static let markdownColorsKey = "markdownColors"
 
     private func saveAppearance() {
         #if os(macOS)
@@ -507,6 +516,11 @@ final class AppModel {
         #endif
         guard !Self.isUITest, let data = try? JSONEncoder().encode(appearance) else { return }
         UserDefaults.standard.set(data, forKey: Self.appearanceKey)
+    }
+
+    private func saveMarkdownColors() {
+        guard !Self.isUITest, let data = try? JSONEncoder().encode(markdownColors) else { return }
+        UserDefaults.standard.set(data, forKey: Self.markdownColorsKey)
     }
 
     private func savePins() {

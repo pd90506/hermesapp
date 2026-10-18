@@ -85,7 +85,7 @@ import Testing
             Self.user("u1"), Self.tool("t1", "terminal"), Self.user("s1", steer: true),
             TranscriptItem(id: "sys", role: .system, text: "note"), Self.tool("t2", "terminal"), Self.reply("a1", "Done."),
         ]
-        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: false)) == ["u1", "[t1,t2]", "s1", "sys", "a1"])
+        #expect(Self.kinds(TranscriptGrouping.blocks(items, isRunning: false)) == ["u1", "[t1]", "s1", "sys", "[t2]", "a1"])
     }
 
     @Test func fileEditsAndCardsStayOutOfTheSummary() {

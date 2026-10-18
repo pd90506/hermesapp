@@ -119,19 +119,6 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(popover.waitForExistence(timeout: 5), "a call in the run opens a popover")
         attach(app, "call popover")
         app.typeKey(.escape, modifierFlags: [])
-
-        // A reply long enough to scroll under the title bar, which is glass: the
-        // rows show through it.
-        press(composer)
-        composer.typeText("Reply with the numbers 1 to 80, one per line, nothing else. Do not use tools.")
-        press(app.buttons["Send"].firstMatch)
-        let last = app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "\n80"))
-        let replied = Date().addingTimeInterval(150)
-        while last.count < 1, Date() < replied { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
-        (last.count > 0 ? last.firstMatch : composer).scroll(byDeltaX: 0, deltaY: 300)
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        attach(app, "rows under the title bar")
         #endif
     }
 
@@ -325,7 +312,8 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
         XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                       "\(state): the sidebar over the rail \(over) and over the list \(session) differ")
-        XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 8 },
+        // The band is glass, a little off the chat's white in light mode, over a hairline.
+        XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 3 },
                       "\(state): no band over the chat: \(chat), the same as under it \(below)")
     }
 
@@ -519,6 +507,7 @@ final class LiveChatUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(reply.count, 1, "round \(round) answered")
         }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
+        // The first replies are under the title bar now, and show through its glass.
         attach(app, "Prompt rail: chat after three rounds")
 
         let ticks = app.buttons.matching(identifier: "prompt-rail-tick")

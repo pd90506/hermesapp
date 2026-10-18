@@ -81,6 +81,17 @@ import Testing
 
         func close() { window.close() }
 
+        /// Runs the loop until `condition` holds, for at most `timeout` seconds.
+        @discardableResult
+        func waitFor(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition() {
+                if Date() > deadline { return false }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            return true
+        }
+
         func settle(_ rounds: Int = 10) {
             for _ in 0..<rounds { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         }
@@ -140,12 +151,16 @@ import Testing
         defer { ui.close() }
         #expect(try #require(ui.remainingBelow) < 2, "the chat opens at its end")
         let top = try #require(ui.shownTop)
+        let height = try #require(ui.contentHeight)
         // As a fold's button does.
         ui.chat.anchor.hold { ui.chat.extra = 300 }
-        ui.settle(20)
+        let grew = ui.waitFor { (ui.contentHeight ?? 0) > height + 299 }
+        ui.settle()
+        #expect(grew, "the fold did not open: \(height) -> \(ui.contentHeight ?? 0)")
         let after = try #require(ui.shownTop)
+        let below = try #require(ui.remainingBelow)
         #expect(abs(after - top) < 1, "the rows on screen moved from \(top) to \(after)")
-        #expect(try #require(ui.remainingBelow) > 250, "the fold opened below the screen")
+        #expect(below > 250, "the fold opened below the screen: \(below) pt below, content \(height) -> \(ui.contentHeight ?? 0)")
     }
 
     /// A reply streaming at the end of the chat keeps the chat at its end.

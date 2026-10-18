@@ -33,7 +33,7 @@ struct TranscriptStack<Content: View>: View {
     private(set) var isHeld = false
     @ObservationIgnored private var holds = 0
 
-    static let endTolerance: CGFloat = 8
+    nonisolated static let endTolerance: CGFloat = 8
     /// Long enough for a fold's animation (`snappy`, 0.2 s) to finish.
     static let holdDuration: Duration = .milliseconds(600)
 

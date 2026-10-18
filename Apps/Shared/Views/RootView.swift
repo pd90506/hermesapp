@@ -268,18 +268,19 @@ private struct OpeningChatView: View {
 }
 
 extension View {
-    /// On macOS, a band under the chat's title bar: a material strip the toolbar's height,
-    /// with a hairline under it, the same in every state and whether or not the pointer
-    /// is over it (the system's showed none, or only under the pointer). The sidebar
-    /// has its own glass.
+    /// On macOS, a band under the chat's title bar: a strip of Liquid Glass the toolbar's
+    /// height, with a hairline under it, the same in every state and whether or not the
+    /// pointer is over it (the system's showed none, or only under the pointer). The
+    /// chat scrolls under it and shows through, as under the sidebar's glass. (A
+    /// material looked opaque: its blur and tint hid the rows under it.)
     @ViewBuilder func titleBarBand() -> some View {
         #if os(macOS)
         overlay(alignment: .top) {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(.regularMaterial)
+                    Color.clear
                         .frame(height: proxy.safeAreaInsets.top)
+                        .glassEffect(.regular, in: .rect)
                     Divider()
                     Spacer(minLength: 0)
                 }

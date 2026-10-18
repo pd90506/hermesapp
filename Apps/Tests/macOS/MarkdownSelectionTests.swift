@@ -600,7 +600,7 @@ import Testing
         reasoned.reasoning = "Thought."
         let base = height(AssistantMessageContent(item: plain) {})
         let label = height(Text("Interrupted").font(.caption))
-        let disclosure = height(DisclosureGroup("Reasoning") { Text("Thought.") }.font(.caption))
+        let disclosure = height(ReasoningFold(item: reasoned))
         #expect(abs(height(AssistantMessageContent(item: interrupted) {}) - base - (label + 6)) <= 1)
         #expect(abs(height(AssistantMessageContent(item: reasoned) {}) - base - (disclosure + 6)) <= 1)
         let bar = height(MessageActionBar(isHovering: false, isNewest: false) {})

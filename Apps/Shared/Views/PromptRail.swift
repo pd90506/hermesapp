@@ -6,17 +6,19 @@ extension View {
     /// slash command, a steer) brings it to the bottom, as ChatGPT does, wherever it
     /// was scrolled to. On macOS the prompt rail sits at its trailing edge.
     /// - Parameters:
-    ///   - current: the prompt the chat is at (`Transcript.currentPromptID`), marked on the rail.
+    ///   - visibleBlocks: the transcript's blocks on screen, for the prompt the chat is
+    ///     at (`Transcript.currentPromptID`), marked on the rail.
     ///   - proxy: the reader around the chat's scroll view; the rail scrolls to a
     ///     prompt's block with it.
-    func promptScrolling(transcript: Transcript, current: String? = nil, proxy: ScrollViewProxy) -> some View {
-        modifier(PromptScrolling(transcript: transcript, current: current, proxy: proxy))
+    func promptScrolling(transcript: Transcript, visibleBlocks: VisibleBlocks? = nil,
+                         proxy: ScrollViewProxy) -> some View {
+        modifier(PromptScrolling(transcript: transcript, visibleBlocks: visibleBlocks, proxy: proxy))
     }
 }
 
 private struct PromptScrolling: ViewModifier {
     let transcript: Transcript
-    let current: String?
+    let visibleBlocks: VisibleBlocks?
     let proxy: ScrollViewProxy
     @State private var position = ScrollPosition(idType: String.self)
 
@@ -29,18 +31,35 @@ private struct PromptScrolling: ViewModifier {
             }
             #if os(macOS)
             .overlay(alignment: .trailing) {
-                let marks = transcript.promptMarks
-                if !marks.isEmpty {
-                    PromptRail(marks: marks, current: current) { mark in
-                        PromptRail.scroll(to: mark, in: transcript, with: proxy)
-                    }
-                    .padding(.vertical, PromptRail.verticalInset)
-                    .padding(.trailing, PromptRail.trailingInset)
-                }
+                PromptRailOverlay(transcript: transcript, visibleBlocks: visibleBlocks, proxy: proxy)
             }
             #endif
     }
 }
+
+#if os(macOS)
+/// The rail over the chat. A view of its own: the prompt the chat is at changes as
+/// blocks scroll on and off screen, and only the rail draws it. Read in the chat's
+/// body, it rebuilt the whole transcript each time a block crossed the screen's edge,
+/// a stall in the middle of a scroll.
+private struct PromptRailOverlay: View {
+    let transcript: Transcript
+    let visibleBlocks: VisibleBlocks?
+    let proxy: ScrollViewProxy
+
+    var body: some View {
+        let marks = transcript.promptMarks
+        if !marks.isEmpty {
+            let current = visibleBlocks.flatMap { transcript.currentPromptID(visibleBlockIDs: $0.ids) }
+            PromptRail(marks: marks, current: current) { mark in
+                PromptRail.scroll(to: mark, in: transcript, with: proxy)
+            }
+            .padding(.vertical, PromptRail.verticalInset)
+            .padding(.trailing, PromptRail.trailingInset)
+        }
+    }
+}
+#endif
 
 /// A tick per prompt the user sent, oldest at the top, down the chat's trailing edge,
 /// like the timeline beside Time Machine's windows; the prompt the chat is at is the

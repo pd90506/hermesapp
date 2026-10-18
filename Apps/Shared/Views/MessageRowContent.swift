@@ -18,6 +18,7 @@ struct AssistantMessageContent: View {
     /// files are left out.
     var deliveredFiles: (([DeliveredFile]) -> AnyView)?
     let copy: () -> Void
+    @Environment(\.isInToolRun) private var isInToolRun
 
     /// No text (whitespace counts as none, as for the waiting row and the action bar),
     /// no reasoning and no outcome to show: the row has no content yet.
@@ -36,13 +37,12 @@ struct AssistantMessageContent: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 if !item.reasoning.isEmpty {
-                    // Model-written like the reply, so rendered the same way; the
-                    // content is only built while expanded.
-                    DisclosureGroup("Reasoning") {
-                        MarkdownView(text: item.reasoning, isStreaming: item.isActive, isReasoning: true)
-                            .equatable()
+                    // Inside an opened run it is shown as it is: the run is the fold.
+                    if isInToolRun {
+                        ReasoningText(item: item)
+                    } else {
+                        ReasoningFold(item: item)
                     }
-                    .uiFont(.caption)
                 }
                 ForEach(Array(Self.segments(item).enumerated()), id: \.offset) { _, segment in
                     switch segment {
@@ -65,59 +65,167 @@ struct AssistantMessageContent: View {
     }
 }
 
+/// A reply's reasoning, closed under a "Reasoning" line. The whole line opens it, the
+/// word as well as the chevron, and it opens below the line, which stays where it was.
+/// Model-written like the reply, so rendered the same way; the content is only built
+/// while open.
+struct ReasoningFold: View {
+    let item: TranscriptItem
+    @State private var isExpanded: Bool
+
+    static let accessibilityIdentifier = "reasoningToggle"
+
+    init(item: TranscriptItem, isExpanded: Bool = false) {
+        self.item = item
+        _isExpanded = State(initialValue: isExpanded)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            FoldButton(isExpanded: $isExpanded) {
+                Text("Reasoning")
+            }
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            if isExpanded {
+                ReasoningText(item: item)
+            }
+        }
+    }
+}
+
+/// Reasoning as it reads once shown: smaller than the reply, in the secondary color.
+struct ReasoningText: View {
+    let item: TranscriptItem
+
+    var body: some View {
+        MarkdownView(text: item.reasoning, isStreaming: item.isActive, isReasoning: true)
+            .equatable()
+    }
+}
+
+/// The line every fold in the chat opens with (reasoning, a tool call, a run of them):
+/// its label, then a chevron that turns down while open. The whole line is the button.
+/// Opening or closing holds the chat's scroll position (`ChatScrollAnchor.hold`), so
+/// the line stays under the pointer and the next click closes it again.
+struct FoldButton<Label: View>: View {
+    @Binding var isExpanded: Bool
+    var showsChevron = true
+    @ViewBuilder let label: Label
+    @Environment(\.chatScrollAnchor) private var scrollAnchor
+
+    var body: some View {
+        Button {
+            scrollAnchor?.hold()
+            let open = !isExpanded
+            withAnimation(.snappy(duration: 0.2)) { isExpanded = open }
+        } label: {
+            HStack(spacing: 6) {
+                label
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .uiFont(.caption2, weight: .semibold)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            .uiFont(.callout)
+            .foregroundStyle(.secondary)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(isExpanded ? "expanded" : "collapsed")
+    }
+}
+
+extension EnvironmentValues {
+    /// Drawn inside an opened run of tool calls (`ToolRunView`): the run is the one
+    /// fold, so nothing in it folds again. Reasoning shows as it is, and a tool call's
+    /// input and output open in a popover rather than below its line.
+    @Entry var isInToolRun = false
+}
+
 /// One tool call, as Desktop draws it: a single line (status, what it did, chevron)
 /// that opens on demand to the call's input, output, diff or error. A file edit
 /// with a diff opens by default, with its +/− counts on the line. No action bar
 /// (Copy Message is in its context menu), so a run of tool calls stays compact.
+///
+/// Inside an opened run (`isInToolRun`) the line doesn't fold: a click shows the
+/// call's input and output in a popover beside it, so a run never opens into folds
+/// of its own.
 struct ToolMessageContent: View {
     let item: TranscriptItem
     /// The user's choice; until then an edit with a diff is open and the rest closed.
     @State private var toggled: Bool?
+    @State private var showsPopover = false
+    @Environment(\.isInToolRun) private var isInToolRun
 
     private var isExpanded: Bool { toggled ?? (item.isFileEdit && item.toolDiff != nil) }
 
     static let accessibilityIdentifier = "toolCallRow"
+    static let popoverWidth: CGFloat = 520
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                let open = !isExpanded
-                withAnimation(.snappy(duration: 0.2)) { toggled = open }
-            } label: {
-                HStack(spacing: 6) {
-                    statusIcon.frame(width: 14)
-                    Text(ToolCallSummary.title(for: item))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if item.isFileEdit, let diff = item.toolDiff {
-                        let stats = ToolCallDetail.stats(diff)
-                        if stats.added > 0 { Text("+\(stats.added)").monospacedDigit().foregroundStyle(.green) }
-                        if stats.removed > 0 { Text("−\(stats.removed)").monospacedDigit().foregroundStyle(.red) }
-                    }
-                    if let duration = item.tool?.durationSeconds, !item.isActive {
-                        Text(Self.duration(duration)).monospacedDigit().foregroundStyle(.tertiary)
-                    }
-                    if hasDetail {
-                        Image(systemName: "chevron.right")
-                            .uiFont(.caption2, weight: .semibold)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer(minLength: 0)
+        if isInToolRun {
+            HStack(spacing: 0) {
+                Button {
+                    showsPopover = true
+                } label: {
+                    line
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .hoverHighlight(isEnabled: hasDetail)
+                        .padding(.horizontal, -4)
+                        .padding(.vertical, -1)
+                        .contentShape(.rect)
                 }
-                .uiFont(.callout)
-                .foregroundStyle(.secondary)
-                .contentShape(.rect)
+                .buttonStyle(.plain)
+                .disabled(!hasDetail)
+                .help(hasDetail ? "Show input and output" : "")
+                .accessibilityIdentifier(Self.accessibilityIdentifier)
+                .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
+                    // Each box scrolls inside itself past `ToolCallDetail.maxLines`.
+                    ToolCallDetail(item: item)
+                        .padding(12)
+                        .frame(width: Self.popoverWidth)
+                        .presentationCompactAdaptation(.popover)
+                }
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .disabled(!hasDetail)
-            .accessibilityIdentifier(Self.accessibilityIdentifier)
-            .accessibilityValue(isExpanded ? "expanded" : "collapsed")
-            if isExpanded {
-                ToolCallDetail(item: item)
-                    .padding(.leading, 20)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                FoldButton(isExpanded: Binding(get: { isExpanded }, set: { toggled = $0 }),
+                           showsChevron: hasDetail) {
+                    line
+                }
+                .disabled(!hasDetail)
+                .accessibilityIdentifier(Self.accessibilityIdentifier)
+                if isExpanded {
+                    ToolCallDetail(item: item)
+                        .padding(.leading, 20)
+                }
             }
         }
+    }
+
+    /// Status, what the call did, and its counts and duration.
+    private var line: some View {
+        HStack(spacing: 6) {
+            statusIcon.frame(width: 14)
+            Text(ToolCallSummary.title(for: item))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if item.isFileEdit, let diff = item.toolDiff {
+                let stats = ToolCallDetail.stats(diff)
+                if stats.added > 0 { Text("+\(stats.added)").monospacedDigit().foregroundStyle(.green) }
+                if stats.removed > 0 { Text("−\(stats.removed)").monospacedDigit().foregroundStyle(.red) }
+            }
+            if let duration = item.tool?.durationSeconds, !item.isActive {
+                Text(Self.duration(duration)).monospacedDigit().foregroundStyle(.tertiary)
+            }
+        }
+        .uiFont(.callout)
+        .foregroundStyle(.secondary)
     }
 
     @ViewBuilder private var statusIcon: some View {
@@ -275,30 +383,14 @@ struct BackgroundNoticeRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button {
-                withAnimation(.snappy(duration: 0.2)) { isExpanded.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "bell").imageScale(.small).frame(width: 14)
-                    Text(notice.headline)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if !notice.detail.isEmpty {
-                        Image(systemName: "chevron.right")
-                            .uiFont(.caption2, weight: .semibold)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .uiFont(.callout)
-                .foregroundStyle(.secondary)
-                .contentShape(.rect)
+            FoldButton(isExpanded: $isExpanded, showsChevron: !notice.detail.isEmpty) {
+                Image(systemName: "bell").imageScale(.small).frame(width: 14)
+                Text(notice.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .buttonStyle(.plain)
             .disabled(notice.detail.isEmpty)
             .accessibilityIdentifier(Self.accessibilityIdentifier)
-            .accessibilityValue(isExpanded ? "expanded" : "collapsed")
             if isExpanded {
                 ToolCallDetail(sections: [.init(kind: .output, text: notice.detail)])
                     .padding(.leading, 20)
@@ -311,12 +403,20 @@ struct BackgroundNoticeRow: View {
 /// (`components/assistant-ui/tool/fallback.tsx:950-1048`). Closed by default; while
 /// live, the call in progress shows under the line. A run of one call is that call's
 /// row, with no summary above it.
+///
+/// The run is the one fold: what it opens to doesn't fold again (`isInToolRun`).
 struct ToolRunView<Message: View>: View {
     let run: ToolRun
     @ViewBuilder let message: (TranscriptItem) -> Message
-    @State private var isExpanded = false
+    @State private var isExpanded: Bool
 
     static var accessibilityIdentifier: String { "toolRunSummary" }
+
+    init(run: ToolRun, isExpanded: Bool = false, @ViewBuilder message: @escaping (TranscriptItem) -> Message) {
+        self.run = run
+        self.message = message
+        _isExpanded = State(initialValue: isExpanded)
+    }
 
     var body: some View {
         let visible = run.visibleItems
@@ -324,43 +424,28 @@ struct ToolRunView<Message: View>: View {
             message(only)
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                header
-                if isExpanded {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(visible) { message($0) }
-                    }
-                    .padding(.leading, 10)
-                    .overlay(alignment: .leading) {
-                        Rectangle().fill(.quaternary).frame(width: 1)
-                    }
-                } else if run.isLive, let current = run.tools.last {
-                    message(current)
+                FoldButton(isExpanded: $isExpanded) {
+                    Text(run.summary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
+                .accessibilityIdentifier(Self.accessibilityIdentifier)
+                Group {
+                    if isExpanded {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(visible) { message($0) }
+                        }
+                        .padding(.leading, 10)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(.quaternary).frame(width: 1)
+                        }
+                    } else if run.isLive, let current = run.tools.last {
+                        message(current)
+                    }
+                }
+                .environment(\.isInToolRun, true)
             }
         }
-    }
-
-    private var header: some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) { isExpanded.toggle() }
-        } label: {
-            HStack(spacing: 6) {
-                Text(run.summary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Image(systemName: "chevron.right")
-                    .uiFont(.caption2, weight: .semibold)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
-            }
-            .uiFont(.callout)
-            .foregroundStyle(.secondary)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(Self.accessibilityIdentifier)
-        .accessibilityValue(isExpanded ? "expanded" : "collapsed")
     }
 }
 

@@ -87,6 +87,7 @@ targets:
       - path: Apps/Shared/Views/Hover.swift
       - path: Apps/Shared/Views/SidebarControls.swift
       - path: Apps/Shared/Views/MessageCopyButton.swift
+      - path: Apps/Shared/Views/ChatScrolling.swift
       - path: Apps/Shared/Views/MessageRowContent.swift
       - path: Apps/Shared/Views/ScrollLatching.swift
       - path: Apps/Shared/Views/PromptRail.swift

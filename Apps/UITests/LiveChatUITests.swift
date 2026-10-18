@@ -110,6 +110,29 @@ final class LiveChatUITests: XCTestCase {
         while rows.count < 2, Date() < opened { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
         attach(app, "opened")
         XCTAssertGreaterThanOrEqual(rows.count, 2, "opening the summary shows each call")
+
+        #if os(macOS)
+        // The run is the one fold: a call in it opens its input and output in a
+        // popover, not below its line.
+        press(rows.firstMatch)
+        let popover = app.popovers.firstMatch
+        XCTAssertTrue(popover.waitForExistence(timeout: 5), "a call in the run opens a popover")
+        attach(app, "call popover")
+        app.typeKey(.escape, modifierFlags: [])
+
+        // A reply long enough to scroll under the title bar, which is glass: the
+        // rows show through it.
+        press(composer)
+        composer.typeText("Reply with the numbers 1 to 80, one per line, nothing else. Do not use tools.")
+        press(app.buttons["Send"].firstMatch)
+        let last = app.textViews.matching(NSPredicate(format: "value CONTAINS '\n80'"))
+        let replied = Date().addingTimeInterval(150)
+        while last.count < 1, Date() < replied { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        (last.count > 0 ? last.firstMatch : composer).scroll(byDeltaX: 0, deltaY: 300)
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        attach(app, "rows under the title bar")
+        #endif
     }
 
     #if os(macOS)

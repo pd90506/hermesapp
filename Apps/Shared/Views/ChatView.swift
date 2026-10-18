@@ -17,6 +17,8 @@ struct ChatView: View {
     @State private var olderPageAnchor: String?
     /// The transcript's blocks on screen, for the prompt the chat is at.
     @State private var visibleBlocks = VisibleBlocks()
+    /// Which edge of the chat stays put as its content changes size.
+    @State private var scrollAnchor = ChatScrollAnchor()
     @Environment(\.textSizes) private var sizes
 
     /// How wide the chat's messages and composer get, centered in a wider window:
@@ -26,7 +28,7 @@ struct ChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                TranscriptStack {
                     HistoryHeader(session: session, loadOlder: loadOlderMessages)
                     TranscriptMessages(transcript: session.transcript) { item, isNewest in
                         MessageRow(item: item, isNewest: isNewest, profile: session.profile, session: session)
@@ -46,8 +48,9 @@ struct ChatView: View {
                 #endif
             }
             .environment(\.visibleBlocks, visibleBlocks)
-            // Opens at the newest message and stays there as a reply streams in.
-            .defaultScrollAnchor(.bottom)
+            // Opens at the newest message and stays there as a reply streams in; a fold
+            // opened or closed keeps its line where it was (`ChatScrollAnchor`).
+            .chatScrollAnchoring(scrollAnchor, readingOlderPage: olderPageAnchor != nil)
             // An older page lands above the rows on screen. Left alone, the view stays
             // at the top edge, so the header shows again and reads the next page, and
             // so on to the beginning. Keep the row that was on top where it was: the
@@ -59,7 +62,7 @@ struct ChatView: View {
                     proxy.scrollTo(id, anchor: .top)
                 }
             }
-            .promptScrolling(transcript: session.transcript, current: currentPromptID, proxy: proxy)
+            .promptScrolling(transcript: session.transcript, visibleBlocks: visibleBlocks, proxy: proxy)
         }
         .safeAreaInset(edge: .bottom) {
             // As wide as the messages' text (the content width less its padding).
@@ -82,12 +85,6 @@ struct ChatView: View {
         // the top of the chat: a gray band down to the first message, with a line under it.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
-    }
-
-    /// The prompt the chat is at: the last one in or above the topmost block on screen,
-    /// or the last prompt once the chat is scrolled to its end.
-    private var currentPromptID: String? {
-        session.transcript.currentPromptID(visibleBlockIDs: visibleBlocks.ids)
     }
 
     private func loadOlderMessages() async {

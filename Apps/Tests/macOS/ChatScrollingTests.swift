@@ -22,7 +22,7 @@ import Testing
     }
 
     private struct Harness: View {
-        let chat: Chat
+        @Bindable var chat: Chat
 
         var body: some View {
             ScrollView {
@@ -217,14 +217,15 @@ import Testing
         for _ in 0..<10 { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
     }
 
-    /// Every accessibility element under `root`, depth first.
-    private func elements(in root: Any) -> [NSObject] {
-        guard let object = root as? NSObject else { return [] }
-        let children = (object.accessibilityChildren() ?? []) as [Any]
+    /// Every accessibility element under `root`, depth first. SwiftUI's elements are
+    /// private classes, so their accessibility methods are looked up dynamically.
+    private func elements(in root: Any) -> [AnyObject] {
+        let object = root as AnyObject
+        let children: [Any] = (object.accessibilityChildren?() ?? nil) ?? []
         return [object] + children.flatMap { elements(in: $0) }
     }
 
-    private func identifier(_ element: NSObject) -> String { element.accessibilityIdentifier() ?? "" }
+    private func identifier(_ element: AnyObject) -> String { element.accessibilityIdentifier?() ?? "" }
 
     private func texts(in view: NSView) -> [String] {
         ((view as? NSTextView).map { [$0.string] } ?? []) + view.subviews.flatMap(texts)
@@ -260,7 +261,7 @@ import Testing
                 "the reasoning folds again inside the run")
         let calls = all.filter { identifier($0) == ToolMessageContent.accessibilityIdentifier }
         #expect(calls.count == 2, "the run's calls: \(calls.count)")
-        let folds = calls.filter { ["expanded", "collapsed"].contains($0.accessibilityValue() as? String ?? "") }
+        let folds = calls.filter { ["expanded", "collapsed"].contains(($0.accessibilityValue?() ?? nil) as? String ?? "") }
         #expect(folds.isEmpty, "a call folds inside the run")
     }
 
@@ -271,9 +272,9 @@ import Testing
         defer { window.close() }
         #expect(!texts(in: view).contains { $0.contains("Weighing") }, "the reasoning starts closed")
         let toggle = try #require(elements(in: view).first { identifier($0) == ReasoningFold.accessibilityIdentifier })
-        #expect(toggle.accessibilityFrame().width > 60,
-                "the button is the chevron alone: \(toggle.accessibilityFrame())")
-        #expect(toggle.accessibilityPerformPress())
+        let frame = toggle.accessibilityFrame?() ?? .zero
+        #expect(frame.width > 60, "the button is the chevron alone: \(frame)")
+        #expect(toggle.accessibilityPerformPress?() == true)
         settle()
         #expect(texts(in: view).contains { $0.contains("Weighing") }, "pressing the line opens the reasoning")
     }

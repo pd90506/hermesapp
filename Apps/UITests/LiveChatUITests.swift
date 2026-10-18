@@ -506,12 +506,11 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
         let list = app.outlines.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
-        // A session's row is the one holding its "…" button.
-        let more = list.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "More actions"))
+        // The list's rows, less its section headers and notes.
+        let notes = ["Sessions", "Pinned", "No sessions yet", "Loading sessions…"]
         func sessionRows() -> [XCUIElement] {
-            let buttons = more.allElementsBoundByIndex.map(\.frame)
-            return list.outlineRows.allElementsBoundByIndex.filter { row in
-                buttons.contains { row.frame.contains(CGPoint(x: $0.midX, y: $0.midY)) }
+            list.outlineRows.allElementsBoundByIndex.filter { row in
+                !notes.contains { row.staticTexts[$0].exists }
             }
         }
         RunLoop.current.run(until: Date().addingTimeInterval(3))
@@ -528,7 +527,7 @@ final class LiveChatUITests: XCTestCase {
             let deadline = Date().addingTimeInterval(90)
             while sessionRows().count <= before, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
             XCTAssertGreaterThan(sessionRows().count, before,
-                                 "the chat written in is listed: \(more.count) \"…\", \(list.outlineRows.count) rows")
+                                 "the chat written in is listed: \(list.outlineRows.count) rows")
         }
 
         let rows = sessionRows()

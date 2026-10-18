@@ -312,12 +312,11 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
         XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                       "\(state): the sidebar over the rail \(over) and over the list \(session) differ")
-        // The band is frosted, a little off the chat's white in light mode, and the title
-        // bar reads as one: the band in the sidebar's tone.
-        XCTAssertTrue(zip(chat, below).contains { abs(Int($0) - Int($1)) > 3 },
-                      "\(state): no band over the chat: \(chat), the same as under it \(below)")
-        XCTAssertTrue(zip(chat, session).allSatisfy { abs(Int($0) - Int($1)) <= 12 },
-                      "\(state): the band over the chat \(chat) and the sidebar's title bar \(session) differ")
+        // No band of its own over the chat: the chat runs up to the window's top and
+        // fades under the title as it scrolls (Mail's look), so with nothing under the
+        // title bar it is the chat's own color.
+        XCTAssertTrue(zip(chat, below).allSatisfy { abs(Int($0) - Int($1)) <= 3 },
+                      "\(state): a band over the chat: \(chat), unlike under it \(below)")
     }
 
     /// The Bot Chat is pinned above the session list: scrolling the list leaves it where
@@ -510,7 +509,7 @@ final class LiveChatUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(reply.count, 1, "round \(round) answered")
         }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        // The first replies are under the title bar now, blurred by its frosted band.
+        // The first replies are under the title bar now, fading out under it.
         attach(app, "Prompt rail: chat after three rounds")
 
         let ticks = app.buttons.matching(identifier: "prompt-rail-tick")
@@ -534,8 +533,7 @@ final class LiveChatUITests: XCTestCase {
             ? app.staticTexts.matching(isFirst).firstMatch : app.textViews.matching(isFirst).firstMatch
         XCTAssertTrue(first.exists && first.isHittable, "the first prompt is on screen after the jump")
 
-        // The band follows the appearance: dark frosted glass in dark mode, with the
-        // first reply scrolled under it.
+        // The same in dark mode, with the first reply scrolled under the title bar.
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
         first.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).scroll(byDeltaX: 0, deltaY: -300)

@@ -48,6 +48,12 @@ struct ChatView: View {
                 #endif
             }
             .environment(\.visibleBlocks, visibleBlocks)
+            #if os(macOS)
+            // As Mail does: no band under the title bar; the chat runs up to the window's
+            // top and blurs and fades out under the title. A band of our own over the
+            // chat, glass or material, read as a slab apart from the sidebar (2026-10-18).
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            #endif
             // Opens at the newest message and stays there as a reply streams in.
             .defaultScrollAnchor(.bottom)
             .chatScrolling(scroll)

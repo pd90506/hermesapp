@@ -24,7 +24,7 @@ struct RootView: View {
             if visibility != .all { columns = .all }
         }
         // No toolbar background anywhere: macOS 26 showed it only while the pointer was
-        // over the title bar, which shaded the band (`titleBarBand`) under it.
+        // over the title bar. The chat fades under the title bar instead (`ChatView`).
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         #if os(macOS)
@@ -133,9 +133,7 @@ struct RootView: View {
                     description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
             }
         }
-        // The whole column, so the band spans it whatever is shown.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .titleBarBand()
     }
 
     private func followActiveChat() {
@@ -266,51 +264,3 @@ private struct OpeningChatView: View {
             .accessibilityLabel("Opening \(title)")
     }
 }
-
-extension View {
-    /// On macOS, a band under the chat's title bar: frosted glass the toolbar's height,
-    /// in the sidebar's tone so the title bar reads as one across the window (no hairline
-    /// under it: the sidebar has none), the same in every state and whether or not the pointer is over
-    /// it (the system's showed none, or only under the pointer). The chat scrolls under
-    /// it as a soft blur, in the window's light or dark: Liquid Glass blurs it, and a
-    /// tone over the glass (`titleBarTone`) brings it to the sidebar's. The glass alone
-    /// was lighter than the sidebar, and than the chat in dark mode. Clear glass showed
-    /// the rows sharp, with a mirrored line along its edge; materials, SwiftUI's and
-    /// AppKit's within the window alike, drew a solid band (VM, 2026-10-18).
-    @ViewBuilder func titleBarBand() -> some View {
-        #if os(macOS)
-        overlay(alignment: .top) {
-            GeometryReader { proxy in
-                VStack(spacing: 0) {
-                    // The glass runs past the band and is cut to it: its rims drew a
-                    // bright line along the band's bottom and tinted its top.
-                    titleBarTone
-                        .background {
-                            Color.clear.glassEffect(.regular, in: .rect).padding(.vertical, -24)
-                        }
-                        .frame(height: proxy.safeAreaInsets.top)
-                        .clipped()
-                    Spacer(minLength: 0)
-                }
-                .ignoresSafeArea(edges: .top)
-            }
-            // The title bar stays the window's: clicks and drags go through.
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-        #else
-        self
-        #endif
-    }
-}
-
-#if os(macOS)
-/// Over the band's glass, the tone that brings it to the sidebar's (about 236 in light,
-/// 50 in dark; the glass under it about 252 and 73, VM 2026-10-18). The window's
-/// background is the chat's white (or its dark) on macOS 26, not the sidebar's tone.
-/// Half see-through, so the chat's blur shows.
-private let titleBarTone = Color(nsColor: NSColor(name: nil) { appearance in
-    appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        ? NSColor(white: 0.125, alpha: 0.55) : NSColor(white: 0.875, alpha: 0.55)
-})
-#endif

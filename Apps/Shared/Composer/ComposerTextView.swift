@@ -112,9 +112,18 @@ extension ComposerTextView: NSViewRepresentable {
             textView.font = .systemFont(ofSize: size)
             coordinator.measure(during: .viewUpdate)
         }
-        if coordinator.focusRequest != focusRequest {
+        // A kept chat shown again takes the keyboard back; one hidden gives it up
+        // (`KeptChats`), so typing never goes to a chat that is not on screen.
+        let isShown = context.environment.chatIsShown
+        if coordinator.focusRequest != focusRequest || coordinator.isShown != isShown {
+            let focus = isShown && (coordinator.focusRequest != focusRequest || !coordinator.isShown)
             coordinator.focusRequest = focusRequest
-            DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+            coordinator.isShown = isShown
+            if focus {
+                DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+            } else if !isShown, let window = textView.window, window.firstResponder === textView {
+                window.makeFirstResponder(nil)
+            }
         }
     }
 
@@ -128,6 +137,8 @@ extension ComposerTextView: NSViewRepresentable {
         weak var textView: ComposerNSTextView?
         weak var scrollView: NSScrollView?
         var focusRequest: Int
+        /// The chat is on screen (`chatIsShown`): a hidden one attaches no pastes.
+        var isShown = true
         private var pasteMonitor: Any?
 
         init(_ parent: ComposerTextView) {
@@ -288,7 +299,7 @@ extension ComposerTextView: NSViewRepresentable {
         }
 
         private func handlesPaste(_ event: NSEvent) -> Bool {
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+            guard isShown, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
                 event.charactersIgnoringModifiers == "v",
                 let textView, let window = textView.window, event.window === window
             else { return false }
@@ -453,6 +464,8 @@ extension ComposerTextView: UIViewRepresentable {
             // Only on explicit requests: popping the keyboard on every chat open is intrusive on a phone.
             if coordinator.hasAppeared { DispatchQueue.main.async { textView.becomeFirstResponder() } }
         }
+        // A kept chat that is hidden (`KeptChats`) gives up the keyboard.
+        if !context.environment.chatIsShown, textView.isFirstResponder { textView.resignFirstResponder() }
         coordinator.hasAppeared = true
     }
 

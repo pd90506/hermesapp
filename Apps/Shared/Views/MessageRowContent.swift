@@ -116,7 +116,10 @@ struct FoldButton<Label: View>: View {
     var body: some View {
         Button {
             let open = !isExpanded
-            let toggle = { withAnimation(.snappy(duration: 0.2)) { isExpanded = open } }
+            let binding = $isExpanded
+            let toggle: @MainActor @Sendable () -> Void = {
+                withAnimation(.snappy(duration: 0.2)) { binding.wrappedValue = open }
+            }
             if let scrollAnchor { scrollAnchor.hold(then: toggle) } else { toggle() }
         } label: {
             HStack(spacing: 6) {

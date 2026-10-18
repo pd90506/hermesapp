@@ -5,8 +5,9 @@ import SwiftUI
 /// Placeholder chat: transcript, pending approval/clarify cards, composer.
 struct ChatView: View {
     let session: ChatSession
-    /// Overrides the session title (a Bot Chat is titled "Bot Chat"; show the bot instead).
-    var title: String?
+    /// False while the chat is kept built but hidden (`KeptChats`): its composer gives up
+    /// the keyboard and its shortcuts.
+    var isShown = true
     @Environment(ServerConnection.self) private var server
 
     /// The chat's own composer: it outlives this view (`GatewayConnection.composer(for:)`).
@@ -19,6 +20,8 @@ struct ChatView: View {
     @State private var visibleBlocks = VisibleBlocks()
     /// The chat's scroll position: a send scrolls to the end, a fold keeps its place.
     @State private var scroll = ChatScroll()
+    /// The newest rows first, the older ones in the frames after (`TranscriptWindow`).
+    @State private var window = TranscriptWindow()
     @Environment(\.textSizes) private var sizes
 
     /// How wide the chat's messages and composer get, centered in a wider window:
@@ -48,6 +51,9 @@ struct ChatView: View {
                 #endif
             }
             .environment(\.visibleBlocks, visibleBlocks)
+            .transcriptWindow(window, isEmpty: session.transcript.items.isEmpty) { [session] in
+                session.transcript.blocks
+            }
             // Opens at the newest message and stays there as a reply streams in.
             .defaultScrollAnchor(.bottom)
             .chatScrolling(scroll)
@@ -67,6 +73,8 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom) {
             // As wide as the messages' text (the content width less its padding).
             ComposerView(composer: composer, isConnected: server.isConnected)
+                .environment(\.chatIsShown, isShown)
+                .disabled(!isShown)
                 .frame(maxWidth: Self.contentWidth(textSize: sizes.content) - 32)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 16)
@@ -76,10 +84,8 @@ struct ChatView: View {
                 .padding(.vertical, 10)
                 .background(.bar)
         }
-        .navigationTitle(title ?? session.title ?? "New Chat")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #else
+        // The title is the column's (`RootView`), as several chats are kept built.
+        #if os(macOS)
         // No toolbar background over the chat. Its title bar holds no controls, and
         // macOS 26 showed that background while the pointer was over the title bar or
         // the top of the chat: a gray band down to the first message, with a line under it.
@@ -103,6 +109,7 @@ private struct HistoryHeader: View {
     /// Reads the next older page, keeping the rows on screen in place.
     let loadOlder: @MainActor @Sendable () async -> Void
     @State private var isVisible = false
+    @Environment(\.transcriptWindow) private var window
 
     /// Re-runs the load when a page lands and the header is still on screen.
     private struct Trigger: Equatable {
@@ -111,6 +118,15 @@ private struct HistoryHeader: View {
     }
 
     var body: some View {
+        // Not above a transcript still being built (`TranscriptWindow`): on screen over
+        // the first frame's rows, it would read an older page before the rest of this
+        // one is built. A chat with no rows yet shows its spinner.
+        if window?.isComplete != false || session.transcript.items.isEmpty {
+            header
+        }
+    }
+
+    private var header: some View {
         HStack {
             Spacer()
             content

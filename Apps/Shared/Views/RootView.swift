@@ -118,24 +118,40 @@ struct RootView: View {
             showChat: { compactColumn = .detail })
     }
 
+    /// The chat on screen, over the other warm chats of its server, which stay built
+    /// but hidden (`KeptChats`): going back to one shows it as it was left, without
+    /// building its transcript again.
     private var chat: some View {
-        Group {
+        ZStack {
+            if let server = model.activeServer {
+                KeptChats(server: server, shown: server.connection.opening == nil ? server.connection.activeSession : nil)
+                    .id(server.id)
+                    .environment(server)
+            }
             if let server = model.activeServer, let opening = server.connection.opening {
                 // A first open: the chat's frame at once, not the previous chat.
                 OpeningChatView(title: title(of: opening, on: server))
-            } else if let server = model.activeServer, let session = server.connection.activeSession {
-                ChatView(session: session, title: title(of: session, on: server))
-                    .id(session.id)  // a fresh composer per chat
-                    .environment(server)
-            } else {
+            } else if model.activeServer?.connection.activeSession == nil {
                 ContentUnavailableView(
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
                     description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
             }
         }
+        // One title for the column: each kept chat setting its own, the hidden ones' won.
+        .navigationTitle(chatTitle)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         // The whole column, so the band spans it whatever is shown.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .titleBarBand()
+    }
+
+    private var chatTitle: String {
+        guard let server = model.activeServer else { return "" }
+        if let opening = server.connection.opening { return title(of: opening, on: server) }
+        guard let session = server.connection.activeSession else { return "" }
+        return title(of: session, on: server) ?? session.title ?? "New Chat"
     }
 
     private func followActiveChat() {
@@ -251,7 +267,8 @@ private struct ShownProfile: Equatable {
     var ref: ProfileRef { ProfileRef(server: server, profile: profile) }
 }
 
-/// The frame of a chat being opened: its title and a spinner where the transcript goes.
+/// The frame of a chat being opened: a spinner where the transcript goes (the column
+/// shows its title).
 private struct OpeningChatView: View {
     let title: String
 
@@ -259,11 +276,42 @@ private struct OpeningChatView: View {
         ProgressView()
             .controlSize(.small)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle(title)
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
             .accessibilityLabel("Opening \(title)")
+    }
+}
+
+/// The warm chats of a server (`GatewayConnection.warmSessions`), each built once it has
+/// been shown and kept built while another is on screen. Switching between them only
+/// changes which one shows: a page of rows took most of a second to build again
+/// (`ChatSwitchTests`), and the chat comes back where it was scrolled.
+///
+/// A chat is built only once shown here, so a server switch builds the one chat shown,
+/// not all of its warm chats at once. One that leaves the warm chats goes with its view.
+private struct KeptChats: View {
+    let server: ServerConnection
+    let shown: ChatSession?
+    /// The chats shown since this view appeared.
+    @State private var built: Set<ObjectIdentifier> = []
+
+    var body: some View {
+        ForEach(chats) { session in
+            ChatView(session: session, isShown: session === shown)
+                .keptChat(isShown: session === shown)
+        }
+        .onChange(of: shown?.id, initial: true) { _, id in
+            if let id { built.insert(id) }
+            let warm = Set(server.connection.warmSessions.map(\.id))
+            built.formIntersection(warm.union(id.map { [$0] } ?? []))
+        }
+    }
+
+    /// The warm chats shown since this view appeared, and the one shown now, in a
+    /// fixed order: the warm chats reorder on every switch, and moving views in the
+    /// stack is work for nothing.
+    private var chats: [ChatSession] {
+        var chats = server.connection.warmSessions.filter { built.contains($0.id) && $0 !== shown }
+        if let shown { chats.append(shown) }
+        return chats.sorted { $0.id < $1.id }
     }
 }
 

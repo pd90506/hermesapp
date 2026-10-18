@@ -54,6 +54,10 @@ struct TranscriptStack<Content: View>: View {
 extension EnvironmentValues {
     /// The chat's scroll position, for the folds in it (`ChatScroll.keepingPlace`).
     @Entry var chatScroll: ChatScroll? = nil
+    /// Whether the chat is the one on screen, for its composer. False for a warm chat
+    /// kept built but hidden (`KeptChats`): its composer neither takes the keyboard nor
+    /// attaches pastes.
+    @Entry var chatIsShown = true
 }
 
 extension View {
@@ -73,5 +77,35 @@ private struct ChatScrolling: ViewModifier {
             .onScrollGeometryChange(for: CGFloat.self, of: { ChatScroll.shownY($0) }) { _, y in
                 scroll.scrolled(to: y)
             }
+    }
+}
+
+extension View {
+    /// A kept chat: drawn and reachable only while shown (`KeptChats`). Hidden, it
+    /// keeps the width it was last shown at, so resizing the window lays out only the
+    /// chat on screen, and it reports no size, so it never widens the column.
+    ///
+    /// Nothing here changes the chat's environment: a change there updates every row's
+    /// text view, which made a switch between kept chats cost a third of a rebuild (VM,
+    /// 2026-10-18). The composer is told on its own (`ChatView.isShown`).
+    func keptChat(isShown: Bool) -> some View {
+        modifier(KeptChat(isShown: isShown))
+    }
+}
+
+private struct KeptChat: ViewModifier {
+    let isShown: Bool
+    @State private var width: CGFloat?
+
+    func body(content: Content) -> some View {
+        content
+            .frame(width: isShown ? nil : width)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { newWidth in
+                if isShown { width = newWidth }
+            }
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
+            .opacity(isShown ? 1 : 0)
+            .allowsHitTesting(isShown)
+            .accessibilityHidden(!isShown)
     }
 }

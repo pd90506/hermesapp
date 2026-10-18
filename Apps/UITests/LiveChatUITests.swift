@@ -317,6 +317,17 @@ final class LiveChatUITests: XCTestCase {
         // title bar it is the chat's own color.
         XCTAssertTrue(zip(chat, below).allSatisfy { abs(Int($0) - Int($1)) <= 3 },
                       "\(state): a band over the chat: \(chat), unlike under it \(below)")
+        // Nor with the pointer over the title bar (macOS 26 shaded it then).
+        window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: chatX, dy: 8)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let hovered = window.screenshot()
+        let hoveredAttachment = XCTAttachment(screenshot: hovered)
+        hoveredAttachment.name = "title bar under the pointer, \(state)"
+        hoveredAttachment.lifetime = .keepAlways
+        add(hoveredAttachment)
+        let chatHovered = color(at: chatX, 8, in: hovered)
+        XCTAssertTrue(zip(chatHovered, below).allSatisfy { abs(Int($0) - Int($1)) <= 3 },
+                      "\(state): a band over the chat under the pointer: \(chatHovered), unlike under it \(below)")
     }
 
     /// The Bot Chat is pinned above the session list: scrolling the list leaves it where

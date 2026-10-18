@@ -23,9 +23,6 @@ struct RootView: View {
         .onChange(of: columns) { _, visibility in
             if visibility != .all { columns = .all }
         }
-        // No toolbar background anywhere: macOS 26 showed it only while the pointer was
-        // over the title bar. The chat fades under the title bar instead (`ChatView`).
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         #if os(macOS)
         // The app must connect (`SettingsPresentation`): the Settings window, as the gear

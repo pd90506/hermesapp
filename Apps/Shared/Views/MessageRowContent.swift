@@ -100,7 +100,8 @@ struct ReasoningText: View {
 /// The line every fold in the chat opens with (reasoning, a tool call, a turn's work, a
 /// group of its steps, a step): its label, then a chevron. The whole line is the button.
 /// Opening or closing keeps the chat's scroll place (`ChatScroll.keepingPlace`), so the
-/// line stays under the pointer and the next click closes it again.
+/// line stays under the pointer and the next click closes it again. On the Mac the pointer
+/// over a line that opens is a pointing hand, as over a link (the user, 2026-10-18).
 struct FoldButton<Label: View>: View {
     enum Chevron {
         /// Points right, turning down while open.
@@ -117,6 +118,7 @@ struct FoldButton<Label: View>: View {
     var chevron = Chevron.disclosure
     @ViewBuilder let label: Label
     @Environment(\.chatScroll) private var chatScroll
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     init(isExpanded: Binding<Bool>, showsChevron: Bool = true, @ViewBuilder label: () -> Label) {
@@ -158,6 +160,9 @@ struct FoldButton<Label: View>: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        #if os(macOS)
+        .pointerStyle(isEnabled ? .link : nil)
+        #endif
         .onHover { isHovering = $0 }
         .accessibilityValue(isExpanded ? "expanded" : "collapsed")
     }

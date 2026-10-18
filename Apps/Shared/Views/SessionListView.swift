@@ -57,15 +57,22 @@ struct SessionListView: View {
         #if os(iOS)
         @Bindable var model = model
         #endif
-        List(selection: $selection) {
-            if let server = model.sessionsServer {
-                pinnedSection(server)
-                sessionsSection(server)
+        // The Bot Chat above the list, not in a bar over it: always in reach, and the
+        // rows scroll under nothing. As a bar the list's rows scrolled under, the system
+        // drew a line across the column at its bottom, only under the pointer (or with
+        // rows under it), beside the Bot Chat's own divider, which is always there.
+        VStack(spacing: 0) {
+            pinnedBotChat
+            List(selection: $selection) {
+                if let server = model.sessionsServer {
+                    pinnedSection(server)
+                    sessionsSection(server)
+                }
             }
+            #if os(macOS)
+            .listStyle(.sidebar)
+            #endif
         }
-        #if os(macOS)
-        .listStyle(.sidebar)
-        #endif
         .navigationTitle(profileName ?? "Sessions")
         #if os(macOS)
         .toolbar {
@@ -95,10 +102,8 @@ struct SessionListView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .refreshable { await model.refreshLists() }
-        // Above the rows, always in reach: they scroll under it.
-        .safeAreaBar(edge: .top) { pinnedBotChat }
         #if os(iOS)
-        // Pinned above the list: it never scrolls away; rows scroll under it.
+        // Pinned above the Bot Chat and the list: it never scrolls away.
         .safeAreaBar(edge: .top) {
             SessionListHeader(title: profileName ?? "No profile",
                               subtitle: subtitle,
@@ -159,10 +164,6 @@ struct SessionListView: View {
                 selection = item
                 showChat()
             }
-            .contextMenu {
-                Button("New Side Chat", systemImage: "plus.bubble") { startSideChat(with: bot, on: server) }
-                    .disabled(!server.isConnected || isStartingChat)
-            }
         }
     }
 
@@ -192,7 +193,7 @@ struct SessionListView: View {
                 sessionRow(entry, on: server)
             }
         } header: {
-            Text("Sessions")
+            SidebarSectionTitle("Sessions")
         }
     }
 
@@ -205,7 +206,7 @@ struct SessionListView: View {
                     sessionRow(entry, on: server)
                 }
             } header: {
-                Text("Pinned")
+                SidebarSectionTitle("Pinned")
             }
         }
     }

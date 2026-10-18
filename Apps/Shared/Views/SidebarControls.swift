@@ -225,31 +225,29 @@ struct SidebarFooter<Accessory: View>: View {
     }
 }
 
+/// The Bot Chat's row: like a session row (`HistoryRow`), with no avatar (the profile
+/// rail beside it shows the bot's, with its activity badge).
 struct BotRow: View {
     let bot: Bot
     let activity: BotActivity
 
     var body: some View {
-        HStack(spacing: 10) {
-            BotAvatar(name: bot.displayName, activity: activity)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(bot.displayName)
-                        .fontWeight(.medium)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(bot.displayName)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let lastActive = bot.lastActive {
+                    Text(lastActive, format: .relative(presentation: .named))
+                        .uiFont(.caption2)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if let lastActive = bot.lastActive {
-                        Text(lastActive, format: .relative(presentation: .named))
-                            .uiFont(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
                 }
-                Text(subtitle)
-                    .uiFont(.caption)
-                    .foregroundStyle(activity == .waitingForYou ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
-                    .lineLimit(2)
             }
+            Text(subtitle)
+                .uiFont(.caption)
+                .foregroundStyle(activity == .waitingForYou ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                .lineLimit(2)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
@@ -264,9 +262,27 @@ struct BotRow: View {
     }
 }
 
+/// A sidebar section's title ("Bot Chat", "Pinned", "Sessions"): one font and colour
+/// for all of them, so the pinned Bot Chat's header reads as a peer of the list's.
+struct SidebarSectionTitle: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .uiFont(.subheadline, weight: .semibold)
+            .foregroundStyle(.secondary)
+            .textCase(nil)
+    }
+}
+
 /// The Bot Chat row pinned above the session list: a `BotRow` under a "Bot Chat"
-/// header, set in like the list's rows, with their hover and a selected fill (the
-/// List's own selection can't reach a row outside it).
+/// header (in the Sessions header's style), set in like the list's rows, with their
+/// hover and a selected fill (the List's own selection can't reach a row outside it).
+/// A divider under it, always shown, sets it off from the sessions.
 struct PinnedBotChat: View {
     let bot: Bot
     let activity: BotActivity
@@ -275,9 +291,7 @@ struct PinnedBotChat: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(Bot.chatTitle)
-                .uiFont(.caption, weight: .semibold)
-                .foregroundStyle(.secondary)
+            SidebarSectionTitle(Bot.chatTitle)
                 .padding(.horizontal, Hover.rowContentInset)
                 .accessibilityHidden(true)
             Button(action: open) {
@@ -289,9 +303,11 @@ struct PinnedBotChat: View {
             .padding(.horizontal, Hover.rowInset)
             .accessibilityIdentifier("pinnedBotChat")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
+            Divider()
+                .padding(.horizontal, Hover.rowContentInset)
+                .padding(.top, 4)
         }
         .padding(.top, 6)
-        .padding(.bottom, 4)
     }
 
     private struct Style: ButtonStyle {

@@ -165,6 +165,7 @@ extension GatewayConnection {
     func forget(_ session: ChatSession) {
         session.cancelRereadRetry()
         warmChats.removeAll { $0 === session }
+        unsentChats = unsentChats.filter { $0.value !== session }
         forgetComposer(of: session)
         if activeSession === session { clearActiveSession() }
     }

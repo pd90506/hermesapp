@@ -317,6 +317,68 @@ struct GatewayConnectionBotTests {
         #expect(connection.activeSession === side)
     }
 
+    /// New chat has no Sessions row until its first message, so New chat again goes
+    /// back to it, with what was typed, instead of starting a blank one.
+    @Test func newChatComesBackWithItsDraftUntilSent() async throws {
+        let log = FrameLog()
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
+
+        let side = try await connection.newSideChat(profile: "coder")
+        connection.composer(for: side).draft = "half typed"
+        _ = try await connection.newSideChat(profile: "finance")  // another chat on screen
+        let again = try await connection.newSideChat(profile: "coder")
+
+        #expect(again === side && connection.activeSession === side)
+        #expect(connection.composer(for: again).draft == "half typed")
+        #expect(log.requests("session.create").count == 2)
+        // On screen already: New chat leaves it there.
+        #expect(try await connection.newSideChat(profile: "coder") === side)
+        #expect(log.requests("session.create").count == 2)
+    }
+
+    @Test func newChatKeepsItsDraftPastTheWarmCache() async throws {
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: FrameLog())
+
+        let side = try await connection.newSideChat(profile: "coder")
+        connection.composer(for: side).draft = "still here"
+        for _ in 0..<GatewayConnection.warmChatLimit {
+            // Each a sent chat, so the next New chat on finance is a new one.
+            let other = try await connection.newSideChat(profile: "finance")
+            try await other.send("hi")
+        }
+        #expect(!connection.warmSessions.contains { $0 === side })
+
+        let again = try await connection.newSideChat(profile: "coder")
+        #expect(again === side)
+        #expect(connection.composer(for: again).draft == "still here")
+    }
+
+    @Test func newChatAfterASendStartsAnother() async throws {
+        let log = FrameLog()
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
+
+        let side = try await connection.newSideChat(profile: "coder")
+        try await side.send("hello")
+        let next = try await connection.newSideChat(profile: "coder")
+
+        #expect(next !== side && connection.activeSession === next)
+        #expect(log.requests("session.create").count == 2)
+    }
+
+    @Test func newChatWhoseRuntimeWasReclaimedIsReplacedWithItsDraft() async throws {
+        let log = FrameLog()
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
+
+        let side = try await connection.newSideChat(profile: "coder")
+        connection.composer(for: side).draft = "keep me"
+        side.markRuntimeGone()
+        let next = try await connection.newSideChat(profile: "coder")
+
+        #expect(next !== side && connection.activeSession === next)
+        #expect(connection.composer(for: next).draft == "keep me")
+        #expect(log.requests("session.create").count == 2)
+    }
+
     @Test func newSessionsCarryTheChosenSource() async throws {
         let log = FrameLog()
         let (connection, _) = try await connect(BotServer(profiles: roster), log: log)

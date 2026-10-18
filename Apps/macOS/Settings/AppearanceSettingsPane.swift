@@ -2,7 +2,7 @@ import HermesKit
 import SwiftUI
 
 /// The Appearance tab: the same settings as `AppearanceSettingsView` (iOS), as a
-/// columns form.
+/// columns form: light or dark, the theme, and the text sizes.
 struct AppearanceSettingsPane: View {
     @Environment(AppModel.self) private var model
     @Environment(\.textSizes) private var sizes
@@ -19,6 +19,13 @@ struct AppearanceSettingsPane: View {
             .pickerStyle(.segmented)
             .fixedSize()
             .accessibilityIdentifier("appearanceMode")
+
+            LabeledContent("Theme:") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ColorThemePicker(selection: model.colorThemeBinding)
+                    SettingsNote("Hermes Desktop's themes: the accent of buttons, your messages and selections, and the Markdown colors of replies. Choosing one clears the Markdown colors you changed.")
+                }
+            }
 
             Divider()
 

@@ -63,8 +63,8 @@ public struct RGBAColor: Sendable, Hashable, Codable, CustomStringConvertible {
 /// (`apps/desktop/src/themes/presets.ts`). The presets here borrow those themes' palettes,
 /// and the default borrows Desktop's default theme (Nous) and its blue.
 ///
-/// The user starts from a preset and may change single colours; a colour the user never
-/// changed follows the preset.
+/// The user starts from a preset, the app's theme (Settings ▸ Appearance), and may change
+/// single colours; a colour the user never changed follows the preset.
 public struct MarkdownColors: Sendable, Hashable, Codable {
     public enum Element: String, Sendable, Hashable, Codable, CaseIterable {
         case heading, bold, link
@@ -93,14 +93,8 @@ public struct MarkdownColors: Sendable, Hashable, Codable {
         }
     }
 
-    public enum Preset: String, Sendable, Hashable, Codable, CaseIterable {
-        /// Hermes Desktop's default theme: GitHub's neutrals and Nous blue.
-        case nous
-        case github, catppuccin, everforest, solarized
-        /// No colour of its own: the system's text greys and link blue, as messages
-        /// looked before these settings.
-        case plain
-    }
+    /// The app's theme (`ColorTheme`): each has a Markdown palette.
+    public typealias Preset = ColorTheme
 
     public private(set) var preset: Preset
     private var custom: [Element: [Mode: RGBAColor]]
@@ -141,6 +135,9 @@ public struct MarkdownColors: Sendable, Hashable, Codable {
         self.preset = preset
         custom = [:]
     }
+
+    /// Every colour back to the preset's; the preset stays.
+    public mutating func resetColors() { custom = [:] }
 
     // MARK: Palettes
 

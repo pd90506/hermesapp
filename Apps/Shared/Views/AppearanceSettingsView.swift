@@ -1,8 +1,8 @@
 import HermesKit
 import SwiftUI
 
-/// Light, dark or the system's look, and the UI, content and code text sizes
-/// (`AppearanceSettings`, kept by `AppModel`). Pushed from the connection settings on
+/// Light, dark or the system's look, the theme (`ColorTheme`), and the UI, content and
+/// code text sizes (`AppearanceSettings`, kept by `AppModel`). Pushed from the connection settings on
 /// iOS; the macOS Settings window has `AppearanceSettingsPane`.
 struct AppearanceSettingsView: View {
     @Environment(AppModel.self) private var model
@@ -21,6 +21,15 @@ struct AppearanceSettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .accessibilityIdentifier("appearanceMode")
+            }
+
+            Section {
+                ColorThemePicker(selection: model.colorThemeBinding)
+                    .frame(maxWidth: .infinity)
+            } header: {
+                Text("Theme")
+            } footer: {
+                Text("Hermes Desktop's themes: the accent of buttons, your messages and selections, and the Markdown colors of replies. Choosing one clears the Markdown colors you changed.")
             }
 
             Section {

@@ -150,7 +150,8 @@ final class AppModel {
     var appearance = AppearanceSettings() {
         didSet { saveAppearance() }
     }
-    /// The colours of Markdown in messages (Settings ▸ Markdown), kept across launches.
+    /// The colours of Markdown in messages (Settings ▸ Markdown), and the app's theme they
+    /// start from (Settings ▸ Appearance), kept across launches.
     var markdownColors = MarkdownColors() {
         didSet { saveMarkdownColors() }
     }

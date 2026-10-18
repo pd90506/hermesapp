@@ -312,9 +312,8 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertFalse(session.isEmpty || chat.isEmpty || over.isEmpty || below.isEmpty, "read the window")
         XCTAssertTrue(zip(session, over).allSatisfy { abs(Int($0) - Int($1)) <= 8 },
                       "\(state): the sidebar over the rail \(over) and over the list \(session) differ")
-        // No band of its own over the chat: the chat runs up to the window's top and
-        // fades under the title as it scrolls (Mail's look), so with nothing under the
-        // title bar it is the chat's own color.
+        // The band is in the chat's own color (the App Store's look): with nothing under
+        // the title bar, it is the chat's color.
         XCTAssertTrue(zip(chat, below).allSatisfy { abs(Int($0) - Int($1)) <= 3 },
                       "\(state): a band over the chat: \(chat), unlike under it \(below)")
         // Nor with the pointer over the title bar (macOS 26 shaded it then).
@@ -520,7 +519,7 @@ final class LiveChatUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(reply.count, 1, "round \(round) answered")
         }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        // The first replies are under the title bar now, fading out under it.
+        // The first replies are under the title bar now, blurred by its glass.
         attach(app, "Prompt rail: chat after three rounds")
 
         let ticks = app.buttons.matching(identifier: "prompt-rail-tick")

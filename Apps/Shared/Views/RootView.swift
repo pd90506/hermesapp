@@ -24,7 +24,7 @@ struct RootView: View {
             if visibility != .all { columns = .all }
         }
         // No toolbar background anywhere: macOS 26 showed it only while the pointer was
-        // over the title bar. The chat fades under it instead (`titleBarFade`).
+        // over the title bar. A glass band of our own instead (`titleBarBand`).
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
         #if os(macOS)
@@ -133,9 +133,9 @@ struct RootView: View {
                     description: Text(model.isAnyConnected ? "Pick a profile, then a session to chat with." : "Connect to your Hermes gateway."))
             }
         }
-        // The whole column, so the fade spans it whatever is shown.
+        // The whole column, so the band spans it whatever is shown.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .titleBarFade()
+        .titleBarBand()
     }
 
     private func followActiveChat() {
@@ -268,33 +268,27 @@ private struct OpeningChatView: View {
 }
 
 extension View {
-    /// On macOS, the chat fades out under its title bar, as Mail's message does: no band
-    /// of its own, the chat runs up to the window's top, and under the title it blurs
-    /// (Liquid Glass) and fades into the chat's background, more toward the top. The
-    /// same in every state and whether or not the pointer is over it (the system's
-    /// toolbar background showed only under the pointer, as a gray band with a line).
-    /// A band over the chat, glass or material, read as a slab apart from the sidebar,
-    /// light in dark mode, and clear glass showed the rows sharp (2026-10-18).
-    @ViewBuilder func titleBarFade() -> some View {
+    /// On macOS, a glass band under the chat's title bar, as the App Store's: the
+    /// toolbar's height, in the chat's own color, with the chat that scrolls under it
+    /// showing through as a blur, the same in every state and whether or not the pointer
+    /// is over it (the system's toolbar background showed only under the pointer, as a
+    /// gray band with a line). Liquid Glass blurs the chat; in dark mode a shade over it
+    /// (`titleBarShade`) brings it back to the chat's color, as the glass alone was a
+    /// light slab there. The chat's background over the glass hid the rows under it,
+    /// clear glass showed them sharp with a mirrored line along its edge, and materials
+    /// drew a solid band (2026-10-18).
+    @ViewBuilder func titleBarBand() -> some View {
         #if os(macOS)
         overlay(alignment: .top) {
             GeometryReader { proxy in
-                // The chat's background over the glass, so the fade is the chat's color
-                // with the rows blurred in it. The glass runs above the window and is cut
-                // to the fade: its top rim tinted it.
-                Color(nsColor: .windowBackgroundColor)
-                    .opacity(0.7)
+                // The glass runs past the band and is cut to it: its rims drew a bright
+                // line along the band's bottom and tinted its top.
+                titleBarShade
                     .background {
-                        Color.clear.glassEffect(.regular, in: .rect).padding(.top, -24)
+                        Color.clear.glassEffect(.regular, in: .rect).padding(.vertical, -24)
                     }
-                    .frame(height: proxy.safeAreaInsets.top + 24)
+                    .frame(height: proxy.safeAreaInsets.top)
                     .clipped()
-                    .mask {
-                        LinearGradient(stops: [.init(color: .black, location: 0),
-                                               .init(color: .black, location: 0.5),
-                                               .init(color: .clear, location: 1)],
-                                       startPoint: .top, endPoint: .bottom)
-                    }
                     .frame(maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea(edges: .top)
             }
@@ -307,3 +301,12 @@ extension View {
         #endif
     }
 }
+
+#if os(macOS)
+/// Over the band's glass in dark mode, the shade that brings it to the chat's color
+/// (the glass about 60 over the chat's 41, VM 2026-10-18); in light mode, none.
+private let titleBarShade = Color(nsColor: NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        ? NSColor(white: 0, alpha: 0.3) : .clear
+})
+#endif

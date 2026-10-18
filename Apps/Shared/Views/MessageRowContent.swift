@@ -603,8 +603,10 @@ struct TurnWorkView<Message: View>: View {
 /// A group of a turn's steps: its kind's icon and what its calls did ("Ran commands"),
 /// a chevron only under the pointer; opened, its steps one line each. Closed until the
 /// user opens it, also while the turn works in it (the user, 2026-10-18: a working turn
-/// opens one layer, its groups and text): then a spinner stands for its icon and its
-/// name speaks in the present tense ("Running commands").
+/// opens one layer, its groups and text). While the turn works in it, its line is its
+/// newest step's ("Skill · hermes-agent", then "Bash · git status"), changing as each
+/// step starts; once the turn moves on, it reads what the calls did ("Called tools, ran
+/// commands").
 struct StepGroupView: View {
     let group: StepGroup
     @State private var isExpanded: Bool
@@ -616,22 +618,25 @@ struct StepGroupView: View {
         _isExpanded = State(initialValue: isExpanded)
     }
 
+    /// The step the group's line shows: its newest, while the turn works in it.
+    static func liveStep(of group: StepGroup) -> WorkStep? {
+        group.isLive ? group.steps.last : nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             FoldButton(isExpanded: $isExpanded, chevron: .onHover) {
-                Group {
-                    if group.isLive {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
-                            .imageScale(.small)
-                            .foregroundStyle(.tertiary)
-                    }
+                if let latest = Self.liveStep(of: group) {
+                    WorkStepLine(step: latest)
+                } else {
+                    Image(systemName: group.iconTool.map(ToolCallLine.icon) ?? WorkStepLine.thinkIcon)
+                        .imageScale(.small)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 14)
+                    Text(group.title)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
-                .frame(width: 14)
-                Text(group.title)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
             .help(group.tools.isEmpty ? group.title : group.summary)
             .accessibilityIdentifier(Self.accessibilityIdentifier)

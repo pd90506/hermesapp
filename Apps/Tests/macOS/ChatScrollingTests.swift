@@ -262,7 +262,8 @@ import Testing
         let calls = all.filter { identifier($0) == ToolMessageContent.accessibilityIdentifier }
         #expect(calls.count == 2, "the run's calls: \(calls.count)")
         let folds = calls.filter { call in
-            let value = ((call as? NSAccessibilityProtocol)?.accessibilityValue?() ?? nil) as? String
+            let raw: Any? = (call as? NSAccessibilityProtocol)?.accessibilityValue ?? nil
+            let value = raw as? String
             return ["expanded", "collapsed"].contains(value ?? "")
         }
         #expect(folds.isEmpty, "a call folds inside the run")

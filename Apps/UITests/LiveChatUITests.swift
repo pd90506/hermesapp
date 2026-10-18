@@ -632,35 +632,7 @@ final class LiveChatUITests: XCTestCase {
         defer { XCUIDevice.shared.appearance = .light }
         let app = try launchApp()
         defer { app.terminate() }
-        let newChat = app.buttons["New chat"]
-        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
-        let list = app.outlines.firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
-        // The list's rows, less its section headers and notes.
-        let notes = ["Sessions", "Pinned", "No sessions yet", "Loading sessions…"]
-        func sessionRows() -> [XCUIElement] {
-            list.outlineRows.allElementsBoundByIndex.filter { row in
-                !notes.contains { row.staticTexts[$0].exists }
-            }
-        }
-        RunLoop.current.run(until: Date().addingTimeInterval(3))
-        while sessionRows().count < 2 {
-            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
-            XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
-            let before = sessionRows().count
-            press(newChat)
-            let composer = app.textViews["composer"]
-            XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
-            press(composer)
-            composer.typeText("Reply with exactly OK and nothing else. Do not use tools.")
-            press(app.buttons["Send"].firstMatch)
-            let deadline = Date().addingTimeInterval(90)
-            while sessionRows().count <= before, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
-            XCTAssertGreaterThan(sessionRows().count, before,
-                                 "the chat written in is listed: \(list.outlineRows.count) rows")
-        }
-
-        let rows = sessionRows()
+        let (list, rows) = try twoSessionRows(app)
         let selected = rows[0], hovered = rows[1]
         press(selected)
         RunLoop.current.run(until: Date().addingTimeInterval(1))
@@ -693,6 +665,89 @@ final class LiveChatUITests: XCTestCase {
         let gap = shaded[span].split(separator: true, omittingEmptySubsequences: true).map(\.count).max() ?? 0
         XCTAssertGreaterThanOrEqual(gap, 1, "no gap between the selection and the hover, around their edge: \(around)")
         print("selection/hover edge, \(scale) px per pt: \(around)")
+    }
+
+    /// The selected session row is the theme's accent (Nous, the default: blue) whether
+    /// the list has focus or not: picked with a click, then after a switch to another
+    /// session, then with the composer focused. AppKit drew it in the system's accent
+    /// only while the list had focus, gray otherwise. Writes in chats until the list
+    /// has two sessions.
+    @MainActor
+    func testSelectedSessionRowKeepsTheAccentWhateverHasFocus() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let (list, rows) = try twoSessionRows(app)
+        let window = app.windows.firstMatch
+        // Inside the fill (10 pt in, `Hover.rowInset`), before the row's text (16 pt in).
+        func fill(of row: XCUIElement, _ name: String) -> [Int] {
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let shot = window.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let frame = window.frame
+            let pixel = Self.pixels(of: shot.image, column: (x: list.frame.minX + 13 - frame.minX,
+                                                            from: row.frame.midY - frame.minY,
+                                                            to: row.frame.midY + 1 - frame.minY),
+                                    in: frame.size).first ?? []
+            XCTAssertGreaterThanOrEqual(pixel.count, 3, "read the row")
+            return pixel.prefix(3).map(Int.init)
+        }
+        press(rows[0])
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let picked = fill(of: rows[0], "selected session, clicked")
+        press(rows[1])
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let switched = fill(of: rows[1], "selected session, after switching")
+        press(app.textViews["composer"])
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let composing = fill(of: rows[1], "selected session, composer focused")
+        print("selected row fill: clicked \(picked), switched \(switched), composing \(composing)")
+        // Blue, not gray: its channels spread apart.
+        for (name, pixel) in [("clicked", picked), ("switched", switched), ("composing", composing)] {
+            let spread = (pixel.max() ?? 0) - (pixel.min() ?? 0)
+            XCTAssertGreaterThan(spread, 20, "\(name): the selection is gray: \(pixel)")
+        }
+        for other in [switched, composing] {
+            XCTAssertTrue(zip(picked, other).allSatisfy { abs($0 - $1) <= 6 },
+                          "the selection changed colour: \(picked) vs \(other)")
+        }
+    }
+
+    /// The session list, once it has at least two sessions (written in until it does),
+    /// and its session rows, less its section headers and notes.
+    @MainActor
+    private func twoSessionRows(_ app: XCUIApplication) throws -> (list: XCUIElement, rows: [XCUIElement]) {
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
+        let list = app.outlines.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
+        let notes = ["Sessions", "Pinned", "No sessions yet", "Loading sessions…"]
+        func sessionRows() -> [XCUIElement] {
+            list.outlineRows.allElementsBoundByIndex.filter { row in
+                !notes.contains { row.staticTexts[$0].exists }
+            }
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        while sessionRows().count < 2 {
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+            XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+            let before = sessionRows().count
+            press(newChat)
+            let composer = app.textViews["composer"]
+            XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+            press(composer)
+            composer.typeText("Reply with exactly OK and nothing else. Do not use tools.")
+            press(app.buttons["Send"].firstMatch)
+            let deadline = Date().addingTimeInterval(90)
+            while sessionRows().count <= before, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+            XCTAssertGreaterThan(sessionRows().count, before,
+                                 "the chat written in is listed: \(list.outlineRows.count) rows")
+        }
+        return (list, sessionRows())
     }
 
     /// The window's title (the chat's) once it passes `test`, or nil.

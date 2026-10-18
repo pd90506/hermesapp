@@ -180,6 +180,24 @@ private final class HostWindow {
 
     func brightness(of rect: CGRect) -> Double { brightness(of: rect, in: snapshot()) }
 
+    /// Mean colour of `rect` (host coordinates), in sRGB.
+    func color(of rect: CGRect, in rep: NSBitmapImageRep) -> (red: Double, green: Double, blue: Double)? {
+        let scale = Double(rep.pixelsWide) / host.bounds.width
+        var sum = (red: 0.0, green: 0.0, blue: 0.0)
+        var count = 0.0
+        for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+            for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                sum.red += color.redComponent
+                sum.green += color.greenComponent
+                sum.blue += color.blueComponent
+                count += 1
+            }
+        }
+        guard count > 0 else { return nil }
+        return (sum.red / count, sum.green / count, sum.blue / count)
+    }
+
     /// The darkest pixel in `rect`: thin strokes (a chevron) barely move the mean.
     func darkest(in rect: CGRect, of rep: NSBitmapImageRep) -> Double {
         let scale = Double(rep.pixelsWide) / host.bounds.width
@@ -256,7 +274,7 @@ private func entries(_ count: Int) -> [HistoryEntry] {
                         HistoryRow(entry: entry) {
                             Button("Pin") {}
                         }
-                            .sidebarRowHover(isSelected: selection == entry.id)
+                            .sidebarRowHighlight(isSelected: selection == entry.id)
                             .tag(entry.id)
                     }
                 }
@@ -345,6 +363,51 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         ui.click(at: CGPoint(x: session.midX, y: session.midY))
         #expect(selections == ["default/s0"])
         #expect(ui.selectedRows() == [firstSessionRow])
+    }
+
+    // MARK: Selection
+
+    /// The selected row is filled in the tint (the theme's accent), inset like the hover;
+    /// the rows beside it aren't. The List draws no selection of its own, which came in
+    /// the system's accent while the list had focus and in gray once it lost it.
+    @Test func selectedRowIsFilledInTheTint() throws {
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) {
+            Sidebar(selection: "default/s0").tint(.red)
+        }
+        let table = try #require(ui.subviews(of: NSTableView.self).first)
+        #expect(table.selectionHighlightStyle == .none)
+        let selected = try ui.rowRect(firstSessionRow), next = try ui.rowRect(firstSessionRow + 1)
+        let shot = ui.snapshot()
+        // Inside the fill, before the row's text.
+        func spot(_ row: CGRect) -> CGRect { CGRect(x: Hover.rowInset + 2, y: row.midY - 2, width: 3, height: 4) }
+        let fill = try #require(ui.color(of: spot(selected), in: shot))
+        #expect(fill.red - fill.blue > 0.1, "the selected row isn't in the tint: \(fill)")
+        let other = try #require(ui.color(of: spot(next), in: shot))
+        #expect(abs(other.red - other.blue) < 0.01, "an unselected row is tinted: \(other)")
+        let margin = try #require(ui.color(of: CGRect(x: 2, y: selected.midY - 2, width: 4, height: 4), in: shot))
+        #expect(abs(margin.red - margin.blue) < 0.01, "the fill reaches the List's edge: \(margin)")
+    }
+
+    /// With the list focused (where AppKit drew an accent selection with white text) the
+    /// row looks as it does unfocused: the same fill, and its title stays dark.
+    @Test func selectedRowLooksTheSameWithAndWithoutFocus() throws {
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) { Sidebar(selection: "default/s0") }
+        let table = try #require(ui.subviews(of: NSTableView.self).first)
+        let row = try ui.rowRect(firstSessionRow)
+        let spot = CGRect(x: Hover.rowInset + 2, y: row.midY - 2, width: 3, height: 4)
+        let title = CGRect(x: Hover.rowContentInset, y: row.minY + 2, width: 40, height: row.height / 2)
+        ui.window.makeFirstResponder(nil)
+        ui.settle()
+        let unfocused = ui.snapshot()
+        ui.window.makeFirstResponder(table)
+        ui.settle()
+        #expect(ui.window.firstResponder === table)
+        let focused = ui.snapshot()
+        #expect(table.selectionHighlightStyle == .none)
+        let before = try #require(ui.color(of: spot, in: unfocused)), after = try #require(ui.color(of: spot, in: focused))
+        #expect(abs(before.red - after.red) + abs(before.green - after.green) + abs(before.blue - after.blue) < 0.02,
+                "the fill changed with focus: \(before) → \(after)")
+        #expect(ui.darkest(in: title, of: focused) < 0.4, "the title turned light with focus")
     }
 
     // MARK: Buttons

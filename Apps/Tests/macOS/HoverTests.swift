@@ -292,7 +292,7 @@ private func entries(_ count: Int) -> [HistoryEntry] {
     @Test func rowHoverFillsTheRowInsetFromTheEdges() throws {
         let ui = HostWindow(size: CGSize(width: 280, height: 300)) { Sidebar() }
         let row = try ui.rowRect(firstSessionRow)
-        let inside = CGRect(x: Hover.rowInset + 2, y: row.minY + 1, width: 3, height: 3)  // a corner, past the text
+        let inside = CGRect(x: Hover.rowInset + 4, y: row.minY + Hover.rowGap + 3, width: 3, height: 3)  // a corner, past the text
         let outside = CGRect(x: 2, y: row.midY - 2, width: 4, height: 4)  // the inset margin
         let before = ui.snapshot()
 
@@ -311,6 +311,27 @@ private func entries(_ count: Int) -> [HistoryEntry] {
 
         ui.pointerLeaves()
         #expect(abs(ui.brightness(of: nextInside, in: before) - ui.brightness(of: nextInside)) < 0.005)
+    }
+
+    /// Hover stops `Hover.rowGap` short of the row's top and bottom, so a selected row
+    /// next to it (whose selection fills its row) stays apart from it: there was no gap
+    /// between the two shades. Snapshots don't draw the selection, so the hover's own
+    /// edges are what's checked here; `LiveChatUITests` checks the two together.
+    @Test func rowHoverLeavesAGapAboveAndBelow() throws {
+        let ui = HostWindow(size: CGSize(width: 280, height: 300)) { Sidebar() }
+        let row = try ui.rowRect(firstSessionRow + 1)
+        let top = CGRect(x: row.midX - 40, y: row.minY, width: 50, height: Hover.rowGap)
+        let bottom = top.offsetBy(dx: 0, dy: row.height - Hover.rowGap)
+        let filled = top.offsetBy(dx: 0, dy: Hover.rowGap + 1)
+        let before = ui.snapshot()
+
+        ui.movePointer(to: CGPoint(x: row.maxX - 30, y: row.midY))
+        let hovered = ui.snapshot()
+        #expect(ui.brightness(of: filled, in: before) - ui.brightness(of: filled, in: hovered) > visible)
+        #expect(abs(ui.brightness(of: top, in: before) - ui.brightness(of: top, in: hovered)) < 0.005,
+                "the hover reaches the row's top")
+        #expect(abs(ui.brightness(of: bottom, in: before) - ui.brightness(of: bottom, in: hovered)) < 0.005,
+                "the hover reaches the row's bottom")
     }
 
     /// Hover is visual only: a click on a hovered row still selects it.

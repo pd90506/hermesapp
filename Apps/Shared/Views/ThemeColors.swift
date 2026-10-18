@@ -23,21 +23,32 @@ extension ColorTheme {
     @MainActor
     var nativeAccent: NSColor? {
         guard let pair = accent else { return nil }
-        let light = NSColor(pair.light), dark = NSColor(pair.dark)
-        return NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-        }
+        return dynamicColor(light: NSColor(pair.light), dark: NSColor(pair.dark))
     }
     #else
     /// The accent, resolved against the drawing traits (light or dark).
     @MainActor
     var nativeAccent: UIColor? {
         guard let pair = accent else { return nil }
-        let light = UIColor(pair.light), dark = UIColor(pair.dark)
-        return UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
+        return dynamicColor(light: UIColor(pair.light), dark: UIColor(pair.dark))
     }
     #endif
 }
+
+/// A colour for light and dark. Nonisolated, so its provider isn't main-actor: SwiftUI
+/// resolves colours on its render thread too, where a main-actor provider trapped
+/// (`dispatch_assert_queue`, the iOS app in the VM, 2026-10-18).
+#if os(macOS)
+nonisolated func dynamicColor(light: NSColor, dark: NSColor) -> NSColor {
+    NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+    }
+}
+#else
+nonisolated func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
+    UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
+}
+#endif
 
 extension View {
     /// The theme's accent as the tint of everything under it: controls, the user's

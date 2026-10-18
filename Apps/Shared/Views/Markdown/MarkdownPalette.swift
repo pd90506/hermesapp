@@ -46,10 +46,7 @@ struct MarkdownPalette: Equatable, Sendable {
     @MainActor
     private static func dynamic(_ pair: MarkdownColors.Pair) -> NSColor {
         if let color = cache[pair] { return color }
-        let light = NSColor(pair.light), dark = NSColor(pair.dark)
-        let color = NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
-        }
+        let color = dynamicColor(light: NSColor(pair.light), dark: NSColor(pair.dark))
         if cache.count > 256 { cache.removeAll() }
         cache[pair] = color
         return color
@@ -58,8 +55,7 @@ struct MarkdownPalette: Equatable, Sendable {
     @MainActor
     private static func dynamic(_ pair: MarkdownColors.Pair) -> UIColor {
         if let color = cache[pair] { return color }
-        let light = UIColor(pair.light), dark = UIColor(pair.dark)
-        let color = UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
+        let color = dynamicColor(light: UIColor(pair.light), dark: UIColor(pair.dark))
         if cache.count > 256 { cache.removeAll() }
         cache[pair] = color
         return color

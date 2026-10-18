@@ -50,7 +50,7 @@ import Testing
     @Test func reasoningAloneHasNoActionBar() {
         let thinking = reply(reasoning: "Let me think.")
         #expect(!AssistantMessageContent.isBlank(thinking))
-        let disclosure = height(DisclosureGroup("Reasoning") { Text("Let me think.") }.font(.caption))
+        let disclosure = height(ReasoningFold(item: thinking))
         let row = height(AssistantMessageContent(item: thinking, isHovering: true, isNewest: true) {})
         #expect(abs(row - disclosure) <= 1, "row \(row) vs disclosure \(disclosure): an action bar under nothing to copy")
     }

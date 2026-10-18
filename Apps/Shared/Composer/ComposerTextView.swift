@@ -17,6 +17,8 @@ import SwiftUI
 /// Command-V with an image or file on the clipboard attaches it whenever the chat's
 /// window is focused and no other editable text has the keyboard.
 struct ComposerTextView {
+    /// What UI tests find the composer by: the replies are text views too.
+    static let accessibilityIdentifier = "composer"
     /// `accept` is plain Return; Shift-Return still inserts a newline.
     typealias SlashKey = SlashListKey
     @Binding var text: String
@@ -61,6 +63,7 @@ extension ComposerTextView: NSViewRepresentable {
     static func makeScrollView(coordinator: Coordinator, text: String) -> ComposerScrollView {
         let textView = ComposerNSTextView()
         textView.delegate = coordinator
+        textView.setAccessibilityIdentifier(ComposerTextView.accessibilityIdentifier)
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
@@ -410,6 +413,7 @@ extension ComposerTextView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ComposerUITextView {
         let textView = ComposerUITextView()
+        textView.accessibilityIdentifier = ComposerTextView.accessibilityIdentifier
         textView.delegate = context.coordinator
         textView.font = .preferredFont(forTextStyle: .body)
         textView.adjustsFontForContentSizeCategory = true

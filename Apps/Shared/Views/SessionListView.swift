@@ -26,7 +26,7 @@ enum SidebarItem: Hashable {
 ///   `SessionListHeader`; rows scroll under it.
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
-/// - Settings is at the bottom of the profile rail (on iPhone, a toolbar button here).
+/// - Settings is at the bottom of the profile rail.
 /// - At the bottom, the error and "waiting" banners; on iOS also a fixed-height footer
 ///   with the connection status (on macOS the rail beside it shows that).
 /// Rows and controls are in `SidebarControls.swift`; pointer feedback in `Hover.swift`.
@@ -49,14 +49,8 @@ struct SessionListView: View {
     @State private var newTitle = ""
     /// The row waiting for the user to confirm its deletion.
     @State private var deleting: HistoryEntry?
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    #endif
 
     var body: some View {
-        #if os(iOS)
-        @Bindable var model = model
-        #endif
         // The Bot Chat above the list, not in a bar over it: always in reach, and the
         // rows scroll under nothing. As a bar the list's rows scrolled under, the system
         // drew a line across the column at its bottom, only under the pointer (or with
@@ -120,14 +114,6 @@ struct SessionListView: View {
                 #endif
             }
         }
-        #if os(iOS)
-        // On iPhone the list mostly covers the rail; on iPad the rail's bottom has the gear.
-        .toolbar {
-            if sizeClass == .compact {
-                SettingsToolbarItem(presentation: $model.settingsPresentation)
-            }
-        }
-        #endif
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Title", text: $newTitle)
             Button("Cancel", role: .cancel) { renaming = nil }

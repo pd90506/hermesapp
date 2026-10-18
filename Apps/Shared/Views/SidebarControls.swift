@@ -81,23 +81,6 @@ struct NewChatButton: View {
     }
 }
 
-/// The session list's Settings button on iPhone: opens the settings sheet (`RootView`).
-///
-/// The system toolbar button, unstyled, so macOS 26 gives it the same glass circle,
-/// glyph weight and hover as the sidebar toggle beside it. (A custom style squeezed it
-/// into a narrow capsule.)
-struct SettingsToolbarItem: ToolbarContent {
-    @Binding var presentation: SettingsPresentation
-
-    var body: some ToolbarContent {
-        ToolbarItem {
-            Button("Settings", systemImage: "gearshape") {
-                presentation.toggle()
-            }
-        }
-    }
-}
-
 /// One profile in the profile rail, as in Discord's server rail: on macOS only its
 /// avatar (the name is the tooltip), a circle that turns into a rounded square when
 /// selected or hovered, with a pill on the rail's leading edge, tall when selected and

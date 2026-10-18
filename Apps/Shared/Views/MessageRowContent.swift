@@ -913,8 +913,15 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
 ///
 /// A chat opened before its rows are read starts again once they land, so a page read
 /// over the network is built the same way.
+///
+/// On iPhone a chat is a page pushed over the session list, and the push waits for the
+/// page's first layout: a long reply's rows held it back by most of a second (a reply
+/// of tables and code was 390 text views, VM 2026-10-18). There the window builds no
+/// row until the push is over (`pushed`), then only the newest block, then the rest.
 @MainActor @Observable final class TranscriptWindow {
     enum Extent: Equatable {
+        /// Nothing yet: the page is being pushed.
+        case none
         /// The first frame: `PaintBudget.firstPaintStart`.
         case firstPaint
         /// The blocks from this index on.
@@ -922,15 +929,31 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
         case all
     }
 
-    private(set) var extent = Extent.firstPaint
+    private(set) var extent: Extent
+    /// The page is pushed: no rows until the push is over, then the newest block alone.
+    private let pushed: Bool
+
+    init(pushed: Bool = false) {
+        self.pushed = pushed
+        extent = pushed ? .none : .firstPaint
+    }
+
+    /// About as long as the system's push.
+    static let pushDuration = Duration.milliseconds(350)
 
     /// Every block is built.
     var isComplete: Bool { extent == .all }
 
+    /// Rows are waiting for the push to end.
+    var isWaitingForPush: Bool { extent == .none }
+
     /// The index of the first block built.
     func start(in blocks: [TranscriptBlock]) -> Int {
         switch extent {
-        case .firstPaint: PaintBudget.firstPaintStart(in: blocks)
+        case .none: blocks.count
+        case .firstPaint:
+            pushed ? PaintBudget.start(in: blocks, end: blocks.count, budget: PaintBudget.firstPaint, minimumBlocks: 1)
+                : PaintBudget.firstPaintStart(in: blocks)
         case .from(let index): min(index, blocks.count)
         case .all: 0
         }
@@ -938,6 +961,11 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
 
     /// Builds the older blocks above the first frame's, a step a frame.
     fileprivate func backfill(_ blocks: @MainActor () -> [TranscriptBlock]) async {
+        if extent == .none {
+            try? await Task.sleep(for: Self.pushDuration)
+            guard !Task.isCancelled else { return }
+            extent = .firstPaint
+        }
         var start = start(in: blocks())
         while start > 0 {
             // A frame for the rows already shown, and for input between the steps.

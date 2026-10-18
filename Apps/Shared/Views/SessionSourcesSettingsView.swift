@@ -3,8 +3,8 @@ import HermesKit
 import SwiftUI
 
 /// The session sources: which source sessions this app creates carry, and which
-/// sources the session list shows (`SessionSourceSettings`). Pushed from the connection
-/// settings on iOS; the macOS Settings window has `SessionSourcesSettingsPane`.
+/// sources the session list shows (`SessionSourceSettings`). Settings ▸ Session
+/// Sources on iOS; the macOS Settings window has `SessionSourcesSettingsPane`.
 struct SessionSourcesSettingsView: View {
     @Environment(AppModel.self) private var model
 

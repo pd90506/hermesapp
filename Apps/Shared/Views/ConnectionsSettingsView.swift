@@ -2,60 +2,89 @@
 import HermesKit
 import SwiftUI
 
-/// The servers, and the URL and credentials of the one picked, edited in place in
-/// `AppModel` (closing it never loses or reverts an edit; Connect saves). A sheet from the
-/// gear or on launch (`SettingsPresentation`). The macOS Settings window has its own
-/// layout of the same settings (`MacSettingsView`).
-struct ConnectionSettingsView: View {
+/// Settings ▸ Connections: every server, with its status, and Add Server. A server
+/// opens its own page (`ServerSettingsView`). Everything edits `AppModel` in place
+/// (leaving a page never loses or reverts an edit; Connect saves). The macOS Settings
+/// window has its own layout of the same settings (`ServersSettingsPane`).
+struct ConnectionsSettingsView: View {
+    @Binding var path: [SettingsPage]
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        @Bindable var model = model
-
         Form {
             Section {
-                if model.servers.count > 1 {
-                    Picker("Server", selection: $model.selectedServerID) {
-                        ForEach(model.servers) { server in
-                            Text(server.name).tag(Optional(server.id))
-                        }
+                ForEach(model.servers) { server in
+                    NavigationLink(value: SettingsPage.server(server.id)) {
+                        ServerRow(server: server)
                     }
+                    .accessibilityIdentifier("serverRow")
                 }
                 Button("Add Server", systemImage: "plus") {
-                    model.addServer()
+                    let server = model.addServer()
+                    path.append(.server(server.id))
                 }
             } header: {
                 Text("Servers")
             } footer: {
                 Text("The app stays connected to every server at once; the profile rail groups profiles by server.")
             }
-
-            if let server = model.selectedServer {
-                ServerSettingsSection(server: server, dismiss: { dismiss() })
-                    .id(server.id)
-            }
-
-            Section {
-                NavigationLink("Session Sources") {
-                    SessionSourcesSettingsView()
-                }
-                NavigationLink("Appearance") {
-                    AppearanceSettingsView()
-                }
-            }
         }
         .formStyle(.grouped)
-        .navigationTitle("Connection")
-        .onAppear {
-            // Nothing to edit yet: start with a blank server.
-            if model.servers.isEmpty { model.addServer() }
-            if model.selectedServer == nil { model.selectedServerID = model.servers.first?.id }
-        }
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close") { dismiss() }
+        .navigationTitle("Connections")
+    }
+}
+
+/// A server in Connections: its name, address and status.
+private struct ServerRow: View {
+    let server: ServerConnection
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(server.hasURL ? server.name : "New Server")
+                Text(detail)
+                    .uiFont(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statusColor: Color {
+        let state = server.connection.state
+        return state != .connected && server.lastError != nil ? .red : state.statusColor
+    }
+
+    private var detail: String {
+        let state = server.connection.state
+        let status = state == .connected ? state.statusText : server.lastError ?? state.statusText
+        let address = server.config.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        return address.isEmpty ? status : "\(status) · \(address)"
+    }
+}
+
+/// Settings ▸ Connections ▸ a server: its address, sign-in and actions.
+struct ServerSettingsView: View {
+    let serverID: UUID
+    @Binding var path: [SettingsPage]
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let server = model.server(serverID) {
+            Form {
+                ServerSettingsSection(server: server, removed: { path.removeLast() })
+            }
+            .formStyle(.grouped)
+            .navigationTitle(server.hasURL ? server.name : "New Server")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { model.selectedServerID = server.id }
+        } else {
+            ContentUnavailableView("Server Removed", systemImage: "server.rack")
         }
     }
 }
@@ -63,7 +92,8 @@ struct ConnectionSettingsView: View {
 /// One server's address, sign-in and actions.
 private struct ServerSettingsSection: View {
     @Bindable var server: ServerConnection
-    let dismiss: () -> Void
+    /// Back to Connections, once the server is removed.
+    let removed: () -> Void
     @Environment(AppModel.self) private var model
     @State private var isWorking = false
     @State private var confirmsRemoval = false
@@ -124,9 +154,9 @@ private struct ServerSettingsSection: View {
             Button {
                 Task {
                     isWorking = true
+                    // Connected, it closes the whole sheet (`AppModel.connectFromSettings`).
                     await model.connectFromSettings(server)
                     isWorking = false
-                    if server.isConnected, server.lastError == nil { dismiss() }
                 }
             } label: {
                 HStack {
@@ -149,6 +179,7 @@ private struct ServerSettingsSection: View {
             }
             .confirmationDialog("Remove \(server.name)?", isPresented: $confirmsRemoval) {
                 Button("Remove", role: .destructive) {
+                    removed()
                     Task { await model.removeServer(server) }
                 }
             } message: {

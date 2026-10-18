@@ -450,6 +450,110 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(eventually { botChat.frame.minX > restingX + 60 }, "the list slid right after the swipe")
     }
 
+    /// The session list has no Settings button of its own: the gear is the rail's, a
+    /// Liquid Glass circle. Settings opens on Connections, Session Sources and
+    /// Appearance, each a page of its own; Connections lists the servers, each with its
+    /// own page.
+    @MainActor
+    func testSettingsOpensItsThreePages() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected, Sessions page shown")
+        XCTAssertFalse(app.buttons["Settings"].exists, "no Settings button over the session list")
+
+        app.buttons["profilesButton"].tap()
+        let gear = app.buttons["settingsButton"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 5), "the gear under the profiles")
+        XCTAssertTrue(eventually { gear.isHittable }, "the gear on screen")
+        attach(app, "profiles with the glass gear")
+        gear.tap()
+
+        let connections = app.buttons["settings.connections"]
+        XCTAssertTrue(connections.waitForExistence(timeout: 5), "Settings lists Connections")
+        XCTAssertTrue(app.buttons["settings.sessionSources"].exists, "Settings lists Session Sources")
+        XCTAssertTrue(app.buttons["settings.appearance"].exists, "Settings lists Appearance")
+        XCTAssertTrue(app.navigationBars["Settings"].exists, "titled Settings")
+        attach(app, "settings")
+
+        connections.tap()
+        XCTAssertTrue(app.navigationBars["Connections"].waitForExistence(timeout: 5), "Connections opens")
+        XCTAssertTrue(app.buttons["Add Server"].exists, "Connections has Add Server")
+        attach(app, "settings: connections")
+        app.buttons["serverRow"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Check Server"].waitForExistence(timeout: 5), "a server opens its own page")
+        attach(app, "settings: a server")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Connections"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let sources = app.buttons["settings.sessionSources"]
+        XCTAssertTrue(sources.waitForExistence(timeout: 5))
+        sources.tap()
+        XCTAssertTrue(app.navigationBars["Session Sources"].waitForExistence(timeout: 5), "Session Sources opens")
+        attach(app, "settings: session sources")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let appearance = app.buttons["settings.appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        appearance.tap()
+        XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5), "Appearance opens")
+        attach(app, "settings: appearance")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        XCTAssertTrue(connections.waitForExistence(timeout: 5))
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(eventually { !connections.exists }, "Close closes the settings")
+    }
+
+    /// On iPhone, picking a profile shows its sessions, never its last chat: the chat
+    /// stays a tap away (on the Mac and iPad, where the chat is always beside the list,
+    /// the profile's last chat comes back).
+    @MainActor
+    func testPickingAProfileStaysOnItsSessions() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        let newChat = app.buttons["New chat"]
+        if !newChat.waitForExistence(timeout: 5), back.exists { back.tap() }
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+
+        // The profile's Bot Chat, so it is the chat the profile showed last.
+        let botChat = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the session list")
+        botChat.tap()
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "the Bot Chat opens")
+        back.tap()
+        XCTAssertTrue(newChat.waitForExistence(timeout: 10), "back on the sessions")
+
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        app.buttons["profilesButton"].tap()
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "Profiles uncovers the rail")
+        let picked = rail.buttons.matching(NSPredicate(format: "isSelected == true")).firstMatch
+        XCTAssertTrue(picked.waitForExistence(timeout: 10), "a profile is selected")
+        let others = rail.buttons.matching(NSPredicate(format: "isSelected == false AND identifier != 'settingsButton'"))
+        guard others.count > 0 else { throw XCTSkip("Only one profile in the VM's Hermes") }
+        let pickedLabel = picked.label
+        others.firstMatch.tap()
+        XCTAssertTrue(eventually { !rail.exists }, "picking a profile covers the rail")
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        XCTAssertFalse(composer.exists, "another profile shows its sessions, not a chat")
+        XCTAssertTrue(newChat.exists, "the session list stays")
+
+        app.buttons["profilesButton"].tap()
+        XCTAssertTrue(rail.waitForExistence(timeout: 5))
+        rail.buttons[pickedLabel].firstMatch.tap()
+        XCTAssertTrue(eventually { !rail.exists }, "picking a profile covers the rail")
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        XCTAssertFalse(composer.exists, "back on the first profile: its sessions, not its Bot Chat")
+        XCTAssertTrue(newChat.exists, "the session list stays")
+        attach(app, "profile picked: its sessions")
+    }
+
     /// Polls a condition that settles after an animation.
     @MainActor
     private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {

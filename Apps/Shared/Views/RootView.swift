@@ -17,6 +17,10 @@ struct RootView: View {
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     /// On iPhone, whether the session list is slid aside to show the profile rail.
     @State private var isRailOpen = false
+    /// On iPhone, the chat page was popped a moment ago: its views go now, while the
+    /// list shows, not when the next row is tapped. Torn down then, a long chat's
+    /// views held that push back by half a second (VM, 2026-10-18).
+    @State private var isChatPageGone = false
     #endif
 
     var body: some View {
@@ -45,15 +49,24 @@ struct RootView: View {
         .sheet(isPresented: Binding(
             get: { model.settingsPresentation.isShown },
             set: { if !$0 { model.settingsPresentation.close() } })) {
-            NavigationStack {
-                ConnectionSettingsView()
-            }
+            SettingsView()
         }
         #endif
         // The chat on screen can change without a click: dropped on reconnect,
         // cleared on a server switch, or a new side chat. Follow it, so the
         // highlighted row is always the one on screen and clicking a row always opens it.
         .onChange(of: model.activeServer?.connection.activeSession?.id) { _, _ in followActiveChat() }
+        #if os(iOS)
+        .task(id: isOnSessionList) {
+            guard isOnSessionList else {
+                isChatPageGone = false
+                return
+            }
+            // After the pop's animation, which still shows the chat.
+            try? await Task.sleep(for: .milliseconds(600))
+            if !Task.isCancelled { isChatPageGone = true }
+        }
+        #endif
         // A click on another server's row moves `activeServerID` before its chat opens,
         // so only a server that stopped showing anything (disconnected, removed) clears it.
         .onChange(of: model.activeServerID) { _, id in if id == nil { followActiveChat() } }
@@ -65,7 +78,8 @@ struct RootView: View {
             }
         }
         // Picking another profile in the rail shows the chat it showed last: its Bot
-        // Chat, or a session once its list confirms the session is still there.
+        // Chat, or a session once its list confirms the session is still there. Not on
+        // iPhone (`restoreProfileChat`).
         .onChange(of: model.pendingProfileChat) { _, _ in restoreProfileChat() }
         .onChange(of: shownProfile) { _, _ in restoreProfileChat() }
         .task {
@@ -148,13 +162,18 @@ struct RootView: View {
     private var chat: some View {
         ZStack {
             if let server = model.activeServer {
-                KeptChats(server: server, shown: server.connection.opening == nil ? server.connection.activeSession : nil)
+                KeptChats(server: server,
+                          shown: server.connection.opening == nil && !showsStaleChat && !chatPageGone
+                              ? server.connection.activeSession : nil,
+                          keepsHidden: keepsHiddenChats)
                     .id(server.id)
                     .environment(server)
             }
             if let server = model.activeServer, let opening = server.connection.opening {
                 // A first open: the chat's frame at once, not the previous chat.
                 OpeningChatView(title: title(of: opening, on: server))
+            } else if showsStaleChat {
+                OpeningChatView(title: "chat")
             } else if model.activeServer?.connection.activeSession == nil {
                 ContentUnavailableView(
                     "No Chat Selected", systemImage: "bubble.left.and.bubble.right",
@@ -171,7 +190,51 @@ struct RootView: View {
         .titleBarBand()
     }
 
+    /// On iPhone, whether the chat on screen is still the one shown before the row just
+    /// tapped: a tap pushes the chat page at once, before the chat it opens is active.
+    /// The page then shows the opening spinner, not the previous chat. Laying out the
+    /// previous chat (a long transcript) held the push back by most of a second, and it
+    /// left the screen right after (VM, 2026-10-18).
+    private var showsStaleChat: Bool {
+        #if os(iOS)
+        guard sizeClass == .compact, let selection, let server = model.activeServer else { return false }
+        return item(for: server.connection.activeSession, on: server) != selection
+        #else
+        false
+        #endif
+    }
+
+    /// On iPhone, the session list is on screen: no row's chat is pushed (a row push
+    /// selects it), and no chat was pushed without a row (a new chat, `compactColumn`).
+    private var isOnSessionList: Bool {
+        #if os(iOS)
+        sizeClass == .compact && selection == nil && compactColumn == .sidebar
+        #else
+        false
+        #endif
+    }
+
+    private var chatPageGone: Bool {
+        #if os(iOS)
+        isChatPageGone && isOnSessionList
+        #else
+        false
+        #endif
+    }
+
+    /// Whether the warm chats stay built while hidden (`KeptChats`). Not on iPhone: one
+    /// chat shows at a time there, on a page pushed afresh, and every push laid out the
+    /// hidden chats' transcripts too (about 300 ms each in the VM, 2026-10-18).
+    private var keepsHiddenChats: Bool {
+        #if os(iOS)
+        sizeClass != .compact
+        #else
+        true
+        #endif
+    }
+
     private var chatTitle: String {
+        guard !showsStaleChat else { return "" }
         guard let server = model.activeServer else { return "" }
         if let opening = server.connection.opening { return title(of: opening, on: server) }
         guard let session = server.connection.activeSession else { return "" }
@@ -199,6 +262,15 @@ struct RootView: View {
     }
 
     private func restoreProfileChat() {
+        #if os(iOS)
+        // On iPhone the chat is a page of its own, not always beside the list as on the
+        // Mac or iPad: a profile picked in the rail shows its sessions, and its last
+        // chat stays a tap away instead of being pushed over them (user, 2026-10-18).
+        if sizeClass == .compact {
+            model.pendingProfileChat = nil
+            return
+        }
+        #endif
         guard let pending = model.pendingProfileChat, let shown = shownProfile, shown.ref == pending.profile,
             let server = model.server(shown.server)
         else { return }
@@ -314,12 +386,14 @@ private struct OpeningChatView: View {
 private struct KeptChats: View {
     let server: ServerConnection
     let shown: ChatSession?
+    /// False: only the chat shown is built (iPhone, `RootView.keepsHiddenChats`).
+    var keepsHidden = true
     /// The chats shown since this view appeared.
     @State private var built: Set<ObjectIdentifier> = []
 
     var body: some View {
         ForEach(chats) { session in
-            ChatView(session: session, isShown: session === shown)
+            ChatView(session: session, isShown: session === shown, pushed: !keepsHidden)
                 .keptChat(isShown: session === shown)
         }
         .onChange(of: shown?.id, initial: true) { _, id in
@@ -333,6 +407,7 @@ private struct KeptChats: View {
     /// fixed order: the warm chats reorder on every switch, and moving views in the
     /// stack is work for nothing.
     private var chats: [ChatSession] {
+        guard keepsHidden else { return shown.map { [$0] } ?? [] }
         var chats = server.connection.warmSessions.filter { built.contains($0.id) && $0 !== shown }
         if let shown { chats.append(shown) }
         return chats.sorted { $0.id < $1.id }

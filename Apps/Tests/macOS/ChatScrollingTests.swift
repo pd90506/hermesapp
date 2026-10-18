@@ -175,6 +175,20 @@ import Testing
         #expect(try #require(ui.remainingBelow) < 2, "the chat stopped following the reply")
     }
 
+    /// A new chat's reply outgrows the screen and the chat follows it to its end, as
+    /// it streams in and for a second prompt. It stayed at the top once the reply
+    /// passed the screen's height (VM, 2026-10-18).
+    @Test func aShortChatFollowsItsReplyPastTheScreen() throws {
+        let ui = UI(turns: 1)
+        defer { ui.close() }
+        for step in 1...30 {
+            ui.chat.extra = CGFloat(step) * 50
+            ui.settle(3)
+        }
+        ui.settle()
+        #expect(try #require(ui.remainingBelow) < 2, "the chat stopped following the reply")
+    }
+
     /// Scrolled up, the rows on screen stay where they are as the chat grows below them,
     /// a fold opening or a reply streaming alike.
     @Test func scrolledUpTheRowsOnScreenStayPut() throws {

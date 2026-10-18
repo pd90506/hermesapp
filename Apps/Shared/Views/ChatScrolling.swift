@@ -34,8 +34,6 @@ struct TranscriptStack<Content: View>: View {
     @ObservationIgnored private var holds = 0
 
     nonisolated static let endTolerance: CGFloat = 8
-    /// Long enough for a fold's animation (`snappy`, 0.2 s) to finish.
-    static let holdDuration: Duration = .milliseconds(600)
 
     func anchor(readingOlderPage: Bool) -> UnitPoint {
         if isHeld { return .top }
@@ -46,20 +44,36 @@ struct TranscriptStack<Content: View>: View {
     /// the top, then makes `change` a moment later. Made in the same update as the
     /// change, the new anchor came too late for it: the chat still kept its bottom
     /// (measured in the VM, 2026-10-18).
-    func hold(then change: @escaping @MainActor () -> Void) {
+    func hold(then change: @escaping @MainActor @Sendable () -> Void) {
         holds += 1
         let hold = holds
         isHeld = true
-        Task { @MainActor in
-            try? await Task.sleep(for: Self.anchorLead)
-            change()
-            try? await Task.sleep(for: Self.holdDuration)
-            if holds == hold { isHeld = false }
+        // Dispatched rather than awaited: a window test's run loop runs these, and a
+        // task's sleep never resumed there (VM, 2026-10-18).
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.anchorLead) {
+            MainActor.assumeIsolated { change() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.anchorLead + Self.holdDuration) {
+            MainActor.assumeIsolated {
+                if self.holds == hold { self.isHeld = false }
+            }
         }
     }
 
     /// About a frame: the anchor reaches the scroll view before the content changes.
-    static let anchorLead: Duration = .milliseconds(20)
+    static let anchorLead: TimeInterval = 0.02
+    /// Long enough for a fold's animation (`snappy`, 0.2 s) to finish.
+    static let holdDuration: TimeInterval = 0.6
+
+    /// Follows a scroll (`ChatScrollAnchoring`). Only a move decides whether the chat
+    /// is at its end: when the content grows, its new size is reported before the
+    /// anchor has moved the view to the new end, and reading "not at the end" there
+    /// stopped the chat following a reply (VM, 2026-10-18). While a fold holds the
+    /// top, a growth is real: what opened below the screen is not at the end.
+    func scrolled(from old: ChatScrollPlace, to new: ChatScrollPlace) {
+        guard isHeld || new.offset != old.offset || new.container != old.container else { return }
+        isAtEnd = new.isAtEnd
+    }
 
     /// Whether `geometry` shows the end of the content (the composer's inset aside).
     nonisolated static func isAtEnd(_ geometry: ScrollGeometry) -> Bool {
@@ -93,8 +107,21 @@ private struct ChatScrollAnchoring: ViewModifier {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             .defaultScrollAnchor(anchor.anchor(readingOlderPage: readingOlderPage), for: .sizeChanges)
-            .onScrollGeometryChange(for: Bool.self, of: ChatScrollAnchor.isAtEnd) { _, isAtEnd in
-                anchor.isAtEnd = isAtEnd
+            .onScrollGeometryChange(for: ChatScrollPlace.self, of: { ChatScrollPlace($0) }) {
+                anchor.scrolled(from: $0, to: $1)
             }
+    }
+}
+
+/// Where the chat is scrolled to, as `ChatScrollAnchor.scrolled(from:to:)` reads it.
+struct ChatScrollPlace: Equatable, Sendable {
+    var offset: CGFloat
+    var container: CGFloat
+    var isAtEnd: Bool
+
+    nonisolated init(_ geometry: ScrollGeometry) {
+        offset = geometry.contentOffset.y
+        container = geometry.containerSize.height
+        isAtEnd = ChatScrollAnchor.isAtEnd(geometry)
     }
 }

@@ -497,7 +497,9 @@ final class LiveChatUITests: XCTestCase {
     @MainActor
     func testSelectedAndHoveredSessionRowsStayApart() throws {
         continueAfterFailure = false
-        XCUIDevice.shared.appearance = .light
+        // Dark, as the user saw it: a gray selection over a lighter hover, touching.
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
         let app = try launchApp()
         defer { app.terminate() }
         let newChat = app.buttons["New chat"]

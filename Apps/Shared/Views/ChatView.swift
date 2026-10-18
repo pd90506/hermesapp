@@ -17,8 +17,8 @@ struct ChatView: View {
     @State private var olderPageAnchor: String?
     /// The transcript's blocks on screen, for the prompt the chat is at.
     @State private var visibleBlocks = VisibleBlocks()
-    /// Which edge of the chat stays put as its content changes size.
-    @State private var scrollAnchor = ChatScrollAnchor()
+    /// The chat's scroll position: a send scrolls to the end, a fold keeps its place.
+    @State private var scroll = ChatScroll()
     @Environment(\.textSizes) private var sizes
 
     /// How wide the chat's messages and composer get, centered in a wider window:
@@ -48,9 +48,9 @@ struct ChatView: View {
                 #endif
             }
             .environment(\.visibleBlocks, visibleBlocks)
-            // Opens at the newest message and stays there as a reply streams in; a fold
-            // opened or closed keeps its line where it was (`ChatScrollAnchor`).
-            .chatScrollAnchoring(scrollAnchor, readingOlderPage: olderPageAnchor != nil)
+            // Opens at the newest message and stays there as a reply streams in.
+            .defaultScrollAnchor(.bottom)
+            .chatScrolling(scroll)
             // An older page lands above the rows on screen. Left alone, the view stays
             // at the top edge, so the header shows again and reads the next page, and
             // so on to the beginning. Keep the row that was on top where it was: the
@@ -62,7 +62,7 @@ struct ChatView: View {
                     proxy.scrollTo(id, anchor: .top)
                 }
             }
-            .promptScrolling(transcript: session.transcript, visibleBlocks: visibleBlocks, proxy: proxy)
+            .promptScrolling(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks, proxy: proxy)
         }
         .safeAreaInset(edge: .bottom) {
             // As wide as the messages' text (the content width less its padding).

@@ -10,24 +10,24 @@ extension View {
     ///     at (`Transcript.currentPromptID`), marked on the rail.
     ///   - proxy: the reader around the chat's scroll view; the rail scrolls to a
     ///     prompt's block with it.
-    func promptScrolling(transcript: Transcript, visibleBlocks: VisibleBlocks? = nil,
+    ///   - scroll: the chat's scroll position (`chatScrolling`), which a send moves.
+    func promptScrolling(transcript: Transcript, scroll: ChatScroll, visibleBlocks: VisibleBlocks? = nil,
                          proxy: ScrollViewProxy) -> some View {
-        modifier(PromptScrolling(transcript: transcript, visibleBlocks: visibleBlocks, proxy: proxy))
+        modifier(PromptScrolling(transcript: transcript, scroll: scroll, visibleBlocks: visibleBlocks, proxy: proxy))
     }
 }
 
 private struct PromptScrolling: ViewModifier {
     let transcript: Transcript
+    let scroll: ChatScroll
     let visibleBlocks: VisibleBlocks?
     let proxy: ScrollViewProxy
-    @State private var position = ScrollPosition(idType: String.self)
 
     func body(content: Content) -> some View {
         content
-            .scrollPosition($position)
             .onChange(of: transcript.lastPromptID) { _, id in
                 guard id != nil else { return }
-                position.scrollTo(edge: .bottom)
+                scroll.position.scrollTo(edge: .bottom)
             }
             #if os(macOS)
             .overlay(alignment: .trailing) {

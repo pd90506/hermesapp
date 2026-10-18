@@ -24,6 +24,7 @@ import Testing
     /// `ChatView`'s scroll view, with rows of a fixed height so positions are known.
     private struct Harness: View {
         let chat: Chat
+        @State private var scroll = ChatScroll()
         static let rowHeight: CGFloat = 60
         static let spacing: CGFloat = 12
         static let padding: CGFloat = 16
@@ -42,7 +43,8 @@ import Testing
                     .padding(.trailing, PromptRail.width)
                 }
                 .defaultScrollAnchor(.bottom)
-                .promptScrolling(transcript: chat.transcript, proxy: proxy)
+                .chatScrolling(scroll)
+                .promptScrolling(transcript: chat.transcript, scroll: scroll, proxy: proxy)
                 .onChange(of: chat.jump) {
                     if let mark = chat.jump { PromptRail.scroll(to: mark, in: chat.transcript, with: proxy) }
                 }

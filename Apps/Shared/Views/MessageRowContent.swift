@@ -105,22 +105,19 @@ struct ReasoningText: View {
 
 /// The line every fold in the chat opens with (reasoning, a tool call, a run of them):
 /// its label, then a chevron that turns down while open. The whole line is the button.
-/// Opening or closing holds the chat's scroll position (`ChatScrollAnchor.hold(then:)`), so
-/// the line stays under the pointer and the next click closes it again.
+/// Opening or closing keeps the chat's scroll place (`ChatScroll.keepingPlace`), so the
+/// line stays under the pointer and the next click closes it again.
 struct FoldButton<Label: View>: View {
     @Binding var isExpanded: Bool
     var showsChevron = true
     @ViewBuilder let label: Label
-    @Environment(\.chatScrollAnchor) private var scrollAnchor
+    @Environment(\.chatScroll) private var chatScroll
 
     var body: some View {
         Button {
             let open = !isExpanded
-            let binding = $isExpanded
-            let toggle: @MainActor @Sendable () -> Void = {
-                withAnimation(.snappy(duration: 0.2)) { binding.wrappedValue = open }
-            }
-            if let scrollAnchor { scrollAnchor.hold(then: toggle) } else { toggle() }
+            let toggle = { withAnimation(.snappy(duration: 0.2)) { isExpanded = open } }
+            if let chatScroll { chatScroll.keepingPlace(toggle) } else { toggle() }
         } label: {
             HStack(spacing: 6) {
                 label

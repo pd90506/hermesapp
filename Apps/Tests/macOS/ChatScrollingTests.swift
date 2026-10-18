@@ -5,8 +5,8 @@ import SwiftUI
 import Testing
 
 /// The chat's scroll view (`ChatView`), built from its own pieces: the transcript stack
-/// (`TranscriptStack`) with real replies in it, and its scroll anchors
-/// (`chatScrollAnchoring`).
+/// (`TranscriptStack`) with real replies in it, its bottom anchor, and its scroll
+/// position (`chatScrolling`). Insets stand in for the title bar and the composer.
 ///
 /// Scrolling goes through SwiftUI (`ScrollPosition`), as in `PromptRailTests`: wheel
 /// events sent here do not scroll the chat (measured 2026-10-17).
@@ -14,10 +14,9 @@ import Testing
 @Suite(.serialized) struct ChatScrollingTests {
     @MainActor @Observable final class Chat {
         var items: [TranscriptItem] = []
-        var position = ScrollPosition(idType: String.self)
         /// How tall the last row's extra part is: a fold opening, or a reply streaming.
         var extra: CGFloat = 0
-        let anchor = ChatScrollAnchor()
+        let scroll = ChatScroll()
     }
 
     private struct Harness: View {
@@ -28,8 +27,10 @@ import Testing
                 TranscriptStack { rows }
                     .padding()
             }
-            .chatScrollAnchoring(chat.anchor)
-            .scrollPosition($chat.position)
+            .defaultScrollAnchor(.bottom)
+            .chatScrolling(chat.scroll)
+            .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: UI.titleBar) }
+            .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: UI.composer) }
         }
 
         @ViewBuilder private var rows: some View {
@@ -64,6 +65,8 @@ import Testing
 
     @MainActor private final class UI {
         static let size = CGSize(width: 520, height: 480)
+        static let titleBar: CGFloat = 52
+        static let composer: CGFloat = 90
         let chat = Chat()
         let window: NSWindow
         let host: NSView
@@ -120,7 +123,7 @@ import Testing
         }
 
         func scroll(toY y: CGFloat) {
-            chat.position.scrollTo(y: y)
+            chat.scroll.position.scrollTo(y: y)
             settle()
         }
     }
@@ -153,14 +156,36 @@ import Testing
         let top = try #require(ui.shownTop)
         let height = try #require(ui.contentHeight)
         // As a fold's button does.
-        ui.chat.anchor.hold { ui.chat.extra = 300 }
+        ui.chat.scroll.keepingPlace { ui.chat.extra = 300 }
         let grew = ui.waitFor { (ui.contentHeight ?? 0) > height + 299 }
         ui.settle()
         #expect(grew, "the fold did not open: \(height) -> \(ui.contentHeight ?? 0)")
         let after = try #require(ui.shownTop)
         let below = try #require(ui.remainingBelow)
         #expect(abs(after - top) < 1, "the rows on screen moved from \(top) to \(after)")
-        #expect(below > 250, "the fold opened below the screen: \(below) pt below, content \(height) -> \(ui.contentHeight ?? 0)")
+        #expect(below > 300 - UI.composer - 10, "the fold opened below the screen: \(below) pt below (the composer covers \(UI.composer))")
+
+        // And closes again in place.
+        ui.chat.scroll.keepingPlace { ui.chat.extra = 0 }
+        ui.waitFor { abs((ui.contentHeight ?? 0) - height) < 1 }
+        ui.settle()
+        let closed = try #require(ui.shownTop)
+        #expect(abs(closed - top) < 1, "closing moved the rows on screen from \(top) to \(closed)")
+    }
+
+    /// Scrolled up, a fold opening keeps the rows on screen where they are.
+    @Test func aFoldOpenedScrolledUpKeepsItsLine() throws {
+        let ui = UI(turns: 20)
+        defer { ui.close() }
+        ui.scroll(toY: 400)
+        let top = try #require(ui.shownTop)
+        let height = try #require(ui.contentHeight)
+        #expect(try #require(ui.remainingBelow) > 200, "scrolled up")
+        ui.chat.scroll.keepingPlace { ui.chat.extra = 300 }
+        ui.waitFor { (ui.contentHeight ?? 0) > height + 299 }
+        ui.settle()
+        let after = try #require(ui.shownTop)
+        #expect(abs(after - top) < 1, "the rows on screen moved from \(top) to \(after)")
     }
 
     /// A reply streaming at the end of the chat keeps the chat at its end.
@@ -187,20 +212,6 @@ import Testing
         }
         ui.settle()
         #expect(try #require(ui.remainingBelow) < 2, "the chat stopped following the reply")
-    }
-
-    /// Scrolled up, the rows on screen stay where they are as the chat grows below them,
-    /// a fold opening or a reply streaming alike.
-    @Test func scrolledUpTheRowsOnScreenStayPut() throws {
-        let ui = UI(turns: 20)
-        defer { ui.close() }
-        ui.scroll(toY: 400)
-        let top = try #require(ui.shownTop)
-        #expect(try #require(ui.remainingBelow) > 200, "scrolled up")
-        ui.chat.extra = 300
-        ui.settle()
-        let after = try #require(ui.shownTop)
-        #expect(abs(after - top) < 1, "the rows on screen moved from \(top) to \(after)")
     }
 }
 

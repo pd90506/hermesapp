@@ -538,13 +538,32 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertFalse(app.menuItems["New Side Chat"].exists, "the Bot Chat's context menu offers New Side Chat")
         app.typeKey(.escape, modifierFlags: [])
 
-        // The divider under the Bot Chat, with the pointer away and over it.
-        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        attach(app, "sidebar, pointer away")
+        // The divider under the Bot Chat is the same with the pointer away and over it:
+        // the system drew a second line across the column only under the pointer. Read
+        // down a column of pixels near the list's leading edge, outside the Bot Chat's
+        // own (inset) divider and its hover fill, from the row's bottom into the Sessions
+        // header.
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        let list = app.outlines.firstMatch
+        let column = (x: list.frame.minX + 5 - frame.minX, from: bot.frame.maxY - frame.minY,
+                      to: bot.frame.maxY + 24 - frame.minY)
+        func edge(_ name: String) -> [[UInt8]] {
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let shot = window.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return Self.pixels(of: shot.image, column: column, in: frame.size)
+        }
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
+        let away = edge("sidebar, pointer away")
+        XCTAssertFalse(away.isEmpty, "read the sidebar")
         bot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        attach(app, "sidebar, pointer on the Bot Chat")
+        let over = edge("sidebar, pointer on the Bot Chat")
+        XCTAssertNil(Self.firstDifference(away, over), "a line shows under the Bot Chat only under the pointer")
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
         XCUIDevice.shared.appearance = .dark
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         attach(app, "sidebar, dark")

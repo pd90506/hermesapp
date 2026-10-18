@@ -547,10 +547,12 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
     @ViewBuilder let requests: () -> Requests
 
     @Environment(\.visibleBlocks) private var visibleBlocks
+    @Environment(\.transcriptWindow) private var window
 
     var body: some View {
         let newestID = ConversationMarkdown.newestMessageID(in: transcript.items)
-        ForEach(transcript.blocks) { block in
+        let blocks = transcript.blocks
+        ForEach(blocks[(window?.start(in: blocks) ?? 0)...]) { block in
             Group {
                 switch block {
                 case .item(let item):
@@ -580,6 +582,76 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
                 .uiFont(.callout)
                 .foregroundStyle(.red)
         }
+    }
+}
+
+/// Which of a chat's blocks `TranscriptMessages` builds (`PaintBudget`): when the chat
+/// comes on screen, a screen of the newest; then, a frame at a time, the older ones
+/// above them, until the whole transcript is built. The chat keeps its bottom as they
+/// land (`defaultScrollAnchor`), so the rows on screen stay where they are.
+///
+/// A chat opened before its rows are read starts again once they land, so a page read
+/// over the network is built the same way.
+@MainActor @Observable final class TranscriptWindow {
+    enum Extent: Equatable {
+        /// The first frame: `PaintBudget.firstPaintStart`.
+        case firstPaint
+        /// The blocks from this index on.
+        case from(Int)
+        case all
+    }
+
+    private(set) var extent = Extent.firstPaint
+
+    /// Every block is built.
+    var isComplete: Bool { extent == .all }
+
+    /// The index of the first block built.
+    func start(in blocks: [TranscriptBlock]) -> Int {
+        switch extent {
+        case .firstPaint: PaintBudget.firstPaintStart(in: blocks)
+        case .from(let index): min(index, blocks.count)
+        case .all: 0
+        }
+    }
+
+    /// Builds the older blocks above the first frame's, a step a frame.
+    fileprivate func backfill(_ blocks: @MainActor () -> [TranscriptBlock]) async {
+        var start = start(in: blocks())
+        while start > 0 {
+            // A frame for the rows already shown, and for input between the steps.
+            try? await Task.sleep(for: .milliseconds(16))
+            guard !Task.isCancelled else { return }
+            let all = blocks()
+            start = PaintBudget.start(in: all, end: min(start, all.count), budget: PaintBudget.step)
+            extent = start > 0 ? .from(start) : .all
+        }
+        extent = .all
+    }
+
+    /// No rows yet: they are built from the first frame again once they land.
+    fileprivate func restart() { extent = .firstPaint }
+}
+
+extension EnvironmentValues {
+    /// The blocks `TranscriptMessages` builds; nil builds all of them.
+    @Entry var transcriptWindow: TranscriptWindow? = nil
+}
+
+extension View {
+    /// Builds the transcript in this view newest first (`TranscriptWindow`). `blocks`
+    /// reads the transcript's blocks as they are now.
+    func transcriptWindow(_ window: TranscriptWindow?, isEmpty: Bool,
+                          blocks: @escaping @MainActor () -> [TranscriptBlock]) -> some View {
+        environment(\.transcriptWindow, window)
+            .task(id: isEmpty) {
+                guard let window else { return }
+                if isEmpty {
+                    window.restart()
+                } else {
+                    await window.backfill(blocks)
+                }
+            }
     }
 }
 

@@ -118,8 +118,12 @@ public final class GatewayConnection {
     @ObservationIgnored var liveRuntimeIDs: [String: String] = [:]
     /// Chats shown on this connection, most recent first, at most `warmChatLimit`
     /// (the active one included). Going back to one shows it at once; see
-    /// `GatewayConnection+Revisit`.
-    @ObservationIgnored var warmChats: [ChatSession] = []
+    /// `GatewayConnection+Revisit`. Observed: the apps keep these chats' views built
+    /// (`warmSessions`).
+    var warmChats: [ChatSession] = []
+    /// The chats kept warm, most recent first, the active one included: the apps keep
+    /// their views built while hidden, so going back to one shows it as it was left.
+    public var warmSessions: [ChatSession] { warmChats }
     /// The composer of each warm chat (`composer(for:)`).
     @ObservationIgnored private var composers: [ObjectIdentifier: ChatComposer] = [:]
     /// The open that `opening` belongs to.

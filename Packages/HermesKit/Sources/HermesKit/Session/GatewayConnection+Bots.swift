@@ -245,14 +245,32 @@ extension GatewayConnection {
     /// Starts a temporary chat with a bot: a plain, visible, untitled session
     /// on its profile. It shows up in History after its first turn, never as
     /// the bot's chat.
+    ///
+    /// The profile's last New chat, while nothing has been sent in it, comes back
+    /// instead of a new one, with what was typed in it (it has no Sessions row to go
+    /// back to). One whose runtime was reclaimed is replaced, and its draft carried over.
     @discardableResult
     public func newSideChat(profile: String) async throws -> ChatSession {
         let token = beginSelection()
         guard let client else { throw GatewayClientError.notConnected }
+        var carried: String?
+        if let unsent = unsentChats[profile] {
+            if !unsent.transcript.items.isEmpty {
+                unsentChats[profile] = nil
+            } else if !unsent.isRuntimeGone {
+                return activeSession === unsent ? keepShowing(unsent) : revisit(unsent, token: token, client: client)
+            } else {
+                carried = composer(for: unsent).draft
+                unsentChats[profile] = nil
+                forget(unsent)
+            }
+        }
         let created = try await client.createSession(SessionCreateParams(source: sourceSettings.newSessionSource, profile: profile))
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: nil, profile: profile, kind: .sideChat, connection: self)
+        if let carried, !carried.isEmpty { composer(for: session).draft = carried }
         try await show(OpenedChat(session: session, openRequests: []), token: token, client: client)
+        unsentChats[profile] = session
         refreshListsInBackground()
         return session
     }

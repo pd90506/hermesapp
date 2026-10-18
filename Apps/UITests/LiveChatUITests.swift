@@ -495,6 +495,81 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "Test 2 shows its Bot Chat again: \(window.title)")
     }
 
+    /// What was typed in a New chat, not sent, is still there after another chat was
+    /// shown: New chat goes back to the same chat. The pinned Bot Chat has no avatar (the
+    /// rail shows it) and no New Side Chat in its context menu.
+    @MainActor
+    func testNewChatKeepsItsDraftAndBotChatIsPlain() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.appearance = .light
+        let app = try launchApp()
+        defer { app.terminate() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        let bot = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
+        XCTAssertTrue(bot.waitForExistence(timeout: 30), "the pinned Bot Chat")
+
+        press(newChat)
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        let draft = "draft \(Int.random(in: 1000...9999)) kept"
+        composer.typeText(draft)
+        attach(app, "New chat with a draft")
+
+        press(bot)
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: bot)
+        XCTAssertEqual(XCTWaiter().wait(for: [selected], timeout: 10), .completed, "the Bot Chat shows as selected")
+        let switched = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value != %@", draft),
+                                                 object: app.textViews["composer"].firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [switched], timeout: 30), .completed, "the Bot Chat's own composer")
+
+        press(newChat)
+        let kept = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", draft),
+                                             object: app.textViews["composer"].firstMatch)
+        XCTAssertEqual(XCTWaiter().wait(for: [kept], timeout: 30), .completed,
+                       "the draft came back: \(String(describing: app.textViews["composer"].firstMatch.value))")
+        attach(app, "New chat again, draft kept")
+
+        bot.rightClick()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertFalse(app.menuItems["New Side Chat"].exists, "the Bot Chat's context menu offers New Side Chat")
+        app.typeKey(.escape, modifierFlags: [])
+
+        // The divider under the Bot Chat is the same with the pointer away and over it:
+        // the system drew a second line across the column only under the pointer. Read
+        // down a column of pixels near the list's leading edge, outside the Bot Chat's
+        // own (inset) divider and its hover fill, from the row's bottom into the Sessions
+        // header.
+        let window = app.windows.firstMatch
+        let frame = window.frame
+        let list = app.outlines.firstMatch
+        let column = (x: list.frame.minX + 5 - frame.minX, from: bot.frame.maxY - frame.minY,
+                      to: bot.frame.maxY + 24 - frame.minY)
+        func edge(_ name: String) -> [[UInt8]] {
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let shot = window.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return Self.pixels(of: shot.image, column: column, in: frame.size)
+        }
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
+        let away = edge("sidebar, pointer away")
+        XCTAssertFalse(away.isEmpty, "read the sidebar")
+        bot.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        let over = edge("sidebar, pointer on the Bot Chat")
+        XCTAssertNil(Self.firstDifference(away, over), "a line shows under the Bot Chat only under the pointer")
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
+        XCUIDevice.shared.appearance = .dark
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        attach(app, "sidebar, dark")
+        XCUIDevice.shared.appearance = .light
+    }
+
     /// A selected session row and the hovered row under it keep a gap between their two
     /// shades: the hover stopped at the row's edge, right against the selection. Checked
     /// in the real window, where the selection is drawn, down a column of pixels through

@@ -502,7 +502,8 @@ final class LiveChatUITests: XCTestCase {
 
     /// The prompt rail: a chat with three long replies gets a tick per prompt beside the
     /// centered messages; hovering a tick opens the panel of prompts, and a prompt there
-    /// scrolls the chat back to it. Screenshots of each step are attached.
+    /// scrolls the chat back to it and is marked, the one before last too. Screenshots of
+    /// each step are attached.
     @MainActor
     func testPromptRailListsThePromptsAndJumpsBack() throws {
         continueAfterFailure = false
@@ -542,6 +543,24 @@ final class LiveChatUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         attach(app, "Prompt rail: panel open")
 
+        // The prompt before last (the user's report, 2026-10-18): its jump left the last
+        // prompt on screen under it, and the rail marked the last prompt instead.
+        press(rows.element(boundBy: 1))
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "Prompt rail: after jumping to the prompt before last")
+        XCTAssertEqual(ticks.element(boundBy: 1).value as? String, "current",
+                       "the rail marks the prompt before last after a jump to it")
+        XCTAssertNotEqual(ticks.element(boundBy: 2).value as? String, "current", "the last prompt is not marked")
+        let isSecond = NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@", "Round 2:", "Round 2:")
+        let second = app.staticTexts.matching(isSecond).firstMatch.exists
+            ? app.staticTexts.matching(isSecond).firstMatch : app.textViews.matching(isSecond).firstMatch
+        XCTAssertTrue(second.exists && second.isHittable, "the prompt before last is on screen after the jump")
+
+        ticks.element(boundBy: 1).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), "hovering the rail opens the panel again")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         press(rows.element(boundBy: 0))
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         // Away from the rail, so the panel closes and only the chat's texts remain.

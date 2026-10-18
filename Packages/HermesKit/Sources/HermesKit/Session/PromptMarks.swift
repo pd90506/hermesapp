@@ -53,25 +53,27 @@ extension Transcript {
     /// The prompt the chat is at with the blocks `visibleBlockIDs` on screen
     /// (`PromptMark.current`). Nil when the transcript has no prompts or no block is
     /// on screen.
-    public func currentPromptID(visibleBlockIDs: Set<String>) -> String? {
-        PromptMark.current(in: blocks, marks: promptMarks, visible: visibleBlockIDs)
+    public func currentPromptID(visibleBlockIDs: Set<String>, atEnd: Bool = false, picked: String? = nil) -> String? {
+        PromptMark.current(in: blocks, marks: promptMarks, visible: visibleBlockIDs, atEnd: atEnd, picked: picked)
     }
 }
 
 extension PromptMark {
     /// The prompt the chat is at with the blocks `visible` on screen: the last prompt in
     /// or above the first block on screen, or the first prompt when that block is above
-    /// them all. A chat scrolled to its end (its last block on screen) is at its last
-    /// prompt, even when the reply before it still fills the top of the screen.
-    public static func current(in blocks: [TranscriptBlock], marks: [PromptMark], visible: Set<String>) -> String? {
+    /// them all.
+    /// - A chat scrolled to its end (`atEnd`, its bottom on screen) is at its last
+    ///   prompt, even when the reply before it still fills the top of the screen.
+    /// - A prompt `picked` on the rail is the one the chat is at while the pick holds
+    ///   (`PromptPick`), whatever else is on screen. The one before last scrolls to the
+    ///   top of the screen with the last prompt under it, or only as far as the chat's
+    ///   end, and either rule would mark the last prompt instead.
+    public static func current(in blocks: [TranscriptBlock], marks: [PromptMark], visible: Set<String>,
+                               atEnd: Bool = false, picked: String? = nil) -> String? {
         guard let first = marks.first else { return nil }
-        let top: String?
-        if let last = blocks.last, visible.contains(last.id) {
-            top = last.id
-        } else {
-            top = blocks.first { visible.contains($0.id) }?.id
-        }
-        guard let top else { return nil }
+        if let picked, marks.contains(where: { $0.id == picked }) { return picked }
+        guard let top = blocks.first(where: { visible.contains($0.id) })?.id else { return nil }
+        if atEnd { return marks.last?.id }
         let ids = Set(marks.map(\.id))
         var current: String?
         for block in blocks {
@@ -79,5 +81,33 @@ extension PromptMark {
             if block.id == top { return current ?? first.id }
         }
         return nil
+    }
+}
+
+/// A prompt picked on the chat's prompt rail (a tick or a row of its panel). The chat is
+/// at that prompt until the user scrolls it away: the pick holds until the prompt's
+/// block, once on screen, leaves it. The jump to the prompt lands after the pick, so a
+/// block not on screen yet does not end it. The app also ends it when the user scrolls
+/// or sends.
+public struct PromptPick: Sendable, Hashable {
+    public let promptID: String
+    /// Whether the prompt's block has been on screen since the pick.
+    public private(set) var wasShown = false
+
+    public init(promptID: String) {
+        self.promptID = promptID
+    }
+
+    /// The pick with the blocks `visible` on screen; nil once the prompt's block, having
+    /// been on screen, has left it, or when the prompt is no longer in `transcript`.
+    public func holding(visible: Set<String>, in transcript: Transcript) -> PromptPick? {
+        guard let block = transcript.blockID(containing: promptID) else { return nil }
+        var pick = self
+        if visible.contains(block) {
+            pick.wasShown = true
+        } else if wasShown {
+            return nil
+        }
+        return pick
     }
 }

@@ -93,7 +93,8 @@ import Testing
         #expect(PromptMark.current(in: blocks, marks: PromptMark.marks(in: items), visible: Set([top].compactMap { $0 })) == "u1")
     }
 
-    @Test func aChatAtItsEndIsAtItsLastPrompt() {
+    /// Two prompts, each with its reply, and the ids of the blocks holding `a1`, `u2`, `a2`.
+    private static func twoRounds() -> (blocks: [TranscriptBlock], marks: [PromptMark], ids: [String]) {
         let items = [
             TranscriptItem(id: "u1", role: .user, text: "one"),
             TranscriptItem(id: "a1", role: .assistant, text: "reply one"),
@@ -101,12 +102,52 @@ import Testing
             TranscriptItem(id: "a2", role: .assistant, text: "reply two"),
         ]
         let blocks = TranscriptGrouping.blocks(items, isRunning: false)
-        let marks = PromptMark.marks(in: items)
         let ids = ["a1", "u2", "a2"].compactMap { TranscriptGrouping.blockID(containing: $0, in: blocks) }
+        return (blocks, PromptMark.marks(in: items), ids)
+    }
+
+    @Test func aChatAtItsEndIsAtItsLastPrompt() {
+        let (blocks, marks, ids) = Self.twoRounds()
         let onScreen = Set(ids)
-        #expect(PromptMark.current(in: blocks, marks: marks, visible: onScreen) == "u2",
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: onScreen, atEnd: true) == "u2",
                 "reply one fills the top of the screen, but the chat is scrolled to its end")
-        let notAtEnd = onScreen.subtracting([ids.last!])
-        #expect(PromptMark.current(in: blocks, marks: marks, visible: notAtEnd) == "u1")
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: onScreen.subtracting([ids.last!]), atEnd: true) == "u2")
+    }
+
+    /// The bug the user hit (2026-10-18): picking the prompt before last scrolled it to
+    /// the top with the last reply's start under it, and the rail marked the last prompt,
+    /// as a chat at its end would.
+    @Test func theLastReplyOnScreenBelowTheTopIsNotTheEnd() {
+        let (blocks, marks, ids) = Self.twoRounds()
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: Set(ids), atEnd: false) == "u1",
+                "reply one is at the top and the chat is not at its end")
+    }
+
+    @Test func aPickedPromptIsTheCurrentOneEvenAtTheEnd() {
+        let (blocks, marks, ids) = Self.twoRounds()
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: Set(ids), atEnd: true, picked: "u1") == "u1",
+                "the prompt before last, picked, scrolls only as far as the chat's end")
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: [], picked: "u1") == "u1",
+                "picked before its jump lands")
+        #expect(PromptMark.current(in: blocks, marks: marks, visible: Set(ids), atEnd: true, picked: "gone") == "u2",
+                "a pick of a prompt no longer in the chat is ignored")
+    }
+
+    @Test func aPickHoldsUntilItsBlockLeavesTheScreen() throws {
+        var transcript = Transcript()
+        let first = transcript.appendUserPrompt("one")
+        let second = transcript.appendUserPrompt("two")
+        let firstBlock = try #require(transcript.blockID(containing: first))
+        let secondBlock = try #require(transcript.blockID(containing: second))
+        let pick = PromptPick(promptID: first)
+
+        let beforeTheJump = try #require(pick.holding(visible: [secondBlock], in: transcript),
+                                         "the jump has not brought it on screen yet")
+        #expect(!beforeTheJump.wasShown)
+        let shown = try #require(beforeTheJump.holding(visible: [firstBlock, secondBlock], in: transcript))
+        #expect(shown.wasShown)
+        #expect(shown.holding(visible: [firstBlock], in: transcript) != nil, "still on screen")
+        #expect(shown.holding(visible: [secondBlock], in: transcript) == nil, "scrolled off screen")
+        #expect(PromptPick(promptID: "gone").holding(visible: [firstBlock], in: transcript) == nil)
     }
 }

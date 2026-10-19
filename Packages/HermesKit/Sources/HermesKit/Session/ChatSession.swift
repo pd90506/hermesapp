@@ -155,9 +155,11 @@ public final class ChatSession: Identifiable {
             self.info = info
             if let title = info.title, !title.isEmpty { self.title = title }
         }
-        // Built from the snapshot and stored rows only: no bubble is carried over.
+        // Built from the snapshot and stored rows only: no bubble is carried over. The
+        // old stored rows stay on screen until the newest page replaces them.
         let old = transcript
         transcript = Transcript(snapshot: snapshot, localIDsAfter: old.lastLocalID)
+        current.holdStoredRows(of: old)
         current.adoptSentImages(of: old)
         returnFailedPrompts(of: old)
         lastSeq = nil

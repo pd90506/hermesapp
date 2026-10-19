@@ -301,7 +301,8 @@ struct SessionListView: View {
     /// shows the same as a dot).
     private var subtitle: String? {
         guard let server = model.sessionsServer else { return nil }
-        let state = server.connection.state
+        // Quiet while a dropped connection gets back within a few seconds (`shownState`).
+        let state = server.connection.shownState
         // Not connected because of something the user can fix (no password): say what.
         let status = state == .connected ? nil : server.lastError ?? state.statusText
         let parts = [model.showsServerNames ? server.name : nil, status].compactMap { $0 }

@@ -59,6 +59,7 @@ final class ComposerUITests: XCTestCase {
         plus.tap()
         let library = app.buttons["Photo Library"].firstMatch
         XCTAssertTrue(library.waitForExistence(timeout: 5), "the + menu's Photo Library")
+        XCTAssertFalse(app.buttons["Paste"].exists, "no Paste in the + menu: the text view's own pastes images")
         attach(app, "the + menu, claudeCode, light")
         // A tap while the menu still opens only closes it: let it settle first.
         RunLoop.current.run(until: Date().addingTimeInterval(1))

@@ -176,6 +176,34 @@ struct PagedHistoryTests {
         expectWellFormed(session.transcript)
     }
 
+    /// A cold restore (a restarted backend) keeps the chat's rows on screen while the
+    /// newest page is read again, rather than going blank under a spinner; the page then
+    /// replaces them (user, 2026-10-19).
+    @Test func aRestoreKeepsTheRowsOnScreenUntilThePageLands() async throws {
+        let store = FakeMessageStore(count: 300)
+        let server = PagedServer(store: store)
+        let second = FakeTransport()
+        second.serve(epoch: "E2", log: FrameLog(), server.handle)
+        let (connection, first) = try await connect(server, log: FrameLog(), extra: [second])
+        let session = try await connection.openBotChat(profile: "coder")
+        await loaded(session)
+        let shown = session.transcript.items.map(\.id)
+        #expect(shown.count == 120)
+
+        store.hold()
+        first.serverDrops()
+        #expect(await eventually { store.heldCount == 1 && connection.state == .connected })
+        #expect(session.historyLoad == .loadingLatest)
+        #expect(session.transcript.items.map(\.id) == shown)
+        #expect(!session.transcript.paging.isLoaded)
+
+        store.append((301...302).map { storedRow(id: $0) })
+        store.release()
+        #expect(await eventually { session.historyLoad == .idle })
+        #expect(session.transcript.items.compactMap(\.rowID) == Array(183...302))
+        expectWellFormed(session.transcript)
+    }
+
     /// A cold restore while the newest page is in flight: the page read for the
     /// replaced transcript is dropped, the one read after the restore lands.
     @Test func aRestoreMidLoadDropsTheStalePage() async throws {

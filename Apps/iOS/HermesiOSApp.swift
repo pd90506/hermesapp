@@ -16,7 +16,15 @@ struct HermesiOSApp: App {
                     // iOS suspends sockets in the background; reconnect on return.
                     // The connection's replay logic restores the active session.
                     guard phase == .active else { return }
-                    Task { await model.connectAll() }
+                    Task {
+                        #if DEBUG
+                        // Found gone on return, as a real iPhone's (the simulator keeps them).
+                        if UITestLaunch.current?.dropsSocketsInBackground == true {
+                            for server in model.servers { await server.connection.dropSocket(forgettingReplay: true) }
+                        }
+                        #endif
+                        await model.connectAll()
+                    }
                 }
         }
     }

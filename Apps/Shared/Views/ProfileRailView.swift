@@ -168,7 +168,7 @@ struct ProfileRailView: View {
     /// Under the name, as Slack's workspace address: the profile's own name, and its
     /// server while that isn't connected.
     private func drawerSubtitle(_ bot: Bot, on server: ServerConnection) -> String {
-        server.connection.state == .connected ? bot.name : "\(bot.name) · \(status(server))"
+        server.connection.shownState == .connected ? bot.name : "\(bot.name) · \(status(server))"
     }
 
     @ViewBuilder private func avatarMenu(_ bot: Bot, on server: ServerConnection) -> some View {
@@ -263,13 +263,14 @@ struct ProfileRailView: View {
         return selected.server.id == server.id && selected.profile == bot.name
     }
 
+    /// Quiet while a dropped connection gets back within a few seconds (`shownState`).
     private func statusColor(_ server: ServerConnection) -> Color {
-        let state = server.connection.state
+        let state = server.connection.shownState
         return state != .connected && server.lastError != nil ? .red : state.statusColor
     }
 
     private func status(_ server: ServerConnection) -> String {
-        let state = server.connection.state
+        let state = server.connection.shownState
         return state == .connected ? state.statusText : server.lastError ?? state.statusText
     }
 

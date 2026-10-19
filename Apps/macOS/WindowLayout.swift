@@ -21,6 +21,7 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
 
     @Environment(\.surfaces) private var surfaces
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("profileRailShown") private var isRailShown = true
     @AppStorage("sessionListWidth") private var listWidth = 320.0
     /// The window buttons, in the window (top-left origin); nil in full screen, where
@@ -43,6 +44,10 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
                 }
                 panel
             }
+            // The rail slides out (in) and the panel with it, in one motion. Here, not in
+            // the button: the toggle comes from the title bar's own item (and its ⌃⌘S),
+            // whose `withAnimation` didn't reach this view, so the panel jumped.
+            .animation(Motion.rail(reduceMotion: reduceMotion), value: isRailShown)
         }
         .background(surfaces.frame)
         .ignoresSafeArea(.container, edges: .top)
@@ -105,7 +110,8 @@ private struct CollapseButton: View {
 
     var body: some View {
         Button(isRailShown ? "Hide Profiles" : "Show Profiles", systemImage: "sidebar.left") {
-            withAnimation(.snappy(duration: 0.25)) { isRailShown.toggle() }
+            // Animated by `WindowLayout`.
+            isRailShown.toggle()
         }
         .labelStyle(.iconOnly)
         .font(.system(size: 15))

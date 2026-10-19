@@ -103,7 +103,7 @@ struct RootView: View {
             NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
                 ProfileDrawer(isOpen: $isRailOpen) {
                     ProfileRailView(style: .drawer,
-                                    showSessions: { withAnimation(.snappy(duration: 0.28)) { isRailOpen = false } })
+                                    showSessions: { withAnimation(Motion.drawer) { isRailOpen = false } })
                 } content: {
                     sessionList
                 }

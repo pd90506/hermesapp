@@ -37,6 +37,8 @@ struct ComposerTextView {
     var onComposingChange: (Bool) -> Void = { _ in }
     /// Called only when AppKit has no marked text. Returning true consumes the key.
     var onSlashKey: (SlashKey) -> Bool = { _ in false }
+    /// iOS: the text view took or gave up the keyboard.
+    var onFocusChange: (Bool) -> Void = { _ in }
 
     static let verticalInset: CGFloat = 4
 
@@ -506,6 +508,14 @@ extension ComposerTextView: UIViewRepresentable {
         /// an input method composed: as on macOS (`showDraft`).
         var known = ""
         private var held: (base: String, draft: String)?
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            parent.onFocusChange(true)
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            parent.onFocusChange(false)
+        }
 
         func textViewDidChange(_ textView: UITextView) {
             reportComposing(textView)

@@ -28,6 +28,9 @@ struct ComposerView: View {
     @Environment(\.colorScheme) private var colorScheme
     #if os(iOS)
     @State private var photoSelection: [PhotosPickerItem] = []
+    @State private var isPickingPhotos = false
+    /// The text view has the keyboard.
+    @State private var isFocused = false
     #endif
 
     /// About eight lines of body text, then the text area scrolls.
@@ -47,15 +50,36 @@ struct ComposerView: View {
             }
             SlashSuggestionList(composer: composer) { focusRequest += 1 }
             if composer.isCompressing { compressingRow }
-            textArea
-            toolbar
+            // The text area keeps its place in both layouts, so the text view, and the
+            // keyboard it has, stay when the card grows or shrinks.
+            HStack(spacing: 8) {
+                if isCollapsed { addMenu }
+                textArea
+                if isCollapsed { sendButton }
+            }
+            .padding(.horizontal, isCollapsed ? Self.inset.toolbar : Self.inset.text)
+            .padding(.vertical, isCollapsed ? Self.inset.toolbar : 0)
+            .padding(.top, isCollapsed ? 0 : Self.inset.top)
+            if !isCollapsed { toolbar }
         }
+        .animation(.snappy(duration: 0.25), value: isCollapsed)
+        #if os(iOS)
+        // A card floating over the chat, as the Claude app's: Liquid Glass in the theme's
+        // composer colour.
+        .glassEffect(.regular.tint(surfaces.composer.opacity(colorScheme == .dark ? 0.55 : 0.4)),
+                     in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
+        // A hairline edge, as the Claude app's card; the tint while a drop is over it (iPad).
+        .overlay {
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(isDropTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.primary.opacity(0.08)),
+                              lineWidth: isDropTargeted ? 2 : 1)
+        }
+        #else
         .background(surfaces.composer, in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(isDropTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator), lineWidth: 1)
         }
-        #if os(macOS)
         // Lifted a little off the chat, as Desktop's composer.
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 6, y: 2)
         #endif
@@ -72,6 +96,7 @@ struct ComposerView: View {
             }
         }
         #if os(iOS)
+        .photosPicker(isPresented: $isPickingPhotos, selection: $photoSelection, matching: .images)
         .onChange(of: photoSelection) { _, items in
             guard !items.isEmpty else { return }
             photoSelection = []
@@ -116,12 +141,32 @@ struct ComposerView: View {
         var isConnected: Bool
     }
 
-    /// On the Mac rounder than the system's fields, as Desktop's composer.
+    /// On the Mac rounder than the system's fields, as Desktop's composer; on iOS a
+    /// large card, as the Claude app's.
     private static var cornerRadius: CGFloat {
         #if os(macOS)
         12
         #else
-        6
+        30
+        #endif
+    }
+
+    /// The toolbar's round controls (`+`, Send, Stop) and the pills' height: on iOS
+    /// full-size touch targets.
+    static var controlSize: CGFloat {
+        #if os(macOS)
+        26
+        #else
+        36
+        #endif
+    }
+
+    /// The space between the card's edge and its text, cards and controls.
+    private static var inset: (text: CGFloat, top: CGFloat, cards: CGFloat, toolbar: CGFloat) {
+        #if os(macOS)
+        (text: 10, top: 8, cards: 8, toolbar: 6)
+        #else
+        (text: 16, top: 14, cards: 12, toolbar: 10)
         #endif
     }
 
@@ -142,8 +187,8 @@ struct ComposerView: View {
             .hoverButtonStyle(.circle, padding: 3)
             .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
+        .padding(.horizontal, Self.inset.text)
+        .padding(.top, Self.inset.top)
     }
 
     /// A `/compress` still running (it can take minutes). The composer stays usable
@@ -156,14 +201,14 @@ struct ComposerView: View {
                 .uiFont(.callout)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
+        .padding(.horizontal, Self.inset.text)
+        .padding(.top, Self.inset.top)
         .accessibilityElement(children: .combine)
     }
 
     private var cards: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 6) {
+            HStack(spacing: AttachmentCardView.spacing) {
                 ForEach(composer.attachments) { attachment in
                     // The draft outlives this view (`GatewayConnection.composer(for:)`); its thumbnails
                     // are also in the shared store, for when the chat is shown again.
@@ -182,8 +227,8 @@ struct ComposerView: View {
                     UploadingCardView(name: name)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
+            .padding(.horizontal, Self.inset.cards)
+            .padding(.top, Self.inset.cards)
         }
         .scrollIndicators(.never)
     }
@@ -196,7 +241,12 @@ struct ComposerView: View {
             onAttach: { sources in Task { await attach(sources) } },
             onProviders: { providers in Task { await attach(await ImageLoader.sources(from: providers)) } },
             onComposingChange: { isComposing = $0 },
-            onSlashKey: handleSlashKey
+            onSlashKey: handleSlashKey,
+            onFocusChange: { focused in
+                #if os(iOS)
+                isFocused = focused
+                #endif
+            }
         )
         .frame(height: min(max(textHeight, 28), maxTextHeight))
         .overlay(alignment: .topLeading) {
@@ -209,8 +259,19 @@ struct ComposerView: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
+    }
+
+    /// On iOS, with the keyboard away and nothing in the draft, the card is one row, as
+    /// the Claude app's: `+`, the field and Send. The model and effort pills come back
+    /// with the keyboard (asked for by the user, 2026-10-19).
+    private var isCollapsed: Bool {
+        #if os(iOS)
+        !isFocused && composer.draft.isEmpty && !isComposing && composer.attachments.isEmpty
+            && composer.files.isEmpty && composer.uploadingFiles == 0 && composer.error == nil && stopError == nil
+            && !composer.isCompressing && !composer.slashIsOpen && !composer.isModelPickerRequested
+        #else
+        false
+        #endif
     }
 
     private func handleSlashKey(_ key: ComposerTextView.SlashKey) -> Bool {
@@ -221,7 +282,10 @@ struct ComposerView: View {
         return true
     }
 
+    /// On the Mac `+` alone on the left, as Desktop's; on iOS `+` and the pills on the
+    /// left, Send on the right, as the Claude app's.
     private var toolbar: some View {
+        #if os(macOS)
         HStack(spacing: 2) {
             addMenu
             Spacer(minLength: 8)
@@ -231,9 +295,21 @@ struct ComposerView: View {
             sendButton
                 .padding(.leading, 4)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, Self.inset.toolbar)
         .padding(.bottom, 6)
         .padding(.top, 2)
+        #else
+        HStack(spacing: 8) {
+            addMenu
+            modelMenu
+            effortMenu
+            Spacer(minLength: 0)
+            sendButton
+        }
+        .padding(.horizontal, Self.inset.toolbar)
+        .padding(.bottom, Self.inset.toolbar)
+        .padding(.top, 6)
+        #endif
     }
 
     // MARK: Toolbar controls
@@ -241,24 +317,36 @@ struct ComposerView: View {
     private var addMenu: some View {
         Menu {
             #if os(iOS)
-            PhotosPicker(selection: $photoSelection, matching: .images) {
-                Label("Photo Library", systemImage: "photo.on.rectangle")
-            }
+            // A button, the picker presented from the composer: a PhotosPicker in the
+            // menu closed the menu and showed no picker (VM, iOS 27).
+            Button("Photo Library", systemImage: "photo.on.rectangle") { isPickingPhotos = true }
             #endif
             Button("Choose Files…", systemImage: "doc") { isImportingFile = true }
             Button("Paste", systemImage: "doc.on.clipboard", action: paste)
         } label: {
+            #if os(macOS)
             Image(systemName: "plus")
                 .uiFont(.body, weight: .medium)
-                .frame(width: 26, height: 26)
+                .frame(width: Self.controlSize, height: Self.controlSize)
                 .contentShape(.rect)
+            #else
+            Image(systemName: "plus")
+                .font(.system(size: 17, weight: .medium))
+                .frame(width: Self.controlSize, height: Self.controlSize)
+                .background(Self.controlFill, in: .circle)
+                .contentShape(.circle)
+            #endif
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .hoverHighlight(in: Circle())
+        #if os(macOS)
         .foregroundStyle(.secondary)
+        #else
+        .foregroundStyle(.primary)
+        #endif
         .help("Attach images or files")
         .accessibilityLabel("Attach")
     }
@@ -290,7 +378,9 @@ struct ComposerView: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        #if os(macOS)
         .fixedSize()
+        #endif
         .hoverHighlight()
         .disabled(!isConnected)
         .help(composer.currentModel.map { "Model for this chat: \($0)" } ?? "Model for this chat")
@@ -329,7 +419,8 @@ struct ComposerView: View {
         }
     }
 
-    private func pillLabel(_ title: String) -> some View {
+    @ViewBuilder private func pillLabel(_ title: String) -> some View {
+        #if os(macOS)
         HStack(spacing: 3) {
             Text(title)
                 .lineLimit(1)
@@ -341,9 +432,32 @@ struct ComposerView: View {
         .uiFont(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 6)
-        .frame(height: 26)
+        .frame(height: Self.controlSize)
         .contentShape(.rect)
+        #else
+        // A filled capsule like `+`'s circle. A long model name shortens in the middle, so the
+        // effort pill and Send keep their room on a phone (`modelMenu` isn't fixed in size).
+        HStack(spacing: 4) {
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .uiFont(.subheadline, weight: .medium)
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .frame(height: Self.controlSize)
+        .background(Self.controlFill, in: .capsule)
+        .contentShape(.capsule)
+        #endif
     }
+
+    #if os(iOS)
+    /// The fill of `+` and the pills on the card, as the Claude app's.
+    static let controlFill = Color.primary.opacity(0.08)
+    #endif
 
     /// Voice input needs the dashboard's HTTP transcription route; the gateway's
     /// `voice.record` records on the gateway host's microphone, not this device's
@@ -568,7 +682,7 @@ private struct CircleButton: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(isEnabled && isProminent ? AnyShapeStyle(.primary) : AnyShapeStyle(.quaternary))
+                .fill(fill)
                 .opacity(isEnabled && isProminent && hovered ? 0.8 : 1)
             Circle()
                 .fill(Hover.fill(pressed: false))
@@ -577,20 +691,19 @@ private struct CircleButton: View {
                 // Sending: a spinner around the label (the cancel ✕).
                 ProgressView()
                     .controlSize(.small)
-                    .tint(Color(white: 0.5))
+                    .tint(Self.isAccentFilled && isProminent ? Color.white : Color(white: 0.5))
                 configuration.label
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: Self.isAccentFilled ? 10 : 8, weight: .bold))
+                    .foregroundStyle(Self.isAccentFilled && isProminent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
             } else {
                 configuration.label
                     .labelStyle(.iconOnly)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(!isEnabled ? AnyShapeStyle(.secondary)
-                        : isProminent ? AnyShapeStyle(.background) : AnyShapeStyle(.primary))
+                    .font(.system(size: Self.isAccentFilled ? 16 : 12, weight: .bold))
+                    .foregroundStyle(labelStyle)
             }
         }
-        .frame(width: 26, height: 26)
+        .frame(width: ComposerView.controlSize, height: ComposerView.controlSize)
         .opacity(configuration.isPressed ? 0.7 : 1)
         .contentShape(.circle)
         .onHover { isHovered = $0 }
@@ -602,5 +715,27 @@ private struct CircleButton: View {
         #else
         false
         #endif
+    }
+
+    /// On iOS the filled circle is the theme's accent with a white arrow, as the Claude
+    /// app's Send; on the Mac the text colour, as Desktop's.
+    private static var isAccentFilled: Bool {
+        #if os(macOS)
+        false
+        #else
+        true
+        #endif
+    }
+
+    private var fill: AnyShapeStyle {
+        guard isProminent else { return AnyShapeStyle(.quaternary) }
+        if Self.isAccentFilled { return isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.35)) }
+        return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.quaternary)
+    }
+
+    private var labelStyle: AnyShapeStyle {
+        if Self.isAccentFilled && isProminent { return AnyShapeStyle(.white.opacity(isEnabled ? 1 : 0.85)) }
+        if !isEnabled { return AnyShapeStyle(.secondary) }
+        return isProminent ? AnyShapeStyle(.background) : AnyShapeStyle(.primary)
     }
 }

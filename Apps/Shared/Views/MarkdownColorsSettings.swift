@@ -99,14 +99,8 @@ struct ThemePreview: View {
 
     @Environment(\.surfaces) private var surfaces
 
-    /// The chat's colour (the theme's on the Mac, where it paints the window).
-    private var chatColor: Color {
-        #if os(macOS)
-        surfaces.chat
-        #else
-        scheme == .dark ? Color(white: 0.12) : Color.white
-        #endif
-    }
+    /// The chat's colour: the theme's, as the chat paints it.
+    private var chatColor: Color { surfaces.chat }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {

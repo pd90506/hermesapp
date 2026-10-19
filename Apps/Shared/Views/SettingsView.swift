@@ -15,7 +15,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            Form {
+            ThemedForm {
                 Section {
                     NavigationLink(value: SettingsPage.connections) {
                         LabeledContent {
@@ -35,7 +35,6 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.appearance")
                 }
             }
-            .formStyle(.grouped)
             .navigationTitle("Settings")
             .navigationDestination(for: SettingsPage.self) { page in
                 switch page {

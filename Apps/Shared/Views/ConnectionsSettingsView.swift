@@ -11,7 +11,7 @@ struct ConnectionsSettingsView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Form {
+        ThemedForm {
             Section {
                 ForEach(model.servers) { server in
                     NavigationLink(value: SettingsPage.server(server.id)) {
@@ -29,7 +29,6 @@ struct ConnectionsSettingsView: View {
                 Text("The app stays connected to every server at once; the profile rail groups profiles by server.")
             }
         }
-        .formStyle(.grouped)
         .navigationTitle("Connections")
     }
 }
@@ -76,10 +75,9 @@ struct ServerSettingsView: View {
 
     var body: some View {
         if let server = model.server(serverID) {
-            Form {
+            ThemedForm {
                 ServerSettingsSection(server: server, removed: { path.removeLast() })
             }
-            .formStyle(.grouped)
             .navigationTitle(server.hasURL ? server.name : "New Server")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { model.selectedServerID = server.id }

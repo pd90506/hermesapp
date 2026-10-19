@@ -11,7 +11,7 @@ import AppKit
 /// sets them). The chats it creates are deleted by the script's sweep afterwards.
 final class LiveChatUITests: XCTestCase {
     @MainActor
-    private func launchApp(servers: Int = 1) throws -> XCUIApplication {
+    private func launchApp(servers: Int = 1, motionScale: Double? = nil) throws -> XCUIApplication {
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
             throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
@@ -21,6 +21,8 @@ final class LiveChatUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = String(servers)
+        // The app's animations this many times slower (`Motion`), to see them part way.
+        if let motionScale { app.launchEnvironment["HERMES_UITEST_MOTION_SCALE"] = String(motionScale) }
         app.launch()
         return app
     }
@@ -174,6 +176,86 @@ final class LiveChatUITests: XCTestCase {
         checkHoveringTheTitleBarDoesNotShadeTheChat(app, composer: composer)
 
         try checkBotChatStaysPinnedAboveTheSessions(app, newChat: newChat, list: list)
+    }
+
+    /// Hiding the profile rail slides it out and the panel (session list and chat) with
+    /// it, to the window's edge, and showing it slides both back: no jump straight to the
+    /// end, and no frame where the panel's edge goes back the way it came (a flicker). The
+    /// app's animations run 10 times slower here, so screenshots catch them part way; the
+    /// frames are attached in order, with how far into the slide each was taken.
+    @MainActor
+    func testProfileRailSlidesWithThePanel() throws {
+        continueAfterFailure = true
+        XCUIDevice.shared.appearance = .light
+        let app = try launchApp(motionScale: 10)
+        defer { app.terminate() }
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        try require(rail.waitForExistence(timeout: 30), "the profile rail")
+        let collapse = app.windows.firstMatch.buttons["collapseProfiles"]
+        try require(collapse.waitForExistence(timeout: 10), "the collapse button")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+
+        let shown = panelEdges(app, press: collapse, "hiding the profiles")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let hidden = panelEdges(app, press: collapse, "showing the profiles")
+        for (name, edges, from, to) in [("hiding", shown, CGFloat(54), CGFloat(0)), ("showing", hidden, 0, 54)] {
+            XCTAssertEqual(edges.first ?? -1, from, accuracy: 2, "\(name): the panel's edge before: \(edges)")
+            XCTAssertEqual(edges.last ?? -1, to, accuracy: 2, "\(name): the panel's edge after: \(edges)")
+            XCTAssertTrue(edges.contains { $0 > 6 && $0 < 48 }, "\(name): no frame part way, a jump: \(edges)")
+            let steps = zip(edges, edges.dropFirst()).map { $1 - $0 }
+            XCTAssertFalse(steps.contains { to < from ? $0 > 1 : $0 < -1 }, "\(name): the edge went back: \(edges)")
+        }
+    }
+
+    /// Clicks `button`, then screenshots the window as fast as it can for the slowed
+    /// slide and a little after: the panel's leading edge in each, in window points, the
+    /// first from just before the click. Each screenshot is attached.
+    @MainActor
+    private func panelEdges(_ app: XCUIApplication, press button: XCUIElement, _ name: String) -> [CGFloat] {
+        let window = app.windows.firstMatch
+        let size = window.frame.size
+        func edge(_ shot: XCUIScreenshot, _ label: String) -> CGFloat {
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = "\(name) \(label)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return Self.panelEdge(in: shot.image, size: size)
+        }
+        var edges = [edge(window.screenshot(), "00 before")]
+        let start = Date()
+        button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        while Date().timeIntervalSince(start) < 4 {
+            let shot = window.screenshot()
+            let t = Date().timeIntervalSince(start)
+            edges.append(edge(shot, String(format: "%02d at %d ms", edges.count, Int(t * 1000))))
+        }
+        return edges
+    }
+
+    /// The panel's leading edge in window points: along a line at mid-height (under the
+    /// profiles, over the empty rail), the first pixel off the frame's colour, which the
+    /// strip over the window shows at its middle.
+    private static func panelEdge(in image: NSImage, size: CGSize) -> CGFloat {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return -1 }
+        let width = cg.width, height = cg.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return -1 }
+        let scale = CGFloat(width) / size.width
+        // The bitmap's first row is the image's top row.
+        func pixel(_ x: Int, _ y: Int) -> [Int] { (0..<3).map { Int(bytes[(y * width + x) * 4 + $0]) } }
+        let frameColour = pixel(width / 2, Int(6 * scale))
+        let row = min(height - 1, Int(size.height * 0.6 * scale))
+        for x in 0..<min(width, Int(200 * scale)) where zip(pixel(x, row), frameColour).contains(where: { abs($0 - $1) > 6 }) {
+            return CGFloat(x) / scale
+        }
+        return -1
     }
 
     /// Stops the test when a step the later checks need didn't happen.

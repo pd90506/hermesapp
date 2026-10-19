@@ -191,37 +191,6 @@ struct RailServerHeader: View {
     }
 }
 
-/// The connection status, with an optional accessory on the same line. A fixed
-/// height, so the footer is the same with or without it, on both platforms.
-struct SidebarFooter<Accessory: View>: View {
-    static var height: CGFloat { 28 }
-
-    let status: String
-    let color: Color
-    @ViewBuilder var accessory: () -> Accessory
-
-    var body: some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 8, height: 8)
-                Text(status)
-                    .uiFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .accessibilityElement(children: .combine)
-            Spacer(minLength: 8)
-            accessory()
-                .layoutPriority(1)
-        }
-        .frame(height: Self.height)
-        .padding(.horizontal)
-        .padding(.vertical, 4)
-    }
-}
-
 /// The Bot Chat's row: like a session row (`HistoryRow`), with no avatar (the profile
 /// rail beside it shows the bot's, with its activity badge).
 struct BotRow: View {

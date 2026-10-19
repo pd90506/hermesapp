@@ -14,11 +14,14 @@ public protocol GatewayConnector: Sendable {
     var messagesSource: (any SessionMessagesSource)? { get }
     /// Reads images stored on the gateway (`@image:` paths), with the same credential.
     var mediaSource: (any GatewayMediaSource)? { get }
+    /// Lists and manages the profiles' scheduled jobs, with the same credential.
+    var cronSource: (any CronSource)? { get }
 }
 
 extension GatewayConnector {
     public var messagesSource: (any SessionMessagesSource)? { nil }
     public var mediaSource: (any GatewayMediaSource)? { nil }
+    public var cronSource: (any CronSource)? { nil }
 }
 
 /// Images and files on the gateway's disk, for a client that cannot read that disk.
@@ -63,7 +66,7 @@ public enum GatewayCredential: Sendable, Hashable {
 public struct DashboardConnector: GatewayConnector {
     public let endpoint: GatewayEndpoint
     public let credential: GatewayCredential
-    private let dashboard: DashboardClient
+    let dashboard: DashboardClient
     private let makeSocket: @Sendable (URLRequest) -> any MessageTransport
 
     public init(
@@ -117,6 +120,7 @@ public struct DashboardConnector: GatewayConnector {
 
     public var messagesSource: (any SessionMessagesSource)? { self }
     public var mediaSource: (any GatewayMediaSource)? { self }
+    public var cronSource: (any CronSource)? { self }
 
     /// At most one refresh per connect: proactively when the token is known
     /// to be expired, otherwise after the server rejects it (401

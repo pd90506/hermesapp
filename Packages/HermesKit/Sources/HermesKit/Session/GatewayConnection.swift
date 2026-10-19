@@ -68,6 +68,8 @@ public final class GatewayConnection {
     /// A chat being opened for the first time: shown as a frame (title, loading)
     /// at once instead of the previous chat, until it is active or the open fails.
     public private(set) var opening: PendingChat?
+    /// The list profile's scheduled jobs (`GatewayConnection+Cron`, in `CronBoard.swift`).
+    public let cron = CronBoard()
     /// Out-of-band notices pushed by the gateway (`notification.show`), oldest
     /// first. Timed ones (`ttl_ms`) remove themselves; see `dismissNotification`.
     public internal(set) var notifications: [GatewayNotification] = []
@@ -344,6 +346,7 @@ public final class GatewayConnection {
 
     /// REST reads of stored transcripts, with this connection's credential.
     var messagesSource: (any SessionMessagesSource)? { connector?.messagesSource }
+    var cronSource: (any CronSource)? { connector?.cronSource }
 
     /// `session.resume` with a bounded ack, and the newest transcript page read
     /// alongside it, as Desktop opens chats (`use-session-actions/index.ts:2169-2194`).
@@ -643,6 +646,7 @@ public final class GatewayConnection {
         case HistoryReadError.tooLong(let rows):
             return "This chat has more than \(rows) messages, too many to load from this gateway. Updating Hermes fixes this."
         case let composer as ComposerError: return composer.message
+        case let cron as CronRequestError: return cron.detail
         case SessionActionError.botChatProtected:
             return "A bot's Bot Chat can't be renamed, archived or deleted."
         case SessionActionError.reservedTitle: return "\"\(Bot.chatTitle)\" is reserved for the bot's own chat."

@@ -82,7 +82,7 @@ struct RootView: View {
     }
 
     /// On macOS, as in Slack: the profile rail and a strip along the top in the theme's
-    /// deep colour, around a panel with the session list (which collapses) and the chat
+    /// deep colour (the rail collapses), around a panel with the session list and the chat
     /// (`WindowLayout`). On iPad three
     /// columns. On iPhone two, which collapse into a navigation stack (sessions → chat),
     /// with the profiles in a drawer over the session list: as a column of their own, Back

@@ -161,7 +161,7 @@ final class LiveChatUITests: XCTestCase {
         checkNewChatHoldsStill(app, newChat: newChat, "no chat")
         checkSessionListHeaderLooksTheSameUnderThePointer(app, newChat: newChat)
         checkFrameIsOneColourAroundThePanel(app, newChat: newChat, list: list, rail: rail, "no chat")
-        checkCollapseButtonHidesTheSessionList(app, list: list, rail: rail)
+        checkCollapseButtonHidesTheProfiles(app, list: list, rail: rail)
 
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
         try require(XCTWaiter().wait(for: [enabled], timeout: 30) == .completed, "New chat enabled")
@@ -265,28 +265,32 @@ final class LiveChatUITests: XCTestCase {
     }
 
     /// The collapse button sits after the window buttons, level with them, and hides the
-    /// session list, leaving the profile rail; again, it shows the list as it was.
+    /// profile rail (as Slack's hides its workspaces), the session list moving to the
+    /// window's edge; again, it shows the rail.
     @MainActor
-    private func checkCollapseButtonHidesTheSessionList(_ app: XCUIApplication, list: XCUIElement, rail: XCUIElement) {
+    private func checkCollapseButtonHidesTheProfiles(_ app: XCUIApplication, list: XCUIElement, rail: XCUIElement) {
         let window = app.windows.firstMatch
         // The green button: full screen on macOS 26, zoom before.
         let fullScreen = window.buttons[XCUIIdentifierFullScreenWindow]
         let zoom = fullScreen.exists ? fullScreen : window.buttons[XCUIIdentifierZoomWindow]
-        let collapse = window.buttons["collapseSessionList"]
+        let collapse = window.buttons["collapseProfiles"]
         guard collapse.exists else { return XCTFail("the collapse button") }
         XCTAssertGreaterThan(collapse.frame.minX, zoom.frame.maxX, "after the window buttons: \(collapse.frame)")
         XCTAssertLessThan(collapse.frame.minX, zoom.frame.maxX + 30, "right after them: \(collapse.frame)")
         XCTAssertLessThanOrEqual(abs(collapse.frame.midY - zoom.frame.midY), 2, "level with them: \(collapse.frame)")
-        let width = list.frame.width
+        let listX = list.frame.minX, width = list.frame.width
         press(collapse)
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: list)
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 5), .completed, "the session list hides")
-        XCTAssertTrue(rail.exists, "the profile rail stays")
-        attach(app, "session list collapsed")
-        press(collapse)
-        XCTAssertTrue(list.waitForExistence(timeout: 5), "the session list shows again")
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: rail)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 5), .completed, "the profile rail hides")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        XCTAssertEqual(list.frame.width, width, accuracy: 1, "at the width it had")
+        XCTAssertTrue(list.exists, "the session list stays")
+        XCTAssertLessThan(list.frame.minX, listX - 40, "the session list moves to the window's edge: \(list.frame)")
+        XCTAssertEqual(list.frame.width, width, accuracy: 1, "at its width")
+        attach(app, "profiles collapsed")
+        press(collapse)
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "the profile rail shows again")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertEqual(list.frame.minX, listX, accuracy: 1, "the session list back beside it")
     }
 
     /// New chat holds still in the title bar, with a chat open and with none. It

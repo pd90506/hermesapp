@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The Mac window as Slack's (asked for by the user, 2026-10-18): a frame in the theme's
 /// deep colour (`ColorTheme.frameColor`), a strip along the top, with the window buttons
-/// and the session list's collapse button, and the profile rail down the leading edge,
+/// and the profile rail's collapse button, and the profile rail down the leading edge,
 /// around one panel, rounded at its top-leading corner, that holds the session list and
 /// the chat. It was Mail's: one glass sidebar for the rail and the list, the window
 /// buttons on it.
@@ -21,7 +21,7 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
     @ViewBuilder var list: List
     @ViewBuilder var chat: Chat
 
-    @AppStorage("sessionListShown") private var isListShown = true
+    @AppStorage("profileRailShown") private var isRailShown = true
     @AppStorage("sessionListWidth") private var listWidth = 320.0
     /// The window buttons, in the window (top-left origin); nil in full screen, where
     /// they aren't in the window.
@@ -33,8 +33,11 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
         VStack(spacing: 0) {
             strip
             HStack(spacing: 0) {
-                rail
-                    .environment(\.colorScheme, .dark)
+                if isRailShown {
+                    rail
+                        .environment(\.colorScheme, .dark)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
                 panel
             }
         }
@@ -43,7 +46,7 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
         .background(WindowButtonsReader { windowButtons = $0 })
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                CollapseButton(isListShown: $isListShown)
+                CollapseButton(isRailShown: $isRailShown)
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -59,17 +62,14 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
         return Color.clear.frame(height: height)
     }
 
-    /// The session list (unless collapsed) and the chat, on the window's background.
+    /// The session list and the chat, on the window's background.
     private var panel: some View {
         HStack(spacing: 0) {
-            if isListShown {
-                list
-                    .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
-                    // A touch of the frame's colour, as Slack's sidebar.
-                    .background(color.opacity(0.05))
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                ColumnResizer(width: $listWidth, range: Self.listWidths)
-            }
+            list
+                .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
+                // A touch of the frame's colour, as Slack's sidebar.
+                .background(color.opacity(0.05))
+            ColumnResizer(width: $listWidth, range: Self.listWidths)
             chat
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -78,14 +78,15 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
     }
 }
 
-/// Hides or shows the session list, after the window buttons (⌃⌘S, the system's sidebar
-/// shortcut). The profile rail stays: it is the only way to switch profiles.
+/// Hides or shows the profile rail, after the window buttons (⌃⌘S, the system's sidebar
+/// shortcut), as Slack's toggle hides its workspaces (the user, 2026-10-18: the profiles,
+/// not the sessions). Shown again, it is the way to switch profiles.
 private struct CollapseButton: View {
-    @Binding var isListShown: Bool
+    @Binding var isRailShown: Bool
 
     var body: some View {
-        Button(isListShown ? "Hide Session List" : "Show Session List", systemImage: "sidebar.left") {
-            withAnimation(.snappy(duration: 0.25)) { isListShown.toggle() }
+        Button(isRailShown ? "Hide Profiles" : "Show Profiles", systemImage: "sidebar.left") {
+            withAnimation(.snappy(duration: 0.25)) { isRailShown.toggle() }
         }
         .labelStyle(.iconOnly)
         .font(.system(size: 15))
@@ -93,12 +94,12 @@ private struct CollapseButton: View {
         .foregroundStyle(.white.opacity(0.8))
         .hoverButtonStyle(padding: 5)
         .environment(\.colorScheme, .dark)
-        .help(isListShown ? "Hide the session list" : "Show the session list")
+        .help(isRailShown ? "Hide the profiles" : "Show the profiles")
         .keyboardShortcut("s", modifiers: [.control, .command])
         // A window control, as the window buttons beside it: never the key view, so no
         // focus ring around it at launch.
         .focusable(false)
-        .accessibilityIdentifier("collapseSessionList")
+        .accessibilityIdentifier("collapseProfiles")
     }
 }
 

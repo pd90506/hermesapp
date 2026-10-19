@@ -189,7 +189,8 @@ final class LiveChatUITests: XCTestCase {
     /// files into the composer (user, 2026-10-19).
     @MainActor
     private func checkAttachMenuHasNoPaste(_ app: XCUIApplication) {
-        let plus = app.buttons["Attach"].firstMatch
+        // A menu button on the Mac.
+        let plus = app.menuButtons["Attach"].firstMatch
         guard plus.waitForExistence(timeout: 5) else { return XCTFail("the composer's +") }
         press(plus)
         let files = app.menuItems["Choose Files…"].firstMatch

@@ -8,27 +8,38 @@ import SwiftUI
 /// The session list's pinned top on iOS, above the scrolling list (ChatGPT style): the
 /// selected profile's name (and, with several servers, its server), with the New chat
 /// button at its trailing edge, centered on the name. It never scrolls; rows scroll under
-/// it. (On macOS the name and New chat are in the title bar.)
-struct SessionListHeader: View {
+/// it. (On macOS the name and New chat are in the title bar.) On iPhone the profile's
+/// avatar leads it, as Slack's workspace icon.
+struct SessionListHeader<Leading: View>: View {
     /// The profile's name.
     var title: String
     /// The profile's server, when there are several.
     var subtitle: String?
     /// New chat, or `nil` when no profile is selected.
     var newChat: NewChatButton?
+    /// Before the title: on iPhone the profile's avatar.
+    @ViewBuilder var leading: Leading
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
+            leading
             ColumnTitle(title: title, subtitle: subtitle, style: .title3, weight: .semibold)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let newChat {
                 newChat
             }
         }
-        .padding(.leading, Hover.rowContentInset)
+        // An avatar's button has its own margin, as New chat's at the other end.
+        .padding(.leading, Leading.self == EmptyView.self ? Hover.rowContentInset : Hover.rowInset)
         .padding(.trailing, Hover.rowInset)
         .padding(.vertical, 4)
         .padding(.bottom, 6)
+    }
+}
+
+extension SessionListHeader where Leading == EmptyView {
+    init(title: String, subtitle: String? = nil, newChat: NewChatButton? = nil) {
+        self.init(title: title, subtitle: subtitle, newChat: newChat) { EmptyView() }
     }
 }
 

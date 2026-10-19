@@ -33,9 +33,86 @@ struct AttachmentCardView: View {
 
     @State private var isHovering = false
 
+    /// The card's size and shape: on iOS larger and rounder, as the Claude app's
+    /// attachments in its composer card.
+    struct Metrics {
+        var size: CGSize
+        var cornerRadius: CGFloat
+        var thumbnail: CGFloat
+        var thumbnailRadius: CGFloat
+        /// The ✕'s circle.
+        var removeSize: CGFloat
+
+        static var current: Metrics {
+            #if os(macOS)
+            Metrics(size: CGSize(width: 200, height: 40), cornerRadius: 4, thumbnail: 28, thumbnailRadius: 3,
+                    removeSize: 18)
+            #else
+            Metrics(size: CGSize(width: 210, height: 56), cornerRadius: 14, thumbnail: 40, thumbnailRadius: 9,
+                    removeSize: 24)
+            #endif
+        }
+    }
+
+    /// The space between cards in the composer.
+    static var spacing: CGFloat {
+        #if os(macOS)
+        6
+        #else
+        8
+        #endif
+    }
+
+    private var metrics: Metrics { .current }
+
     var body: some View {
+        #if os(iOS)
+        if fileIcon == nil {
+            imageTile
+        } else {
+            card
+        }
+        #else
+        card
+        #endif
+    }
+
+    #if os(iOS)
+    /// On iOS an image is a square of its own picture, ✕ at its corner, as the Claude
+    /// app's composer shows one.
+    private var imageTile: some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        return thumbnailView(size: Self.tileSize, cornerRadius: 16)
+            .overlay { shape.strokeBorder(Color.primary.opacity(0.1), lineWidth: 1) }
+            .overlay(alignment: .topTrailing) {
+                Button(action: onRemove) {
+                    Label("Remove \(name)", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.black)
+                        .frame(width: 24, height: 24)
+                        .background(.white, in: .circle)
+                        .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                        // A touch target larger than the circle.
+                        .padding(6)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(isSending)
+            }
+            .opacity(isSending ? 0.6 : 1)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Image \(name), \(detail)")
+            .accessibilityAction(named: "Remove") { if !isSending { onRemove() } }
+    }
+
+    /// An image tile's side.
+    static let tileSize: CGFloat = 84
+    #endif
+
+    private var card: some View {
         HStack(spacing: 8) {
-            thumbnailView
+            thumbnailView(size: metrics.thumbnail, cornerRadius: metrics.thumbnailRadius)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .uiFont(.caption)
@@ -49,13 +126,10 @@ struct AttachmentCardView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 22)
-        .frame(width: 200, height: 40)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4).strokeBorder(.separator, lineWidth: 1)
-        }
+        .padding(.leading, (metrics.size.height - metrics.thumbnail) / 2)
+        .padding(.trailing, metrics.removeSize + 4)
+        .frame(width: metrics.size.width, height: metrics.size.height)
+        .attachmentCardBackground(metrics)
         .overlay(alignment: .trailing) {
             if showsRemove {
                 Button(action: onRemove) {
@@ -66,7 +140,7 @@ struct AttachmentCardView: View {
                 }
                 .hoverButtonStyle(.circle, padding: 3)
                 .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
+                .frame(width: metrics.removeSize, height: metrics.removeSize)
                 .background(.background.opacity(0.8), in: .circle)
                     .padding(.trailing, 4)
                     .disabled(isSending)
@@ -89,7 +163,7 @@ struct AttachmentCardView: View {
         #endif
     }
 
-    @ViewBuilder private var thumbnailView: some View {
+    private func thumbnailView(size: CGFloat, cornerRadius: CGFloat) -> some View {
         Group {
             if let thumbnail {
                 Image(decorative: thumbnail, scale: 1)
@@ -102,8 +176,8 @@ struct AttachmentCardView: View {
                     .background(.quaternary)
             }
         }
-        .frame(width: 28, height: 28)
-        .clipShape(.rect(cornerRadius: 3))
+        .frame(width: size, height: size)
+        .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
@@ -116,7 +190,7 @@ struct UploadingCardView: View {
         HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-                .frame(width: 28, height: 28)
+                .frame(width: metrics.thumbnail, height: metrics.thumbnail)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .uiFont(.caption)
@@ -128,13 +202,27 @@ struct UploadingCardView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, 6)
-        .frame(width: 200, height: 40)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4).strokeBorder(.separator, lineWidth: 1)
-        }
+        .padding(.leading, (metrics.size.height - metrics.thumbnail) / 2)
+        .frame(width: metrics.size.width, height: metrics.size.height)
+        .attachmentCardBackground(metrics)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Uploading \(name)")
+    }
+
+    private var metrics: AttachmentCardView.Metrics { .current }
+}
+
+private extension View {
+    /// A card's fill and outline: on the Mac a faint box, on iOS a rounded tile on the
+    /// composer's glass.
+    func attachmentCardBackground(_ metrics: AttachmentCardView.Metrics) -> some View {
+        let shape = RoundedRectangle(cornerRadius: metrics.cornerRadius, style: .continuous)
+        #if os(macOS)
+        return background(.quaternary.opacity(0.5), in: shape)
+            .overlay { shape.strokeBorder(.separator, lineWidth: 1) }
+        #else
+        return background(Color.primary.opacity(0.06), in: shape)
+            .overlay { shape.strokeBorder(Color.primary.opacity(0.1), lineWidth: 1) }
+        #endif
     }
 }

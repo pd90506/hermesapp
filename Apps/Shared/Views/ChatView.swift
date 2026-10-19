@@ -22,7 +22,7 @@ struct ChatView: View {
     @State private var scroll = ChatScroll()
     /// The newest rows first, the older ones in the frames after (`TranscriptWindow`).
     @State private var window: TranscriptWindow
-    /// The scroll view's own width, scroller included (`steadyColumn`).
+    /// The scroll view's own width, scroller included (`steadyColumn`); macOS only.
     @State private var chatWidth: CGFloat?
     @Environment(\.textSizes) private var sizes
     @Environment(\.surfaces) private var surfaces
@@ -66,7 +66,21 @@ struct ChatView: View {
                 .steadyColumn(maxWidth: Self.contentWidth(textSize: sizes.content), sideRoom: Self.sideRoom,
                               in: chatWidth)
             }
+            #if os(macOS)
+            // Not on iOS, which has no scroller to make room for: there the column took the
+            // width measured before a turn to landscape and back, held the scroll view at
+            // it, and so never measured the narrower one again; the chat and its composer
+            // ran off the screen's right edge (VM, 2026-10-19).
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
+            #endif
+            #if os(iOS)
+            // The keyboard goes as on iOS's own chats: a drag down on the transcript takes
+            // it along under the finger (back up, it stays), and a tap on the transcript
+            // puts it away. Before, nothing did, once the composer had the keyboard.
+            .scrollDismissesKeyboard(.interactively)
+            .contentShape(.rect)
+            .simultaneousGesture(TapGesture().onEnded { Self.dismissKeyboard() })
+            #endif
             .environment(\.visibleBlocks, visibleBlocks)
             .environment(\.sessionFolder, session.info?.cwd)
             .transcriptWindow(window, isEmpty: session.transcript.items.isEmpty) { [session] in
@@ -88,20 +102,14 @@ struct ChatView: View {
             }
             .promptScrolling(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks, proxy: proxy)
         }
-        .safeAreaInset(edge: .bottom) {
-            // As wide as the messages' text (the content width less its padding).
-            ComposerView(composer: composer, isConnected: server.isConnected)
-                .environment(\.chatIsShown, isShown)
-                .disabled(!isShown)
-                .frame(maxWidth: Self.contentWidth(textSize: sizes.content) - 32)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 16)
-                #if os(macOS)
-                .padding(.horizontal, PromptRail.room)
-                #endif
-                .padding(.vertical, 10)
-                .background { composerBar }
-        }
+        #if os(macOS)
+        .safeAreaInset(edge: .bottom) { composerRow }
+        #else
+        // A bar, so the messages blur away under the floating card, as under iOS's own bars.
+        .safeAreaBar(edge: .bottom) { composerRow }
+        // The theme's chat colour, as the Mac's chat card: not the system's black in dark.
+        .background { surfaces.chat.ignoresSafeArea() }
+        #endif
         // The title is the column's (`RootView`), as several chats are kept built.
         #if os(macOS)
         // No toolbar background over the chat. Its title bar holds no controls, and
@@ -111,21 +119,41 @@ struct ChatView: View {
         #endif
     }
 
-    /// Under the composer. On the Mac the chat's own colour, the transcript fading into
-    /// it above the composer, as Desktop's; on iOS the system's bar.
-    @ViewBuilder private var composerBar: some View {
-        #if os(macOS)
-        surfaces.chat
-            .overlay(alignment: .top) {
-                LinearGradient(colors: [surfaces.chat.opacity(0), surfaces.chat], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 16)
-                    .offset(y: -16)
-                    .allowsHitTesting(false)
+    /// The composer, as wide as the messages' text (the content width less its padding).
+    /// On the Mac on a bar of the chat's colour, the transcript fading into it, as
+    /// Desktop's; on iOS a card floating over the chat, as the Claude app's.
+    private var composerRow: some View {
+        ComposerView(composer: composer, isConnected: server.isConnected)
+            .environment(\.chatIsShown, isShown)
+            .disabled(!isShown)
+            .frame(maxWidth: Self.contentWidth(textSize: sizes.content) - 32)
+            .frame(maxWidth: .infinity)
+            #if os(macOS)
+            .padding(.horizontal, 16)
+            .padding(.horizontal, PromptRail.room)
+            .padding(.vertical, 10)
+            .background {
+                surfaces.chat
+                    .overlay(alignment: .top) {
+                        LinearGradient(colors: [surfaces.chat.opacity(0), surfaces.chat], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 16)
+                            .offset(y: -16)
+                            .allowsHitTesting(false)
+                    }
             }
-        #else
-        Rectangle().fill(.bar)
-        #endif
+            #else
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 6)
+            #endif
     }
+
+    #if os(iOS)
+    /// Whatever has the keyboard (the composer's text view) gives it up.
+    private static func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+    #endif
 
     private func loadOlderMessages() async {
         let offset = session.transcript.nextOlderOffset

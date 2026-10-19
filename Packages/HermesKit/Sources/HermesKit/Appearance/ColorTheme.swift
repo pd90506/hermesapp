@@ -7,8 +7,8 @@ import Foundation
 /// `[client choice]` Kept by the app, across launches. Most names and accents are Hermes
 /// Desktop's themes (`apps/shared/src/theme-presets.ts`, each theme's `primary`), and the
 /// default is Desktop's (Nous). Codex and Claude Code are the app's own, after those apps
-/// (Desktop has neither). On the Mac a theme also paints the window's surfaces, as
-/// Desktop's do (`surfaces`); iOS keeps the platform's.
+/// (Desktop has neither). A theme also paints the app's surfaces (`surfaces`): the Mac
+/// window's, as Desktop's do, and on iOS the chat and the list and settings pages.
 public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
     /// Hermes Desktop's default theme: GitHub's neutrals and Nous blue.
     case nous

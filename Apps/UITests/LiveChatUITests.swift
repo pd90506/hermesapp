@@ -316,7 +316,7 @@ final class LiveChatUITests: XCTestCase {
     /// build whose rail a person can drag.
     @MainActor
     private func checkProfileRailIsFixed(_ app: XCUIApplication, rail: XCUIElement) {
-        XCTAssertEqual(rail.frame.width, 64, accuracy: 1, "the rail's width")
+        XCTAssertEqual(rail.frame.width, 54, accuracy: 1, "the rail's width")
         for title in ["Hide Sidebar", "Show Sidebar", "Toggle Sidebar"] {
             XCTAssertFalse(app.menuBars.menuItems[title].exists, "the menus offer \(title)")
         }

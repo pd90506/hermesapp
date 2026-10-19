@@ -97,12 +97,15 @@ struct NewChatButton: View {
 /// selected or hovered, with a pill on the rail's leading edge, tall when selected and
 /// short on hover. iOS has no pointer, so there the name sits under the avatar.
 struct ProfileRailItem: View {
+    // On the Mac narrower than it was (64 pt, 40 pt avatars): the user found the rail too
+    // wide beside the session list (2026-10-19).
     #if os(macOS)
-    static let width: CGFloat = 64
+    static let width: CGFloat = 54
+    static let avatarSize: CGFloat = 36
     #else
     static let width: CGFloat = 76
-    #endif
     static let avatarSize: CGFloat = 40
+    #endif
     /// Space above and below the avatar.
     static let verticalPadding: CGFloat = 4
 

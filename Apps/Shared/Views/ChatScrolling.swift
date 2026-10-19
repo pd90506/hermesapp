@@ -90,6 +90,13 @@ struct SteadyColumn: ViewModifier {
     /// Whether the chat's end is on screen, for the prompt it is at (`PromptRail`).
     /// Observed, and set only when it changes.
     private(set) var isAtEnd = true
+    /// Whether the chat is scrolled well up from its end, for the scroll-to-bottom
+    /// button (`ScrollToBottomButton`). Observed, and set only when it changes.
+    private(set) var isAwayFromEnd = false
+
+    /// How far up from the end the button shows: Desktop's (use-stick-to-bottom's
+    /// near-bottom band, 70 px), so a nudge or a reply's last lines don't bring it up.
+    nonisolated static let awayFromEndDistance: CGFloat = 70
 
     /// Makes `change` (a fold opening or closing) and keeps the content on screen where
     /// it was, in the same update.
@@ -112,8 +119,22 @@ struct SteadyColumn: ViewModifier {
         return shownBottom >= geometry.contentSize.height - 8
     }
 
+    /// Whether the visible area's bottom is more than `awayFromEndDistance` above the
+    /// content's bottom.
+    nonisolated static func isAwayFromEnd(_ geometry: ScrollGeometry) -> Bool {
+        let shownBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
+        return shownBottom < geometry.contentSize.height - awayFromEndDistance
+    }
+
+    /// The scroll-to-bottom button: down to the newest message, smoothly; at once with
+    /// Reduce Motion.
+    func scrollToEnd(reduceMotion: Bool = false) {
+        withAnimation(reduceMotion ? nil : Motion.scrollToEnd) { position.scrollTo(edge: .bottom) }
+    }
+
     fileprivate func scrolled(to y: CGFloat) { shownY = y }
     fileprivate func reachedEnd(_ atEnd: Bool) { isAtEnd = atEnd }
+    fileprivate func leftEnd(_ away: Bool) { isAwayFromEnd = away }
 }
 
 extension EnvironmentValues {
@@ -144,6 +165,9 @@ private struct ChatScrolling: ViewModifier {
             }
             .onScrollGeometryChange(for: Bool.self, of: { ChatScroll.isAtEnd($0) }) { _, atEnd in
                 scroll.reachedEnd(atEnd)
+            }
+            .onScrollGeometryChange(for: Bool.self, of: { ChatScroll.isAwayFromEnd($0) }) { _, away in
+                scroll.leftEnd(away)
             }
     }
 }

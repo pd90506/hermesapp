@@ -17,6 +17,7 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
     @ViewBuilder var content: Content
     /// How far a drag in progress has moved the panel from where it rests.
     @State private var drag: CGFloat = 0
+    @Environment(\.surfaces) private var surfaces
     /// The panel is in the hierarchy though closed: about to slide in, or sliding out.
     @State private var isMounted = false
 
@@ -58,7 +59,8 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
                         .background {
                             UnevenRoundedRectangle(bottomTrailingRadius: Self.cornerRadius,
                                                    topTrailingRadius: Self.cornerRadius, style: .continuous)
-                                .fill(.background)
+                                // The theme's frame, as the Mac's profile rail.
+                                .fill(surfaces.frame)
                                 // Off screen, none along the screen's edge.
                                 .shadow(color: .black.opacity(0.15 * shown / width), radius: 12)
                                 .ignoresSafeArea()

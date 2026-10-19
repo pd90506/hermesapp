@@ -11,7 +11,7 @@ struct SessionSourcesSettingsView: View {
     var body: some View {
         @Bindable var model = model
 
-        Form {
+        ThemedForm {
             Section {
                 Picker("Source", selection: $model.sourceSettings.newSessionSource) {
                     Text("Server default").tag(String?.none)
@@ -45,7 +45,6 @@ struct SessionSourcesSettingsView: View {
                 Text("Sessions without a source are always shown. Hiding a source only filters the list; nothing is deleted.")
             }
         }
-        .formStyle(.grouped)
         .navigationTitle("Session Sources")
     }
 }

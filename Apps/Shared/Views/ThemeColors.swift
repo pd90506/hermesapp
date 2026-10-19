@@ -53,8 +53,9 @@ nonisolated func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
 extension View {
     /// The theme's accent as the tint of everything under it: controls, the user's
     /// messages, selected rows and the app's other marks (`.tint`). Plain keeps the
-    /// system's accent. On the Mac also the theme's surfaces (`ThemeSurfaces`), for the
-    /// views that paint them.
+    /// system's accent. Also the theme's surfaces (`ThemeSurfaces`), for the views that
+    /// paint them: on iOS too, whose system black in dark the Mac never shows (the user,
+    /// 2026-10-19).
     func colorTheme(_ theme: ColorTheme) -> some View {
         modifier(ColorThemeModifier(theme: theme))
     }
@@ -66,14 +67,12 @@ private struct ColorThemeModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .tint(theme.accentColor)
-            #if os(macOS)
-            .environment(\.surfaces, SurfaceColors(theme.macSurfaces))
-            #endif
+            .environment(\.surfaces, SurfaceColors(theme.nativeSurfaces))
     }
 }
 
 /// A theme's surfaces as colours that follow light and dark. The defaults, before a
-/// theme applies (and on iOS, which keeps the platform's surfaces), are the system's.
+/// theme applies, are the system's.
 struct SurfaceColors {
     /// The window's frame: the strip along the top and the profile rail.
     var frame: Color
@@ -87,42 +86,119 @@ struct SurfaceColors {
     var selection: AnyShapeStyle
     /// The user's messages.
     var userBubble: AnyShapeStyle
+    /// On iOS, under a grouped list or form (the session list, Settings): in light the
+    /// chrome, as the system's grey page; in dark the chat, not the chrome, which in
+    /// several themes is nearly black.
+    var page: Color
+    /// On iOS, a grouped list's or form's rows, on `page`.
+    var row: Color
 
-    static let system = SurfaceColors(
-        frame: Color.secondary.opacity(0.12), chrome: Color.secondary.opacity(0.08), chat: Color.clear,
-        composer: {
-            #if os(macOS)
-            Color(nsColor: .controlBackgroundColor)
-            #else
-            Color(uiColor: .secondarySystemBackground)
-            #endif
-        }(),
-        selection: AnyShapeStyle(.tint.opacity(0.2)), userBubble: AnyShapeStyle(.tint.opacity(0.15)))
+    static let system: SurfaceColors = {
+        #if os(macOS)
+        let composer = Color(nsColor: .controlBackgroundColor)
+        let page = Color(nsColor: .windowBackgroundColor), row = composer
+        #else
+        let composer = Color(uiColor: .secondarySystemBackground)
+        let page = Color(uiColor: .systemGroupedBackground), row = Color(uiColor: .secondarySystemGroupedBackground)
+        #endif
+        return SurfaceColors(
+            frame: Color.secondary.opacity(0.12), chrome: Color.secondary.opacity(0.08), chat: Color.clear,
+            composer: composer, selection: AnyShapeStyle(.tint.opacity(0.2)),
+            userBubble: AnyShapeStyle(.tint.opacity(0.15)), page: page, row: row)
+    }()
 }
 
-#if os(macOS)
 extension ColorTheme {
-    /// The Mac's surfaces; Plain's tinted with the system's accent.
+    /// The surfaces this platform paints; Plain's tinted with the system's accent (on
+    /// iOS its blue).
     @MainActor
-    var macSurfaces: ThemeSurfaces {
+    var nativeSurfaces: ThemeSurfaces {
         guard self == .plain else { return surfaces }
+        #if os(macOS)
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
         let color = RGBAColor(red: accent.redComponent, green: accent.greenComponent, blue: accent.blueComponent)
         return surfaces(accent: MarkdownColors.Pair(light: color, dark: color))
+        #else
+        func color(_ style: UIUserInterfaceStyle) -> RGBAColor {
+            var (r, g, b, a): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+            UIColor.systemBlue.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)).getRed(&r, green: &g, blue: &b, alpha: &a)
+            return RGBAColor(red: r, green: g, blue: b)
+        }
+        return surfaces(accent: MarkdownColors.Pair(light: color(.light), dark: color(.dark)))
+        #endif
     }
 }
 
 extension SurfaceColors {
     init(_ surfaces: ThemeSurfaces) {
         func color(_ pair: MarkdownColors.Pair) -> Color {
+            #if os(macOS)
             Color(nsColor: dynamicColor(light: NSColor(pair.light), dark: NSColor(pair.dark)))
+            #else
+            Color(uiColor: dynamicColor(light: UIColor(pair.light), dark: UIColor(pair.dark)))
+            #endif
         }
         self.init(frame: color(surfaces.frame), chrome: color(surfaces.chrome), chat: color(surfaces.chat), composer: color(surfaces.composer),
                   selection: surfaces.selection.map { AnyShapeStyle(color($0)) } ?? Self.system.selection,
-                  userBubble: surfaces.userBubble.map { AnyShapeStyle(color($0)) } ?? Self.system.userBubble)
+                  userBubble: surfaces.userBubble.map { AnyShapeStyle(color($0)) } ?? Self.system.userBubble,
+                  page: color(MarkdownColors.Pair(light: surfaces.chrome.light, dark: surfaces.chat.dark)),
+                  row: color(surfaces.composer))
     }
 }
-#endif
+
+extension View {
+    /// On iOS, a grouped list or form on the theme's `page`, in place of the system's
+    /// (black in dark). Its rows take `themedRows()`. Nothing on the Mac, where the
+    /// views paint their own.
+    func themedPage() -> some View {
+        modifier(ThemedPage())
+    }
+
+    /// On iOS, the rows of the sections this wraps on the theme's `row` colour.
+    func themedRows() -> some View {
+        modifier(ThemedRows())
+    }
+}
+
+/// A grouped form (Settings) on the theme's page and rows (`themedPage`, `themedRows`).
+struct ThemedForm<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        Form {
+            Group { content }
+                .themedRows()
+        }
+        .formStyle(.grouped)
+        .themedPage()
+    }
+}
+
+private struct ThemedPage: ViewModifier {
+    @Environment(\.surfaces) private var surfaces
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .scrollContentBackground(.hidden)
+            .background { surfaces.page.ignoresSafeArea() }
+        #else
+        content
+        #endif
+    }
+}
+
+private struct ThemedRows: ViewModifier {
+    @Environment(\.surfaces) private var surfaces
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.listRowBackground(surfaces.row)
+        #else
+        content
+        #endif
+    }
+}
 
 extension EnvironmentValues {
     /// The theme's surfaces (`colorTheme`).

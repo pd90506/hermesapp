@@ -58,9 +58,12 @@ struct SessionListView: View {
             pinnedBotChat
             List(selection: $selection) {
                 if let server = model.sessionsServer {
-                    botSection(server)
-                    pinnedSection(server)
-                    sessionsSection(server)
+                    Group {
+                        botSection(server)
+                        pinnedSection(server)
+                        sessionsSection(server)
+                    }
+                    .themedRows()
                 }
             }
             #if os(macOS)
@@ -73,6 +76,8 @@ struct SessionListView: View {
         // On the panel's own colour (`WindowLayout`).
         .scrollContentBackground(.hidden)
         #else
+        // On the theme's page, as the chat is on its chat colour (`ChatView`).
+        .themedPage()
         // The header shows the name; the navigation title stays for the back button.
         .navigationTitle(profileName ?? "Sessions")
         .toolbar(removing: .title)

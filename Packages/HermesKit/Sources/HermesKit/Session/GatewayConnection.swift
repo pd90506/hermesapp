@@ -135,12 +135,18 @@ public final class GatewayConnection {
     @ObservationIgnored private let configuration: GatewayClient.Configuration
     @ObservationIgnored private let backoff: @Sendable (Int) -> Duration
 
+    /// Whether its chats show streamed text a batch at a time (`StreamedTextQueue`), as
+    /// the apps do; off, each delta shows as it comes.
+    public nonisolated let coalescesStreamedText: Bool
+
     public init(
         configuration: GatewayClient.Configuration = .init(),
-        backoff: @escaping @Sendable (Int) -> Duration = GatewayConnection.exponentialBackoff
+        backoff: @escaping @Sendable (Int) -> Duration = GatewayConnection.exponentialBackoff,
+        coalescesStreamedText: Bool = false
     ) {
         self.configuration = configuration
         self.backoff = backoff
+        self.coalescesStreamedText = coalescesStreamedText
     }
 
     /// 0.5 s, 1 s, 2 s, … capped at 30 s, with ±20 % jitter.

@@ -59,7 +59,8 @@ final class ServerConnection: Identifiable {
     fileprivate(set) var isConnecting = false
     fileprivate var connectedEndpoint: GatewayEndpoint?
 
-    let connection = GatewayConnection()
+    /// Its chats show streamed text a batch at a time, as Desktop does (`StreamedTextQueue`).
+    let connection = GatewayConnection(coalescesStreamedText: true)
     #if os(macOS)
     /// The Hermes backend this server is, when the app runs it on this Mac ("This Mac").
     let backend: LocalBackendProcess?

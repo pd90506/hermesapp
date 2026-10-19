@@ -78,6 +78,10 @@ struct ChatView: View {
             // it along under the finger (back up, it stays), and a tap on the transcript
             // puts it away. Before, nothing did, once the composer had the keyboard.
             .scrollDismissesKeyboard(.interactively)
+            // The messages blur away under the composer's bar, down to the screen's edge,
+            // as in the Claude app. The automatic style, which the bar alone gave, left
+            // them sharp under and around the card (VM, 2026-10-19).
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
             .contentShape(.rect)
             .simultaneousGesture(TapGesture().onEnded { Self.dismissKeyboard() })
             #endif
@@ -143,7 +147,9 @@ struct ChatView: View {
             }
             #else
             .padding(.horizontal, 12)
-            .padding(.top, 6)
+            // Room above the card inside the bar: the blur (`scrollEdgeEffectStyle`) starts
+            // there, so a line above the card is already soft as it reaches it.
+            .padding(.top, 20)
             .padding(.bottom, 6)
             #endif
     }

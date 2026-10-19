@@ -765,6 +765,9 @@ extension MarkdownSelectionTextView {
         view.isEditable = false
         view.isSelectable = true
         view.drawsBackground = false
+        // Links keep the theme's link colour (each run's foreground): the default link
+        // attributes paint every link the system's blue.
+        view.linkTextAttributes = [.underlineStyle: NSUnderlineStyle.single.rawValue, .cursor: NSCursor.pointingHand]
         view.textContainerInset = .zero
         view.textContainer?.lineFragmentPadding = 0
         // SwiftUI owns the frame; the height comes from `sizeThatFits`.
@@ -990,6 +993,8 @@ struct SelectableMarkdownText: UIViewRepresentable {
         view.isSelectable = true
         view.isScrollEnabled = false
         view.backgroundColor = .clear
+        // Links keep the theme's link colour (each run's foreground), not the tint.
+        view.linkTextAttributes = [.underlineStyle: NSUnderlineStyle.single.rawValue]
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
         view.observeAppearance()

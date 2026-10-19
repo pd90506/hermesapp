@@ -178,10 +178,19 @@ struct ColorThemePicker: View {
 
         private static let size: CGFloat = 26
 
+        /// The system's accent for System: `.accentColor` is the tint, the theme picked.
+        private static var systemAccent: Color {
+            #if os(macOS)
+            Color(nsColor: .controlAccentColor)
+            #else
+            Color(uiColor: .systemBlue)
+            #endif
+        }
+
         var body: some View {
             VStack(spacing: 5) {
                 Circle()
-                    .fill(theme.accentColor ?? .accentColor)
+                    .fill(theme.accentColor ?? Self.systemAccent)
                     .overlay { Circle().strokeBorder(.black.opacity(0.12)) }
                     .frame(width: Self.size, height: Self.size)
                     .padding(3)

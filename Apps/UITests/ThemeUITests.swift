@@ -168,6 +168,13 @@ final class ThemeUITests: XCTestCase {
                 mode.buttons[name].firstMatch.tap()
                 RunLoop.current.run(until: Date().addingTimeInterval(1))
                 attach(app, "appearance, \(theme), \(name.lowercased())")
+                // The preview, below the text sizes.
+                let preview = app.descendants(matching: .any)["themePreview"].firstMatch
+                app.swipeUp()
+                XCTAssertTrue(eventually { preview.exists && preview.isHittable }, "the preview on screen")
+                attach(app, "preview, \(theme), \(name.lowercased())")
+                app.swipeDown()
+                XCTAssertTrue(eventually { swatch.isHittable }, "back at the swatches")
             }
         }
 

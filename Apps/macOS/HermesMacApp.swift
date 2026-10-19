@@ -19,6 +19,10 @@ struct HermesMacApp: App {
                 .onAppear { UITestLaunch.placeWindowsOnBuiltInDisplay() }
                 #endif
         }
+        // A compact title bar: the window buttons sit higher, and the frame's strip under
+        // them, which is as tall as they are centred (`WindowLayout`), is shorter (the
+        // user found it too tall, 2026-10-19).
+        .windowToolbarStyle(.unifiedCompact)
         // The first window, before there is a saved frame.
         .defaultWindowPlacement { _, context in
             WindowPlacement(size: Self.defaultWindowSize(in: context.defaultDisplay.visibleRect.size))

@@ -126,6 +126,21 @@ extension GatewayConnection {
         return try await open(row)
     }
 
+    /// Branches `session` into a new chat holding the conversation up to `item`
+    /// (`session.branch`, `MessageBranch`) and opens it, as `fork` opens its copy. The
+    /// gateway names it after the parent's lineage ("Title #2").
+    @discardableResult
+    public func branch(_ session: ChatSession, at item: TranscriptItem) async throws -> ChatSession {
+        guard !isProtected(session) else { throw SessionActionError.botChatProtected }
+        let branched = try await session.branch(at: item)
+        // A chat of the launch profile (no profile name) opens as one.
+        guard let profile = session.profile else { return try await open(SessionSummary(id: branched.storedSessionID)) }
+        if listProfile == profile { await refreshSessionList() }
+        let row = history.first { $0.profile == profile && $0.summary.id == branched.storedSessionID }
+            ?? HistoryEntry(profile: profile, summary: SessionSummary(id: branched.storedSessionID))
+        return try await open(row)
+    }
+
     // MARK: Delete
 
     /// Deletes a chat and its messages for good. If it is on screen it is closed;

@@ -707,6 +707,9 @@ public final class GatewayConnection {
         case SessionActionError.reservedTitle: return "\"\(Bot.chatTitle)\" is reserved for the bot's own chat."
         case SessionActionError.emptyTitle: return "Enter a title."
         case SessionActionError.notOpen: return "Open the chat first, then rename it."
+        case MessageBranchError.busy: return "Stop the current reply, or wait for it to finish, then branch."
+        case MessageBranchError.messageNotFound:
+            return "That message isn't saved in the chat yet. Try again in a moment."
         case let urlError as URLError: return urlError.localizedDescription
         default: return String(describing: error)
         }

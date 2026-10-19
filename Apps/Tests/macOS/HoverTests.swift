@@ -498,8 +498,9 @@ private func entries(_ count: Int) -> [HistoryEntry] {
         CGRect(x: row.minX, y: row.maxY - 26, width: 26, height: 26)
     }
 
+    /// Copy's light grey icon (`MessageActionBar.ink`) shows on the white window.
     private func barShown(_ ui: HostWindow, _ row: CGRect) -> Bool {
-        ui.darkest(in: copyButton(of: row).insetBy(dx: 4, dy: 4), of: ui.snapshot()) < 0.6
+        ui.darkest(in: copyButton(of: row).insetBy(dx: 4, dy: 4), of: ui.snapshot()) < 0.85
     }
 
     /// From the text, down across the bar's empty stretch and the strip just

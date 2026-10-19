@@ -191,6 +191,13 @@ extension GatewayClient {
                        params: SessionBranchStoredParams(parentSessionID: parentID, profile: profile))
     }
 
+    /// Copies a live session's first `count` visible turns into a new session (Branch).
+    /// 4008 when it has no visible turns yet.
+    public func branch(sessionID: String, count: Int?, idempotencyKey: String? = nil) async throws -> SessionBranchResult {
+        try await call(GatewayMethod.sessionBranch,
+                       params: SessionBranchParams(sessionID: sessionID, count: count, idempotencyKey: idempotencyKey))
+    }
+
     /// `PROMPT_SUBMIT_REQUEST_TIMEOUT_MS` in the Desktop app.
     public static let promptSubmitTimeout: Duration = .seconds(1800)
 

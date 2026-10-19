@@ -114,6 +114,11 @@ struct SessionListView: View {
                 banners
                 SessionListTabBar(tab: $tab, cronAlerts: cronAlerts)
             }
+            #if os(macOS)
+            .background { SessionListBottomBand() }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("sessionListBottomBar")
+            #endif
         }
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Title", text: $newTitle)

@@ -342,6 +342,41 @@ public final class ChatSession: Identifiable {
     /// Most rows read from a gateway that pages but ignores `order`.
     nonisolated static let orderlessRowLimit = 20_000
 
+    /// The whole stored transcript, oldest first, 500 rows a page, as Desktop reads it to
+    /// branch from a message (`getAllSessionMessages`). Bounded like `fetchLatest`.
+    func readAllStoredRows() async throws -> [StoredMessage] {
+        guard let source = connection?.messagesSource, let key = storedSessionID else {
+            throw MessageBranchError.messageNotFound
+        }
+        var rows: [StoredMessage] = []
+        var seen = Set<Int>()
+        while true {
+            try Task.checkCancellation()
+            guard rows.count < Self.orderlessRowLimit else { throw HistoryReadError.tooLong(rows: Self.orderlessRowLimit) }
+            let page = try await source.messagesPage(SessionMessagesQuery(
+                sessionID: key, profile: profile, order: .oldest, limit: 500, offset: rows.count))
+            let fresh = page.messages.filter { $0.id.map { seen.insert($0).inserted } ?? true }
+            rows += fresh
+            // A gateway that predates paging sends everything at once; a short page is the last.
+            guard let limit = page.pagination?.limit, limit > 0, page.messages.count >= limit else { break }
+            guard !fresh.isEmpty else { throw HistoryReadError.noProgress }
+        }
+        return rows
+    }
+
+    /// Branches this chat into a new one ending at `item`, a reply or prompt shown here
+    /// (`MessageBranch`). Refused while a turn runs, as Desktop does. Returns the new
+    /// session's ids; `GatewayConnection.branch` opens it.
+    func branch(at item: TranscriptItem) async throws -> SessionBranchResult {
+        guard !transcript.isRunning else { throw MessageBranchError.busy }
+        let rows = try await readAllStoredRows()
+        guard let count = MessageBranch.count(through: item, shown: transcript.items, stored: rows) else {
+            throw MessageBranchError.messageNotFound
+        }
+        let client = try await liveClient()
+        return try await client.branch(sessionID: sessionID, count: count, idempotencyKey: UUID().uuidString)
+    }
+
     /// After a fast-path reattach: pick up the (possibly rotated) stored key.
     func update(from snapshot: LiveSessionSnapshot) {
         if let key = snapshot.storedKey { storedSessionID = key }

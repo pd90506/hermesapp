@@ -255,6 +255,7 @@ private struct MessageRow: View {
     let session: ChatSession
     @Environment(\.surfaces) private var surfaces
     @Environment(ServerConnection.self) private var server
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         // Background work Hermes reported as a user turn: a line, not a prompt bubble.
@@ -300,7 +301,7 @@ private struct MessageRow: View {
                                 .background(surfaces.userBubble, in: .rect(cornerRadius: 12))
                         }
                         MessageActionBar(isHovering: isHovering, isNewest: isNewest,
-                                         alignment: .trailing, copy: copyMessage)
+                                         alignment: .trailing, timestamp: item.timestamp, copy: copyMessage)
                     }
                 }
             }
@@ -311,6 +312,7 @@ private struct MessageRow: View {
                 AssistantMessageContent(item: item, isHovering: isHovering, isNewest: isNewest,
                                         conversationSource: { ConversationMarkdown.export(session.transcript.items) },
                                         deliveredFiles: deliveredFiles,
+                                        branch: branchAction,
                                         copy: copyMessage)
             }
         case .tool:
@@ -323,6 +325,14 @@ private struct MessageRow: View {
     }
 
     private func copyMessage() { Clipboard.copy(ConversationMarkdown.messageSource(for: item)) }
+
+    /// Branch in New Chat from this message; not for a bot's Bot Chat, which isn't copied
+    /// (`SessionActionError.botChatProtected`).
+    private var branchAction: (() -> Void)? {
+        guard !server.connection.isProtected(session) else { return nil }
+        let (model, session, item, server) = (model, session, item, server)
+        return { Task { await model.branch(session, at: item, on: server) } }
+    }
 
     private var fileContext: GatewayFileContext {
         GatewayFileContext(profile: profile, sessionKey: session.storedSessionID, connection: server.connection,

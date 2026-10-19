@@ -38,4 +38,26 @@ struct ColorThemeTests {
         #expect(!colors.hasCustomColors)
         #expect(colors == MarkdownColors(preset: .catppuccin))
     }
+
+    /// The Mac's frame is the accent deepened, dark enough under white marks in every
+    /// theme; Plain deepens the system's accent in the app.
+    @Test func theFrameIsTheAccentDeepened() throws {
+        for theme in ColorTheme.allCases where theme != .plain {
+            let accent = try #require(theme.accent?.light, "\(theme)")
+            let frame = try #require(theme.frame, "\(theme)")
+            #expect(frame.alpha == 1, "\(theme)")
+            #expect(Self.luminance(frame) < Self.luminance(accent), "\(theme)")
+            #expect(Self.contrast(white: frame) >= 7, "\(theme): \(frame.hex)")
+        }
+        #expect(ColorTheme.plain.frame == nil)
+        #expect(ColorTheme.nous.frame?.hex == "#001E5B")
+    }
+
+    /// WCAG's relative luminance.
+    private static func luminance(_ color: RGBAColor) -> Double {
+        func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
+    }
+
+    private static func contrast(white color: RGBAColor) -> Double { 1.05 / (luminance(color) + 0.05) }
 }

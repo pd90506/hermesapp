@@ -6,10 +6,10 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: SidebarItem?
-    @State private var columns = NavigationSplitViewVisibility.all
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     #else
+    @State private var columns = NavigationSplitViewVisibility.all
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// The column shown when the split view is collapsed (iPhone): the session list,
     /// with the profiles' drawer over it (`ProfileDrawer`), or the chat. A new side chat
@@ -25,16 +25,6 @@ struct RootView: View {
 
     var body: some View {
         split
-        #if os(macOS)
-        // The sidebar, always: dragging its edge (or the sidebar shortcut) could collapse
-        // it, with nothing to bring the profiles back.
-        .onChange(of: columns) { _, visibility in
-            if visibility != .all { columns = .all }
-        }
-        // No toolbar background anywhere: macOS 26 showed it only while the pointer was
-        // over the title bar. A glass band of our own instead (`titleBarBand`).
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        #endif
         #if os(macOS)
         // The app must connect (`SettingsPresentation`): the Settings window, as the gear
         // opens it (`ProfileRailView`). The window stays until the user closes it.
@@ -91,26 +81,19 @@ struct RootView: View {
         }
     }
 
-    /// On macOS, as in Mail: one sidebar, the profile rail beside the session list on the
-    /// same glass panel (the window buttons sit on it), and the chat. On iPad three
+    /// On macOS, as in Slack: the profile rail and a strip along the top in the theme's
+    /// deep colour (the rail collapses), around a panel with the session list and the chat
+    /// (`WindowLayout`). On iPad three
     /// columns. On iPhone two, which collapse into a navigation stack (sessions → chat),
     /// with the profiles in a drawer over the session list: as a column of their own, Back
     /// from the list showed them alone, stretched over the screen (2026-10-18).
     @ViewBuilder private var split: some View {
         #if os(macOS)
-        NavigationSplitView(columnVisibility: $columns) {
-            HStack(spacing: 0) {
-                ProfileRailView()
-                Divider()
-                sessionList
-            }
-            // Always shown (`body` also undoes a collapse): the rail is the only way to
-            // switch profiles. The rail keeps its width; the session list takes the rest.
-            .toolbar(removing: .sidebarToggle)
-            .navigationSplitViewColumnWidth(min: ProfileRailItem.width + 1 + 260,
-                                            ideal: ProfileRailItem.width + 1 + 320,
-                                            max: ProfileRailItem.width + 1 + 480)
-        } detail: {
+        WindowLayout(color: model.markdownColors.preset.frameColor) {
+            ProfileRailView()
+        } list: {
+            sessionList
+        } chat: {
             chat
         }
         #else
@@ -186,9 +169,13 @@ struct RootView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        // The whole column, so the band spans it whatever is shown.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .titleBarBand()
+        #if os(macOS)
+        // The title bar shows no title (`WindowLayout`): the chat's title is over it.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            ChatHeader(title: chatTitle)
+        }
+        #endif
     }
 
     /// On iPhone, whether the chat on screen is still the one shown before the row just
@@ -415,46 +402,28 @@ private struct KeptChats: View {
     }
 }
 
-extension View {
-    /// On macOS, a glass band under the chat's title bar, as the App Store's: the
-    /// toolbar's height, in the chat's own color, with the chat that scrolls under it
-    /// showing through as a blur, the same in every state and whether or not the pointer
-    /// is over it (the system's toolbar background showed only under the pointer, as a
-    /// gray band with a line). Liquid Glass blurs the chat; in dark mode a shade over it
-    /// (`titleBarShade`) brings it back to the chat's color, as the glass alone was a
-    /// light slab there. The chat's background over the glass hid the rows under it,
-    /// clear glass showed them sharp with a mirrored line along its edge, and materials
-    /// drew a solid band (2026-10-18).
-    @ViewBuilder func titleBarBand() -> some View {
-        #if os(macOS)
-        overlay(alignment: .top) {
-            GeometryReader { proxy in
-                // The glass runs past the band and is cut to it: its rims drew a bright
-                // line along the band's bottom and tinted its top.
-                titleBarShade
-                    .background {
-                        Color.clear.glassEffect(.regular, in: .rect).padding(.vertical, -24)
-                    }
-                    .frame(height: proxy.safeAreaInsets.top)
-                    .clipped()
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .ignoresSafeArea(edges: .top)
+#if os(macOS)
+/// The chat's title over it, as a Slack channel's: the title bar shows none
+/// (`WindowLayout`). Also the window's title (`navigationTitle`), for the Window menu.
+private struct ChatHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .uiFont(.headline)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .frame(height: 48)
+            .background(.background)
+            // A line, not a Divider: in the overlay a Divider stood upright.
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(.separator).frame(height: 1)
             }
-            // The title bar stays the window's: clicks and drags go through.
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-        #else
-        self
-        #endif
+            .opacity(title.isEmpty ? 0 : 1)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("chatTitle")
     }
 }
-
-#if os(macOS)
-/// Over the band's glass in dark mode, the shade that brings it to the chat's color
-/// (the glass about 60 over the chat's 41, VM 2026-10-18); in light mode, none.
-private let titleBarShade = Color(nsColor: NSColor(name: nil) { appearance in
-    appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        ? NSColor(white: 0, alpha: 0.3) : .clear
-})
 #endif

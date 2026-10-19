@@ -570,6 +570,12 @@ final class AppModel {
         await perform(on: server) { _ = try await server.connection.fork(entry) }
     }
 
+    /// A new chat holding `session`'s conversation up to `item`, shown (Branch in New Chat).
+    func branch(_ session: ChatSession, at item: TranscriptItem, on server: ServerConnection) async {
+        activeServerID = server.id
+        await perform(on: server) { _ = try await server.connection.branch(session, at: item) }
+    }
+
     private func perform(on server: ServerConnection, _ action: () async throws -> Void) async {
         do {
             try await action()

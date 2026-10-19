@@ -62,6 +62,27 @@ struct SessionListTabBar: View {
     }
 }
 
+#if os(macOS)
+/// The band behind the session list's bottom bar and the hairline over it, always shown.
+/// The system's scroll edge effect drew them only while the pointer was over the list
+/// (asked for by the user, 2026-10-19: the hover look as the resting look). A light veil,
+/// not the opaque `.bar`, which showed as a white strip on the panel's colour.
+struct SessionListBottomBand: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.white.opacity(colorScheme == .dark ? 0.05 : 0.4))
+            // A hairline of its own: a bare `Divider` in an overlay stood upright.
+            .overlay(alignment: .top) {
+                Rectangle().fill(.separator).frame(height: 1)
+            }
+            .ignoresSafeArea(edges: .bottom)
+            .accessibilityHidden(true)
+    }
+}
+#endif
+
 /// The selected profile's scheduled jobs (the Cron Jobs tab): Desktop's sidebar Cron
 /// section as a list (`apps/desktop/src/app/chat/sidebar/cron-jobs-section.tsx`). A
 /// job's row shows its schedule, where it delivers and when it runs next; a tap shows

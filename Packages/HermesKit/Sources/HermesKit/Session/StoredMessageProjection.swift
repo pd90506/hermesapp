@@ -203,7 +203,7 @@ enum StoredMessageProjection {
         text(of: row.displayContent) ?? text(of: row.content) ?? ""
     }
 
-    private static func text(of value: JSONValue?) -> String? {
+    static func text(of value: JSONValue?) -> String? {
         switch value {
         case .string(let text)?: return text
         case .array(let parts)?:

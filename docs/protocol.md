@@ -1551,6 +1551,7 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
 | `session.archive` | `{session_id:<runtime or stored id>, archived, profile?}` | `{archived, session_key}` | sessions.py:337-352; methods_session.py:1252-1279 |
 | `session.delete` | `{session_id:<stored id>, profile?}` | `{deleted:<stored id>}` | sessions.py:294-303; methods_session.py:1175-1198 |
 | `session.branch_stored` | `{parent_session_id:<stored id>, profile?, source?, idempotency_key?, …}` (`session.create`'s params) | `{session_id, stored_session_id, message_count, messages_omitted:true, info}`, no `messages` | methods_session.py:330-493 |
+| `session.branch` | `{session_id:<runtime>, count?, name?, idempotency_key?}` | `{session_id, stored_session_id, title, parent, message_count, messages, info}` | methods_session.py:2202-2204; methods_session_branch.py:84-139 |
 
 - **Desktop uses REST for these.**
   - The endpoints are `PATCH /api/sessions/{id}` with `{title?, archived?, …}` and
@@ -1597,6 +1598,19 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
   - `[client choice]` The package lists the profile again and opens the copy with
     `session.resume`, which reuses the runtime the branch started on this socket. Bot Chats
     aren't forked (`.botChatProtected`).
+- **Branch from a message** (the "…" menu under a reply) is Desktop's "Branch in new chat"
+  (`branchLoadedSession`, `use-session-actions/index.ts:2928-3002`): `session.branch` on the
+  chat's live runtime with `count`.
+  - The gateway copies the first `count` of the parent's visible turns, its user and assistant
+    rows with text (`_visible_branch_history`, `methods_session_branch.py:21-25,108-109`), saves
+    the new row at once under the parent's next lineage title, and starts its runtime on this
+    socket.
+  - Like Desktop (`selectBranchMessages`, `use-session-actions/utils.ts:1791-1848`), the count
+    comes from the whole stored transcript (`GET /api/sessions/{id}/messages`, oldest first, 500
+    rows a page): the copied rows up to the message's row, found by its id, or for a message shown
+    before its row was read back, by role and text counted from the end (`MessageBranch`).
+  - `[client choice]` Refused while a turn runs (`MessageBranchError.busy`, Desktop's
+    `branchStopCurrent`); not offered in a Bot Chat. The branch opens as Fork's copy does.
 - **Pin** is not on the JSON-RPC surface.
   - Hermes keeps it in `sessions.pinned` and Desktop writes it through the dashboard's fenced
     REST `PATCH /api/sessions/{id} {pinned}` (`apps/desktop/src/api/sessions.ts:374-428`).

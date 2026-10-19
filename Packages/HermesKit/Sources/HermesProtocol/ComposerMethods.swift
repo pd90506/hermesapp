@@ -31,6 +31,8 @@ extension GatewayMethod {
     public static let sessionDelete = "session.delete"
     /// A copy of a stored session's whole transcript as a new session (`methods_session.py:489-493`).
     public static let sessionBranchStored = "session.branch_stored"
+    /// A live session's first `count` visible turns as a new session (`methods_session.py:2202-2204`).
+    public static let sessionBranch = "session.branch"
     /// Provider/model inventory for the picker (`tui_gateway/methods_complete.py:357-369`).
     public static let modelOptions = "model.options"
     /// One normalised config value (`tui_gateway/methods_config.py:258-270`).
@@ -673,7 +675,34 @@ public struct SessionBranchStoredParams: Sendable, Hashable, Codable {
     }
 }
 
-/// `session.branch_stored`'s answer: `session.create`'s shape without `messages`.
+/// `session.branch` (`tui_gateway/methods_session_branch.py:84-139`): the gateway copies the
+/// live session's visible user/assistant turns (`_visible_branch_history`, :21-25), the first
+/// `count` of them when given, into a new session, saves its row at once under the parent's
+/// next lineage title (`_persist_branch`, `_branch_title`) and starts its runtime on this
+/// socket. Desktop's "Branch in new chat" on a reply sends the turns up to that reply
+/// (`apps/desktop/src/app/session/hooks/use-session-actions/index.ts:2716-2745,2994-3002`).
+public struct SessionBranchParams: Sendable, Hashable, Codable {
+    /// The parent's runtime id.
+    public var sessionID: String
+    public var count: Int?
+    /// A retry with the same key gets the same branch, not a second one (`:85-99`).
+    public var idempotencyKey: String?
+
+    public init(sessionID: String, count: Int?, idempotencyKey: String? = nil) {
+        self.sessionID = sessionID
+        self.count = count
+        self.idempotencyKey = idempotencyKey
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case count
+        case sessionID = "session_id"
+        case idempotencyKey = "idempotency_key"
+    }
+}
+
+/// The answer of `session.branch_stored` (`session.create`'s shape without `messages`) and
+/// of `session.branch` (with them, which the package does not read).
 public struct SessionBranchResult: Sendable, Hashable, Codable {
     /// The new session's runtime id.
     public var sessionID: String

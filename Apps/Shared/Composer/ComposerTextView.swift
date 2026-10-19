@@ -63,7 +63,9 @@ extension ComposerTextView: NSViewRepresentable {
     /// `makeNSView` so tests can build it without SwiftUI).
     @MainActor
     static func makeScrollView(coordinator: Coordinator, text: String) -> ComposerScrollView {
-        let textView = ComposerNSTextView()
+        // TextKit 1 from the start (`measure` and `UniformLines` read the layout manager).
+        let textView = ComposerNSTextView(usingTextLayoutManager: false)
+        textView.attachUniformLines()
         textView.delegate = coordinator
         textView.setAccessibilityIdentifier(ComposerTextView.accessibilityIdentifier)
         textView.isRichText = false
@@ -83,10 +85,19 @@ extension ComposerTextView: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
+        // No work that starts when typing pauses: inline predictions, completion
+        // candidates, grammar checking and autocorrection. The first key after a pause was
+        // slow, and the lines moved while Chinese was typed (the user, 2026-10-19).
+        // Desktop's text area (Chromium) has none of them either.
+        textView.inlinePredictionType = .no
+        textView.isAutomaticTextCompletionEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
         textView.setAccessibilityLabel("Message")
         textView.string = text
 
         let scrollView = ComposerScrollView()
+        scrollView.contentView = ComposerClipView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         // Off until the text is taller than `maxHeight` (`Coordinator.measure`). An
@@ -273,6 +284,7 @@ extension ComposerTextView: NSViewRepresentable {
             let height = ceil(used + 2 * ComposerTextView.verticalInset)
             let overflows = height > parent.maxHeight + 0.5
             if scrollView?.hasVerticalScroller != overflows { scrollView?.hasVerticalScroller = overflows }
+            (scrollView?.contentView as? ComposerClipView)?.holdsTop = !overflows
             guard abs(parent.contentHeight - height) > 0.5 else { return }
             if moment == .edit {
                 parent.contentHeight = height
@@ -315,6 +327,46 @@ extension ComposerTextView: NSViewRepresentable {
     }
 }
 
+/// Keeps the text in place while it fits. Typing Chinese moved the lines above up and
+/// down (the user's report, 2026-10-19; not reproduced in the VM). One way it can: an
+/// input method's edits scroll the text view to its marked text, and while the text view
+/// is taller than the SwiftUI frame (a line being added, the frame not grown yet) that
+/// scrolls the clip by a few points, until the frame's update scrolls it back. Below
+/// `maxHeight` there is nothing to scroll to, so the clip stays at the top; past it, it
+/// scrolls as usual.
+final class ComposerClipView: NSClipView {
+    var holdsTop = true
+
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var bounds = super.constrainBoundsRect(proposedBounds)
+        if holdsTop { bounds.origin.y = 0 }
+        return bounds
+    }
+}
+
+/// Every line of the composer the font's height, on the font's baseline, whatever its
+/// glyphs: a line whose Chinese fell back to another font, or that shows an input
+/// method's marked text, is as tall as one of Latin letters, so the lines above it don't
+/// move while it is composed and committed.
+@MainActor
+final class UniformLines: NSObject, @preconcurrency NSLayoutManagerDelegate {
+    weak var textView: NSTextView?
+
+    func layoutManager(_ layoutManager: NSLayoutManager,
+                       shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
+                       lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
+                       baselineOffset: UnsafeMutablePointer<CGFloat>,
+                       in textContainer: NSTextContainer,
+                       forGlyphRange glyphRange: NSRange) -> Bool {
+        guard let font = textView?.font else { return false }
+        let height = layoutManager.defaultLineHeight(for: font)
+        lineFragmentRect.pointee.size.height = height
+        lineFragmentUsedRect.pointee.size.height = height
+        baselineOffset.pointee = layoutManager.defaultBaselineOffset(for: font)
+        return true
+    }
+}
+
 /// Keeps the text view exactly as wide as the visible area, whatever size
 /// SwiftUI first creates the scroll view at.
 final class ComposerScrollView: NSScrollView {
@@ -335,6 +387,20 @@ final class ComposerNSTextView: NSTextView {
     var onMarkedTextChange: (() -> Void)?
     /// The clipboard (tests use their own).
     var pasteboard: NSPasteboard = .general
+    /// Holds every line at the font's height (`UniformLines`); the layout manager keeps
+    /// its delegate weakly.
+    private let uniformLines = UniformLines()
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        attachUniformLines()
+    }
+
+    func attachUniformLines() {
+        guard let layoutManager, layoutManager.delegate !== uniformLines else { return }
+        uniformLines.textView = self
+        layoutManager.delegate = uniformLines
+    }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)

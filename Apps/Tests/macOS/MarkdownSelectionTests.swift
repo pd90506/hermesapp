@@ -638,6 +638,22 @@ import Testing
         #expect(MessageActionBar(isHovering: false, isNewest: false, copy: {}).isVisible == false)
         #expect(MessageActionBar(isHovering: true, isNewest: false, copy: {}).isVisible)
         #expect(MessageActionBar(isHovering: false, isNewest: true, copy: {}).isVisible)
+        // With the "…" menu and the time, the same height.
+        let full = NSHostingView(rootView: MessageActionBar(isHovering: true, isNewest: false, timestamp: Date(),
+                                                            branch: {}) {})
+        #expect(full.fittingSize.height == hidden.fittingSize.height)
+    }
+
+    @Test func messageTimesNameTheDayAsDesktopDoes() {
+        let now = Date()
+        let clock = now.formatted(date: .omitted, time: .shortened)
+        #expect(MessageTimeLabel.text(for: now, now: now) == clock)
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        #expect(MessageTimeLabel.text(for: yesterday, now: now).hasPrefix("Yesterday, "))
+        let earlier = Calendar.current.date(byAdding: .day, value: -30, to: now)!
+        let label = MessageTimeLabel.text(for: earlier, now: now)
+        #expect(label.contains(earlier.formatted(.dateTime.month(.abbreviated))), "\(label)")
+        #expect(!label.contains(earlier.formatted(.dateTime.year())), "no year, as Desktop: \(label)")
     }
 
     // MARK: 6. Decorations follow the text

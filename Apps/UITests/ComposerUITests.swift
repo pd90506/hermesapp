@@ -215,14 +215,13 @@ final class ComposerUITests: XCTestCase {
             let shot = app.screenshot()
             attach(app, "messages under the composer, \(mode.lowercased())")
             // Under the card, down to the screen's edge, no sharp text: no brightness step
-            // between neighbouring pixels as a glyph's edge makes (about 100 of 255 sharp,
-            // under 15 blurred, VM 2026-10-19).
+            // between neighbouring pixels as a glyph's edge makes (about 250 of 255 sharp,
+            // 2 blurred, VM 2026-10-19).
             let screen = window.frame
-            let below = CGRect(x: 16, y: send.frame.maxY + 14,
-                               width: send.frame.minX - 16, height: screen.maxY - 12 - (send.frame.maxY + 14))
+            let below = CGRect(x: 8, y: send.frame.maxY + 14,
+                               width: screen.width - 16, height: screen.maxY - 2 - (send.frame.maxY + 14))
             let step = try XCTUnwrap(Self.largestStep(shot.image, in: below, screen: screen))
-            print("The largest step under the card, \(mode): \(step)")
-            XCTAssertLessThan(step, 40, "the messages under the card are blurred, \(mode): \(below)")
+            XCTAssertLessThan(step, 40, "the messages under the card are blurred, \(mode): step \(step) in \(below)")
             back.tap()
         }
 

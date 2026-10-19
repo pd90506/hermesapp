@@ -294,11 +294,9 @@ struct ComposerView: View {
             micButton
             sendButton
                 .padding(.leading, 4)
-                #if os(macOS)
                 // Stop grows in where Send was as a reply starts, and back.
                 .animation(Motion.swap, value: [session.transcript.isRunning, composer.isSubmitting,
                                                 composer.canSubmit || composer.isSubmitting])
-                #endif
         }
         .padding(.horizontal, Self.inset.toolbar)
         .padding(.bottom, 6)

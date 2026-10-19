@@ -53,7 +53,8 @@ nonisolated func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
 extension View {
     /// The theme's accent as the tint of everything under it: controls, the user's
     /// messages, selected rows and the app's other marks (`.tint`). Plain keeps the
-    /// system's accent.
+    /// system's accent. On the Mac also the theme's surfaces (`ThemeSurfaces`), for the
+    /// views that paint them.
     func colorTheme(_ theme: ColorTheme) -> some View {
         modifier(ColorThemeModifier(theme: theme))
     }
@@ -63,8 +64,56 @@ private struct ColorThemeModifier: ViewModifier {
     let theme: ColorTheme
 
     func body(content: Content) -> some View {
-        content.tint(theme.accentColor)
+        content
+            .tint(theme.accentColor)
+            #if os(macOS)
+            .environment(\.surfaces, SurfaceColors(theme.surfaces))
+            #endif
     }
+}
+
+/// A theme's surfaces as colours that follow light and dark. The defaults, before a
+/// theme applies (and on iOS, which keeps the platform's surfaces), are the system's.
+struct SurfaceColors {
+    /// The window's chrome: the strip along the top, the profile rail, the session list.
+    var chrome: Color
+    /// The chat's card.
+    var chat: Color
+    /// The composer's field.
+    var composer: Color
+    /// A selected sidebar row.
+    var selection: AnyShapeStyle
+    /// The user's messages.
+    var userBubble: AnyShapeStyle
+
+    static let system = SurfaceColors(
+        chrome: Color.secondary.opacity(0.08), chat: Color.clear,
+        composer: {
+            #if os(macOS)
+            Color(nsColor: .controlBackgroundColor)
+            #else
+            Color(uiColor: .secondarySystemBackground)
+            #endif
+        }(),
+        selection: AnyShapeStyle(.tint.opacity(0.2)), userBubble: AnyShapeStyle(.tint.opacity(0.15)))
+}
+
+#if os(macOS)
+extension SurfaceColors {
+    init(_ surfaces: ThemeSurfaces) {
+        func color(_ pair: MarkdownColors.Pair) -> Color {
+            Color(nsColor: dynamicColor(light: NSColor(pair.light), dark: NSColor(pair.dark)))
+        }
+        self.init(chrome: color(surfaces.chrome), chat: color(surfaces.chat), composer: color(surfaces.composer),
+                  selection: surfaces.selection.map { AnyShapeStyle(color($0)) } ?? Self.system.selection,
+                  userBubble: surfaces.userBubble.map { AnyShapeStyle(color($0)) } ?? Self.system.userBubble)
+    }
+}
+#endif
+
+extension EnvironmentValues {
+    /// The theme's surfaces (`colorTheme`).
+    @Entry var surfaces = SurfaceColors.system
 }
 
 /// The themes as a row of swatches, each its accent with its name under it, as the

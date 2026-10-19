@@ -39,18 +39,27 @@ struct ColorThemeTests {
         #expect(colors == MarkdownColors(preset: .catppuccin))
     }
 
-    /// The Mac's frame is the accent deepened, dark enough under white marks in every
-    /// theme; Plain deepens the system's accent in the app.
-    @Test func theFrameIsTheAccentDeepened() throws {
-        for theme in ColorTheme.allCases where theme != .plain {
-            let accent = try #require(theme.accent?.light, "\(theme)")
-            let frame = try #require(theme.frame, "\(theme)")
-            #expect(frame.alpha == 1, "\(theme)")
-            #expect(Self.luminance(frame) < Self.luminance(accent), "\(theme)")
-            #expect(Self.contrast(white: frame) >= 7, "\(theme): \(frame.hex)")
+    /// The Mac's surfaces are opaque; in each mode the chat stands apart from the chrome
+    /// around it, and a selected row shows on the chrome.
+    @Test func theSurfacesSetTheChatAndSelectionApart() throws {
+        for theme in ColorTheme.allCases {
+            let surfaces = theme.surfaces
+            for pair in [surfaces.chrome, surfaces.chat, surfaces.composer, surfaces.selection, surfaces.userBubble]
+                .compactMap({ $0 }) {
+                #expect(pair.light.alpha == 1 && pair.dark.alpha == 1, "\(theme)")
+            }
+            for (chrome, chat) in [(surfaces.chrome.light, surfaces.chat.light), (surfaces.chrome.dark, surfaces.chat.dark)] {
+                #expect(Self.contrast(chrome, chat) >= 1.04, "\(theme): \(chrome.hex) \(chat.hex)")
+            }
+            if let selection = surfaces.selection {
+                #expect(Self.contrast(selection.light, surfaces.chrome.light) >= 1.07, "\(theme): \(selection.light.hex)")
+                #expect(Self.contrast(selection.dark, surfaces.chrome.dark) >= 1.2, "\(theme): \(selection.dark.hex)")
+            }
         }
-        #expect(ColorTheme.plain.frame == nil)
-        #expect(ColorTheme.nous.frame?.hex == "#001E5B")
+        // Light chrome is darker than the chat, dark chrome darker still, as Desktop's sidebar.
+        #expect(ColorTheme.nous.surfaces.chrome.light.hex == "#F6F8FA")
+        #expect(ColorTheme.nous.surfaces.chat.dark.hex == "#0D1117")
+        #expect(ColorTheme.plain.surfaces.selection == nil)
     }
 
     /// WCAG's relative luminance.
@@ -59,5 +68,9 @@ struct ColorThemeTests {
         return 0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
     }
 
-    private static func contrast(white color: RGBAColor) -> Double { 1.05 / (luminance(color) + 0.05) }
+    /// WCAG's contrast ratio.
+    private static func contrast(_ a: RGBAColor, _ b: RGBAColor) -> Double {
+        let (x, y) = (luminance(a), luminance(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
 }

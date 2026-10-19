@@ -25,16 +25,12 @@ enum Hover {
     /// the two fills stay apart by this gap.
     static let rowGap: CGFloat = 1
 
-    /// Meant to stay lighter than a selected row's fill (`selection`), so a selected
-    /// row reads as stronger than a hovered one.
+    /// Meant to stay lighter than a selected row's fill (`SurfaceColors.selection`), so
+    /// a selected row reads as stronger than a hovered one.
     static func fill(pressed: Bool) -> Color {
         .primary.opacity(pressed ? 0.11 : 0.06)
     }
 
-    /// A selected sidebar row's fill: the accent (the theme's, else the system's), light
-    /// enough that the row's text keeps its colours, as Desktop's
-    /// `--ui-row-active-background`. The same whether or not the list has focus.
-    static var selection: some ShapeStyle { .tint.opacity(0.2) }
 }
 
 extension View {
@@ -50,7 +46,7 @@ extension View {
     }
 
     /// A sidebar List row's selection and hover fills, inset `Hover.rowInset` from the
-    /// List's edges. The selection (`Hover.selection`) fills the row's height; the hover
+    /// List's edges. The selection (the theme's, `SurfaceColors.selection`) fills the row's height; the hover
     /// stops `Hover.rowGap` short of its top and bottom, so a selected row beside it stays
     /// apart from it, and the selected row has none. The whole row reacts, not just its
     /// text. The List's own selection highlight is off (`NoTableSelectionHighlight`).
@@ -98,6 +94,7 @@ struct HoverHighlight: ViewModifier {
 struct SidebarRowHighlight: ViewModifier {
     var isSelected: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.surfaces) private var surfaces
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
@@ -117,7 +114,7 @@ struct SidebarRowHighlight: ViewModifier {
                         .opacity(isHovered && isEnabled && !isSelected ? 1 : 0)
                         .padding(.vertical, Hover.rowGap)
                     shape
-                        .fill(Hover.selection)
+                        .fill(surfaces.selection)
                         .opacity(isSelected ? 1 : 0)
                 }
                 .padding(.horizontal, Hover.rowInset)

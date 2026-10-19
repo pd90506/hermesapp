@@ -41,7 +41,8 @@ final class ThemeUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(3))
         attach(app, "chat, Nous (default), light")
 
-        // Settings ▸ Appearance: Catppuccin.
+        // Each theme in light and dark, the window as a whole: Nous dark, then
+        // Catppuccin dark and light.
         app.typeKey(",", modifierFlags: .command)
         let appearanceTab = app.toolbars.buttons["Appearance"].firstMatch
         XCTAssertTrue(appearanceTab.waitForExistence(timeout: 10), "the Settings window")
@@ -49,19 +50,40 @@ final class ThemeUITests: XCTestCase {
         let catppuccin = app.buttons["colorTheme.catppuccin"].firstMatch
         XCTAssertTrue(catppuccin.waitForExistence(timeout: 10), "the theme swatches")
         XCTAssertTrue(app.buttons["colorTheme.nous"].firstMatch.isSelected, "Nous is the default")
+        pickMode("Dark", in: app)
+        attach(app, "settings, Nous, dark")
+        showChat(app)
+        attach(app, "chat, Nous, dark")
+
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(catppuccin.waitForExistence(timeout: 10), "the theme swatches")
         click(catppuccin)
         let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: catppuccin)
         XCTAssertEqual(XCTWaiter().wait(for: [picked], timeout: 5), .completed, "Catppuccin picked")
-        attach(app, "settings, Catppuccin picked")
-
-        // Dark mode, then back to the chat.
-        let mode = app.descendants(matching: .any)["appearanceMode"].firstMatch
-        click(mode.buttons["Dark"].firstMatch.exists ? mode.buttons["Dark"].firstMatch : mode.radioButtons["Dark"].firstMatch)
-        RunLoop.current.run(until: Date().addingTimeInterval(1))
         attach(app, "settings, Catppuccin, dark")
+        showChat(app)
+        attach(app, "chat, Catppuccin, dark")
+
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(catppuccin.waitForExistence(timeout: 10), "the theme swatches")
+        pickMode("Light", in: app)
+        showChat(app)
+        attach(app, "chat, Catppuccin, light")
+    }
+
+    /// Settings ▸ Appearance's light or dark mode.
+    @MainActor
+    private func pickMode(_ name: String, in app: XCUIApplication) {
+        let mode = app.descendants(matching: .any)["appearanceMode"].firstMatch
+        click(mode.buttons[name].firstMatch.exists ? mode.buttons[name].firstMatch : mode.radioButtons[name].firstMatch)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+    }
+
+    /// Closes the Settings window, back to the chat.
+    @MainActor
+    private func showChat(_ app: XCUIApplication) {
         app.typeKey("w", modifierFlags: .command)
         RunLoop.current.run(until: Date().addingTimeInterval(2))
-        attach(app, "chat, Catppuccin, dark")
     }
 
     @MainActor

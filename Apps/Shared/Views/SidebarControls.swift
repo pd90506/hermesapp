@@ -275,7 +275,7 @@ struct SidebarSectionTitle: View {
 
 /// The Bot Chat row pinned above the session list: a `BotRow` under a "Bot Chat"
 /// header (in the Sessions header's style), set in like the list's rows, with their
-/// hover and selected fill (`Hover.selection`; the List's selection can't reach a row
+/// hover and selected fill (`SurfaceColors.selection`; the List's selection can't reach a row
 /// outside it).
 /// A divider under it, always shown, sets it off from the sessions.
 struct PinnedBotChat: View {
@@ -307,13 +307,14 @@ struct PinnedBotChat: View {
 
     private struct Style: ButtonStyle {
         var isSelected: Bool
+        @Environment(\.surfaces) private var surfaces
 
         func makeBody(configuration: Configuration) -> some View {
             let shape = RoundedRectangle(cornerRadius: Hover.cornerRadius)
             configuration.label
                 .padding(.horizontal, Hover.rowContentInset - Hover.rowInset)
                 .padding(.vertical, 4)
-                .background { shape.fill(Hover.selection).opacity(isSelected ? 1 : 0) }
+                .background { shape.fill(surfaces.selection).opacity(isSelected ? 1 : 0) }
                 .contentShape(shape)
                 .hoverHighlight(in: shape, isEnabled: !isSelected)
         }

@@ -2,25 +2,24 @@ import AppKit
 import HermesKit
 import SwiftUI
 
-/// The Mac window as Slack's (asked for by the user, 2026-10-18): a frame in the theme's
-/// deep colour (`ColorTheme.frameColor`), a strip along the top, with the window buttons
-/// and the profile rail's collapse button, and the profile rail down the leading edge,
-/// around one panel, rounded at its top-leading corner, that holds the session list and
-/// the chat. It was Mail's: one glass sidebar for the rail and the list, the window
-/// buttons on it.
+/// The Mac window: the strip along the top (the window buttons and the profile rail's
+/// collapse button on it), the profile rail and the session list, all on the theme's
+/// chrome, and the chat as a card on it, rounded and set in from the window's edges,
+/// as Hermes Desktop lays its transcript on the sidebar's colour (the user asked for a
+/// calmer look, 2026-10-19). It was Slack's: a frame in the theme's deep colour around
+/// one panel with the session list and the chat.
 ///
-/// The title bar shows no background and no title: the strip under it is the frame's, as
-/// tall as the title bar (centred on the window buttons). The collapse button is the
+/// The title bar shows no background and no title: the strip under it is the chrome's,
+/// as tall as the title bar (centred on the window buttons). The collapse button is the
 /// title bar's own item after the window buttons, so the title bar still drags the window
 /// and takes clicks as it does (a button drawn under it, with no title bar, got none).
-/// The rail is drawn dark, so its marks are white on any theme.
 struct WindowLayout<Rail: View, List: View, Chat: View>: View {
-    /// The frame's colour.
-    let color: Color
     @ViewBuilder var rail: Rail
     @ViewBuilder var list: List
     @ViewBuilder var chat: Chat
 
+    @Environment(\.surfaces) private var surfaces
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("profileRailShown") private var isRailShown = true
     @AppStorage("sessionListWidth") private var listWidth = 320.0
     /// The window buttons, in the window (top-left origin); nil in full screen, where
@@ -28,6 +27,10 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
     @State private var windowButtons: CGRect?
 
     static var listWidths: ClosedRange<Double> { 260...480 }
+    /// The card's corners: concentric with the window's, set in `cardInset` from them.
+    static var cardRadius: CGFloat { 12 }
+    /// How far the card is set in from the window's trailing and bottom edges.
+    static var cardInset: CGFloat { 8 }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,13 +38,17 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
             HStack(spacing: 0) {
                 if isRailShown {
                     rail
-                        .environment(\.colorScheme, .dark)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                panel
+                list
+                    .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
+                    .overlay(alignment: .trailing) {
+                        ColumnResizer(width: $listWidth, range: Self.listWidths)
+                    }
+                card
             }
         }
-        .background(color)
+        .background(surfaces.chrome)
         .ignoresSafeArea(.container, edges: .top)
         .background(WindowButtonsReader { windowButtons = $0 })
         .toolbar {
@@ -51,8 +58,8 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
             .sharedBackgroundVisibility(.hidden)
         }
         .toolbar(removing: .title)
-        // No toolbar background: the frame's colour shows through (macOS 26 also showed
-        // one only under the pointer).
+        // No toolbar background: the chrome shows through (macOS 26 also showed one
+        // only under the pointer).
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
@@ -62,19 +69,19 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
         return Color.clear.frame(height: height)
     }
 
-    /// The session list and the chat, on the window's background.
-    private var panel: some View {
-        HStack(spacing: 0) {
-            list
-                .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
-                // A touch of the frame's colour, as Slack's sidebar.
-                .background(color.opacity(0.05))
-            ColumnResizer(width: $listWidth, range: Self.listWidths)
-            chat
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .background(.background)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 10, style: .continuous))
+    /// The chat on its card: a hairline edge, and in light mode a soft shadow, lift it
+    /// off the chrome. Views in it that paint `.background` paint the card's colour.
+    private var card: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
+        return chat
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .backgroundStyle(surfaces.chat)
+            .background(surfaces.chat)
+            .clipShape(shape)
+            .overlay { shape.strokeBorder(.primary.opacity(colorScheme == .dark ? 0.1 : 0.07), lineWidth: 1) }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0 : 0.05), radius: 3, y: 1)
+            .padding(.trailing, Self.cardInset)
+            .padding(.bottom, Self.cardInset)
     }
 }
 
@@ -90,10 +97,8 @@ private struct CollapseButton: View {
         }
         .labelStyle(.iconOnly)
         .font(.system(size: 15))
-        // White on the frame's deep colour, as the window buttons beside it stand out.
-        .foregroundStyle(.white.opacity(0.8))
+        .foregroundStyle(.secondary)
         .hoverButtonStyle(padding: 5)
-        .environment(\.colorScheme, .dark)
         .help(isRailShown ? "Hide the profiles" : "Show the profiles")
         .keyboardShortcut("s", modifiers: [.control, .command])
         // A window control, as the window buttons beside it: never the key view, so no
@@ -103,7 +108,7 @@ private struct CollapseButton: View {
     }
 }
 
-/// The line between the session list and the chat, which drags to resize the list.
+/// The session list's trailing edge, against the chat's card: drags to resize the list.
 private struct ColumnResizer: View {
     @Binding var width: Double
     let range: ClosedRange<Double>
@@ -111,21 +116,20 @@ private struct ColumnResizer: View {
     @State private var start: Double?
 
     var body: some View {
-        Divider()
-            .overlay {
-                Color.clear
-                    .frame(width: 8)
-                    .contentShape(.rect)
-                    .pointerStyle(.columnResize)
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                            .onChanged { value in
-                                let from = start ?? width
-                                start = from
-                                width = (from + value.translation.width).clamped(to: range)
-                            }
-                            .onEnded { _ in start = nil })
-            }
+        Color.clear
+            .frame(width: 8)
+            .contentShape(.rect)
+            .pointerStyle(.columnResize)
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let from = start ?? width
+                        start = from
+                        width = (from + value.translation.width).clamped(to: range)
+                    }
+                    .onEnded { _ in start = nil })
+            // Over the list's edge and the card's.
+            .offset(x: 4)
             .accessibilityHidden(true)
     }
 }
@@ -195,18 +199,4 @@ private struct WindowButtonsReader: NSViewRepresentable {
 
 private extension Double {
     func clamped(to range: ClosedRange<Double>) -> Double { min(max(self, range.lowerBound), range.upperBound) }
-}
-
-extension ColorTheme {
-    /// The window's frame: the theme's (`frame`), or for Plain the system's accent
-    /// deepened the same way, following it when the user picks another.
-    @MainActor
-    var frameColor: Color {
-        if let frame { return Color(frame) }
-        return Color(nsColor: NSColor(name: nil) { _ in
-            let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
-            return NSColor(RGBAColor(red: accent.redComponent, green: accent.greenComponent,
-                                     blue: accent.blueComponent).deepened)
-        })
-    }
 }

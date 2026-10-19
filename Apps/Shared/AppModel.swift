@@ -168,6 +168,9 @@ final class AppModel {
                                          serverURL: launch.serverURL, authMode: .sessionToken),
                     secret: launch.token)
             }
+            if let delay = launch.reconnectNoticeDelay {
+                for server in servers { server.connection.tryingNoticeDelay = .milliseconds(Int(delay * 1000)) }
+            }
             self.servers = servers
             self.selectedServerID = servers.first?.id
             self.sessionsServerID = servers.first?.id
@@ -622,6 +625,11 @@ struct UITestLaunch {
     var token: String
     var profile: String?
     var serverCount = 1
+    /// The sockets are gone when the app comes back from the background, as on a real
+    /// iPhone (the simulator keeps them).
+    var dropsSocketsInBackground = false
+    /// Seconds a reconnect stays quiet (`GatewayConnection.tryingNoticeDelay`), if not 5.
+    var reconnectNoticeDelay: Double?
 
     static let current: UITestLaunch? = {
         let env = ProcessInfo.processInfo.environment
@@ -629,7 +637,9 @@ struct UITestLaunch {
             !url.isEmpty, !token.isEmpty
         else { return nil }
         return UITestLaunch(serverURL: url, token: token, profile: env["HERMES_UITEST_PROFILE"],
-                            serverCount: max(1, Int(env["HERMES_UITEST_SERVERS"] ?? "") ?? 1))
+                            serverCount: max(1, Int(env["HERMES_UITEST_SERVERS"] ?? "") ?? 1),
+                            dropsSocketsInBackground: env["HERMES_UITEST_DROP_IN_BACKGROUND"] == "1",
+                            reconnectNoticeDelay: env["HERMES_UITEST_RECONNECT_NOTICE_DELAY"].flatMap(Double.init))
     }()
 }
 #endif

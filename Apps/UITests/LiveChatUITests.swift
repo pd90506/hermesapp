@@ -11,7 +11,9 @@ import AppKit
 /// sets them). The chats it creates are deleted by the script's sweep afterwards.
 final class LiveChatUITests: XCTestCase {
     @MainActor
-    private func launchApp(servers: Int = 1, motionScale: Double? = nil) throws -> XCUIApplication {
+    private func launchApp(servers: Int = 1, motionScale: Double? = nil,
+                           dropsSocketsInBackground: Bool = false,
+                           reconnectNoticeDelay: Double? = nil) throws -> XCUIApplication {
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
             throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
@@ -23,6 +25,10 @@ final class LiveChatUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = String(servers)
         // The app's animations this many times slower (`Motion`), to see them part way.
         if let motionScale { app.launchEnvironment["HERMES_UITEST_MOTION_SCALE"] = String(motionScale) }
+        if dropsSocketsInBackground { app.launchEnvironment["HERMES_UITEST_DROP_IN_BACKGROUND"] = "1" }
+        if let reconnectNoticeDelay {
+            app.launchEnvironment["HERMES_UITEST_RECONNECT_NOTICE_DELAY"] = String(reconnectNoticeDelay)
+        }
         app.launch()
         return app
     }
@@ -174,8 +180,25 @@ final class LiveChatUITests: XCTestCase {
         checkNewChatHoldsStill(app, newChat: newChat, "a chat open")
         checkFrameIsOneColourAroundThePanel(app, newChat: newChat, list: list, rail: rail, "a chat open")
         checkHoveringTheTitleBarDoesNotShadeTheChat(app, composer: composer)
+        checkAttachMenuHasNoPaste(app)
 
         try checkBotChatStaysPinnedAboveTheSessions(app, newChat: newChat, list: list)
+    }
+
+    /// The composer's `+` holds Choose Files… and no Paste: Command-V pastes images and
+    /// files into the composer (user, 2026-10-19).
+    @MainActor
+    private func checkAttachMenuHasNoPaste(_ app: XCUIApplication) {
+        // A menu button on the Mac.
+        let plus = app.menuButtons["Attach"].firstMatch
+        guard plus.waitForExistence(timeout: 5) else { return XCTFail("the composer's +") }
+        press(plus)
+        let files = app.menuItems["Choose Files…"].firstMatch
+        XCTAssertTrue(files.waitForExistence(timeout: 5), "the + menu")
+        let menu = app.menus.containing(NSPredicate(format: "title == %@", "Choose Files…")).firstMatch
+        XCTAssertFalse(menu.menuItems["Paste"].exists, "no Paste in the + menu")
+        attach(app, "the + menu")
+        app.typeKey(.escape, modifierFlags: [])
     }
 
     /// Hiding the profile rail slides it out and the panel (session list and chat) with
@@ -690,6 +713,119 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "Bot Chat open")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(botChat.waitForExistence(timeout: 10), "Back returns to the list")
+    }
+
+    /// A swipe right that drifts up or down opens the profiles' drawer and leaves the
+    /// session list where it was: the list no longer scrolls with the finger under the
+    /// opening drawer (user, 2026-10-19).
+    @MainActor
+    func testSwipingTheDrawerOpenLeavesTheListStill() throws {
+        continueAfterFailure = true
+        let app = try launchApp()
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        let list = app.collectionViews.firstMatch
+        let botChat = list.descendants(matching: .any)["botChatRow"].firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the session list")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        let resting = botChat.frame
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        let window = app.windows.firstMatch
+        // Right and a little up, slowly, so the list's own pan has the touch too.
+        for (start, end) in [(CGVector(dx: 0.08, dy: 0.7), CGVector(dx: 0.9, dy: 0.58)),
+                             (CGVector(dx: 0.08, dy: 0.4), CGVector(dx: 0.9, dy: 0.52))] {
+            window.coordinate(withNormalizedOffset: start)
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: end),
+                       withVelocity: 600, thenHoldForDuration: 0.1)
+            XCTAssertTrue(rail.waitForExistence(timeout: 5), "the swipe opened the drawer")
+            XCTAssertTrue(eventually { abs(rail.frame.minX) < 1 }, "fully open: \(rail.frame)")
+            attach(app, "drawer swiped open \(start.dy) to \(end.dy)")
+            XCTAssertEqual(botChat.frame.minY, resting.minY, accuracy: 1, "the list stayed where it was")
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+            XCTAssertTrue(eventually { !rail.exists }, "a tap beside the drawer closes it")
+        }
+    }
+
+    /// Back from the background the chat stays on screen while the app reconnects, with
+    /// no spinner over it: a reconnect within 5 s shows nothing, a longer one a spinner in
+    /// the title bar (user, 2026-10-19). The app's socket is gone on its return, as a real
+    /// iPhone's (`HERMES_UITEST_DROP_IN_BACKGROUND`), and the chat was opened from the list,
+    /// so it is restored from Hermes's store, not replayed.
+    @MainActor
+    func testReturningFromTheBackgroundKeepsTheChatOnScreen() throws {
+        try returnFromTheBackground(noticeDelay: nil)
+    }
+
+    /// The same with no quiet time: the reconnect shows in the title bar, under the
+    /// chat's title, and the chat stays on screen.
+    @MainActor
+    func testAReconnectPastTheQuietTimeShowsInTheTitleBar() throws {
+        try returnFromTheBackground(noticeDelay: 0)
+    }
+
+    @MainActor
+    private func returnFromTheBackground(noticeDelay: Double?) throws {
+        continueAfterFailure = true
+        let app = try launchApp(dropsSocketsInBackground: true, reconnectNoticeDelay: noticeDelay)
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        newChat.tap()
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        composer.tap()
+        let marker = "PONG-\(Int.random(in: 1000...9999))"
+        composer.typeText("Reply with exactly \(marker) and nothing else. Do not use tools.")
+        app.buttons["Send"].firstMatch.tap()
+        let prompt = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
+                                                                          marker, marker)).firstMatch
+        XCTAssertTrue(prompt.waitForExistence(timeout: 30), "the prompt in the chat")
+        let reply = app.textViews.matching(NSPredicate(format: "value == %@", marker))
+        let deadline = Date().addingTimeInterval(150)
+        while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        // Without a model key there is no reply; the prompt is the chat's content then.
+        // Opened again from the list: a chat read, not one just written in.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let row = app.collectionViews.firstMatch.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 30), "the chat's row in the list")
+        row.tap()
+        XCTAssertTrue(prompt.waitForExistence(timeout: 30), "the chat opened again")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "00 before the background")
+
+        XCUIDevice.shared.press(.home)
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+        app.activate()
+        let start = Date()
+        var samples: [(ms: Int, prompt: Bool, spinner: Bool, reconnecting: Bool)] = []
+        let reconnecting = app.descendants(matching: .any)["reconnectingIndicator"]
+        while Date().timeIntervalSince(start) < (noticeDelay == nil ? 9 : 4) {
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            let inBar = reconnecting.exists && app.navigationBars.firstMatch.frame.contains(reconnecting.frame)
+            let sample = (ms: ms, prompt: prompt.exists, spinner: app.activityIndicators.firstMatch.exists,
+                          reconnecting: inBar)
+            samples.append(sample)
+            attach(app, String(format: "%02d back at %d ms%@%@", samples.count, ms,
+                               sample.spinner ? ", spinner" : "", sample.reconnecting ? ", reconnecting" : ""))
+        }
+        let log = XCTAttachment(string: samples.map { "\($0.ms) ms: prompt \($0.prompt), spinner \($0.spinner), "
+            + "reconnecting \($0.reconnecting)" }.joined(separator: "\n"))
+        log.name = "back from the background, sampled"
+        log.lifetime = .keepAlways
+        add(log)
+        XCTAssertTrue(samples.allSatisfy(\.prompt), "the chat stayed on screen: \(samples)")
+        if noticeDelay == nil {
+            XCTAssertFalse(samples.contains { $0.ms < 4500 && $0.reconnecting }, "nothing within 5 s: \(samples)")
+        } else {
+            XCTAssertTrue(samples.contains(where: \.reconnecting), "the title bar said so: \(samples)")
+        }
+        XCTAssertFalse(samples.contains { $0.spinner && !$0.reconnecting }, "no spinner but the title's: \(samples)")
+        XCTAssertTrue(composer.exists, "still in the chat")
     }
 
     /// The session list has no Settings button of its own: the gear is the rail's, a

@@ -170,7 +170,8 @@ struct CurrentProfileAvatar: View {
 
 /// A pan right that starts the drawer opening: horizontal, so the list still scrolls
 /// on a vertical one. A UIKit recognizer, as a SwiftUI drag on the list took its
-/// scrolling.
+/// scrolling. Once it has started, the list's scrolling stops: until then the list
+/// followed the finger up and down under the opening drawer (user, 2026-10-19).
 private struct OpeningPan: UIGestureRecognizerRepresentable {
     var isEnabled: Bool
     var changed: (CGFloat) -> Void
@@ -191,6 +192,7 @@ private struct OpeningPan: UIGestureRecognizerRepresentable {
     func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
         let translation = pan.translation(in: pan.view).x
         switch pan.state {
+        case .began: context.coordinator.stopScrolling()
         case .changed: changed(max(translation, 0))
         case .ended: ended(translation, pan.velocity(in: pan.view).x)
         case .cancelled, .failed: ended(0, 0)
@@ -199,6 +201,20 @@ private struct OpeningPan: UIGestureRecognizerRepresentable {
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        /// The pans of the scroll views under the touch (the session list's), which
+        /// recognize beside this one.
+        private let scrollPans = NSHashTable<UIPanGestureRecognizer>.weakObjects()
+
+        /// The drawer took the touch: the list stops where it is. Turning a recognizer
+        /// off and on cancels its touch; the next one scrolls again.
+        func stopScrolling() {
+            for pan in scrollPans.allObjects where pan.isEnabled {
+                pan.isEnabled = false
+                pan.isEnabled = true
+            }
+            scrollPans.removeAllObjects()
+        }
+
         func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
             let velocity = pan.velocity(in: pan.view)
@@ -208,7 +224,12 @@ private struct OpeningPan: UIGestureRecognizerRepresentable {
         // Beside the list's own scrolling, which otherwise could take the touch first.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            true
+            if let scroll = other.view as? UIScrollView, other === scroll.panGestureRecognizer {
+                // One that would start once the drawer has the touch doesn't.
+                if recognizer.state == .began || recognizer.state == .changed { return false }
+                scrollPans.add(scroll.panGestureRecognizer)
+            }
+            return true
         }
     }
 }

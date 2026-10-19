@@ -137,7 +137,7 @@ struct ProfileRailItem: View {
         .overlay(alignment: .topLeading) {
             // Level with the avatar's middle, against the rail's edge.
             UnevenRoundedRectangle(cornerRadii: .init(bottomTrailing: 2, topTrailing: 2))
-                .fill(.primary)
+                .fill(.tint)
                 .frame(width: 4, height: pillHeight)
                 .offset(y: Self.verticalPadding + (Self.avatarSize - pillHeight) / 2)
                 .opacity(pillHeight > 0 ? 1 : 0)

@@ -40,26 +40,33 @@ struct ColorThemeTests {
     }
 
     /// The Mac's surfaces are opaque; in each mode the chat stands apart from the chrome
-    /// around it, and a selected row shows on the chrome.
+    /// around it (a hairline edge helps in dark mode), and a selected row shows on the chrome.
     @Test func theSurfacesSetTheChatAndSelectionApart() throws {
-        for theme in ColorTheme.allCases {
+        for theme in ColorTheme.allCases where theme != .plain {
             let surfaces = theme.surfaces
-            for pair in [surfaces.chrome, surfaces.chat, surfaces.composer, surfaces.selection, surfaces.userBubble]
+            let selection = try #require(surfaces.selection, "\(theme)")
+            for pair in [surfaces.chrome, surfaces.chat, surfaces.composer, selection, surfaces.userBubble]
                 .compactMap({ $0 }) {
                 #expect(pair.light.alpha == 1 && pair.dark.alpha == 1, "\(theme)")
             }
-            for (chrome, chat) in [(surfaces.chrome.light, surfaces.chat.light), (surfaces.chrome.dark, surfaces.chat.dark)] {
-                #expect(Self.contrast(chrome, chat) >= 1.04, "\(theme): \(chrome.hex) \(chat.hex)")
-            }
-            if let selection = surfaces.selection {
-                #expect(Self.contrast(selection.light, surfaces.chrome.light) >= 1.07, "\(theme): \(selection.light.hex)")
-                #expect(Self.contrast(selection.dark, surfaces.chrome.dark) >= 1.2, "\(theme): \(selection.dark.hex)")
-            }
+            #expect(Self.contrast(surfaces.chrome.light, surfaces.chat.light) >= 1.15, "\(theme)")
+            #expect(Self.contrast(surfaces.chrome.dark, surfaces.chat.dark) >= 1.02, "\(theme)")
+            #expect(Self.contrast(selection.light, surfaces.chrome.light) >= 1.15, "\(theme): \(selection.light.hex)")
+            #expect(Self.contrast(selection.dark, surfaces.chrome.dark) >= 1.3, "\(theme): \(selection.dark.hex)")
         }
-        // Light chrome is darker than the chat, dark chrome darker still, as Desktop's sidebar.
-        #expect(ColorTheme.nous.surfaces.chrome.light.hex == "#F6F8FA")
-        #expect(ColorTheme.nous.surfaces.chat.dark.hex == "#0D1117")
+    }
+
+    /// Each theme's chrome carries its accent: no two themes share one, and the chrome
+    /// leans toward the accent's hue. Plain takes the accent it is given (the system's).
+    @Test func eachThemeHasItsOwnChrome() throws {
+        let chromes = ColorTheme.allCases.filter { $0 != .plain }.map(\.surfaces.chrome)
+        #expect(Set(chromes.map(\.light.hex)).count == chromes.count)
+        #expect(Set(chromes.map(\.dark.hex)).count == chromes.count)
+        let nous = ColorTheme.nous.surfaces.chrome
+        #expect(nous.light.blue > nous.light.red && nous.dark.blue > nous.dark.red)
         #expect(ColorTheme.plain.surfaces.selection == nil)
+        let blue = try #require(ColorTheme.nous.accent)
+        #expect(ColorTheme.plain.surfaces(accent: blue).selection != nil)
     }
 
     /// WCAG's relative luminance.

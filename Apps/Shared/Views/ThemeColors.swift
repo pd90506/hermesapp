@@ -67,7 +67,7 @@ private struct ColorThemeModifier: ViewModifier {
         content
             .tint(theme.accentColor)
             #if os(macOS)
-            .environment(\.surfaces, SurfaceColors(theme.surfaces))
+            .environment(\.surfaces, SurfaceColors(theme.macSurfaces))
             #endif
     }
 }
@@ -99,6 +99,17 @@ struct SurfaceColors {
 }
 
 #if os(macOS)
+extension ColorTheme {
+    /// The Mac's surfaces; Plain's tinted with the system's accent.
+    @MainActor
+    var macSurfaces: ThemeSurfaces {
+        guard self == .plain else { return surfaces }
+        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+        let color = RGBAColor(red: accent.redComponent, green: accent.greenComponent, blue: accent.blueComponent)
+        return surfaces(accent: MarkdownColors.Pair(light: color, dark: color))
+    }
+}
+
 extension SurfaceColors {
     init(_ surfaces: ThemeSurfaces) {
         func color(_ pair: MarkdownColors.Pair) -> Color {

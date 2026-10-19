@@ -69,6 +69,19 @@ final class ThemeUITests: XCTestCase {
         pickMode("Light", in: app)
         showChat(app)
         attach(app, "chat, Catppuccin, light")
+
+        // The other themes, so they can be told apart: each in light, then in dark.
+        for (mode, themes) in [("Light", ["github", "everforest", "solarized"]), ("Dark", ["github", "everforest", "solarized"])] {
+            for theme in themes {
+                app.typeKey(",", modifierFlags: .command)
+                let swatch = app.buttons["colorTheme.\(theme)"].firstMatch
+                XCTAssertTrue(swatch.waitForExistence(timeout: 10), "the \(theme) swatch")
+                click(swatch)
+                pickMode(mode, in: app)
+                showChat(app)
+                attach(app, "chat, \(theme), \(mode.lowercased())")
+            }
+        }
     }
 
     /// Settings ▸ Appearance's light or dark mode.

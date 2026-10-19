@@ -32,44 +32,75 @@ public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
         }
     }
 
-    /// The Mac window's surfaces, from the theme's Desktop palette (`theme-presets.ts`).
-    public var surfaces: ThemeSurfaces {
+    /// The Mac window's surfaces: the theme's Desktop palette, its chrome and selection
+    /// tinted with its accent, so each theme has a colour of its own (the user,
+    /// 2026-10-19: neutral surfaces made every theme look the same).
+    public var surfaces: ThemeSurfaces { surfaces(accent: accent) }
+
+    /// The surfaces tinted with `accent`: Plain passes the system's accent, which only
+    /// the app knows. With no accent, the palette's neutrals and no selection or bubble.
+    public func surfaces(accent: MarkdownColors.Pair?) -> ThemeSurfaces {
+        var surfaces = palette
+        guard let accent else { return surfaces }
+        func tint(_ pair: MarkdownColors.Pair, light: Double, dark: Double) -> MarkdownColors.Pair {
+            MarkdownColors.Pair(light: pair.light.mixed(with: accent.light, light),
+                                dark: pair.dark.mixed(with: accent.dark, dark))
+        }
+        surfaces.chrome = tint(surfaces.chrome, light: Self.chromeTint.light, dark: Self.chromeTint.dark)
+        surfaces.selection = tint(surfaces.chrome, light: 0.14, dark: 0.22)
+        if surfaces.userBubble == nil { surfaces.userBubble = tint(surfaces.chat, light: 0.12, dark: 0.18) }
+        return surfaces
+    }
+
+    /// How much of the accent the chrome takes: enough to name the theme at a glance,
+    /// light enough to stay behind the chat.
+    static let chromeTint = (light: 0.08, dark: 0.12)
+
+    /// The neutrals from Desktop's palette (`theme-presets.ts`): chrome
+    /// `sidebarBackground`, chat `background`, the user's messages `userBubble` (in dark
+    /// its `accent`: Desktop's dark `userBubble` is darker than the chat, and reads as a
+    /// hole without its border), the composer `muted` in dark.
+    private var palette: ThemeSurfaces {
         func pair(_ light: String, _ dark: String) -> MarkdownColors.Pair {
             MarkdownColors.Pair(light: RGBAColor(hex: light)!, dark: RGBAColor(hex: dark)!)
         }
         return switch self {
-        // Desktop's slots: chrome `sidebarBackground`, chat `background`, selection
-        // `accent`, the user's messages `userBubble` (in dark `accent`: Desktop's dark
-        // `userBubble` is darker than the chat, and reads as a hole without its border),
-        // the composer `muted` in dark.
         case .nous:
             ThemeSurfaces(chrome: pair("#F6F8FA", "#010409"), chat: pair("#FFFFFF", "#0D1117"),
-                          composer: pair("#FFFFFF", "#1A1E24"), selection: pair("#E3EDFF", "#17243A"),
+                          composer: pair("#FFFFFF", "#1A1E24"), selection: nil,
                           userBubble: pair("#DAE7FD", "#17243A"))
         case .github:
             ThemeSurfaces(chrome: pair("#F6F8FA", "#010409"), chat: pair("#FFFFFF", "#0D1117"),
-                          composer: pair("#FFFFFF", "#1A1E24"), selection: pair("#E1ECE4", "#192A24"),
+                          composer: pair("#FFFFFF", "#1A1E24"), selection: nil,
                           userBubble: pair("#DBE7E2", "#192A24"))
         // Latte and Mocha: mantle around base.
         case .catppuccin:
             ThemeSurfaces(chrome: pair("#E6E9EF", "#181825"), chat: pair("#EFF1F5", "#1E1E2E"),
-                          composer: pair("#F7F8FA", "#29293A"), selection: pair("#DAD3EE", "#3D3652"),
+                          composer: pair("#F7F8FA", "#29293A"), selection: nil,
                           userBubble: pair("#DCD7EE", "#38324B"))
-        // Desktop's Everforest is one colour throughout: the chrome is Everforest's own
-        // `bg_dim`, and the selection its `bg_green`, deep enough to show on it.
+        // Desktop's Everforest is one colour throughout: the chrome is Everforest's own `bg_dim`.
         case .everforest:
             ThemeSurfaces(chrome: pair("#EFEBD4", "#232A2E"), chat: pair("#FDF6E3", "#2D353B"),
-                          composer: pair("#FEFBF1", "#343F44"), selection: pair("#E2E2C2", "#425047"),
+                          composer: pair("#FEFBF1", "#343F44"), selection: nil,
                           userBubble: pair("#EDE9D2", "#434E47"))
         case .solarized:
             ThemeSurfaces(chrome: pair("#EEE8D5", "#001F26"), chat: pair("#FDF6E3", "#002B36"),
-                          composer: pair("#FEFBF1", "#073642"), selection: pair("#E3DBC2", "#144050"),
+                          composer: pair("#FEFBF1", "#073642"), selection: nil,
                           userBubble: pair("#EEE8D5", "#144050"))
-        // Neutral greys; the selection and the user's messages take the system's accent.
+        // Neutral greys, tinted with the system's accent in the app.
         case .plain:
             ThemeSurfaces(chrome: pair("#F4F4F5", "#161618"), chat: pair("#FFFFFF", "#1E1E20"),
                           composer: pair("#FFFFFF", "#2A2A2D"), selection: nil, userBubble: nil)
         }
+    }
+}
+
+extension RGBAColor {
+    /// This colour with `amount` (0...1) of `other` mixed in, in sRGB.
+    public func mixed(with other: RGBAColor, _ amount: Double) -> RGBAColor {
+        func mix(_ a: Double, _ b: Double) -> Double { a + (b - a) * amount }
+        return RGBAColor(red: mix(red, other.red), green: mix(green, other.green), blue: mix(blue, other.blue),
+                         alpha: mix(alpha, other.alpha))
     }
 }
 
@@ -82,9 +113,9 @@ public struct ThemeSurfaces: Sendable, Hashable {
     public var chat: MarkdownColors.Pair
     /// The composer's field, on the chat.
     public var composer: MarkdownColors.Pair
-    /// A selected row in the session list; nil: the accent, lightened in the app.
+    /// A selected row in the session list: the chrome, more of the accent in it.
     public var selection: MarkdownColors.Pair?
-    /// The user's messages; nil: the accent, lightened in the app.
+    /// The user's messages.
     public var userBubble: MarkdownColors.Pair?
 
     public init(chrome: MarkdownColors.Pair, chat: MarkdownColors.Pair, composer: MarkdownColors.Pair,

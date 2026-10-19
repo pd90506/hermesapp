@@ -546,9 +546,10 @@ final class LiveChatUITests: XCTestCase {
         let closing = drawerShots(app, "closing the profiles") {
             app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
         }
-        // The drawer's colour and the list's, where the drawer is empty (under its
-        // profiles, over its Settings): fully open and closed.
-        let y = (screen.height * 0.8).rounded()
+        // The drawer's colour and the list's along a line under the status bar and over
+        // the list's header, clear of the drawer's rounded corners and of the list's
+        // cards (white, as the drawer): fully open and closed.
+        let y: CGFloat = 44
         guard let closedShot = opening.first, let openShot = opening.last,
               let list = Self.rgb(closedShot, x: 20, y: y, in: screen),
               let drawer = Self.rgb(openShot, x: 20, y: y, in: screen) else { return XCTFail("read the screenshots") }

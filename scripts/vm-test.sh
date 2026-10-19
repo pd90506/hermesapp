@@ -27,7 +27,9 @@
 #
 # Only one run uses the VM at a time, from any worktree: a second run waits for the
 # first (it would otherwise overwrite the VM's copy of the repo and restart its
-# dashboard mid-run).
+# dashboard mid-run), saying whose run it waits for and which step that run is on. The
+# lock goes with its run however the run ends, even kill -9, so a run never waits on
+# one that has finished or been killed.
 # Each step's time is printed at the end.
 #
 # scripts/live-test.sh stays for running the live tests on this Mac by hand.
@@ -94,6 +96,13 @@ step() {
   local now; now=$(date +%s)
   [[ -n $step_name ]] && timings+=$(printf '\n  %4ss  %s' $((now - step_start)) "$step_name")
   step_name=$1 step_start=$now
+  note_holder
+}
+# While this run holds the VM, who it is and what it is doing, for the runs waiting.
+note_holder() {
+  [[ -n ${vm_since:-} ]] || return 0
+  printf '%s\t%s\t%s\t%s\n' $$ "$repo" "$vm_since" "$step_name" >"$holder_file.$$" \
+    && mv -f "$holder_file.$$" "$holder_file"
 }
 report_times() { step ""; [[ -n $timings ]] && printf 'vm-test.sh step times (total %ss):%s\n' "$SECONDS" "$timings"; }
 
@@ -130,21 +139,85 @@ if ((${#schemes[@]})); then
   done
 fi
 
-# One run at a time: wait for another run's lock (taken over if its process is gone).
+# One run at a time. The lock is the kernel's (flock) on $lockfile, held by a small
+# python3 watcher for as long as this script lives: the kernel drops it the moment the
+# watcher ends, and the watcher ends as soon as this script does, however it ends
+# (done, failed, Ctrl-C, kill -9). So a run waits only while another live run holds the
+# VM. The pid-in-a-directory lock this replaces could be left behind: by a run killed
+# before it wrote its pid (never taken over), or with a pid the system had since given
+# to another process (pids here come round again within hours), and a waiter then
+# waited on an idle VM; two waiters taking over the same stale lock could also delete
+# each other's.
 step "wait for the VM"
-# A fixed path, so runs from any worktree or shell (whatever its TMPDIR) share it.
-lock=/tmp/hermesapp-vm-test.lock
-until mkdir "$lock" 2>/dev/null; do
-  holder=$(cat "$lock/pid" 2>/dev/null || true)
-  if [[ -n $holder ]] && ! kill -0 "$holder" 2>/dev/null; then
-    rm -rf "$lock"; continue
+# Fixed paths, so runs from any worktree or shell (whatever its TMPDIR) share them.
+lockfile=/tmp/hermesapp-vm-test.flock
+holder_file=/tmp/hermesapp-vm-test.holder
+legacy=/tmp/hermesapp-vm-test.lock
+lock_token=$$-$RANDOM$RANDOM
+# It ignores the signals that stop this script, so the lock outlasts the EXIT trap's
+# stopping of the VM; the trap then ends it.
+python3 -c '
+import fcntl, os, signal, sys, time
+path, token = sys.argv[1:]
+for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(s, signal.SIG_IGN)
+script = os.getppid()
+fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
+while True:
+    if os.getppid() != script:
+        sys.exit()
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        break
+    except BlockingIOError:
+        time.sleep(1)
+os.ftruncate(fd, 0)
+os.write(fd, token.encode())
+while os.getppid() == script:
+    time.sleep(1)
+' "$lockfile" "$lock_token" &
+watcher=$!
+release_vm() {
+  [[ $(cat "$legacy/pid" 2>/dev/null) != "$$" ]] || rm -rf "$legacy"
+  [[ -z ${vm_since:-} ]] || rm -f "$holder_file"
+  kill -KILL "$watcher" 2>/dev/null || true
+}
+trap 'remove_products; release_vm' EXIT
+trap 'exit 130' INT TERM HUP
+shown="" polls=0
+until [[ $(cat "$lockfile" 2>/dev/null) == "$lock_token" ]]; do
+  kill -0 "$watcher" 2>/dev/null || { echo "The VM lock's watcher (python3) quit." >&2; exit 1; }
+  # A free lock takes the watcher a moment to take: say nothing until then.
+  ((++polls > 2)) || { sleep 0.5; continue; }
+  hpid="" hrepo="" hsince="" hstep=""
+  IFS=$'\t' read -r hpid hrepo hsince hstep 2>/dev/null <"$holder_file" || true
+  if [[ -n $hpid && $hsince =~ ^[0-9]+$ ]] && kill -0 "$hpid" 2>/dev/null; then
+    seen="$hpid $hstep"
+    msg="The VM is in use by the vm-test.sh run from ${hrepo##*/} (pid $hpid, on the VM for"
+    msg+=" $((($(date +%s) - hsince) / 60)) min, now at: $hstep); waiting for it..."
+  else
+    seen="?" msg="Another vm-test.sh run is using the VM; waiting for it..."
   fi
-  [[ -n ${waited:-} ]] || { echo "Another vm-test.sh run (pid ${holder:-?}) is using the VM; waiting for it..."; waited=1; }
+  [[ $seen == "$shown" ]] || { echo "$msg"; shown=$seen; }
+  sleep 2
+done
+# Runs from worktrees made before this lock take only the old one, a directory holding
+# their pid: wait for such a run, then hold that one too, so they wait for this one.
+# Taken over when its pid is no vm-test.sh run (gone, or since given to another
+# process), or when it has had no pid for a while. (Drop once no such worktree is left.)
+until mkdir "$legacy" 2>/dev/null; do
+  holder=$(cat "$legacy/pid" 2>/dev/null || true)
+  if [[ -n $holder ]]; then
+    ps -o command= -p "$holder" 2>/dev/null | grep -q 'vm-test\.sh' || { rm -rf "$legacy"; continue; }
+  elif (($(date +%s) - $(stat -f %m "$legacy" 2>/dev/null || echo 0) > 10)); then
+    rm -rf "$legacy"; continue
+  fi
+  [[ -n ${waited:-} ]] || { echo "An older vm-test.sh run (pid ${holder:-?}) is using the VM; waiting for it..."; waited=1; }
   sleep 5
 done
-echo $$ >"$lock/pid"
-trap 'remove_products; rm -rf "$lock"' EXIT
-trap 'exit 130' INT TERM HUP
+echo $$ >"$legacy/pid"
+vm_since=$(date +%s)
+note_holder
 
 # 1. The VM: cloned once, headless. No folder is shared: the code is streamed in (step 4).
 step "start the VM"
@@ -168,7 +241,7 @@ if ! tart list | awk -v vm="$VM" '$2 == vm && $NF == "running"' | grep -q .; the
 fi
 for _ in $(seq 1 90); do tart exec "$VM" true >/dev/null 2>&1 && break; sleep 2; done
 vexec() { tart exec "$VM" /bin/zsh -lc "export PATH=\$HOME/.local/bin:\$PATH; $1"; }
-trap 'remove_products; ((keep)) || tart stop "$VM" >/dev/null 2>&1 || true; report_times; rm -rf "$lock"' EXIT
+trap 'remove_products; ((keep)) || tart stop "$VM" >/dev/null 2>&1 || true; report_times; release_vm' EXIT
 
 # 2. The VM's own Hermes: installed once, a hermesapp-test profile on the test model
 #    (memory off, as on the Mac), and the model key from $KEY_FILE.

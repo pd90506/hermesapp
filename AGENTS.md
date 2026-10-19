@@ -116,8 +116,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   - Run `scripts/vm-test.sh` from the PR's own worktree. It builds the apps and their tests on
     the host (decided by the user, 2026-10-18), streams the built products into the VM, which
     only runs them, and then deletes them from the host. Only one run uses the VM at a time (a
-    lock in `/tmp`), so a second run, from any worktree, waits its turn; it builds while it
-    waits.
+    kernel lock in `/tmp` that goes with its run however the run ends), so a second run, from
+    any worktree, waits its turn, naming the run it waits for and that run's step; it builds
+    while it waits.
   - A run from another worktree than the last restarts the VM first (decided by the user,
     2026-10-18): leftovers of another thread's run, such as a hung `xcodebuild`, slowed or
     broke the next one.

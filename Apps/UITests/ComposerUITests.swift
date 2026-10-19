@@ -1,6 +1,8 @@
 import XCTest
 
 #if os(iOS)
+import UIKit
+
 /// The iPhone composer, a card floating over the chat as the Claude app's: Liquid Glass,
 /// a large corner radius, `+` and the model and effort pills on the left, Send in the
 /// theme's accent on the right; an attached image shows inside the card above the text.
@@ -172,6 +174,61 @@ final class ComposerUITests: XCTestCase {
         XCTAssertEqual(send.frame.maxX, restingX, accuracy: 1, "Send where it was before turning")
     }
 
+    /// The messages scrolled under the floating composer blur away into the chat's colour
+    /// below and around the card, as in the Claude app, rather than showing sharp behind
+    /// and beside it (the user, 2026-10-19); the same under the title bar. Screenshots in
+    /// light and dark, the Bot Chat's text dragged under the card.
+    @MainActor
+    func testMessagesBlurAwayUnderTheComposer() throws {
+        continueAfterFailure = false
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+            throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HERMES_UITEST_URL"] = url
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        app.launch()
+        defer { app.terminate() }
+
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["profilesButton"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        let botChat = app.collectionViews.firstMatch.descendants(matching: .any)["botChatRow"].firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the Bot Chat row")
+
+        for mode in ["Light", "Dark"] {
+            pick(theme: "nous", mode: mode, in: app, screenshotSettings: false)
+            botChat.tap()
+            let send = app.buttons["Send"].firstMatch
+            XCTAssertTrue(send.waitForExistence(timeout: 30), "the Bot Chat opened")
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+            attach(app, "at the end, \(mode.lowercased())")
+            // Dragged down slowly, without a fling: the last messages move under the card.
+            let window = app.windows.firstMatch
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+                .press(forDuration: 0.1,
+                       thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)),
+                       withVelocity: .slow, thenHoldForDuration: 0.3)
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let shot = app.screenshot()
+            attach(app, "messages under the composer, \(mode.lowercased())")
+            // Under the card, down to the screen's edge, no sharp text: no brightness step
+            // between neighbouring pixels as a glyph's edge makes (about 250 of 255 sharp,
+            // 2 blurred, VM 2026-10-19).
+            let screen = window.frame
+            let below = CGRect(x: 8, y: send.frame.maxY + 14,
+                               width: screen.width - 16, height: screen.maxY - 2 - (send.frame.maxY + 14))
+            let step = try XCTUnwrap(Self.largestStep(shot.image, in: below, screen: screen))
+            XCTAssertLessThan(step, 40, "the messages under the card are blurred, \(mode): step \(step) in \(below)")
+            back.tap()
+        }
+
+        // Back to the defaults, for the tests after this one.
+        pick(theme: "nous", mode: "System", in: app, screenshotSettings: false)
+    }
+
     /// Settings ▸ Appearance, through the profiles drawer's gear: the theme and the mode
     /// picked, and the sheet closed, back on the Sessions page.
     @MainActor
@@ -202,6 +259,30 @@ final class ComposerUITests: XCTestCase {
         }
         XCTAssertTrue(eventually { !rail.exists }, "the drawer closed")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
+    }
+
+    /// The largest brightness step (0–255) between horizontally neighbouring pixels of
+    /// `rect` (screen points) of a screenshot.
+    private static func largestStep(_ image: UIImage, in rect: CGRect, screen: CGRect) -> Int? {
+        guard let cg = image.cgImage, rect.width > 0, rect.height > 0 else { return nil }
+        let scale = CGFloat(cg.width) / screen.width
+        let crop = CGRect(x: rect.minX * scale, y: rect.minY * scale,
+                          width: rect.width * scale, height: rect.height * scale).integral
+        guard let part = cg.cropping(to: crop) else { return nil }
+        var bytes = [UInt8](repeating: 0, count: part.width * part.height * 4)
+        let context = CGContext(data: &bytes, width: part.width, height: part.height, bitsPerComponent: 8,
+                                bytesPerRow: part.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        context?.draw(part, in: CGRect(x: 0, y: 0, width: part.width, height: part.height))
+        func brightness(_ i: Int) -> Int { (Int(bytes[i]) + Int(bytes[i + 1]) + Int(bytes[i + 2])) / 3 }
+        var largest = 0
+        for row in 0..<part.height {
+            for column in 1..<part.width {
+                let i = (row * part.width + column) * 4
+                largest = max(largest, abs(brightness(i) - brightness(i - 4)))
+            }
+        }
+        return largest
     }
 
     @MainActor

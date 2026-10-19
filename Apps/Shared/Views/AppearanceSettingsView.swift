@@ -29,7 +29,7 @@ struct AppearanceSettingsView: View {
             } header: {
                 Text("Theme")
             } footer: {
-                Text("Hermes Desktop's themes. The accent colors buttons, your messages and selections; replies take the theme's Markdown colors.")
+                Text("Hermes Desktop's themes, with Codex and Claude Code. The accent colors buttons, your messages and selections; replies take the theme's Markdown colors.")
             }
 
             Section {

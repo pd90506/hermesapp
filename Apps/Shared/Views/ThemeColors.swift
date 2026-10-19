@@ -129,25 +129,33 @@ extension EnvironmentValues {
     @Entry var surfaces = SurfaceColors.system
 }
 
-/// The themes as a row of swatches, each its accent with its name under it, as the
-/// system's accent colours are picked (Settings ▸ Appearance).
+/// The themes as swatches, each its accent with its name under it, as the system's
+/// accent colours are picked (Settings ▸ Appearance): one row on the Mac, two rows of
+/// four on iOS, where eight don't fit across a phone.
 struct ColorThemePicker: View {
     @Binding var selection: ColorTheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            ForEach(ColorTheme.allCases, id: \.self) { theme in
-                Button {
-                    selection = theme
-                } label: {
-                    Swatch(theme: theme, isSelected: theme == selection)
-                }
-                .buttonStyle(.plain)
-                .help(Self.label(theme))
-                .accessibilityLabel(Self.label(theme))
-                .accessibilityAddTraits(theme == selection ? .isSelected : [])
-                .accessibilityIdentifier("colorTheme.\(theme.rawValue)")
+        #if os(macOS)
+        HStack(alignment: .top, spacing: 14) { swatches }
+        #else
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: 4),
+                  spacing: 12) { swatches }
+        #endif
+    }
+
+    private var swatches: some View {
+        ForEach(ColorTheme.allCases, id: \.self) { theme in
+            Button {
+                selection = theme
+            } label: {
+                Swatch(theme: theme, isSelected: theme == selection)
             }
+            .buttonStyle(.plain)
+            .help(Self.label(theme))
+            .accessibilityLabel(Self.label(theme))
+            .accessibilityAddTraits(theme == selection ? .isSelected : [])
+            .accessibilityIdentifier("colorTheme.\(theme.rawValue)")
         }
     }
 
@@ -158,6 +166,8 @@ struct ColorThemePicker: View {
         case .catppuccin: "Catppuccin"
         case .everforest: "Everforest"
         case .solarized: "Solarized"
+        case .codex: "Codex"
+        case .claudeCode: "Claude Code"
         case .plain: "System"
         }
     }
@@ -168,10 +178,19 @@ struct ColorThemePicker: View {
 
         private static let size: CGFloat = 26
 
+        /// The system's accent for System: `.accentColor` is the tint, the theme picked.
+        private static var systemAccent: Color {
+            #if os(macOS)
+            Color(nsColor: .controlAccentColor)
+            #else
+            Color(uiColor: .systemBlue)
+            #endif
+        }
+
         var body: some View {
             VStack(spacing: 5) {
                 Circle()
-                    .fill(theme.accentColor ?? .accentColor)
+                    .fill(theme.accentColor ?? Self.systemAccent)
                     .overlay { Circle().strokeBorder(.black.opacity(0.12)) }
                     .frame(width: Self.size, height: Self.size)
                     .padding(3)

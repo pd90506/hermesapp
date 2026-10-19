@@ -4,14 +4,19 @@ import Foundation
 /// user's messages and other marks of the app, and the Markdown colours of replies
 /// (`MarkdownColors`, which keeps the theme).
 ///
-/// `[client choice]` Kept by the app, across launches. The names and accents are Hermes
+/// `[client choice]` Kept by the app, across launches. Most names and accents are Hermes
 /// Desktop's themes (`apps/shared/src/theme-presets.ts`, each theme's `primary`), and the
-/// default is Desktop's (Nous). On the Mac a theme also paints the window's surfaces, as
+/// default is Desktop's (Nous). Codex and Claude Code are the app's own, after those apps
+/// (Desktop has neither). On the Mac a theme also paints the window's surfaces, as
 /// Desktop's do (`surfaces`); iOS keeps the platform's.
 public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
     /// Hermes Desktop's default theme: GitHub's neutrals and Nous blue.
     case nous
     case github, catppuccin, everforest, solarized
+    /// After OpenAI's Codex app: its graphite neutrals, and OpenAI's blue for controls.
+    case codex
+    /// After Claude Code and the Claude apps: Anthropic's ivory and clay.
+    case claudeCode
     /// No colour of its own: the system's accent, and Markdown in the system's text greys
     /// and link blue, as the app looked before themes.
     case plain
@@ -28,6 +33,10 @@ public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
         case .catppuccin: pair("#6D2EBF", "#CBA6F7")
         case .everforest: pair("#586B35", "#A7C080")
         case .solarized: pair("#675E34", "#6EA1C4")
+        // `#0169CC` reads at 5.4:1 on white.
+        case .codex: pair("#0169CC", "#339CFF")
+        // Anthropic's clay: Crail `#C15F3C` in light, the logo's `#D97757` in dark.
+        case .claudeCode: pair("#C15F3C", "#D97757")
         case .plain: nil
         }
     }
@@ -35,7 +44,16 @@ public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
     /// The Mac window's surfaces: the theme's Desktop palette, its chrome and selection
     /// tinted with its accent, so each theme has a colour of its own (the user,
     /// 2026-10-19: neutral surfaces made every theme look the same).
-    public var surfaces: ThemeSurfaces { surfaces(accent: accent) }
+    public var surfaces: ThemeSurfaces { surfaces(accent: surfaceTint) }
+
+    /// The colour the surfaces take: the accent, but for Codex a graphite grey, so its
+    /// window stays neutral as the Codex app's does (its blue tint read as Nous's).
+    private var surfaceTint: MarkdownColors.Pair? {
+        switch self {
+        case .codex: MarkdownColors.Pair(light: RGBAColor(hex: "#5C5C5C")!, dark: RGBAColor(hex: "#8F8F8F")!)
+        default: accent
+        }
+    }
 
     /// The surfaces tinted with `accent`: Plain passes the system's accent, which only
     /// the app knows. With no accent, the palette's neutrals and no selection or bubble.
@@ -91,6 +109,16 @@ public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
             ThemeSurfaces(chrome: pair("#EEE8D5", "#001F26"), chat: pair("#FDF6E3", "#002B36"),
                           composer: pair("#FEFBF1", "#073642"), selection: nil,
                           userBubble: pair("#EEE8D5", "#144050"))
+        // OpenAI's neutrals: ChatGPT's sidebar and page, and its grey user bubble.
+        case .codex:
+            ThemeSurfaces(chrome: pair("#F9F9F9", "#0D0D0D"), chat: pair("#FFFFFF", "#232323"),
+                          composer: pair("#FFFFFF", "#2F2F2F"), selection: nil,
+                          userBubble: pair("#F2F2F2", "#363636"))
+        // Claude's ivory page on its warm sidebar, the composer white in light.
+        case .claudeCode:
+            ThemeSurfaces(chrome: pair("#F0EEE6", "#1F1E1D"), chat: pair("#FAF9F5", "#262624"),
+                          composer: pair("#FFFFFF", "#30302E"), selection: nil,
+                          userBubble: pair("#EDE9DE", "#3A3936"))
         // Neutral greys, tinted with the system's accent in the app.
         case .plain:
             ThemeSurfaces(chrome: pair("#F4F4F5", "#161618"), chat: pair("#FFFFFF", "#1E1E20"),

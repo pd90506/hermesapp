@@ -40,6 +40,9 @@ struct RootView: View {
             get: { model.settingsPresentation.isShown },
             set: { if !$0 { model.settingsPresentation.close() } })) {
             SettingsView()
+                // Set again on the sheet: one already up kept the old mode when the
+                // user picked Light or Dark in it.
+                .preferredColorScheme(AppearanceTheme.colorScheme(model.appearance.theme))
         }
         #endif
         // The chat on screen can change without a click: dropped on reconnect,

@@ -2,14 +2,15 @@ import AppKit
 import HermesKit
 import SwiftUI
 
-/// The Mac window: the strip along the top (the window buttons and the profile rail's
-/// collapse button on it), the profile rail and the session list, all on the theme's
-/// chrome, and the chat as a card on it, rounded and set in from the window's edges,
-/// as Hermes Desktop lays its transcript on the sidebar's colour (the user asked for a
-/// calmer look, 2026-10-19). It was Slack's: a frame in the theme's deep colour around
-/// one panel with the session list and the chat.
+/// The Mac window, as Slack's: a frame along the top (the window buttons and the
+/// profile rail's collapse button on it) and down the profile rail, in a deeper tint of
+/// the theme (`ThemeSurfaces.frame`), around a panel rounded at its top-leading corner,
+/// on the theme's chrome: the session list, and the chat as a card set in from the
+/// window's edges, as Hermes Desktop lays its transcript on the sidebar's colour. The
+/// frame was the accent's deep shade; the user asked for a calmer look, with the
+/// profiles still standing apart (2026-10-19).
 ///
-/// The title bar shows no background and no title: the strip under it is the chrome's,
+/// The title bar shows no background and no title: the strip under it is the frame's,
 /// as tall as the title bar (centred on the window buttons). The collapse button is the
 /// title bar's own item after the window buttons, so the title bar still drags the window
 /// and takes clicks as it does (a button drawn under it, with no title bar, got none).
@@ -40,15 +41,10 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
                     rail
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                list
-                    .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
-                    .overlay(alignment: .trailing) {
-                        ColumnResizer(width: $listWidth, range: Self.listWidths)
-                    }
-                card
+                panel
             }
         }
-        .background(surfaces.chrome)
+        .background(surfaces.frame)
         .ignoresSafeArea(.container, edges: .top)
         .background(WindowButtonsReader { windowButtons = $0 })
         .toolbar {
@@ -58,7 +54,7 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
             .sharedBackgroundVisibility(.hidden)
         }
         .toolbar(removing: .title)
-        // No toolbar background: the chrome shows through (macOS 26 also showed one
+        // No toolbar background: the frame shows through (macOS 26 also showed one
         // only under the pointer).
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
@@ -67,6 +63,22 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
     private var strip: some View {
         let height = windowButtons.map { min(max(($0.midY * 2).rounded(), 32), 64) } ?? 52
         return Color.clear.frame(height: height)
+    }
+
+    /// The session list and the chat's card, on the chrome. The card is set in from the
+    /// panel's top as from the window's edges; the list's header stays level with its title.
+    private var panel: some View {
+        HStack(spacing: 0) {
+            list
+                .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
+                .overlay(alignment: .trailing) {
+                    ColumnResizer(width: $listWidth, range: Self.listWidths)
+                }
+            card
+        }
+        .padding(.top, Self.cardInset)
+        .background(surfaces.chrome)
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: Self.cardRadius, style: .continuous))
     }
 
     /// The chat on its card: a hairline edge, and in light mode a soft shadow, lift it

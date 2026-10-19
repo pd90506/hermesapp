@@ -75,7 +75,9 @@ private struct ColorThemeModifier: ViewModifier {
 /// A theme's surfaces as colours that follow light and dark. The defaults, before a
 /// theme applies (and on iOS, which keeps the platform's surfaces), are the system's.
 struct SurfaceColors {
-    /// The window's chrome: the strip along the top, the profile rail, the session list.
+    /// The window's frame: the strip along the top and the profile rail.
+    var frame: Color
+    /// Under the session list and around the chat's card.
     var chrome: Color
     /// The chat's card.
     var chat: Color
@@ -87,7 +89,7 @@ struct SurfaceColors {
     var userBubble: AnyShapeStyle
 
     static let system = SurfaceColors(
-        chrome: Color.secondary.opacity(0.08), chat: Color.clear,
+        frame: Color.secondary.opacity(0.12), chrome: Color.secondary.opacity(0.08), chat: Color.clear,
         composer: {
             #if os(macOS)
             Color(nsColor: .controlBackgroundColor)
@@ -115,7 +117,7 @@ extension SurfaceColors {
         func color(_ pair: MarkdownColors.Pair) -> Color {
             Color(nsColor: dynamicColor(light: NSColor(pair.light), dark: NSColor(pair.dark)))
         }
-        self.init(chrome: color(surfaces.chrome), chat: color(surfaces.chat), composer: color(surfaces.composer),
+        self.init(frame: color(surfaces.frame), chrome: color(surfaces.chrome), chat: color(surfaces.chat), composer: color(surfaces.composer),
                   selection: surfaces.selection.map { AnyShapeStyle(color($0)) } ?? Self.system.selection,
                   userBubble: surfaces.userBubble.map { AnyShapeStyle(color($0)) } ?? Self.system.userBubble)
     }

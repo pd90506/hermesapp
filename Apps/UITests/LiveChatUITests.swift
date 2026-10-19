@@ -323,8 +323,9 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "profile rail")
     }
 
-    /// The theme's chrome, one colour, runs along the top (the window buttons on it) and
-    /// down the profile rail, beside the chat on its card, which stands apart from it.
+    /// The frame, one deeper tint of the theme, runs along the top (the window buttons on
+    /// it) and down the profile rail, around the panel with the session list and the
+    /// chat's card, which stands apart from it.
     /// Nor does the pointer over the strip shade the chat (macOS 26 shaded the title bar
     /// under the pointer).
     @MainActor

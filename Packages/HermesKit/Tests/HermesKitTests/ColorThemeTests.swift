@@ -53,6 +53,9 @@ struct ColorThemeTests {
             #expect(Self.contrast(surfaces.chrome.dark, surfaces.chat.dark) >= 1.02, "\(theme)")
             #expect(Self.contrast(selection.light, surfaces.chrome.light) >= 1.15, "\(theme): \(selection.light.hex)")
             #expect(Self.contrast(selection.dark, surfaces.chrome.dark) >= 1.3, "\(theme): \(selection.dark.hex)")
+            // The profile rail's frame stands apart from the session list beside it.
+            #expect(Self.contrast(surfaces.frame.light, surfaces.chrome.light) >= 1.15, "\(theme): \(surfaces.frame.light.hex)")
+            #expect(Self.contrast(surfaces.frame.dark, surfaces.chrome.dark) >= 1.12, "\(theme): \(surfaces.frame.dark.hex)")
         }
     }
 

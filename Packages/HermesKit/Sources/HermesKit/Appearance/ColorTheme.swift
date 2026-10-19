@@ -46,6 +46,10 @@ public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
             MarkdownColors.Pair(light: pair.light.mixed(with: accent.light, light),
                                 dark: pair.dark.mixed(with: accent.dark, dark))
         }
+        // The frame from the palette's chrome, before the chrome is tinted: in dark more
+        // of the accent than the chrome, so the profile rail stands apart as a band of
+        // the theme's colour (the user, 2026-10-19).
+        surfaces.frame = tint(tint(surfaces.chrome, light: Self.chromeTint.light, dark: 0), light: 0.14, dark: 0.24)
         surfaces.chrome = tint(surfaces.chrome, light: Self.chromeTint.light, dark: Self.chromeTint.dark)
         surfaces.selection = tint(surfaces.chrome, light: 0.14, dark: 0.22)
         if surfaces.userBubble == nil { surfaces.userBubble = tint(surfaces.chat, light: 0.12, dark: 0.18) }
@@ -107,7 +111,10 @@ extension RGBAColor {
 /// A theme's surfaces in the Mac window, each in light and dark: the chat as a card on
 /// the chrome, as Hermes Desktop lays its transcript on the sidebar's colour.
 public struct ThemeSurfaces: Sendable, Hashable {
-    /// The strip along the top, the profile rail and the session list.
+    /// The strip along the top and the profile rail, around the rest: deeper in the
+    /// theme's colour than the chrome. Without an accent, the chrome.
+    public var frame: MarkdownColors.Pair
+    /// Under the session list and around the chat's card.
     public var chrome: MarkdownColors.Pair
     /// The chat's card.
     public var chat: MarkdownColors.Pair
@@ -120,6 +127,7 @@ public struct ThemeSurfaces: Sendable, Hashable {
 
     public init(chrome: MarkdownColors.Pair, chat: MarkdownColors.Pair, composer: MarkdownColors.Pair,
                 selection: MarkdownColors.Pair?, userBubble: MarkdownColors.Pair?) {
+        self.frame = chrome
         self.chrome = chrome
         self.chat = chat
         self.composer = composer

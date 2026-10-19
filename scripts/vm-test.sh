@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# Runs the tests in a headless macOS VM (Tart), so nothing runs on this Mac: the
+# Runs the tests in a headless macOS VM (Tart), so no test runs on this Mac: the
 # package live tests, the macOS window tests and the macOS UI test.
 #
 # Run it from the checkout or worktree whose code you want tested (a PR's own worktree,
-# not the main checkout). Its files (tracked and untracked, minus what .gitignore lists)
-# are streamed into the VM, which builds and tests them there. Nothing is built or left
-# on this Mac: no Hermes.app, no DerivedData, no copy of the source.
+# not the main checkout). The apps and their tests are built here, on this Mac (decided
+# by the user, 2026-10-18: the VM's builds were the slow part), before waiting for the
+# VM, into build/vm-test in that worktree (git-ignored; its intermediates stay, so the
+# next build is incremental). The built products are streamed into the VM, which only
+# runs them (test-without-building), and are then deleted here, the Mac app first
+# unregistered from Launch Services: the Mac keeps only the main checkout's Hermes.app.
+# The worktree's files (tracked and untracked, minus what .gitignore lists) go in too,
+# for the package's live tests, which the VM still builds itself (small, and swift test
+# can't run a build made elsewhere).
+# The tests' screenshots come back to build/vm-test/screenshots, named by test.
 #
 #   scripts/vm-test.sh          # all of the above
-#   scripts/vm-test.sh --ios    # also the iOS-simulator UI test, in the VM (slow)
+#   scripts/vm-test.sh --ios    # also the iOS-simulator UI test, run in the VM
 #   scripts/vm-test.sh --keep   # leave the VM running afterwards (faster next run)
 #
 # While iterating, run only what the change touches; run the whole set once before merge:
@@ -90,7 +97,41 @@ step() {
 }
 report_times() { step ""; [[ -n $timings ]] && printf 'vm-test.sh step times (total %ss):%s\n' "$SECONDS" "$timings"; }
 
+SECONDS=0
+
+# 0. Build the apps and their tests here, before taking the VM: a run waiting for the VM
+#    builds meanwhile. One scheme per step, so the step times show them apart.
+dd=$repo/build/vm-test
+products=$dd/Build/Products
+schemes=()
+if runs window; then schemes+=(HermesMacTests); fi
+if runs ui; then schemes+=(HermesMacUITests); fi
+if ((ios)); then schemes+=(HermesiOSUITests); fi
+# The built apps leave this Mac with the run, whatever the outcome: unregistered from
+# Launch Services, then deleted (the intermediates stay, for the next build).
+remove_products() {
+  [[ -d $products ]] || return 0
+  find "$products" -maxdepth 2 -name '*.app' -type d -exec \
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u {} \; 2>/dev/null || true
+  rm -rf "$products"
+}
+if ((${#schemes[@]})); then
+  step "generate the Xcode project (here)"
+  xcodegen generate --quiet --use-cache || exit 1
+  remove_products
+  for scheme in "${schemes[@]}"; do
+    step "build $scheme (here)"
+    case $scheme in
+      HermesiOSUITests) dest="generic/platform=iOS Simulator" arch=(ARCHS=arm64) ;;
+      *) dest="platform=macOS,arch=arm64" arch=() ;;
+    esac
+    xcodebuild build-for-testing -project Hermes.xcodeproj -scheme "$scheme" -destination "$dest" \
+      -derivedDataPath "$dd" -quiet ${arch[@]+"${arch[@]}"} || { remove_products; exit 1; }
+  done
+fi
+
 # One run at a time: wait for another run's lock (taken over if its process is gone).
+step "wait for the VM"
 # A fixed path, so runs from any worktree or shell (whatever its TMPDIR) share it.
 lock=/tmp/hermesapp-vm-test.lock
 until mkdir "$lock" 2>/dev/null; do
@@ -102,9 +143,8 @@ until mkdir "$lock" 2>/dev/null; do
   sleep 5
 done
 echo $$ >"$lock/pid"
-trap 'rm -rf "$lock"' EXIT
+trap 'remove_products; rm -rf "$lock"' EXIT
 trap 'exit 130' INT TERM HUP
-SECONDS=0
 
 # 1. The VM: cloned once, headless. No folder is shared: the code is streamed in (step 4).
 step "start the VM"
@@ -112,12 +152,23 @@ if ! tart list --quiet | grep -qx "$VM"; then
   tart clone "$IMAGE" "$VM"
   tart set "$VM" --cpu 8 --memory 8192
 fi
+# A fresh VM for each worktree (decided by the user, 2026-10-18): a run from another
+# worktree than the last one restarts it, so nothing that run left behind (a hung
+# xcodebuild, a stuck simulator) slows or upsets this one. --keep only saves the boot
+# between runs from the same worktree.
+last=/tmp/hermesapp-vm-test.last
+if [[ $(cat "$last" 2>/dev/null) != "$repo" ]] \
+    && tart list | awk -v vm="$VM" '$2 == vm && $NF == "running"' | grep -q .; then
+  echo "The last run came from another worktree: restarting the VM."
+  tart stop "$VM" >/dev/null 2>&1 || true
+fi
+echo "$repo" >"$last"
 if ! tart list | awk -v vm="$VM" '$2 == vm && $NF == "running"' | grep -q .; then
   nohup tart run "$VM" --no-graphics >/tmp/hermesapp-vm.log 2>&1 &
 fi
 for _ in $(seq 1 90); do tart exec "$VM" true >/dev/null 2>&1 && break; sleep 2; done
 vexec() { tart exec "$VM" /bin/zsh -lc "export PATH=\$HOME/.local/bin:\$PATH; $1"; }
-trap '((keep)) || tart stop "$VM" >/dev/null 2>&1 || true; report_times; rm -rf "$lock"' EXIT
+trap 'remove_products; ((keep)) || tart stop "$VM" >/dev/null 2>&1 || true; report_times; rm -rf "$lock"' EXIT
 
 # 2. The VM's own Hermes: installed once, a hermesapp-test profile on the test model
 #    (memory off, as on the Mac), and the model key from $KEY_FILE.
@@ -184,31 +235,66 @@ if runs live; then
   step "package live tests"
   vexec "cd ~/hermesapp && HERMES_LIVE=1 swift test --package-path Packages/HermesKit --filter LiveGatewayTests -q" || status=1
 fi
-if runs window || runs ui || ((ios)); then
-step "generate the Xcode project"
-vexec "sudo automationmodetool enable-automationmode-without-authentication >/dev/null 2>&1 || true
-  command -v xcodegen >/dev/null || brew install xcodegen >/dev/null
-  cd ~/hermesapp && xcodegen generate --quiet --use-cache
-  rm -rf ~/results && mkdir -p ~/results" || status=1
-# One scheme per step, so the step times show the window tests and UI tests apart.
+if ((${#schemes[@]})); then
+step "copy the built tests into the VM"
+COPYFILE_DISABLE=1 tar -c -f - -C "$products" . \
+  | tart exec -i "$VM" /bin/zsh -lc "rm -rf ~/products && mkdir ~/products && tar -x -f - -C ~/products || exit 1
+    sudo automationmodetool enable-automationmode-without-authentication >/dev/null 2>&1 || true
+    rm -rf ~/results && mkdir -p ~/results" || status=1
+remove_products
+# Runs a scheme's tests from what was built here (its .xctestrun). No diagnostics on a
+# failure: collecting the simulator's took ten minutes and then timed out.
 xctest() {  # step name, scheme, result name, destination
   step "$1"
-  vexec "cd ~/hermesapp
+  vexec "cd ~/products
     export TEST_RUNNER_HERMES_UITEST_URL='$url' TEST_RUNNER_HERMES_UITEST_TOKEN='$token' TEST_RUNNER_HERMES_UITEST_PROFILE=$PROFILE
-    xcodebuild test -project Hermes.xcodeproj -scheme $2 -destination \"$4\" \
-      -resultBundlePath ~/results/$3.xcresult -quiet$(only_testing "$2")" || status=1
+    xcodebuild test-without-building -xctestrun \$(ls ~/products/$2_*.xctestrun | head -1) -destination \"$4\" \
+      -resultBundlePath ~/results/$3.xcresult -collect-test-diagnostics never -quiet$(only_testing "$2")" || status=1
 }
-if runs window; then xctest "window tests (build and run)" HermesMacTests mac-window platform=macOS; fi
-if runs ui; then xctest "macOS UI tests (build and run)" HermesMacUITests mac-ui platform=macOS; fi
+if runs window; then xctest "window tests (run)" HermesMacTests mac-window platform=macOS; fi
+if runs ui; then xctest "macOS UI tests (run)" HermesMacUITests mac-ui platform=macOS; fi
 if ((ios)); then
   sim=$(vexec "xcrun simctl list devices available" | sed -n 's/^ *\(iPhone [^(]*\) (.*/\1/p' | head -1 | sed 's/ *$//')
-  xctest "iOS UI tests (build and run)" HermesiOSUITests ios-ui "platform=iOS Simulator,name=$sim"
+  xctest "iOS UI tests (run)" HermesiOSUITests ios-ui "platform=iOS Simulator,name=$sim"
 fi
 vexec "for r in ~/results/*.xcresult; do
     [[ -f \$r/Info.plist ]] || { echo \"\$(basename \$r .xcresult): no results (the run did not finish)\"; continue; }
     printf '%s: ' \"\$(basename \$r .xcresult)\"
     xcrun xcresulttool get test-results summary --path \"\$r\" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[\"result\"], d[\"passedTests\"], \"passed,\", d[\"failedTests\"], \"failed\"); [print(\"  \", f[\"testName\"], \"|\", f[\"failureText\"][:300]) for f in d.get(\"testFailures\", [])]'
   done" || true
+# The tests' screenshots, out of the VM before the next run clears its results: into
+# build/vm-test/screenshots/<result>/, named by the test's attachment names.
+step "copy the screenshots out"
+shots=$dd/screenshots
+rm -rf "$shots" && mkdir -p "$shots"
+vexec "rm -rf ~/att && mkdir ~/att && cd ~/results && for r in *.xcresult; do
+    xcrun xcresulttool export attachments --path \$r --output-path ~/att/\${r%.xcresult} >/dev/null 2>&1 || true
+  done" || true
+tart exec "$VM" /bin/zsh -lc 'cd ~/att && tar -cf - .' | tar -C "$shots" -xf - || true
+python3 - "$shots" <<'PY' || true
+import json, os, re, sys
+root = sys.argv[1]
+for result in os.listdir(root):
+    folder = os.path.join(root, result)
+    manifest = os.path.join(folder, "manifest.json")
+    if not os.path.isfile(manifest):
+        continue
+    kept = set()
+    for n, test in enumerate(json.load(open(manifest))):
+        for a in test.get("attachments", []):
+            src = a.get("exportedFileName", "")
+            if not src.endswith(".png"):
+                continue
+            name = re.sub(r"_\d+_[0-9A-F-]{36}\.png$", "", a.get("suggestedHumanReadableName", src))
+            test_name = test.get("testIdentifier", "").split("/")[-1].removesuffix("()")
+            dst = re.sub(r"[/:]", "-", f"{test_name} - {name}.png")
+            os.rename(os.path.join(folder, src), os.path.join(folder, dst))
+            kept.add(dst)
+    for f in os.listdir(folder):
+        if f not in kept:
+            os.remove(os.path.join(folder, f))
+PY
+echo "Screenshots: $shots"
 fi
 
 # 6. Remove the chats the tests left in the VM's test profile (only the live and UI

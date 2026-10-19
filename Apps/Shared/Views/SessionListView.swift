@@ -16,17 +16,20 @@ enum SidebarItem: Hashable {
     }
 }
 
-/// The profile picked in the profile rail: its Bot Chat pinned at the top, where it
-/// never scrolls away (`PinnedBotChat`), then its sessions. On macOS it shares the
-/// sidebar with the rail (`RootView`); on iOS it is the middle column.
+/// The profile picked in the profile rail: its Bot Chat, then its sessions. On macOS it
+/// shares the sidebar with the rail (`RootView`), with the Bot Chat pinned at the top,
+/// where it never scrolls away (`PinnedBotChat`). On iOS it is the middle column (on
+/// iPhone the page under the profiles' drawer), with the Bot Chat as the list's first
+/// group, which scrolls with the sessions under it (asked for by the user, 2026-10-18).
 ///
 /// - On macOS the profile's name (and server) is the column's title, in the title bar
 ///   level with the window buttons, with New chat (`NewChatButton`, a compose icon) at
 ///   the column's trailing edge, level with the name. On iOS both are in the pinned
-///   `SessionListHeader`; rows scroll under it.
+///   `SessionListHeader`; rows scroll under it. On iPhone the header is the page's top,
+///   with no navigation bar over it, and leads with the profile's avatar.
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
-/// - Settings is at the bottom of the profile rail.
+/// - Settings is at the bottom of the profile rail (on iPhone, of the profiles' drawer).
 /// - At the bottom, the error and "waiting" banners; on iOS also a fixed-height footer
 ///   with the connection status (on macOS the rail beside it shows that).
 /// Rows and controls are in `SidebarControls.swift`; pointer feedback in `Hover.swift`.
@@ -49,16 +52,20 @@ struct SessionListView: View {
     @State private var newTitle = ""
     /// The row waiting for the user to confirm its deletion.
     @State private var deleting: HistoryEntry?
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     var body: some View {
-        // The Bot Chat above the list, not in a bar over it: always in reach, and the
-        // rows scroll under nothing. As a bar the list's rows scrolled under, the system
+        // On macOS the Bot Chat above the list, not in a bar over it: always in reach, and
+        // the rows scroll under nothing. As a bar the list's rows scrolled under, the system
         // drew a line across the column at its bottom, only under the pointer (or with
         // rows under it), beside the Bot Chat's own divider, which is always there.
         VStack(spacing: 0) {
             pinnedBotChat
             List(selection: $selection) {
                 if let server = model.sessionsServer {
+                    botSection(server)
                     pinnedSection(server)
                     sessionsSection(server)
                 }
@@ -94,14 +101,24 @@ struct SessionListView: View {
         // The header shows the name; the navigation title stays for the back button.
         .toolbar(removing: .title)
         .navigationBarTitleDisplayMode(.inline)
+        // On iPhone the header is the top of the page: the bar held only Profiles and
+        // Settings, now the header's avatar and the drawer's Settings.
+        .toolbarVisibility(isPhone ? .hidden : .automatic, for: .navigationBar)
         #endif
         .refreshable { await model.refreshLists() }
         #if os(iOS)
         // Pinned above the Bot Chat and the list: it never scrolls away.
         .safeAreaBar(edge: .top) {
-            SessionListHeader(title: profileName ?? "No profile",
-                              subtitle: subtitle,
-                              newChat: newChatButton)
+            if isPhone {
+                SessionListHeader(title: profileName ?? "No profile", subtitle: subtitle,
+                                  newChat: newChatButton) {
+                    CurrentProfileAvatar()
+                }
+            } else {
+                SessionListHeader(title: profileName ?? "No profile",
+                                  subtitle: subtitle,
+                                  newChat: newChatButton)
+            }
         }
         #endif
         // A bar like the header's: rows fade out under it instead of showing through the
@@ -142,8 +159,9 @@ struct SessionListView: View {
         }
     }
 
-    /// The profile's one ongoing chat, above its other sessions.
+    /// On macOS, the profile's one ongoing chat, above its other sessions.
     @ViewBuilder private var pinnedBotChat: some View {
+        #if os(macOS)
         if let server = model.sessionsServer, let bot = server.connection.listProfileBot {
             let item = SidebarItem.bot(server: server.id, profile: bot.name)
             PinnedBotChat(bot: bot, activity: server.connection.activity(for: bot), isSelected: selection == item) {
@@ -151,6 +169,36 @@ struct SessionListView: View {
                 showChat()
             }
         }
+        #endif
+    }
+
+    /// On iOS, the profile's one ongoing chat, as the list's first group: it scrolls with
+    /// the sessions, a row like theirs.
+    @ViewBuilder private func botSection(_ server: ServerConnection) -> some View {
+        #if os(iOS)
+        if let bot = server.connection.listProfileBot {
+            let item = SidebarItem.bot(server: server.id, profile: bot.name)
+            Section {
+                // A button, not a tagged row: the Bot Chat is often already the
+                // selection (opened at launch, or the profile's last chat), and the
+                // List took a tap on the selected row as no change, so it pushed no chat.
+                Button {
+                    selection = item
+                    showChat()
+                } label: {
+                    BotRow(bot: bot, activity: server.connection.activity(for: bot))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("botChatRow")
+                .accessibilityAddTraits(selection == item ? .isSelected : [])
+                .sidebarRowHighlight(isSelected: selection == item)
+            } header: {
+                SidebarSectionTitle(Bot.chatTitle)
+            }
+        }
+        #endif
     }
 
     @ViewBuilder private func sessionsSection(_ server: ServerConnection) -> some View {
@@ -345,6 +393,15 @@ struct SessionListView: View {
         if server.connection.listProfileBot == nil { return "Pick a profile first." }
         if isStartingChat { return "A new chat is being created." }
         return nil
+    }
+
+    /// On iPhone: the compact layout, with the profiles in a drawer (`RootView`).
+    private var isPhone: Bool {
+        #if os(iOS)
+        sizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     #if os(iOS)

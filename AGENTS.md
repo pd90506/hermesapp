@@ -113,9 +113,14 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   - While iterating on a change, run only the parts it touches (`scripts/vm-test.sh --keep
     --only window`, or `--test HermesMacTests/HoverTests`). Run the whole set once, with no
     `--only`/`--test`, before reporting a PR as ready to merge (decided by the user, 2026-10-16).
-  - Run `scripts/vm-test.sh` from the PR's own worktree. It streams that worktree's files into
-    the VM, which builds and tests them; nothing is built or left on the host. Only one run uses
-    the VM at a time (a lock in `/tmp`), so a second run, from any worktree, waits its turn.
+  - Run `scripts/vm-test.sh` from the PR's own worktree. It builds the apps and their tests on
+    the host (decided by the user, 2026-10-18), streams the built products into the VM, which
+    only runs them, and then deletes them from the host. Only one run uses the VM at a time (a
+    lock in `/tmp`), so a second run, from any worktree, waits its turn; it builds while it
+    waits.
+  - A run from another worktree than the last restarts the VM first (decided by the user,
+    2026-10-18): leftovers of another thread's run, such as a hung `xcodebuild`, slowed or
+    broke the next one.
 - **Tests in the VM use a Hermes installed in the VM** (decided by the user, 2026-10).
   - The test VM (`hermesapp-test-vm`, `scripts/vm-test.sh`) is cloned once and keeps its disk
     across runs, so Hermes is installed there once and reused. Window and UI tests in the VM
@@ -141,15 +146,18 @@ Every third-party dependency, its license, pin and reason. Add a row here before
 - CI (`.github/workflows/package-tests.yml`) runs only on Linux. macOS runners cost 10x on a
   private repo, so app builds are checked by hand on the Mac.
 - **The Mac's main checkout and app builds** (decided by the user, 2026-10-16; PR test builds
-  moved to the VM on 2026-10-17):
+  moved to the VM on 2026-10-17, and back to the host, as builds only, on 2026-10-18):
   - The main checkout on the Mac (`~/repo/fun/hermesapp`) stays on local `main`, kept up to
     date with `origin/main`. Don't leave it on a feature branch, don't switch it to a PR branch
     to test it, and don't start new work on a merged branch.
   - Write code on a new branch from the latest `origin/main`, in a separate `git worktree`
     beside the main checkout, not in the main checkout itself.
-  - **PR test builds** happen only in the VM: run `scripts/vm-test.sh` from the PR's worktree
-    (see [Testing conventions](#testing-conventions)). Don't build a PR on the host, from its
-    worktree or anywhere else.
+  - **PR test builds** happen on the host, through `scripts/vm-test.sh` run from the PR's
+    worktree (see [Testing conventions](#testing-conventions)): it builds into that worktree's
+    git-ignored `build/vm-test`, ships the products to the VM to run, then unregisters
+    (`lsregister -u`) and deletes the built apps, keeping only the intermediates for the next
+    incremental build. Don't build a PR on the host any other way, and never run or open it
+    there.
   - **The host build** happens only in the main checkout, after a merge: pull `main`, build
     with Xcode's default DerivedData (no custom `-derivedDataPath`), and relaunch our Hermes
     app (never the official Hermes Desktop). It never waits on a VM run.

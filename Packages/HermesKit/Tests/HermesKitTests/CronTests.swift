@@ -270,7 +270,15 @@ final class FakeCronSource: CronSource, @unchecked Sendable {
 @Suite(.timeLimit(.minutes(1)))
 struct CronBoardTests {
     private func connect(_ source: FakeCronSource) async throws -> GatewayConnection {
-        let connection = try await ScriptedGateway().withDefaults().connect(cron: source)
+        let gateway = ScriptedGateway()
+        gateway.on("profiles.list", result: [
+            "profiles": [profileRowPayload("default", isDefault: true), profileRowPayload("coder")],
+            "bot_mode_protocol": true, "install_id": "test",
+        ])
+        let connection = try await gateway.withDefaults().connect(cron: source)
+        // Settle connect's background roster read first: it picks a list profile when the
+        // selected one isn't in the roster, which reset the board under the test on CI.
+        try #require(await eventually { connection.listsRefreshTask == nil && !connection.listsRefreshQueued })
         connection.selectListProfile("coder")
         return connection
     }
@@ -322,6 +330,7 @@ struct CronBoardTests {
 
     @Test func withoutRESTTheTabSaysSo() async throws {
         let connection = try await ScriptedGateway().withDefaults().connect()
+        try #require(await eventually { connection.listsRefreshTask == nil && !connection.listsRefreshQueued })
         connection.selectListProfile("coder")
         await connection.refreshCronJobs()
         #expect(!connection.cron.isAvailable)

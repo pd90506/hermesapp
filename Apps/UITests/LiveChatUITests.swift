@@ -316,17 +316,18 @@ final class LiveChatUITests: XCTestCase {
     /// build whose rail a person can drag.
     @MainActor
     private func checkProfileRailIsFixed(_ app: XCUIApplication, rail: XCUIElement) {
-        XCTAssertEqual(rail.frame.width, 64, accuracy: 1, "the rail's width")
+        XCTAssertEqual(rail.frame.width, 54, accuracy: 1, "the rail's width")
         for title in ["Hide Sidebar", "Show Sidebar", "Toggle Sidebar"] {
             XCTAssertFalse(app.menuBars.menuItems[title].exists, "the menus offer \(title)")
         }
         attach(app, "profile rail")
     }
 
-    /// As in Slack, a frame in one colour, the theme's deep one, runs along the top (the
-    /// window buttons on it) and down the profile rail, around the panel with the session
-    /// list and the chat. Nor does the pointer over the strip shade the chat (macOS 26 shaded
-    /// the title bar under the pointer).
+    /// The frame, one deeper tint of the theme, runs along the top (the window buttons on
+    /// it) and down the profile rail, around the panel with the session list and the
+    /// chat's card, which stands apart from it.
+    /// Nor does the pointer over the strip shade the chat (macOS 26 shaded the title bar
+    /// under the pointer).
     @MainActor
     private func checkFrameIsOneColourAroundThePanel(_ app: XCUIApplication, newChat: XCUIElement,
                                                      list: XCUIElement, rail: XCUIElement, _ state: String) {
@@ -358,9 +359,7 @@ final class LiveChatUITests: XCTestCase {
         let chat = color(at: chatX, 160, in: shot)
         XCTAssertTrue(same(stripOverRail, stripOverChat), "\(state): the strip is one colour: \(stripOverRail) \(stripOverChat)")
         XCTAssertTrue(same(stripOverRail, railLow), "\(state): the rail is the strip's colour: \(railLow) vs \(stripOverRail)")
-        XCTAssertFalse(same(stripOverRail, chat, within: 20), "\(state): the panel is set off from the frame: \(chat)")
-        let brightness = stripOverRail.map(Int.init).reduce(0, +)
-        XCTAssertLessThan(brightness, 3 * 110, "\(state): the frame is a deep colour: \(stripOverRail)")
+        XCTAssertFalse(same(stripOverRail, chat), "\(state): the chat's card is set off from the chrome: \(chat)")
         // The pointer over the strip leaves it and the chat alone.
         window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: chatX, dy: 8)).hover()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))

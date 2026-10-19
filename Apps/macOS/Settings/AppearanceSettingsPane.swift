@@ -23,7 +23,7 @@ struct AppearanceSettingsPane: View {
             LabeledContent("Theme:") {
                 VStack(alignment: .leading, spacing: 6) {
                     ColorThemePicker(selection: model.colorThemeBinding)
-                    SettingsNote("Hermes Desktop's themes. The accent colors buttons, your messages and selections; replies take the theme's Markdown colors.")
+                    SettingsNote("Hermes Desktop's themes. They color the window, the sidebar and the chat, the accent colors buttons and marks, and replies take the theme's Markdown colors.")
                 }
             }
 

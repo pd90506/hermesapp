@@ -25,6 +25,7 @@ struct ChatView: View {
     /// The scroll view's own width, scroller included (`steadyColumn`).
     @State private var chatWidth: CGFloat?
     @Environment(\.textSizes) private var sizes
+    @Environment(\.surfaces) private var surfaces
 
     /// `pushed`: the chat is a page pushed over the session list (iPhone), whose rows
     /// wait for the push to end (`TranscriptWindow`).
@@ -99,7 +100,7 @@ struct ChatView: View {
                 .padding(.horizontal, PromptRail.room)
                 #endif
                 .padding(.vertical, 10)
-                .background(.bar)
+                .background { composerBar }
         }
         // The title is the column's (`RootView`), as several chats are kept built.
         #if os(macOS)
@@ -107,6 +108,22 @@ struct ChatView: View {
         // macOS 26 showed that background while the pointer was over the title bar or
         // the top of the chat: a gray band down to the first message, with a line under it.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        #endif
+    }
+
+    /// Under the composer. On the Mac the chat's own colour, the transcript fading into
+    /// it above the composer, as Desktop's; on iOS the system's bar.
+    @ViewBuilder private var composerBar: some View {
+        #if os(macOS)
+        surfaces.chat
+            .overlay(alignment: .top) {
+                LinearGradient(colors: [surfaces.chat.opacity(0), surfaces.chat], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 16)
+                    .offset(y: -16)
+                    .allowsHitTesting(false)
+            }
+        #else
+        Rectangle().fill(.bar)
         #endif
     }
 
@@ -208,6 +225,7 @@ private struct MessageRow: View {
     /// The chat's profile: stored images are read for it.
     let profile: String?
     let session: ChatSession
+    @Environment(\.surfaces) private var surfaces
     @Environment(ServerConnection.self) private var server
 
     var body: some View {
@@ -251,7 +269,7 @@ private struct MessageRow: View {
                                 .contentFont()
                                 .textSelection(.enabled)
                                 .padding(10)
-                                .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+                                .background(surfaces.userBubble, in: .rect(cornerRadius: 12))
                         }
                         MessageActionBar(isHovering: isHovering, isNewest: isNewest,
                                          alignment: .trailing, copy: copyMessage)

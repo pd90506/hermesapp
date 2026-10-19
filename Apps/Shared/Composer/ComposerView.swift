@@ -23,6 +23,9 @@ struct ComposerView: View {
     @State private var isImportingFile = false
     @State private var isDropTargeted = false
     @State private var stopError: String?
+    /// The composer's field: the theme's on the Mac, the system's on iOS.
+    @Environment(\.surfaces) private var surfaces
+    @Environment(\.colorScheme) private var colorScheme
     #if os(iOS)
     @State private var photoSelection: [PhotosPickerItem] = []
     #endif
@@ -47,11 +50,15 @@ struct ComposerView: View {
             textArea
             toolbar
         }
-        .background(fill, in: .rect(cornerRadius: 6))
+        .background(surfaces.composer, in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(isDropTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator), lineWidth: 1)
         }
+        #if os(macOS)
+        // Lifted a little off the chat, as Desktop's composer.
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 6, y: 2)
+        #endif
         .onDrop(of: [.fileURL, .image, .data], isTargeted: $isDropTargeted) { providers in
             let attachable = providers.filter(ImageLoader.isAttachable)
             guard !attachable.isEmpty else { return false }
@@ -109,11 +116,12 @@ struct ComposerView: View {
         var isConnected: Bool
     }
 
-    private var fill: Color {
+    /// On the Mac rounder than the system's fields, as Desktop's composer.
+    private static var cornerRadius: CGFloat {
         #if os(macOS)
-        Color(nsColor: .controlBackgroundColor)
+        12
         #else
-        Color(uiColor: .secondarySystemBackground)
+        6
         #endif
     }
 

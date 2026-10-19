@@ -81,15 +81,14 @@ struct RootView: View {
         }
     }
 
-    /// On macOS, as in Slack: the profile rail and a strip along the top in the theme's
-    /// deep colour (the rail collapses), around a panel with the session list and the chat
-    /// (`WindowLayout`). On iPad three
+    /// On macOS the profile rail (it collapses) and the session list on the theme's chrome,
+    /// beside the chat on a card (`WindowLayout`). On iPad three
     /// columns. On iPhone two, which collapse into a navigation stack (sessions → chat),
     /// with the profiles in a drawer over the session list: as a column of their own, Back
     /// from the list showed them alone, stretched over the screen (2026-10-18).
     @ViewBuilder private var split: some View {
         #if os(macOS)
-        WindowLayout(color: model.markdownColors.preset.frameColor) {
+        WindowLayout {
             ProfileRailView()
         } list: {
             sessionList
@@ -417,9 +416,10 @@ private struct ChatHeader: View {
             .padding(.horizontal, 20)
             .frame(height: 48)
             .background(.background)
-            // A line, not a Divider: in the overlay a Divider stood upright.
+            // A line, not a Divider: in the overlay a Divider stood upright. Faint, as
+            // the card's edge.
             .overlay(alignment: .bottom) {
-                Rectangle().fill(.separator).frame(height: 1)
+                Rectangle().fill(.primary.opacity(0.07)).frame(height: 1)
             }
             .opacity(title.isEmpty ? 0 : 1)
             .accessibilityAddTraits(.isHeader)

@@ -5,11 +5,10 @@ import SwiftUI
 
 // The sidebar's pieces, free of `AppModel` so `HermesMacTests` can host them as they are.
 
-/// The session list's pinned top on iOS, above the scrolling list (ChatGPT style): the
+/// The session list's pinned top, above the scrolling list (ChatGPT and Slack style): the
 /// selected profile's name (and, with several servers, its server), with the New chat
 /// button at its trailing edge, centered on the name. It never scrolls; rows scroll under
-/// it. (On macOS the name and New chat are in the title bar.) On iPhone the profile's
-/// avatar leads it, as Slack's workspace icon.
+/// it. On iPhone the profile's avatar leads it, as Slack's workspace icon.
 struct SessionListHeader<Leading: View>: View {
     /// The profile's name.
     var title: String
@@ -47,7 +46,7 @@ extension SessionListHeader where Leading == EmptyView {
 struct ColumnTitle: View {
     let title: String
     var subtitle: String?
-    /// The title bar's size by default; the iOS header's is larger.
+    /// The text style of the title (the header's is `.title3`).
     var style: Font.TextStyle = .headline
     var weight: Font.Weight? = nil
 
@@ -68,10 +67,8 @@ struct ColumnTitle: View {
     }
 }
 
-/// New chat: an icon-only button (the compose glyph) beside the profile's name, that
-/// starts a chat with the profile picked in the profile rail. On macOS it is a title bar
-/// button at the column's trailing edge, so macOS 26 gives it the system glass and hover;
-/// on iOS it sits at the trailing edge of the list's header.
+/// New chat: an icon-only button (the compose glyph) at the trailing edge of the list's
+/// header, that starts a chat with the profile picked in the profile rail.
 struct NewChatButton: View {
     var isEnabled: Bool
     /// Read by VoiceOver while the button is disabled.
@@ -85,6 +82,9 @@ struct NewChatButton: View {
             .uiFont(.title3)
             .frame(width: 44, height: 44)
             .contentShape(.rect)
+            #else
+            .uiFont(.title3)
+            .hoverButtonStyle(.circle, padding: 6)
             #endif
             .disabled(!isEnabled)
             .help("New chat")

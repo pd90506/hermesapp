@@ -31,4 +31,20 @@ public enum ColorTheme: String, Sendable, Hashable, Codable, CaseIterable {
         case .plain: nil
         }
     }
+
+    /// The Mac window's frame, as Slack's workspace colour (asked for by the user,
+    /// 2026-10-18): the title bar and the profile rail, in one deep shade of the accent,
+    /// the same in light and dark mode, under white marks. nil for Plain: the app deepens
+    /// the system's accent the same way (`RGBAColor.deepened`).
+    public var frame: RGBAColor? { accent?.light.deepened }
+}
+
+extension RGBAColor {
+    /// The colour at about a third of its brightness, its hue kept: deep enough for white
+    /// text and icons on it (at least 7:1, `ColorThemeTests`), as Slack's aubergine.
+    public var deepened: RGBAColor {
+        RGBAColor(red: red * Self.depth, green: green * Self.depth, blue: blue * Self.depth, alpha: alpha)
+    }
+
+    private static let depth = 0.36
 }

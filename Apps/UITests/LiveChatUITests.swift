@@ -522,6 +522,104 @@ final class LiveChatUITests: XCTestCase {
     /// on the list, opens the profiles in a drawer, as Slack's workspaces: a wide panel
     /// over the list, which stays where it is under a shade. Picking a profile or a tap on
     /// the shade closes it.
+    /// The profiles' drawer slides in from the leading edge when the avatar is tapped and
+    /// slides back out when the shade is tapped: no frame where it sits in place half
+    /// faded, and no frame where its edge goes back the way it came. The app's animations
+    /// run 10 times slower here, so screenshots catch them part way; the frames are
+    /// attached in order, with how far into the slide each was taken.
+    @MainActor
+    func testProfileDrawerSlidesInAndOut() throws {
+        continueAfterFailure = true
+        XCUIDevice.shared.appearance = .light
+        let app = try launchApp(motionScale: 10)
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        let avatar = app.buttons["profilesButton"].firstMatch
+        guard avatar.waitForExistence(timeout: 30) else { return XCTFail("the profile's avatar") }
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        let screen = app.windows.firstMatch.frame.size
+        let width = min((screen.width * 0.85).rounded(), 360)
+
+        let opening = drawerShots(app, "opening the profiles") { avatar.tap() }
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let closing = drawerShots(app, "closing the profiles") {
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+        }
+        // The drawer's colour and the list's, where the drawer is empty (under its
+        // profiles, over its Settings): fully open and closed.
+        let y = (screen.height * 0.8).rounded()
+        guard let closedShot = opening.first, let openShot = opening.last,
+              let list = Self.rgb(closedShot, x: 20, y: y, in: screen),
+              let drawer = Self.rgb(openShot, x: 20, y: y, in: screen) else { return XCTFail("read the screenshots") }
+        XCTAssertTrue(Self.differ(list, drawer), "the drawer stands apart from the list: \(drawer) vs \(list)")
+        for (name, shots, from, to) in [("opening", opening, CGFloat(0), width), ("closing", closing, width, 0)] {
+            let edges = shots.map { Self.drawerEdge(in: $0, y: y, colour: drawer, size: screen) }
+            XCTAssertEqual(edges.first ?? -1, from, accuracy: 3, "\(name): the drawer's edge before: \(edges)")
+            XCTAssertEqual(edges.last ?? -1, to, accuracy: 3, "\(name): the drawer's edge after: \(edges)")
+            XCTAssertTrue(edges.contains { $0 > 20 && $0 < width - 20 }, "\(name): no frame part way: \(edges)")
+            let steps = zip(edges, edges.dropFirst()).map { $1 - $0 }
+            XCTAssertFalse(steps.contains { to < from ? $0 > 2 : $0 < -2 }, "\(name): the edge went back: \(edges)")
+        }
+    }
+
+    /// Screenshots the screen from just before `action` and as fast as it can for the
+    /// slowed slide and a little after; each is attached.
+    @MainActor
+    private func drawerShots(_ app: XCUIApplication, _ name: String, action: () -> Void) -> [XCUIScreenshot] {
+        func shot(_ label: String) -> XCUIScreenshot {
+            let shot = app.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = "\(name) \(label)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            return shot
+        }
+        var shots = [shot("00 before")]
+        let start = Date()
+        action()
+        while Date().timeIntervalSince(start) < 4.5 {
+            let t = Date().timeIntervalSince(start)
+            shots.append(shot(String(format: "%02d at %d ms", shots.count, Int(t * 1000))))
+        }
+        return shots
+    }
+
+    /// How far the drawer reaches across the screen, in points, along the line `y`: the
+    /// first pixel from the leading edge off the drawer's `colour`.
+    @MainActor
+    private static func drawerEdge(in shot: XCUIScreenshot, y: CGFloat, colour: [Int], size: CGSize) -> CGFloat {
+        guard let image = shot.image.cgImage else { return -1 }
+        let scale = CGFloat(image.width) / size.width
+        for px in 0..<image.width {
+            guard let pixel = rgb(shot, x: CGFloat(px) / scale, y: y, in: size) else { return -1 }
+            if differ(pixel, colour) { return CGFloat(px) / scale }
+        }
+        return size.width
+    }
+
+    private static func differ(_ a: [Int], _ b: [Int]) -> Bool {
+        zip(a, b).contains { abs($0 - $1) > 4 }
+    }
+
+    /// The RGB of the screenshot's pixel at a point (top-left origin).
+    @MainActor
+    private static func rgb(_ shot: XCUIScreenshot, x: CGFloat, y: CGFloat, in size: CGSize) -> [Int]? {
+        guard let image = shot.image.cgImage else { return nil }
+        let scale = CGFloat(image.width) / size.width
+        let px = min(image.width - 1, Int(x * scale)), py = min(image.height - 1, Int(y * scale))
+        guard let crop = image.cropping(to: CGRect(x: px, y: py, width: 1, height: 1)) else { return nil }
+        var bytes = [UInt8](repeating: 0, count: 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                                          bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        return drawn ? bytes.prefix(3).map(Int.init) : nil
+    }
+
     @MainActor
     func testBotChatScrollsWithTheSessionsAndTheAvatarShowsProfiles() throws {
         continueAfterFailure = false

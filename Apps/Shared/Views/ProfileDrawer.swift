@@ -17,6 +17,8 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
     @ViewBuilder var content: Content
     /// How far a drag in progress has moved the panel from where it rests.
     @State private var drag: CGFloat = 0
+    /// The panel is in the hierarchy though closed: about to slide in, or sliding out.
+    @State private var isMounted = false
 
     /// The panel's width on a screen this wide: most of it, the list's edge showing
     /// beside it, as Slack's.
@@ -35,14 +37,17 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
                     // Nothing under the panel and its shade answers (VoiceOver too).
                     .accessibilityHidden(shown > 0)
 
-                // Only while it shows, so nothing reaches it when it is away.
-                if shown > 0 {
+                // From just before it opens until it has slid away, so it slides both
+                // ways: inserted at its open place, it only faded in and out there.
+                // Nothing reaches it when it is away.
+                if isMounted || shown > 0 {
                     Color.black
                         .opacity(0.35 * shown / width)
                         .ignoresSafeArea()
                         .contentShape(.rect)
                         .onTapGesture { slide(open: false) }
                         .gesture(closingDrag(width: width))
+                        .allowsHitTesting(shown > 0)
                         .accessibilityLabel("Close profiles")
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { slide(open: false) }
@@ -54,7 +59,8 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
                             UnevenRoundedRectangle(bottomTrailingRadius: Self.cornerRadius,
                                                    topTrailingRadius: Self.cornerRadius, style: .continuous)
                                 .fill(.background)
-                                .shadow(color: .black.opacity(0.15), radius: 12)
+                                // Off screen, none along the screen's edge.
+                                .shadow(color: .black.opacity(0.15 * shown / width), radius: 12)
                                 .ignoresSafeArea()
                         }
                         // A swipe left closes it; the profiles still scroll up and down.
@@ -71,6 +77,12 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
                                 }))
         }
         .environment(\.toggleProfiles, ToggleProfiles { slide(open: !isOpen) })
+        // Closed (here or by picking a profile): gone once it has slid away.
+        .task(id: isOpen) {
+            guard !isOpen, isMounted else { return }
+            try? await Task.sleep(for: Motion.drawerSettles)
+            if !Task.isCancelled, !isOpen { isMounted = false }
+        }
     }
 
     /// A swipe left on the panel or the shade while it shows. Only a sideways one, so a
@@ -89,10 +101,19 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
     }
 
     private func slide(open: Bool) {
-        withAnimation(.snappy(duration: 0.28)) {
-            isOpen = open
-            drag = 0
+        let move = {
+            withAnimation(Motion.drawer) {
+                isOpen = open
+                drag = 0
+            }
         }
+        guard open, !isMounted, !isOpen, drag == 0 else {
+            isMounted = isMounted || open
+            return move()
+        }
+        // Not there yet: in place off screen first, then slid in once laid out there.
+        isMounted = true
+        Task { @MainActor in move() }
     }
 }
 

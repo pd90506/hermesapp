@@ -32,10 +32,11 @@ enum SidebarItem: Hashable {
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
 /// - Settings is at the bottom of the profile rail (on iPhone, of the profiles' drawer).
-/// - At the bottom, the error and "waiting" banners; on iOS also a fixed-height footer
-///   with the connection status (on macOS the rail beside it shows that); then the tabs,
-///   Sessions and Cron Jobs (`SessionListTabBar`). Cron Jobs shows the profile's scheduled
-///   jobs in place of its chats (`CronJobsList`).
+/// - At the bottom, the error and "waiting" banners, then the tabs, Sessions and Cron Jobs
+///   (`SessionListTabBar`). Cron Jobs shows the profile's scheduled jobs in place of its
+///   chats (`CronJobsList`). No connection status there on iOS either (asked for by the
+///   user, 2026-10-19): the header's subtitle says when the server isn't connected, and
+///   the profiles' avatars carry a status dot.
 /// Rows and controls are in `SidebarControls.swift`; pointer feedback in `Hover.swift`.
 struct SessionListView: View {
     @Environment(AppModel.self) private var model
@@ -111,9 +112,6 @@ struct SessionListView: View {
         .safeAreaBar(edge: .bottom) {
             VStack(spacing: 0) {
                 banners
-                #if os(iOS)
-                SidebarFooter(status: statusText, color: statusColor) { EmptyView() }
-                #endif
                 SessionListTabBar(tab: $tab, cronAlerts: cronAlerts)
             }
         }
@@ -385,26 +383,6 @@ struct SessionListView: View {
         false
         #endif
     }
-
-    #if os(iOS)
-    /// One server: its status as before. Several: how many are connected (each
-    /// section header has its own).
-    private var statusText: String {
-        let servers = model.sidebarServers
-        guard servers.count > 1 else { return servers.first?.connection.state.statusText ?? "No server" }
-        let connected = servers.filter(\.isConnected).count
-        return connected == servers.count
-            ? "All \(connected) servers connected" : "\(connected) of \(servers.count) servers connected"
-    }
-
-    private var statusColor: Color {
-        let servers = model.sidebarServers
-        guard servers.count > 1 else { return servers.first?.connection.state.statusColor ?? .gray }
-        let connected = servers.filter(\.isConnected).count
-        if connected == servers.count { return .green }
-        return connected > 0 ? .yellow : .red
-    }
-    #endif
 
     private func startSideChat(with bot: Bot, on server: ServerConnection) {
         guard !isStartingChat else { return }

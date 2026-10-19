@@ -325,7 +325,6 @@ struct ComposerView: View {
             Button("Photo Library", systemImage: "photo.on.rectangle") { isPickingPhotos = true }
             #endif
             Button("Choose Files…", systemImage: "doc") { isImportingFile = true }
-            Button("Paste", systemImage: "doc.on.clipboard", action: paste)
         } label: {
             #if os(macOS)
             Image(systemName: "plus")
@@ -585,18 +584,6 @@ struct ComposerView: View {
                 composer.error = error.localizedDescription
             }
         }
-    }
-
-    private func paste() {
-        #if os(macOS)
-        let sources = ImageLoader.sources(from: NSPasteboard.general)
-        if sources.isEmpty { composer.error = "The clipboard has no image or file." }
-        Task { await attach(sources) }
-        #else
-        let providers = ImageLoader.pastedProviders()
-        if providers.isEmpty { composer.error = "The clipboard has no image or file." }
-        Task { await attach(await ImageLoader.sources(from: providers)) }
-        #endif
     }
 
     #if os(iOS)

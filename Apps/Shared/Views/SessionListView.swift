@@ -285,7 +285,8 @@ struct SessionListView: View {
     /// shows the same as a dot).
     private var subtitle: String? {
         guard let server = model.sessionsServer else { return nil }
-        let state = server.connection.state
+        // Quiet while a dropped connection gets back within a few seconds (`shownState`).
+        let state = server.connection.shownState
         // Not connected because of something the user can fix (no password): say what.
         let status = state == .connected ? nil : server.lastError ?? state.statusText
         let parts = [model.showsServerNames ? server.name : nil, status].compactMap { $0 }
@@ -366,16 +367,16 @@ struct SessionListView: View {
     /// section header has its own).
     private var statusText: String {
         let servers = model.sidebarServers
-        guard servers.count > 1 else { return servers.first?.connection.state.statusText ?? "No server" }
-        let connected = servers.filter(\.isConnected).count
+        guard servers.count > 1 else { return servers.first?.connection.shownState.statusText ?? "No server" }
+        let connected = servers.filter { $0.connection.shownState == .connected }.count
         return connected == servers.count
             ? "All \(connected) servers connected" : "\(connected) of \(servers.count) servers connected"
     }
 
     private var statusColor: Color {
         let servers = model.sidebarServers
-        guard servers.count > 1 else { return servers.first?.connection.state.statusColor ?? .gray }
-        let connected = servers.filter(\.isConnected).count
+        guard servers.count > 1 else { return servers.first?.connection.shownState.statusColor ?? .gray }
+        let connected = servers.filter { $0.connection.shownState == .connected }.count
         if connected == servers.count { return .green }
         return connected > 0 ? .yellow : .red
     }

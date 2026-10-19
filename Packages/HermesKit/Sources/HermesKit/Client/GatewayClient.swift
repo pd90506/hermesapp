@@ -159,6 +159,11 @@ public actor GatewayClient {
         await connectionEnded(nil)
     }
 
+    /// Ends the connection as a failure, as a socket the network dropped.
+    func fail(_ error: any Error) async {
+        await connectionEnded(error)
+    }
+
     private func waitForReady() async throws -> GatewayReady {
         if let ready { return ready }
         let timeout = configuration.readyTimeout

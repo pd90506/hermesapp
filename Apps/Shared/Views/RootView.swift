@@ -170,6 +170,13 @@ struct RootView: View {
         .navigationTitle(chatTitle)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        // A connection still getting back after a few seconds says so under the title,
+        // never over the chat; a quicker one shows nothing (user, 2026-10-19).
+        .toolbar {
+            if model.activeServer?.connection.isTryingNoticeably == true, !chatTitle.isEmpty {
+                ToolbarItem(placement: .principal) { ReconnectingTitle(title: chatTitle) }
+            }
+        }
         #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if os(macOS)
@@ -352,6 +359,31 @@ private struct ShownProfile: Equatable {
 
     var ref: ProfileRef { ProfileRef(server: server, profile: profile) }
 }
+
+#if os(iOS)
+/// The chat's title, with a small spinner and "Reconnecting…" under it, while its
+/// connection has been trying to get back for a few seconds (`isTryingNoticeably`).
+private struct ReconnectingTitle: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text(title)
+                .font(.headline)
+                .lineLimit(1)
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Reconnecting…")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("reconnectingIndicator")
+    }
+}
+#endif
 
 /// The frame of a chat being opened: a spinner where the transcript goes (the column
 /// shows its title).

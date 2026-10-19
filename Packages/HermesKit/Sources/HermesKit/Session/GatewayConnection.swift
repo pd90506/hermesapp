@@ -27,7 +27,19 @@ public final class GatewayConnection {
         case failed(String)
     }
 
-    public private(set) var state: State = .disconnected
+    public private(set) var state: State = .disconnected {
+        didSet { noticeTrying(after: oldValue) }
+    }
+    /// The connection has been trying to get back (`.connecting`, `.reconnecting`) for
+    /// longer than `tryingNoticeDelay`: only then do the apps show it. A socket that
+    /// comes back sooner, as one does after a return from the background, shows nothing
+    /// (asked for by the user, 2026-10-19).
+    public private(set) var isTryingNoticeably = false
+    /// How long a connection tries before the apps show it (`isTryingNoticeably`).
+    @ObservationIgnored public var tryingNoticeDelay: Duration = .seconds(5)
+    @ObservationIgnored private var tryingNoticeTask: Task<Void, Never>?
+    /// The last state that was not an attempt: what the apps show while one is quiet.
+    @ObservationIgnored private var settledState: State = .disconnected
     public internal(set) var sessions: [SessionSummary] = []
     public internal(set) var activeSession: ChatSession?
     /// Server requests for sessions other than the active one (badge-worthy:
@@ -155,6 +167,40 @@ public final class GatewayConnection {
         return .milliseconds(Int(base * Double.random(in: 0.8...1.2) * 1000))
     }
 
+    /// `state` as the apps show it: a connection that was connected still shows as
+    /// connected while it gets back within `tryingNoticeDelay`.
+    public var shownState: State {
+        switch state {
+        case .connecting, .reconnecting:
+            isTryingNoticeably || settledState != .connected ? state : settledState
+        case .connected, .disconnected, .failed:
+            state
+        }
+    }
+
+    /// Starts the quiet time of an attempt that begins, and ends it once one settles.
+    private func noticeTrying(after old: State) {
+        switch state {
+        case .connecting, .reconnecting:
+            switch old {
+            case .connecting, .reconnecting: return  // the same attempt, another try
+            case .connected, .disconnected, .failed: settledState = old
+            }
+            tryingNoticeTask?.cancel()
+            let delay = tryingNoticeDelay
+            tryingNoticeTask = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self else { return }
+                self.isTryingNoticeably = true
+            }
+        case .connected, .disconnected, .failed:
+            settledState = state
+            tryingNoticeTask?.cancel()
+            tryingNoticeTask = nil
+            if isTryingNoticeably { isTryingNoticeably = false }
+        }
+    }
+
     // MARK: - Connect / disconnect
 
     /// Connects (or reconnects after `.failed`) with `connector`. An existing
@@ -216,6 +262,15 @@ public final class GatewayConnection {
         liveRuntimeIDs = [:]
         committedEpoch = nil
         state = .disconnected
+    }
+
+    /// Drops the socket as iOS does a suspended app's: the connection reconnects and
+    /// restores its chat, as after any outage. `forgettingReplay`: restored from the
+    /// store, as after a long outage the gateway no longer replays (§7). For the apps'
+    /// UI tests.
+    public func dropSocket(forgettingReplay: Bool = false) async {
+        if forgettingReplay { committedEpoch = nil }
+        await client?.fail(GatewayClientError.connectionClosed("dropped"))
     }
 
     /// Invalidates in-flight work synchronously and returns the new generation.

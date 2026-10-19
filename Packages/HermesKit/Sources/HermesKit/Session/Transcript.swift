@@ -445,6 +445,17 @@ public struct Transcript: Sendable, Hashable {
         absorbLocalRows()
     }
 
+    /// The stored rows `old` showed, until this transcript's newest page is installed
+    /// (`installLatestPage` replaces them): a chat rebuilt after an outage keeps its
+    /// messages on screen while that page is read again, instead of going blank under a
+    /// spinner (user, 2026-10-19). Only into a transcript with no rows of its own (its
+    /// snapshot left the history to the page); `old`'s local rows and live items stay out.
+    mutating func holdStoredRows(of old: Transcript) {
+        guard items.isEmpty, !paging.isLoaded else { return }
+        items = old.items[..<old.historyCount].filter { !old.localIDs.contains($0.id) }
+        historyCount = items.count
+    }
+
     /// The first user row of `rows`, if compaction stamped it hidden.
     private static func hiddenFirstPrompt(_ rows: some Collection<StoredMessage>) -> StoredMessage? {
         rows.first { $0.role == "user" }.flatMap { $0.displayKind == "hidden" ? $0 : nil }

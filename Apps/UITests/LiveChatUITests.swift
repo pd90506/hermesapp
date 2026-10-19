@@ -71,6 +71,13 @@ final class LiveChatUITests: XCTestCase {
             add(shot)
         }
         XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
+        // The row under the reply: Copy, "…" (Branch in New Chat) and the time.
+        let more = app.descendants(matching: .any).matching(identifier: "messageMoreMenu").firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 10), "the reply's … menu")
+        attach(app, "reply and its row")
+        more.tap()
+        XCTAssertTrue(app.buttons["Branch in New Chat"].firstMatch.waitForExistence(timeout: 5), "Branch in the menu")
+        attach(app, "the reply's menu")
     }
     #endif
 

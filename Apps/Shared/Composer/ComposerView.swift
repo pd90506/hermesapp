@@ -230,6 +230,11 @@ struct ComposerView: View {
             micButton
             sendButton
                 .padding(.leading, 4)
+                #if os(macOS)
+                // Stop grows in where Send was as a reply starts, and back.
+                .animation(Motion.swap, value: [session.transcript.isRunning, composer.isSubmitting,
+                                                composer.canSubmit || composer.isSubmitting])
+                #endif
         }
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
@@ -390,6 +395,7 @@ struct ComposerView: View {
                             .accessibilityHint(composer.attachments.isEmpty
                                                ? "May redirect or stop the current reply."
                                                : "Queued to run after the current reply.")
+                            .transition(.swapped)
                     }
                 }
                 Button("Stop", systemImage: "stop.fill") {
@@ -401,6 +407,7 @@ struct ComposerView: View {
                 .buttonStyle(CircleButtonStyle())
                 .disabled(!isConnected)
                 .help("Stop the reply")
+                .transition(.swapped)
             }
         } else {
             if composer.isSubmitting {
@@ -411,6 +418,7 @@ struct ComposerView: View {
                     .disabled(!composer.canSubmit)
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Send (Return)")
+                    .transition(.swapped)
             }
         }
     }
@@ -423,6 +431,7 @@ struct ComposerView: View {
             .buttonStyle(CircleButtonStyle(isBusy: true, isProminent: isProminent))
             .help("Sending… click to cancel")
             .accessibilityHint("Stops sending; the message and images stay in the composer.")
+            .transition(.swapped)
     }
 
     // MARK: Actions
@@ -543,6 +552,11 @@ private struct ModelPickerList: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
+}
+
+private extension AnyTransition {
+    /// A round button taking another's place: it shrinks away as the next one grows in.
+    static var swapped: AnyTransition { .scale(scale: 0.6).combined(with: .opacity) }
 }
 
 /// The filled circular Send/Stop button: the composer's one high-contrast

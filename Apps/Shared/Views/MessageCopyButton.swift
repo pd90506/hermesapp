@@ -33,6 +33,8 @@ struct MessageActionBar: View {
         }
         .frame(minHeight: 26)
         .opacity(isVisible ? 1 : 0)
+        // Fades in and out with the pointer, as ChatGPT's and Desktop's bars do.
+        .animation(Motion.reveal, value: isVisible)
         .allowsHitTesting(isVisible)
         .accessibilityHidden(!isVisible)
         .accessibilityIdentifier("messageActionBar")

@@ -238,7 +238,7 @@ public struct DashboardClient: Sendable {
 
     // MARK: Plumbing
 
-    private func request(path: String, method: String, json: JSONValue? = nil,
+    func request(path: String, method: String, json: JSONValue? = nil,
                          query: [URLQueryItem] = []) -> URLRequest {
         var request = URLRequest(url: endpoint.url(path: path, query: query))
         request.httpMethod = method
@@ -251,7 +251,7 @@ public struct DashboardClient: Sendable {
         return request
     }
 
-    private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
+    func send<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await http.data(for: request)
         switch response.statusCode {
         case 200..<300:

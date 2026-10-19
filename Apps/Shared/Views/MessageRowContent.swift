@@ -17,6 +17,8 @@ struct AssistantMessageContent: View {
     /// (`MediaTags.segments`); the tags themselves are not shown. Without it the
     /// files are left out.
     var deliveredFiles: (([DeliveredFile]) -> AnyView)?
+    /// Branch in New Chat from this reply; without it the bar has no "…" menu.
+    var branch: (() -> Void)?
     let copy: () -> Void
 
     /// No text (whitespace counts as none, as for the waiting row and the action bar),
@@ -53,7 +55,8 @@ struct AssistantMessageContent: View {
             }
             // Directly under the message, so moving down onto it never leaves the row.
             if ConversationMarkdown.hasActionBar(item) {
-                MessageActionBar(isHovering: isHovering, isNewest: isNewest, copy: copy)
+                MessageActionBar(isHovering: isHovering, isNewest: isNewest, timestamp: item.timestamp,
+                                 branch: branch, copy: copy)
             }
         }
     }

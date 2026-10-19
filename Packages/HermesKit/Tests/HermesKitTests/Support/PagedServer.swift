@@ -128,6 +128,12 @@ final class PagedServer: Sendable {
             return ["detached": true, "count": 0]  // `methods_prompt.py:998-1010`
         case "session.interrupt":
             return ["status": "interrupted"]  // `methods_session_interrupt.py:64`
+        case "session.branch":
+            // `_branch_live`'s answer (`tui_gateway/methods_session_branch.py:133-138`).
+            let count = params["count"]?.intValue ?? store.rows.count
+            return ["session_id": "rt-branch-1", "stored_session_id": "branch-1", "title": "Earlier #2",
+                    "parent": "stored-1", "message_count": .number(Double(count)), "messages": [],
+                    "info": ["model": "test-model"]]
         default:
             return nil
         }

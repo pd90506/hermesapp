@@ -177,6 +177,67 @@ private func filename(_ source: AttachmentSource) -> String {
         #expect(last <= 170)
     }
 
+    /// Typing Chinese moved the lines above up and down: an input method's edits scroll
+    /// the text view to the caret, and while the SwiftUI frame is still a line short that
+    /// scrolled the text a few points. Below the cap the text stays at the top.
+    @Test func belowTheCapTheTextNeverScrolls() throws {
+        let box = Box()
+        let (coordinator, scrollView) = makeView(box)
+        let textView = try #require(coordinator.textView)
+        type("First line: English\n第二行 mixed 中文\n", into: coordinator)
+        // The frame not grown yet: shorter than the three lines.
+        scrollView.frame.size.height = box.height - 10
+        scrollView.tile()
+        textView.setMarkedText("ni hao", selectedRange: NSRange(location: 6, length: 0),
+                               replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.scrollRangeToVisible(textView.selectedRange())
+        #expect(scrollView.contentView.bounds.minY == 0)
+        textView.insertText("你好", replacementRange: NSRange(location: NSNotFound, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
+        textView.scrollRangeToVisible(textView.selectedRange())
+        #expect(scrollView.contentView.bounds.minY == 0)
+
+        // Past the cap it scrolls to the caret as before.
+        type((1...40).map { "line \($0)" }.joined(separator: "\n"), into: coordinator)
+        scrollView.frame.size.height = 170
+        scrollView.tile()
+        textView.scrollRangeToVisible(NSRange(location: (textView.string as NSString).length, length: 0))
+        #expect(scrollView.contentView.bounds.minY > 0)
+    }
+
+    /// Nothing that starts when typing pauses (the first key after a pause was slow).
+    @Test func noWorkStartsWhenTypingPauses() throws {
+        let (coordinator, _) = makeView(Box())
+        let textView = try #require(coordinator.textView)
+        #expect(textView.inlinePredictionType == .no)
+        #expect(!textView.isAutomaticTextCompletionEnabled)
+        #expect(!textView.isGrammarCheckingEnabled)
+        #expect(!textView.isAutomaticSpellingCorrectionEnabled)
+    }
+
+    /// Latin, Chinese, mixed, emoji and marked text: every line the font's height.
+    @Test func everyLineIsTheFontsHeight() throws {
+        let box = Box()
+        let (coordinator, _) = makeView(box)
+        let textView = try #require(coordinator.textView)
+        let layoutManager = try #require(textView.layoutManager)
+        type("Latin only\n中文一行\nmixed 中英 text\n😀 emoji\n", into: coordinator)
+        textView.setMarkedText("zhong wen", selectedRange: NSRange(location: 9, length: 0),
+                               replacementRange: NSRange(location: NSNotFound, length: 0))
+        layoutManager.ensureLayout(for: try #require(textView.textContainer))
+        var heights: [CGFloat] = []
+        layoutManager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: layoutManager.numberOfGlyphs)) {
+            rect, _, _, _, _ in heights.append(rect.height)
+        }
+        let line = layoutManager.defaultLineHeight(for: try #require(textView.font))
+        #expect(heights.count == 5)
+        #expect(heights.allSatisfy { $0 == line }, "\(heights)")
+        let composing = box.height
+        textView.insertText("中文", replacementRange: NSRange(location: NSNotFound, length: 0))
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
+        #expect(box.height == composing, "committing the candidate changed the height")
+    }
+
     @Test func pastTheCapTheScrollerAppearsAndGoesAgain() {
         let box = Box()
         let (coordinator, scrollView) = makeView(box)

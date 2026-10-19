@@ -11,6 +11,13 @@ enum Motion {
         reduceMotion ? nil : slowed(.snappy(duration: 0.25))
     }
 
+    /// On iPhone, the profiles' drawer sliding over the session list (`ProfileDrawer`).
+    /// No bounce: past its place, the panel would come away from the screen's edge.
+    static var drawer: Animation { slowed(.smooth(duration: 0.28)) }
+
+    /// How long until the drawer has settled after `drawer` starts.
+    static var drawerSettles: Duration { .milliseconds(Int(400 * (scale ?? 1))) }
+
     /// Controls that show while the pointer is over their content, such as a message's
     /// action bar.
     static var reveal: Animation { slowed(.easeOut(duration: 0.1)) }
@@ -21,10 +28,15 @@ enum Motion {
     /// Under UI tests, `HERMES_UITEST_MOTION_SCALE` times slower, so a test can take
     /// screenshots part way through.
     private static func slowed(_ animation: Animation) -> Animation {
+        scale.map { animation.speed(1 / $0) } ?? animation
+    }
+
+    private static var scale: Double? {
         #if DEBUG
-        if let scale = Self.testScale { return animation.speed(1 / scale) }
+        testScale
+        #else
+        nil
         #endif
-        return animation
     }
 
     #if DEBUG

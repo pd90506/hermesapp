@@ -129,25 +129,33 @@ extension EnvironmentValues {
     @Entry var surfaces = SurfaceColors.system
 }
 
-/// The themes as a row of swatches, each its accent with its name under it, as the
-/// system's accent colours are picked (Settings ▸ Appearance).
+/// The themes as swatches, each its accent with its name under it, as the system's
+/// accent colours are picked (Settings ▸ Appearance): one row on the Mac, two rows of
+/// four on iOS, where eight don't fit across a phone.
 struct ColorThemePicker: View {
     @Binding var selection: ColorTheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            ForEach(ColorTheme.allCases, id: \.self) { theme in
-                Button {
-                    selection = theme
-                } label: {
-                    Swatch(theme: theme, isSelected: theme == selection)
-                }
-                .buttonStyle(.plain)
-                .help(Self.label(theme))
-                .accessibilityLabel(Self.label(theme))
-                .accessibilityAddTraits(theme == selection ? .isSelected : [])
-                .accessibilityIdentifier("colorTheme.\(theme.rawValue)")
+        #if os(macOS)
+        HStack(alignment: .top, spacing: 14) { swatches }
+        #else
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: 4),
+                  spacing: 12) { swatches }
+        #endif
+    }
+
+    private var swatches: some View {
+        ForEach(ColorTheme.allCases, id: \.self) { theme in
+            Button {
+                selection = theme
+            } label: {
+                Swatch(theme: theme, isSelected: theme == selection)
             }
+            .buttonStyle(.plain)
+            .help(Self.label(theme))
+            .accessibilityLabel(Self.label(theme))
+            .accessibilityAddTraits(theme == selection ? .isSelected : [])
+            .accessibilityIdentifier("colorTheme.\(theme.rawValue)")
         }
     }
 
@@ -158,6 +166,8 @@ struct ColorThemePicker: View {
         case .catppuccin: "Catppuccin"
         case .everforest: "Everforest"
         case .solarized: "Solarized"
+        case .codex: "Codex"
+        case .claudeCode: "Claude Code"
         case .plain: "System"
         }
     }

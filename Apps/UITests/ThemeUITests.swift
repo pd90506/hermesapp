@@ -71,7 +71,7 @@ final class ThemeUITests: XCTestCase {
         attach(app, "chat, Catppuccin, light")
 
         // The other themes, so they can be told apart: each in light, then in dark.
-        for (mode, themes) in [("Light", ["github", "everforest", "solarized"]), ("Dark", ["github", "everforest", "solarized"])] {
+        for (mode, themes) in [("Light", ["github", "everforest", "solarized", "codex", "claudeCode"]), ("Dark", ["github", "everforest", "solarized", "codex", "claudeCode"])] {
             for theme in themes {
                 app.typeKey(",", modifierFlags: .command)
                 let swatch = app.buttons["colorTheme.\(theme)"].firstMatch
@@ -112,6 +112,86 @@ final class ThemeUITests: XCTestCase {
     @MainActor
     private func click(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    }
+}
+#endif
+
+#if os(iOS)
+/// The theme on iPhone (Settings ▸ Appearance ▸ Theme): the swatches fit the page, two
+/// rows of four, and a theme picked there colours the page's preview (the user's
+/// message and a reply's Markdown) and the controls, in light and dark. Skipped without
+/// `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
+final class ThemeUITests: XCTestCase {
+    @MainActor
+    func testAThemePickedInSettingsColoursThePreview() throws {
+        continueAfterFailure = false
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+            throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HERMES_UITEST_URL"] = url
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        app.launch()
+        defer { app.terminate() }
+
+        // Settings ▸ Appearance, through the profiles drawer's gear.
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["profilesButton"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        XCTAssertTrue(app.buttons["profilesButton"].waitForExistence(timeout: 30), "the Sessions page")
+        app.buttons["profilesButton"].tap()
+        let gear = app.buttons["settingsButton"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 5), "the gear under the profiles")
+        gear.tap()
+        let appearance = app.buttons["settings.appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5), "Settings lists Appearance")
+        appearance.tap()
+        XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5), "Appearance opens")
+
+        // Every swatch on screen, inside the page's width.
+        let screen = app.windows.firstMatch.frame
+        for theme in ["nous", "github", "catppuccin", "everforest", "solarized", "codex", "claudeCode", "plain"] {
+            let swatch = app.buttons["colorTheme.\(theme)"].firstMatch
+            XCTAssertTrue(swatch.waitForExistence(timeout: 5), "the \(theme) swatch")
+            XCTAssertTrue(swatch.frame.minX >= screen.minX && swatch.frame.maxX <= screen.maxX,
+                          "the \(theme) swatch on screen: \(swatch.frame)")
+        }
+
+        let mode = app.descendants(matching: .any)["appearanceMode"].firstMatch
+        for theme in ["codex", "claudeCode"] {
+            for name in ["Light", "Dark"] {
+                let swatch = app.buttons["colorTheme.\(theme)"].firstMatch
+                swatch.tap()
+                XCTAssertTrue(eventually { swatch.isSelected }, "\(theme) picked")
+                mode.buttons[name].firstMatch.tap()
+                RunLoop.current.run(until: Date().addingTimeInterval(1))
+                attach(app, "appearance, \(theme), \(name.lowercased())")
+            }
+        }
+
+        // Back to the defaults, for the tests after this one.
+        app.buttons["colorTheme.nous"].firstMatch.tap()
+        mode.buttons["System"].firstMatch.tap()
+    }
+
+    @MainActor
+    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+        return condition()
+    }
+
+    @MainActor
+    private func attach(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 }
 #endif

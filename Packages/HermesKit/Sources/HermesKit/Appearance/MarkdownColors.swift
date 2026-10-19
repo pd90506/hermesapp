@@ -149,6 +149,8 @@ public struct MarkdownColors: Sendable, Hashable, Codable {
         case .catppuccin: catppuccin
         case .everforest: everforest
         case .solarized: solarized
+        case .codex: codex
+        case .claudeCode: claudeCode
         case .plain: plain
         }
     }
@@ -250,6 +252,42 @@ public struct MarkdownColors: Sendable, Hashable, Codable {
         .tableHeaderText: ("#586E75", "#93A1A1"),
         .tableBorder: ("#E4DDC8", "#0B4452"),
         .tableStripe: ("#EEE8D580", "#07364280"),
+    ])
+
+    /// OpenAI's neutrals, as ChatGPT and Codex set replies: ink headings, grey code and
+    /// tables, links in OpenAI's blue.
+    static let codex = Palette([
+        .heading: ("#0D0D0D", "#ECECEC"),
+        .bold: ("#0D0D0D", "#ECECEC"),
+        .link: ("#0169CC", "#48AAFF"),
+        .inlineCode: ("#0D0D0D", "#ECECEC"),
+        .inlineCodeBackground: ("#0D0D0D12", "#FFFFFF1A"),
+        .codeBlockBackground: ("#0D0D0D0A", "#0000004D"),
+        .quoteBar: ("#0D0D0D26", "#FFFFFF33"),
+        .quoteText: ("#5D5D5D", "#B4B4B4"),
+        .quoteBackground: ("#00000000", "#00000000"),
+        .tableHeaderBackground: ("#0D0D0D0A", "#FFFFFF0F"),
+        .tableHeaderText: ("#0D0D0D", "#ECECEC"),
+        .tableBorder: ("#0D0D0D1A", "#FFFFFF1F"),
+        .tableStripe: ("#00000000", "#00000000"),
+    ])
+
+    /// Anthropic's palette, as Claude sets replies: near-black ink on ivory, clay for
+    /// links, quotes and code.
+    static let claudeCode = Palette([
+        .heading: ("#141413", "#F5F4EE"),
+        .bold: ("#141413", "#F5F4EE"),
+        .link: ("#B4532F", "#E08A6D"),
+        .inlineCode: ("#9C3D1E", "#EBA58B"),
+        .inlineCodeBackground: ("#C15F3C14", "#D977571F"),
+        .codeBlockBackground: ("#E8E6DC99", "#1F1E1DB3"),
+        .quoteBar: ("#D97757", "#D97757"),
+        .quoteText: ("#73726C", "#A6A39A"),
+        .quoteBackground: ("#D977570A", "#D977570F"),
+        .tableHeaderBackground: ("#E8E6DCB3", "#30302ECC"),
+        .tableHeaderText: ("#141413", "#F5F4EE"),
+        .tableBorder: ("#DEDCD1", "#3E3E3A"),
+        .tableStripe: ("#F0EEE680", "#1F1E1D66"),
     ])
 
     /// The system's label greys and link blue, without tints: messages as they looked

@@ -292,6 +292,7 @@ private struct DrawerProfileRow<Actions: View>: View {
     var image: CGImage?
     let action: () -> Void
     @ViewBuilder var menu: Actions
+    @Environment(\.surfaces) private var surfaces
 
     private static var avatarSize: CGFloat { 48 }
 
@@ -345,7 +346,7 @@ private struct DrawerProfileRow<Actions: View>: View {
         .padding(.vertical, 8)
         .background {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Hover.selection)
+                .fill(surfaces.selection)
                 .opacity(isSelected ? 1 : 0)
         }
         .padding(.horizontal, drawerRowInset)

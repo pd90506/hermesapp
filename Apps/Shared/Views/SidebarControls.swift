@@ -97,12 +97,15 @@ struct NewChatButton: View {
 /// selected or hovered, with a pill on the rail's leading edge, tall when selected and
 /// short on hover. iOS has no pointer, so there the name sits under the avatar.
 struct ProfileRailItem: View {
+    // On the Mac narrower than it was (64 pt, 40 pt avatars): the user found the rail too
+    // wide beside the session list (2026-10-19).
     #if os(macOS)
-    static let width: CGFloat = 64
+    static let width: CGFloat = 54
+    static let avatarSize: CGFloat = 36
     #else
     static let width: CGFloat = 76
-    #endif
     static let avatarSize: CGFloat = 40
+    #endif
     /// Space above and below the avatar.
     static let verticalPadding: CGFloat = 4
 
@@ -137,7 +140,7 @@ struct ProfileRailItem: View {
         .overlay(alignment: .topLeading) {
             // Level with the avatar's middle, against the rail's edge.
             UnevenRoundedRectangle(cornerRadii: .init(bottomTrailing: 2, topTrailing: 2))
-                .fill(.primary)
+                .fill(.tint)
                 .frame(width: 4, height: pillHeight)
                 .offset(y: Self.verticalPadding + (Self.avatarSize - pillHeight) / 2)
                 .opacity(pillHeight > 0 ? 1 : 0)
@@ -275,7 +278,7 @@ struct SidebarSectionTitle: View {
 
 /// The Bot Chat row pinned above the session list: a `BotRow` under a "Bot Chat"
 /// header (in the Sessions header's style), set in like the list's rows, with their
-/// hover and selected fill (`Hover.selection`; the List's selection can't reach a row
+/// hover and selected fill (`SurfaceColors.selection`; the List's selection can't reach a row
 /// outside it).
 /// A divider under it, always shown, sets it off from the sessions.
 struct PinnedBotChat: View {
@@ -307,13 +310,14 @@ struct PinnedBotChat: View {
 
     private struct Style: ButtonStyle {
         var isSelected: Bool
+        @Environment(\.surfaces) private var surfaces
 
         func makeBody(configuration: Configuration) -> some View {
             let shape = RoundedRectangle(cornerRadius: Hover.cornerRadius)
             configuration.label
                 .padding(.horizontal, Hover.rowContentInset - Hover.rowInset)
                 .padding(.vertical, 4)
-                .background { shape.fill(Hover.selection).opacity(isSelected ? 1 : 0) }
+                .background { shape.fill(surfaces.selection).opacity(isSelected ? 1 : 0) }
                 .contentShape(shape)
                 .hoverHighlight(in: shape, isEnabled: !isSelected)
         }

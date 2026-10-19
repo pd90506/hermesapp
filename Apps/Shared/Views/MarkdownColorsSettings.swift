@@ -79,7 +79,7 @@ struct MarkdownColorsPreview: View {
 }
 
 /// The theme in a short exchange (Settings ▸ Appearance): the user's message in the
-/// accent's tint and a reply in the theme's Markdown colours, at the content and code sizes.
+/// theme's bubble and a reply in the theme's Markdown colours, at the content and code sizes.
 struct ThemePreview: View {
     let scheme: ColorScheme
 
@@ -97,17 +97,28 @@ struct ThemePreview: View {
         | Beta | 2 |
         """
 
+    @Environment(\.surfaces) private var surfaces
+
+    /// The chat's colour (the theme's on the Mac, where it paints the window).
+    private var chatColor: Color {
+        #if os(macOS)
+        surfaces.chat
+        #else
+        scheme == .dark ? Color(white: 0.12) : Color.white
+        #endif
+    }
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {
             Text("Show me the themes.")
                 .contentFont()
                 .padding(10)
-                .background(.tint.opacity(0.15), in: .rect(cornerRadius: 12))
+                .background(surfaces.userBubble, in: .rect(cornerRadius: 12))
             MarkdownView(text: Self.sample, isStreaming: false)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
-        .background(scheme == .dark ? Color(white: 0.12) : Color.white, in: .rect(cornerRadius: 10))
+        .background(chatColor, in: .rect(cornerRadius: 10))
         .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.separator) }
         .environment(\.colorScheme, scheme)
         .environment(\.markdownPreviewScheme, scheme)

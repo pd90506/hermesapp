@@ -202,10 +202,13 @@ final class FrameLog: Sendable {
 final class FakeConnector: GatewayConnector, @unchecked Sendable {
     private let transports: Mutex<[FakeTransport]>
     let messagesSource: (any SessionMessagesSource)?
+    let cronSource: (any CronSource)?
 
-    init(_ transports: [FakeTransport], messages: (any SessionMessagesSource)? = nil) {
+    init(_ transports: [FakeTransport], messages: (any SessionMessagesSource)? = nil,
+         cron: (any CronSource)? = nil) {
         self.transports = Mutex(transports)
         self.messagesSource = messages
+        self.cronSource = cron
     }
 
     func makeTransport() async throws -> any MessageTransport {

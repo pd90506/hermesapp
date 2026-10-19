@@ -294,9 +294,15 @@ struct RootView: View {
         switch session.kind {
         case .botChat: return .bot(server: server.id, profile: profile)
         case .sideChat:
-            return server.connection.history
-                .first { $0.profile == profile && $0.summary.id == session.storedSessionID }
-                .map { .history(server: server.id, id: $0.id) }
+            // A run opened from the Cron Jobs tab keeps its row there selected, though
+            // the Sessions tab may list the same session.
+            if case .cronRun(server.id, profile, session.storedSessionID ?? "") = selection { return selection }
+            if let entry = server.connection.history
+                .first(where: { $0.profile == profile && $0.summary.id == session.storedSessionID }) {
+                return .history(server: server.id, id: entry.id)
+            }
+            guard let stored = session.storedSessionID, CronRun.isRunSessionID(stored) else { return nil }
+            return .cronRun(server: server.id, profile: profile, id: stored)
         case .session: return nil
         }
     }
@@ -313,6 +319,10 @@ struct RootView: View {
             case .history(_, let id):
                 guard let entry = server.connection.history.first(where: { $0.id == id }) else { return }
                 try await server.connection.open(entry)
+            case .cronRun(_, let profile, let id):
+                let run = server.connection.cron.runs.values.lazy.flatMap { $0 }.first { $0.id == id }
+                    ?? CronRun(id: id, profile: profile)
+                try await server.connection.open(run.historyEntry(profile: profile))
             }
             model.actionError = nil
         } catch is CancellationError {

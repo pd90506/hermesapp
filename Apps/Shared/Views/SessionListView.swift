@@ -8,10 +8,12 @@ enum SidebarItem: Hashable {
     case bot(server: UUID, profile: String)
     /// A Sessions row, by `HistoryEntry.id`.
     case history(server: UUID, id: String)
+    /// A scheduled job's run on the Cron Jobs tab, by its stored session id.
+    case cronRun(server: UUID, profile: String, id: String)
 
     var server: UUID {
         switch self {
-        case .bot(let server, _), .history(let server, _): server
+        case .bot(let server, _), .history(let server, _), .cronRun(let server, _, _): server
         }
     }
 }
@@ -30,8 +32,11 @@ enum SidebarItem: Hashable {
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
 /// - Settings is at the bottom of the profile rail (on iPhone, of the profiles' drawer).
-/// - At the bottom, the error and "waiting" banners; on iOS also a fixed-height footer
-///   with the connection status (on macOS the rail beside it shows that).
+/// - At the bottom, the error and "waiting" banners, then the tabs, Sessions and Cron Jobs
+///   (`SessionListTabBar`). Cron Jobs shows the profile's scheduled jobs in place of its
+///   chats (`CronJobsList`). No connection status there on iOS either (asked for by the
+///   user, 2026-10-19): the header's subtitle says when the server isn't connected, and
+///   the profiles' avatars carry a status dot.
 /// Rows and controls are in `SidebarControls.swift`; pointer feedback in `Hover.swift`.
 struct SessionListView: View {
     @Environment(AppModel.self) private var model
@@ -45,6 +50,9 @@ struct SessionListView: View {
     @State private var newTitle = ""
     /// The row waiting for the user to confirm its deletion.
     @State private var deleting: HistoryEntry?
+    /// Sessions or Cron Jobs. Not kept across launches: the app opens on the sessions.
+    /// (Kept per window, a run left on Cron Jobs opened the next launch there.)
+    @State private var tab: SessionListTab = .sessions
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -55,20 +63,25 @@ struct SessionListView: View {
         // drew a line across the column at its bottom, only under the pointer (or with
         // rows under it), beside the Bot Chat's own divider, which is always there.
         VStack(spacing: 0) {
-            pinnedBotChat
-            List(selection: $selection) {
-                if let server = model.sessionsServer {
-                    Group {
-                        botSection(server)
-                        pinnedSection(server)
-                        sessionsSection(server)
+            switch tab {
+            case .sessions:
+                pinnedBotChat
+                List(selection: $selection) {
+                    if let server = model.sessionsServer {
+                        Group {
+                            botSection(server)
+                            pinnedSection(server)
+                            sessionsSection(server)
+                        }
+                        .themedRows()
                     }
-                    .themedRows()
                 }
+                #if os(macOS)
+                .listStyle(.sidebar)
+                #endif
+            case .cron:
+                CronJobsList(selection: $selection, showChat: showChat)
             }
-            #if os(macOS)
-            .listStyle(.sidebar)
-            #endif
         }
         #if os(macOS)
         // No title of its own: the window's is the chat's (`RootView`), which a title here
@@ -86,7 +99,12 @@ struct SessionListView: View {
         // Settings, now the header's avatar and the drawer's Settings.
         .toolbarVisibility(isPhone ? .hidden : .automatic, for: .navigationBar)
         #endif
-        .refreshable { await model.refreshLists() }
+        .refreshable {
+            switch tab {
+            case .sessions: await model.refreshLists()
+            case .cron: await model.sessionsServer?.connection.refreshCronJobs()
+            }
+        }
         // Pinned above the Bot Chat and the list: it never scrolls away.
         .safeAreaBar(edge: .top) { header }
         // A bar like the header's: rows fade out under it instead of showing through the
@@ -94,9 +112,7 @@ struct SessionListView: View {
         .safeAreaBar(edge: .bottom) {
             VStack(spacing: 0) {
                 banners
-                #if os(iOS)
-                SidebarFooter(status: statusText, color: statusColor) { EmptyView() }
-                #endif
+                SessionListTabBar(tab: $tab, cronAlerts: cronAlerts)
             }
         }
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -326,6 +342,13 @@ struct SessionListView: View {
         }
     }
 
+    /// The profile's jobs whose last run failed or wasn't delivered, as read last.
+    private var cronAlerts: Int {
+        guard let connection = model.sessionsServer?.connection,
+            connection.cron.profile == connection.listProfile else { return 0 }
+        return connection.cron.jobs.filter(\.needsAttention).count
+    }
+
     /// Chats with a question for the user that isn't on screen: every server's
     /// background chats, plus another server's open chat.
     private var waitingCount: Int {
@@ -361,26 +384,6 @@ struct SessionListView: View {
         false
         #endif
     }
-
-    #if os(iOS)
-    /// One server: its status as before. Several: how many are connected (each
-    /// section header has its own).
-    private var statusText: String {
-        let servers = model.sidebarServers
-        guard servers.count > 1 else { return servers.first?.connection.shownState.statusText ?? "No server" }
-        let connected = servers.filter { $0.connection.shownState == .connected }.count
-        return connected == servers.count
-            ? "All \(connected) servers connected" : "\(connected) of \(servers.count) servers connected"
-    }
-
-    private var statusColor: Color {
-        let servers = model.sidebarServers
-        guard servers.count > 1 else { return servers.first?.connection.shownState.statusColor ?? .gray }
-        let connected = servers.filter { $0.connection.shownState == .connected }.count
-        if connected == servers.count { return .green }
-        return connected > 0 ? .yellow : .red
-    }
-    #endif
 
     private func startSideChat(with bot: Bot, on server: ServerConnection) {
         guard !isStartingChat else { return }

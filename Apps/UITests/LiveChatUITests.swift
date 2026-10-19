@@ -954,10 +954,24 @@ final class LiveChatUITests: XCTestCase {
         defer { app.terminate() }
         let back = app.navigationBars.buttons.element(boundBy: 0)
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
-        if !waitForText(in: app, "All 2 servers connected", timeout: 60) {
+        // The list has no connection footer (user, 2026-10-19): the profiles' drawer says
+        // each server's status in its section's title.
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "the session list")
+        app.buttons["profilesButton"].firstMatch.tap()
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(rail.waitForExistence(timeout: 5), "the drawer opened")
+        let connected = ["Test 1", "Test 2"].map { name in
+            XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true"),
+                object: app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label == %@", "\(name): Connected")).firstMatch)
+        }
+        if XCTWaiter().wait(for: connected, timeout: 60) != .completed {
             attach(app, "not both connected")
             XCTFail("both servers connected")
         }
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+        XCTAssertTrue(eventually { !rail.exists }, "the drawer closed")
         XCTAssertTrue(waitForText(in: app, "Test 1", timeout: 10), "the Sessions list is headed by its server")
         let newChat = app.buttons["New chat"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)

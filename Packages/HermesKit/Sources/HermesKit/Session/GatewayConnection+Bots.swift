@@ -321,6 +321,7 @@ extension GatewayConnection {
         historyProfile = nil
         sessionListLoading = false
         sessionListError = nil
+        cron.reset(to: profile)
     }
 
     public func refreshSessionListIfVisible() async {

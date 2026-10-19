@@ -49,8 +49,9 @@ struct SessionListView: View {
     @State private var newTitle = ""
     /// The row waiting for the user to confirm its deletion.
     @State private var deleting: HistoryEntry?
-    /// Sessions or Cron Jobs, kept per window.
-    @SceneStorage("sessionListTab") private var tab: SessionListTab = .sessions
+    /// Sessions or Cron Jobs. Not kept across launches: the app opens on the sessions.
+    /// (Kept per window, a run left on Cron Jobs opened the next launch there.)
+    @State private var tab: SessionListTab = .sessions
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif

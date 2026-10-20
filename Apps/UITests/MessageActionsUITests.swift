@@ -3,7 +3,8 @@ import XCTest
 
 /// The row under a Mac reply: a small grey Copy, a "…" menu and the time it was written.
 /// The menu's Branch in New Chat opens a new chat holding the conversation up to that
-/// reply (`session.branch`). Screenshots of the row, the menu and the branch.
+/// reply (`session.branch`), listed under the chat it came from as Desktop nests it, and
+/// opened again from its row. Screenshots of the row, the menu, the branch and the list.
 /// Needs a reply, so the VM's Hermes needs its model key; skipped without
 /// `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`. The script's sweep deletes the chats.
 final class MessageActionsUITests: XCTestCase {
@@ -29,13 +30,15 @@ final class MessageActionsUITests: XCTestCase {
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isEnabled == true"), object: newChat)], timeout: 30), .completed)
-        press(newChat)
-        let composer = app.textViews["composer"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 30), "the composer")
-        press(composer)
+        let window = app.windows.firstMatch
+        let list = app.outlines.firstMatch
         let first = "ALPHA-\(Int.random(in: 1000...9999))"
+        let middle = "MIDDLE-\(Int.random(in: 1000...9999))"
         let second = "BRAVO-\(Int.random(in: 1000...9999))"
-        for marker in [first, second] {
+        let composer = app.textViews["composer"]
+        func ask(_ marker: String) {
+            XCTAssertTrue(composer.waitForExistence(timeout: 30), "the composer")
+            press(composer)
             composer.typeText("Reply with exactly \(marker) and nothing else. Do not use tools.")
             press(app.buttons["Send"].firstMatch)
             let reply = app.textViews.matching(NSPredicate(format: "value == %@", marker))
@@ -43,6 +46,21 @@ final class MessageActionsUITests: XCTestCase {
             while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
             XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
         }
+        // The parent's first exchange, then a chat in between, then the parent's second
+        // exchange: a branch from the first reply is as old as that reply, so the list,
+        // sorted by each chat's newest message, would put the other chat above it.
+        press(newChat)
+        ask(first)
+        let parentTitle = try XCTUnwrap(chatTitle(of: window, timeout: 60), "the parent is titled")
+        XCTAssertNotNil(row(titled: parentTitle, in: list, timeout: 30),
+                        "the parent “\(parentTitle)” is listed: \(rowTitles(list))")
+        press(newChat)
+        ask(middle)
+        let middleTitle = try XCTUnwrap(chatTitle(of: window, timeout: 60) { $0 != parentTitle }, "the other chat is titled")
+        // Rows are found again before each click: a row element is bound to its place.
+        press(try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 30)))
+        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == parentTitle }, "the parent shown again")
+        ask(second)
         // The row is written once the turn ends; let the transcript read it back.
         RunLoop.current.run(until: Date().addingTimeInterval(3))
 
@@ -63,11 +81,10 @@ final class MessageActionsUITests: XCTestCase {
         let branch = app.menuItems["Branch in New Chat"].firstMatch
         XCTAssertTrue(branch.waitForExistence(timeout: 5), "Branch in New Chat in the menu")
         attach(app, "2 the menu")
-        let titleBefore = app.windows.firstMatch.title
+        let titleBefore = window.title
         branch.click()
 
         // The branch: the first exchange only, in a new chat.
-        let window = app.windows.firstMatch
         let deadline = Date().addingTimeInterval(30)
         while window.title == titleBefore, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
         XCTAssertNotEqual(window.title, titleBefore, "a new chat is shown")
@@ -77,6 +94,62 @@ final class MessageActionsUITests: XCTestCase {
         XCTAssertEqual(app.textViews.matching(NSPredicate(format: "value == %@", second)).count, 0,
                        "and not the second")
         attach(app, "3 the branch")
+
+        // Listed right under its parent, above the chat in between, as Desktop nests it.
+        let branchTitle = try XCTUnwrap(chatTitle(of: window, timeout: 10), "the branch is titled")
+        XCTAssertNotNil(row(titled: branchTitle, in: list, timeout: 15),
+                        "the branch “\(branchTitle)” is listed: \(rowTitles(list))")
+        let parentRow = try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 5), "the parent is listed")
+        let branchRow = try XCTUnwrap(row(titled: branchTitle, in: list, timeout: 5), "the branch is listed")
+        let middleRow = try XCTUnwrap(row(titled: middleTitle, in: list, timeout: 5), "the other chat is listed")
+        XCTAssertEqual(branchRow.frame.minY, parentRow.frame.maxY, accuracy: 4, "the branch right under its parent")
+        XCTAssertGreaterThan(middleRow.frame.minY, branchRow.frame.minY, "the chat in between below them")
+        attach(app, "4 the branch under its parent")
+
+        // Another chat, then back to the branch from its row.
+        press(try XCTUnwrap(row(titled: middleTitle, in: list, timeout: 5)))
+        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == middleTitle }, "the other chat shown")
+        press(try XCTUnwrap(row(titled: branchTitle, in: list, timeout: 5)))
+        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == branchTitle },
+                        "back on the branch from its row: \(window.title)")
+        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", first)).firstMatch
+            .waitForExistence(timeout: 30), "the branch holds the first reply again")
+        attach(app, "5 back on the branch")
+    }
+
+    /// The chat's title in the window's (“Title · Profile”), once there is one that passes `test`.
+    @MainActor
+    private func chatTitle(of window: XCUIElement, timeout: TimeInterval,
+                           _ test: (String) -> Bool = { _ in true }) -> String? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let title = window.title.components(separatedBy: " · ").dropLast().joined(separator: " · ")
+            if !title.isEmpty, !["New Chat", "Side chat", "Chat", "Untitled chat"].contains(title), test(title) {
+                return title
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        return nil
+    }
+
+    /// The list's texts, top to bottom, for failure messages.
+    @MainActor
+    private func rowTitles(_ list: XCUIElement) -> String {
+        list.staticTexts.allElementsBoundByIndex.map { $0.label.isEmpty ? "\($0.value ?? "")" : $0.label }
+            .joined(separator: " | ")
+    }
+
+    /// The session list's row showing `title`, once it is there.
+    @MainActor
+    private func row(titled title: String, in list: XCUIElement, timeout: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if let row = list.outlineRows.allElementsBoundByIndex.first(where: { $0.staticTexts[title].exists }) {
+                return row
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        return nil
     }
 
     @MainActor

@@ -100,10 +100,12 @@ extension ScriptedGateway {
     }
 
     @MainActor
-    func connect(cron: (any CronSource)? = nil) async throws -> GatewayConnection {
+    func connect(cron: (any CronSource)? = nil, links: (any SessionLinkSource)? = nil) async throws
+        -> GatewayConnection
+    {
         start()
         let connection = makeTestConnection()
-        try await connection.connect(using: FakeConnector([transport], cron: cron))
+        try await connection.connect(using: FakeConnector([transport], cron: cron, links: links))
         return connection
     }
 }

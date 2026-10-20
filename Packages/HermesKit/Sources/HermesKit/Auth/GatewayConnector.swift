@@ -16,12 +16,15 @@ public protocol GatewayConnector: Sendable {
     var mediaSource: (any GatewayMediaSource)? { get }
     /// Lists and manages the profiles' scheduled jobs, with the same credential.
     var cronSource: (any CronSource)? { get }
+    /// Tells which listed sessions are branches of which, with the same credential.
+    var sessionLinkSource: (any SessionLinkSource)? { get }
 }
 
 extension GatewayConnector {
     public var messagesSource: (any SessionMessagesSource)? { nil }
     public var mediaSource: (any GatewayMediaSource)? { nil }
     public var cronSource: (any CronSource)? { nil }
+    public var sessionLinkSource: (any SessionLinkSource)? { nil }
 }
 
 /// Images and files on the gateway's disk, for a client that cannot read that disk.
@@ -121,6 +124,7 @@ public struct DashboardConnector: GatewayConnector {
     public var messagesSource: (any SessionMessagesSource)? { self }
     public var mediaSource: (any GatewayMediaSource)? { self }
     public var cronSource: (any CronSource)? { self }
+    public var sessionLinkSource: (any SessionLinkSource)? { self }
 
     /// At most one refresh per connect: proactively when the token is known
     /// to be expired, otherwise after the server rejects it (401

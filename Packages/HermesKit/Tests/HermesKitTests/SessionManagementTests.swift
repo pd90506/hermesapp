@@ -273,6 +273,10 @@ struct SessionManagementTests {
         #expect(copy.storedSessionID == "fork-1" && copy.title == "Plan #2")
         #expect(connection.activeSession === copy)
         #expect(connection.history.map(\.summary.id) == ["fork-1", "old"])
+        // Listed under the chat it was copied from.
+        let tree = connection.sessionTree(connection.history)
+        #expect(tree.map(\.entry.summary.id) == ["old", "fork-1"])
+        #expect(tree.map(\.branchStem) == [nil, "└─ "])
     }
 
     @Test func aChatWithNothingToCopyIsNotForked() async throws {

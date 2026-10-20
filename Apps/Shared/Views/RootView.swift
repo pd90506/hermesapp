@@ -449,8 +449,16 @@ private struct KeptChats: View {
 #if os(macOS)
 /// The chat's title over it, as a Slack channel's: the title bar shows none
 /// (`WindowLayout`). Also the window's title (`navigationTitle`), for the Window menu.
+///
+/// On a band of Liquid Glass across the card's top, as the App Store's title bar: the
+/// messages scroll under it, blurred (#54, brought back on the card, 2026-10-20). The
+/// glass is tinted with the card's colour, so the theme carries through, and runs past the
+/// band, cut to it: its rims drew a bright line along the band's edges. In dark a shade
+/// over it, as the glass alone was a light slab there. Clear glass showed the rows sharp
+/// and materials drew a solid band (2026-10-18).
 private struct ChatHeader: View {
     let title: String
+    @Environment(\.surfaces) private var surfaces
 
     var body: some View {
         Text(title)
@@ -460,15 +468,22 @@ private struct ChatHeader: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
             .frame(height: 48)
-            .background(.background)
-            // A line, not a Divider: in the overlay a Divider stood upright. Faint, as
-            // the card's edge.
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(.primary.opacity(0.07)).frame(height: 1)
+            .background {
+                Self.shade
+                    .background {
+                        Color.clear
+                            .glassEffect(.regular.tint(surfaces.chat.opacity(0.5)), in: .rect)
+                            .padding(.vertical, -24)
+                    }
+                    .clipped()
             }
             .opacity(title.isEmpty ? 0 : 1)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier("chatTitle")
     }
+
+    private static let shade = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(white: 0, alpha: 0.2) : .clear
+    })
 }
 #endif

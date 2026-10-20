@@ -183,29 +183,16 @@ struct ProfileRailView: View {
         }
     }
 
-    /// The gear under the profiles. On iOS the system's Liquid Glass circle, as the
-    /// toolbar's buttons (user, 2026-10-18); on macOS a plain glyph with a hover circle.
-    @ViewBuilder private var settingsButton: some View {
-        #if os(macOS)
-        Button("Settings", systemImage: "gearshape") {
-            // The Settings window, as the app menu's Settings… opens it.
-            openSettings()
-        }
-        .labelStyle(.iconOnly)
-        .uiFont(.title3)
-        .foregroundStyle(.secondary)
-        .hoverButtonStyle(.circle, padding: 8)
-        .help("Settings")
-        #else
-        Button("Settings", systemImage: "gearshape") {
-            model.settingsPresentation.toggle()
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        .accessibilityIdentifier("settingsButton")
-        #endif
+    /// The gear under the profiles: the system's Liquid Glass circle, as the toolbar's
+    /// buttons (user, 2026-10-18; on the Mac too since 2026-10-20).
+    private var settingsButton: some View {
+        Button("Settings", systemImage: "gearshape", action: openSettingsWindow)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .help("Settings")
+            .accessibilityIdentifier("settingsButton")
     }
 
     @ViewBuilder private func section(_ server: ServerConnection) -> some View {

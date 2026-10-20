@@ -23,9 +23,6 @@ struct ComposerView: View {
     @State private var isImportingFile = false
     @State private var isDropTargeted = false
     @State private var stopError: String?
-    /// The composer's field: the theme's on the Mac, the system's on iOS.
-    @Environment(\.surfaces) private var surfaces
-    @Environment(\.colorScheme) private var colorScheme
     #if os(iOS)
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
@@ -63,26 +60,17 @@ struct ComposerView: View {
             if !isCollapsed { toolbar }
         }
         .animation(.snappy(duration: 0.25), value: isCollapsed)
-        #if os(iOS)
-        // A card floating over the chat, as the Claude app's: Liquid Glass in the theme's
-        // composer colour.
-        .glassEffect(.regular.tint(surfaces.composer.opacity(colorScheme == .dark ? 0.55 : 0.4)),
-                     in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
-        // A hairline edge, as the Claude app's card; the tint while a drop is over it (iPad).
+        // A card floating over the chat, as the Claude app's, on the Mac and iOS alike:
+        // Liquid Glass in the theme's composer colour (`themedGlass`), the messages blurred
+        // under it. No line of its own around it: the glass has its rim. The tint's edge
+        // while a drop is over it.
+        .themedGlass(in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
+        .chatGlassID("composer")
         .overlay {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .strokeBorder(isDropTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.primary.opacity(0.08)),
-                              lineWidth: isDropTargeted ? 2 : 1)
+                .strokeBorder(.tint, lineWidth: 2)
+                .opacity(isDropTargeted ? 1 : 0)
         }
-        #else
-        .background(surfaces.composer, in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .strokeBorder(isDropTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator), lineWidth: 1)
-        }
-        // Lifted a little off the chat, as Desktop's composer.
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 6, y: 2)
-        #endif
         .onDrop(of: [.fileURL, .image, .data], isTargeted: $isDropTargeted) { providers in
             let attachable = providers.filter(ImageLoader.isAttachable)
             guard !attachable.isEmpty else { return false }
@@ -627,6 +615,8 @@ private struct ModelPickerList: View {
             }
         }
         .frame(minWidth: 260, idealWidth: 300, minHeight: 200, idealHeight: 360)
+        // The sheet's or popover's own Liquid Glass shows through, not the list's page.
+        .scrollContentBackground(.hidden)
         #if os(iOS)
         .presentationDetents([.medium, .large])
         #endif

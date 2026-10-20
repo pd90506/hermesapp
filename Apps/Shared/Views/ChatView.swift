@@ -26,6 +26,8 @@ struct ChatView: View {
     @State private var chatWidth: CGFloat?
     @Environment(\.textSizes) private var sizes
     @Environment(\.surfaces) private var surfaces
+    /// The composer's card and the scroll-to-bottom pill, as one glass (`ChatGlass`).
+    @Namespace private var glass
 
     /// `pushed`: the chat is a page pushed over the session list (iPhone), whose rows
     /// wait for the push to end (`TranscriptWindow`).
@@ -49,7 +51,25 @@ struct ChatView: View {
         #endif
     }
 
+    /// How far the scroll-to-bottom pill floats above the composer's card. The chat's glass
+    /// merges shapes this close, so the pill comes out of the card, yet at rest they are apart.
+    static var pillGap: CGFloat {
+        #if os(macOS)
+        16
+        #else
+        20
+        #endif
+    }
+
     var body: some View {
+        // The composer's card and the pill in one container, so their glass morphs.
+        GlassEffectContainer(spacing: Self.pillGap) {
+            chat
+        }
+        .environment(\.chatGlass, ChatGlass(namespace: glass))
+    }
+
+    private var chat: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 TranscriptStack {
@@ -73,15 +93,15 @@ struct ChatView: View {
             // ran off the screen's right edge (VM, 2026-10-19).
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
             #endif
+            // The messages blur away under the composer's bar, down to the window's or screen's
+            // edge, as in the Claude app. The automatic style, which the bar alone gave, left
+            // them sharp under and around the card (VM, 2026-10-19).
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
             #if os(iOS)
             // The keyboard goes as on iOS's own chats: a drag down on the transcript takes
             // it along under the finger (back up, it stays), and a tap on the transcript
             // puts it away. Before, nothing did, once the composer had the keyboard.
             .scrollDismissesKeyboard(.interactively)
-            // The messages blur away under the composer's bar, down to the screen's edge,
-            // as in the Claude app. The automatic style, which the bar alone gave, left
-            // them sharp under and around the card (VM, 2026-10-19).
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
             .contentShape(.rect)
             .simultaneousGesture(TapGesture().onEnded { Self.dismissKeyboard() })
             #endif
@@ -106,21 +126,19 @@ struct ChatView: View {
             }
             .promptScrolling(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks, proxy: proxy)
             // Over the chat, not the composer: at the bottom of the safe area, which ends
-            // where the composer's inset (Mac) or bar (iOS) begins, so the button sits just
-            // above the card, clear of the bar's blur and inside its own hit area.
+            // where the composer's bar begins, so the button sits just above the card, clear
+            // of the bar's blur and inside its own hit area.
             .overlay(alignment: .bottom) {
                 ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
                     #if os(macOS)
-                    // 16 pt above the card, as Desktop's, with the bar's 10 pt padding.
-                    .padding(.bottom, 6)
+                    // 16 pt above the card (`pillGap`), as Desktop's, with the bar's 10 pt padding.
+                    .padding(.bottom, Self.pillGap - 10)
                     #endif
             }
         }
-        #if os(macOS)
-        .safeAreaInset(edge: .bottom) { composerRow }
-        #else
         // A bar, so the messages blur away under the floating card, as under iOS's own bars.
         .safeAreaBar(edge: .bottom) { composerRow }
+        #if os(iOS)
         // The theme's chat colour, as the Mac's chat card: not the system's black in dark.
         .background { surfaces.chat.ignoresSafeArea() }
         #endif
@@ -133,9 +151,9 @@ struct ChatView: View {
         #endif
     }
 
-    /// The composer, as wide as the messages' text (the content width less its padding).
-    /// On the Mac on a bar of the chat's colour, the transcript fading into it, as
-    /// Desktop's; on iOS a card floating over the chat, as the Claude app's.
+    /// The composer, as wide as the messages' text (the content width less its padding):
+    /// a glass card floating over the chat, as the Claude app's, the messages blurring
+    /// away under it (`scrollEdgeEffectStyle`).
     private var composerRow: some View {
         ComposerView(composer: composer, isConnected: server.isConnected)
             .environment(\.chatIsShown, isShown)
@@ -146,20 +164,11 @@ struct ChatView: View {
             .padding(.horizontal, 16)
             .padding(.horizontal, PromptRail.room)
             .padding(.vertical, 10)
-            .background {
-                surfaces.chat
-                    .overlay(alignment: .top) {
-                        LinearGradient(colors: [surfaces.chat.opacity(0), surfaces.chat], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 16)
-                            .offset(y: -16)
-                            .allowsHitTesting(false)
-                    }
-            }
             #else
             .padding(.horizontal, 12)
             // Room above the card inside the bar: the blur (`scrollEdgeEffectStyle`) starts
             // there, so a line above the card is already soft as it reaches it.
-            .padding(.top, 20)
+            .padding(.top, Self.pillGap)
             .padding(.bottom, 6)
             #endif
     }

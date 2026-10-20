@@ -91,6 +91,19 @@ final class ScrollToBottomUITests: XCTestCase {
         XCTAssertLessThan(button.frame.maxY, card.minY, "above the composer: \(button.frame), \(card)")
         XCTAssertGreaterThan(button.frame.maxY, card.minY - 60, "just above it: \(button.frame), \(card)")
         attach(app, "2 scrolled up, \(name)")
+        #if os(macOS)
+        // The messages under the composer's glass, the pointer over it (the Mac drew some
+        // edge effects only under the pointer), and the prompt rail's glass panel open.
+        composer.hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        attach(app, "2b pointer over the composer, \(name)")
+        let tick = app.buttons.matching(identifier: "prompt-rail-tick").firstMatch
+        if tick.exists {
+            tick.hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            attach(app, "2c prompt rail panel, \(name)")
+        }
+        #endif
 
         press(button)
         let shortReply = app.textViews.matching(
@@ -99,6 +112,26 @@ final class ScrollToBottomUITests: XCTestCase {
         XCTAssertTrue(eventually(timeout: 5) { shortReply.exists && shortReply.isHittable },
                       "the newest reply on screen (\(name))")
         attach(app, "3 back at the end, \(name)")
+
+        // `/model` opens the model list: in a sheet (iPhone) or popover (Mac) whose own
+        // glass shows through it.
+        press(composer)
+        composer.typeText("/model")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        press(app.buttons["Send"].firstMatch)
+        let reload = app.buttons["Reload Models"].firstMatch
+        if reload.waitForExistence(timeout: 10) {
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+            attach(app, "4 model list, \(name)")
+            #if os(macOS)
+            app.typeKey(.escape, modifierFlags: [])
+            #else
+            app.swipeDown(velocity: .fast)
+            #endif
+            XCTAssertTrue(eventually(timeout: 5) { !reload.exists }, "the model list closed (\(name))")
+        } else {
+            attach(app, "4 no model list, \(name)")
+        }
     }
 
     #if os(iOS)

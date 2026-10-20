@@ -4,7 +4,7 @@ import XCTest
 /// The row under a Mac reply: a small grey Copy, a "…" menu and the time it was written.
 /// The menu's Branch in New Chat opens a new chat holding the conversation up to that
 /// reply (`session.branch`), listed in the session list and opened again from its row after
-/// another chat, also from a resumed chat with `tui` rows hidden, as on the user's Mac.
+/// another chat, with `tui` rows hidden as on the user's Mac.
 /// Screenshots of the row, the menu, the branch and the list.
 /// Needs a reply, so the VM's Hermes needs its model key; skipped without
 /// `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`. The script's sweep deletes the chats.
@@ -22,8 +22,9 @@ final class MessageActionsUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
         // As the user's Mac: new chats are `desktop`, `tui` rows hidden. A branch is stored
-        // under its parent's runtime source, which was `tui` when a chat was resumed
-        // without one, so the list left the branch out.
+        // under its parent's runtime source, which was `tui` for a chat resumed without one,
+        // so the list left it out. (A resume here reuses the runtime the gateway keeps for
+        // 10 minutes, so this test can't make one cold; the package tests cover the resume.)
         app.launchEnvironment["HERMES_UITEST_SOURCE_SETTINGS"] = #"{"newSessionSource":"desktop","hiddenSources":["tui"]}"#
         // A window even if the last run's app was killed without one.
         app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
@@ -50,30 +51,11 @@ final class MessageActionsUITests: XCTestCase {
             while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
             XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
         }
-        // Two exchanges, then the app relaunched: the chat is resumed from its row
-        // (`session.resume`), as an older chat is. Its runtime takes the source the resume
-        // sends, and a branch from it takes the runtime's.
         press(newChat)
         ask(first)
         ask(second)
-        RunLoop.current.run(until: Date().addingTimeInterval(3))  // the rows are written once the turn ends
-        app.terminate()
-        app.launch()
-        if !app.windows.firstMatch.waitForExistence(timeout: 10) { app.typeKey("n", modifierFlags: .command) }
-        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected again")
-        // Found by its first prompt's marker: its title may still be changing. Clicked again
-        // if the first click, right after the launch, didn't take.
-        let readBack = app.textViews.matching(NSPredicate(format: "value == %@", second)).firstMatch
-        for _ in 0..<3 where !readBack.exists {
-            let title = list.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
-                                                                  first, first)).firstMatch
-            XCTAssertTrue(title.waitForExistence(timeout: 30), "the chat is listed: \(rowTitles(list))")
-            title.click()
-            _ = readBack.waitForExistence(timeout: 15)
-        }
-        attach(app, "0 the chat after a relaunch")
-        XCTAssertTrue(readBack.exists, "the chat's transcript read back")
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        // The row is written once the turn ends; let the transcript read it back.
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
 
         // The first reply: hovered, its row shows Copy, "…" and the time.
         let firstReply = app.textViews.matching(NSPredicate(format: "value == %@", first)).firstMatch
@@ -147,21 +129,6 @@ final class MessageActionsUITests: XCTestCase {
     private func rowTitles(_ list: XCUIElement) -> String {
         list.staticTexts.allElementsBoundByIndex.map { $0.label.isEmpty ? "\($0.value ?? "")" : $0.label }
             .joined(separator: " | ")
-    }
-
-    /// The session list's row whose title contains `text`, once it is there.
-    @MainActor
-    private func row(containing text: String, in list: XCUIElement, timeout: TimeInterval) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
-        let match = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)
-        repeat {
-            if let row = list.outlineRows.allElementsBoundByIndex
-                .first(where: { $0.staticTexts.matching(match).firstMatch.exists }) {
-                return row
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        } while Date() < deadline
-        return nil
     }
 
     /// The session list's row showing `title`, once it is there.

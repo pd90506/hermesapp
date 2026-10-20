@@ -275,6 +275,22 @@ struct SessionManagementTests {
         #expect(connection.history.map(\.summary.id) == ["fork-1", "old"])
     }
 
+    /// The copy is stored under the source new chats carry, as Desktop's (`desktop`).
+    @Test func aForkCarriesTheChosenSource() async throws {
+        let gateway = botGateway(listings: ["coder": [sessionRow(id: "old", title: "Plan")]])
+        gateway.on("session.branch_stored") { _ in
+            .result(["session_id": "rt-fork-1", "stored_session_id": "fork-1", "message_count": 2,
+                     "messages_omitted": true, "info": ["model": "test-model"]])
+        }
+        let connection = try await connect(gateway)
+        connection.sourceSettings.newSessionSource = "desktop"
+
+        try await connection.fork(try #require(connection.history.first))
+
+        #expect(gateway.params("session.branch_stored") == [["parent_session_id": "old", "profile": "coder",
+                                                               "source": "desktop"]])
+    }
+
     @Test func aChatWithNothingToCopyIsNotForked() async throws {
         let gateway = botGateway(listings: ["coder": [sessionRow(id: "empty")]])
         gateway.on("session.branch_stored") { _ in .error(code: 4008, message: "send a message first") }

@@ -236,7 +236,15 @@ plus the newest page of the transcript over REST.
     only (`methods_session.py:854-869`).
   - `[unverified]` A non-Desktop `source` makes the hydration read the display history as well
     (`model_history_only` is only set for `source == "desktop"`, `methods_session.py:961-963`).
-    That cost stays on the server; nothing more goes over the wire. The app sends no `source`.
+    That cost stays on the server; nothing more goes over the wire.
+- `source`: the runtime's source; without one it is the gateway's own platform, `tui` under the
+  dashboard (`_new_runtime_ids`, `methods_session.py:65-67`; `_resolve_session_source`,
+  `server.py:1570-1573`). A branch from the chat is stored under it (`_session_source`,
+  `methods_session_branch.py:110`). Desktop resumes with `desktop`
+  (`use-session-actions/index.ts:2084-2088`).
+  - `[client choice]` The app sends the source its new chats carry (`newSessionSource`, Settings),
+    on resume and on Fork's `session.branch_stored`, and none when that is unset. Before, a branch
+    was stored as `tui` and a list hiding `tui` left it out.
 
 **Newest page:**
 `GET {base}/api/sessions/{id}/messages?profile=<p>&order=latest&limit=120&offset=0&include_compacted=true&inline_images=false`

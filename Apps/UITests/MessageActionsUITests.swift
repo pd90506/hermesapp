@@ -153,7 +153,7 @@ final class MessageActionsUITests: XCTestCase {
     @MainActor
     private func row(containing text: String, in list: XCUIElement, timeout: TimeInterval) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(timeout)
-        let match = NSPredicate(format: "label CONTAINS %@", text)
+        let match = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)
         repeat {
             if let row = list.outlineRows.allElementsBoundByIndex
                 .first(where: { $0.staticTexts.matching(match).firstMatch.exists }) {

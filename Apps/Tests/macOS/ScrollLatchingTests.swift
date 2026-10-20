@@ -10,6 +10,11 @@ import Testing
 @Suite(.serialized) struct ScrollLatchingTests {
     @MainActor final class Recording: NSScrollView {
         var received = 0
+        var hitTests = 0
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            hitTests += 1
+            return super.hitTest(point)
+        }
         override func scrollWheel(with event: NSEvent) { received += 1 }
     }
 
@@ -37,11 +42,12 @@ import Testing
 
         /// A pixel scroll at `point` (screen coordinates), `phase` 0 for a plain wheel
         /// tick, 1 began, 2 changed (`CGScrollPhase`).
-        func scroll(at point: NSPoint, phase: Int64, time: TimeInterval) -> NSEvent? {
-            let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -10, wheel2: 0, wheel3: 0)!
+        func scroll(at point: NSPoint, phase: Int64, time: TimeInterval, momentum: Int64 = 0, horizontal: Int32 = 0) -> NSEvent? {
+            let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -10, wheel2: horizontal, wheel3: 0)!
             let primary = NSScreen.screens.first?.frame.height ?? 0
             event.location = CGPoint(x: point.x, y: primary - point.y)
             event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+            event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
             event.timestamp = CGEventTimestamp(time * 1_000_000_000)
             return ScrollLatching.route(NSEvent(cgEvent: event)!, in: window)
         }
@@ -116,7 +122,8 @@ import Testing
         let ui = Nested()
         defer { ui.close() }
         #expect(ui.scroll(at: ui.insidePoint, phase: 1, time: 20) != nil)
-        #expect(ui.scroll(at: ui.insidePoint, phase: 2, time: 20.02) != nil, "the box's own gesture is delivered to it")
+        #expect(ui.scroll(at: ui.insidePoint, phase: 2, time: 20.02) == nil)
+        #expect(ui.inner.received == 1, "the box receives its continuation exactly once")
         #expect(ui.outer.received == 0)
     }
 
@@ -126,6 +133,83 @@ import Testing
         #expect(ui.scroll(at: ui.outsidePoint, phase: 0, time: 30) != nil)
         #expect(ui.scroll(at: ui.insidePoint, phase: 0, time: 30.1) == nil, "the next tick stays with the chat")
         #expect(ui.outer.received == 1)
+        ui.outer.hitTests = 0
+        #expect(ui.scroll(at: ui.insidePoint, phase: 0, time: 30.2) == nil)
+        #expect(ui.outer.hitTests == 0)
         #expect(ui.scroll(at: ui.insidePoint, phase: 0, time: 31) != nil, "after a pause, a tick over the box scrolls it")
+        #expect(ui.outer.hitTests == 1)
+        #expect(ScrollLatching.currentOwner === ui.inner)
     }
+
+    // Count only synchronous calls made by route, not AppKit's later dispatch.
+    // Before the optimization each of these continuations hit-tested the root.
+    @Test func continuationsDoNotHitTestEvenWhenThePointerMovesOrMomentumEnds() {
+        let ui = Nested()
+        defer { ui.close() }
+        #expect(ui.scroll(at: ui.outsidePoint, phase: 1, time: 50) != nil)
+        ui.outer.hitTests = 0
+        #expect(ui.scroll(at: ui.outsidePoint, phase: 2, time: 50.01) == nil)
+        #expect(ui.scroll(at: ui.insidePoint, phase: 2, time: 50.02) == nil)
+        #expect(ui.scroll(at: ui.insidePoint, phase: 4, time: 50.03) == nil)
+        #expect(ui.scroll(at: ui.insidePoint, phase: 0, time: 51, momentum: 1) == nil)
+        #expect(ui.scroll(at: ui.insidePoint, phase: 0, time: 51.02, momentum: 4) == nil)
+        #expect(ui.outer.hitTests == 0)
+        #expect(ui.outer.received == 5)
+        #expect(ui.inner.received == 0)
+        #expect(ui.scroll(at: ui.insidePoint, phase: 1, time: 52) != nil)
+        #expect(ui.outer.hitTests == 1)
+        #expect(ScrollLatching.currentOwner === ui.inner)
+    }
+
+    @Test func horizontalBoxOwnsContinuationsOutsideItsBounds() {
+        let ui = Nested()
+        defer { ui.close() }
+        ui.inner.hasHorizontalScroller = true
+        ui.inner.documentView?.setFrameSize(NSSize(width: 2000, height: 100))
+        #expect(ui.scroll(at: ui.insidePoint, phase: 1, time: 60, horizontal: 10) != nil)
+        ui.outer.hitTests = 0
+        #expect(ui.scroll(at: ui.outsidePoint, phase: 2, time: 60.01, horizontal: 10) == nil)
+        #expect(ui.inner.received == 1)
+        #expect(ui.outer.received == 0)
+        #expect(ui.outer.hitTests == 0)
+    }
+
+    @Test func detachedOwnerIsReplacedByAFreshHitTest() {
+        let ui = Nested()
+        defer { ui.close() }
+        #expect(ui.scroll(at: ui.insidePoint, phase: 1, time: 70) != nil)
+        ui.inner.removeFromSuperview()
+        ui.outer.hitTests = 0
+        #expect(ui.scroll(at: ui.outsidePoint, phase: 2, time: 70.01) != nil)
+        #expect(ui.outer.hitTests == 1)
+        #expect(ScrollLatching.currentOwner === ui.outer)
+        #expect(ui.inner.received == 0)
+    }
+
+    @Test func aDifferentWindowReacquiresTheOwner() {
+        let first = Nested()
+        let second = Nested()
+        defer { first.close(); second.close() }
+        #expect(first.scroll(at: first.insidePoint, phase: 1, time: 80) != nil)
+        second.outer.hitTests = 0
+        #expect(second.scroll(at: second.outsidePoint, phase: 2, time: 80.01) != nil)
+        #expect(second.outer.hitTests == 1)
+        #expect(ScrollLatching.currentOwner === second.outer)
+        #expect(first.inner.received == 0)
+    }
+
+    @Test func noScrollableTargetIsNotCached() {
+        let ui = Nested()
+        defer { ui.close() }
+        let content = NSView(frame: ui.outer.frame)
+        ui.window.contentView = content
+        #expect(ui.scroll(at: ui.outsidePoint, phase: 1, time: 90) != nil)
+        #expect(ScrollLatching.currentOwner == nil)
+        content.addSubview(ui.outer)
+        ui.outer.hitTests = 0
+        #expect(ui.scroll(at: ui.outsidePoint, phase: 2, time: 90.01) != nil)
+        #expect(ui.outer.hitTests == 1)
+        #expect(ScrollLatching.currentOwner === ui.outer)
+    }
+
 }

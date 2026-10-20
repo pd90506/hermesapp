@@ -1611,22 +1611,6 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
     before its row was read back, by role and text counted from the end (`MessageBranch`).
   - `[client choice]` Refused while a turn runs (`MessageBranchError.busy`, Desktop's
     `branchStopCurrent`); not offered in a Bot Chat. The branch opens as Fork's copy does.
-- **Where branches are listed.** A branch's copied rows keep the parent's timestamps
-  (`_BRANCH_COPY_FIELDS`, `methods_session_branch.py:57-65`) and `session.list` sorts by each
-  chat's newest message (`_sql_freshest_of`, `hermes_state_common.py:257-268`), so a branch from
-  an old reply sorts at that reply's time, far down a long list.
-  - Desktop nests a branch under its parent with a `├─ `/`└─ ` stem, the group at its newest
-    member's place (`flattenSessionsWithBranches`, `apps/desktop/src/lib/session-branch-tree.ts`),
-    keyed on `_branched_from`, else `parent_session_id`, never for a `_reset_from` child
-    (`forkParentId`, :28-40).
-  - `session.list` rows carry none of these (`_session_row_summary`, `methods_session.py:110-122`);
-    `GET /api/sessions?profile=&order=created&limit=100` does, lifted out of `model_config`
-    (`hermes_cli/web_routers/sessions.py:177-235`, `hermes_state.py:530-560`).
-  - `[client choice]` `SessionBranchTree` nests as Desktop does. The parents of branches made
-    here (Fork, Branch in New Chat) are known at once; the rest come from that REST read, made
-    when the list shows a row not checked yet. A branch is new when made, so it is on that
-    newest-started page; older rows count as checked, so they cost no more reads. A branch
-    older than the page (made elsewhere, before the app first saw the list) is not nested.
 - **Pin** is not on the JSON-RPC surface.
   - Hermes keeps it in `sessions.pinned` and Desktop writes it through the dashboard's fenced
     REST `PATCH /api/sessions/{id} {pinned}` (`apps/desktop/src/api/sessions.ts:374-428`).

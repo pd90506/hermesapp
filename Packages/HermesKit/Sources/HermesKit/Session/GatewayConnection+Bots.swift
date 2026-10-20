@@ -362,7 +362,6 @@ extension GatewayConnection {
                     }.map { HistoryEntry(profile: profile, summary: $0) }
                     historyProfile = profile
                     sessionListReads += 1
-                    readBranchLinks(profile: profile)
                     return
                 }
                 guard limit <= Int.max / 2 else { throw SessionListError.tooLarge }
@@ -378,44 +377,3 @@ extension GatewayConnection {
 }
 
 private enum SessionListError: Error { case tooLarge }
-
-// Which listed sessions are branches: `session.list` rows don't say, the dashboard's
-// `GET /api/sessions` does (`SessionLinkSource`).
-extension GatewayConnection {
-    /// Records that `child` was branched from `parent`, so the list nests it at once.
-    func noteBranch(_ child: String, of parent: String?, profile: String) {
-        guard let parent, !parent.isEmpty, parent != child else { return }
-        branchParents[profile, default: [:]][child] = parent
-        branchLinksChecked[profile, default: []].insert(child)
-    }
-
-    /// Reads which of the listed rows are branches, once a row the list has not checked
-    /// yet appears. A branch is new when made, so it is among the newest started sessions
-    /// the read returns; rows older than those are taken as checked, so they cost no
-    /// further reads. Best effort: without it, branches stay where the list puts them.
-    func readBranchLinks(profile: String) {
-        let listed = history.filter { $0.profile == profile }.map(\.summary.id)
-        let checked = branchLinksChecked[profile] ?? []
-        guard listed.contains(where: { !checked.contains($0) }), !branchLinksReading.contains(profile),
-            let source = sessionLinkSource
-        else { return }
-        branchLinksReading.insert(profile)
-        let gen = generation
-        Task { [weak self] in
-            let links = try? await source.recentSessionLinks(profile: profile)
-            guard let self, gen == self.generation else { return }
-            self.branchLinksReading.remove(profile)
-            // A failed read is not retried for these rows: the list refreshes every few
-            // seconds while a turn streams, and an old dashboard without the route would
-            // be asked each time.
-            self.branchLinksChecked[profile, default: []].formUnion(listed)
-            guard let links else { return }
-            var parents = self.branchParents[profile] ?? [:]
-            for (child, parent) in links {
-                if let parent, parent != child { parents[child] = parent }
-            }
-            if parents != (self.branchParents[profile] ?? [:]) { self.branchParents[profile] = parents }
-            self.branchLinksChecked[profile, default: []].formUnion(links.keys)
-        }
-    }
-}

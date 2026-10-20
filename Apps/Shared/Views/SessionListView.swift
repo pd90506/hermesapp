@@ -230,9 +230,8 @@ struct SessionListView: View {
                     .uiFont(.caption)
                     .foregroundStyle(.secondary)
             }
-            // Branches under the chat they came from, as Desktop lists them.
-            ForEach(connection.sessionTree(model.pins.split(connection.visibleHistory, on: server.id).others)) { row in
-                sessionRow(row.entry, branchStem: row.branchStem, on: server)
+            ForEach(model.pins.split(connection.visibleHistory, on: server.id).others) { entry in
+                sessionRow(entry, on: server)
             }
         } header: {
             SidebarSectionTitle("Sessions")
@@ -244,8 +243,8 @@ struct SessionListView: View {
         let pinned = model.pins.split(server.connection.visibleHistory, on: server.id).pinned
         if !pinned.isEmpty {
             Section {
-                ForEach(server.connection.sessionTree(pinned)) { row in
-                    sessionRow(row.entry, branchStem: row.branchStem, on: server)
+                ForEach(pinned) { entry in
+                    sessionRow(entry, on: server)
                 }
             } header: {
                 SidebarSectionTitle("Pinned")
@@ -253,10 +252,9 @@ struct SessionListView: View {
         }
     }
 
-    private func sessionRow(_ entry: HistoryEntry, branchStem: String? = nil,
-                            on server: ServerConnection) -> some View {
+    private func sessionRow(_ entry: HistoryEntry, on server: ServerConnection) -> some View {
         let item = SidebarItem.history(server: server.id, id: entry.id)
-        return HistoryRow(entry: entry, branchStem: branchStem) {
+        return HistoryRow(entry: entry) {
             sessionActions(entry, on: server)
         }
         .sidebarRowHighlight(isSelected: selection == item)

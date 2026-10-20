@@ -431,31 +431,18 @@ enum AvatarImages {
 /// at the trailing edge (the same as its context menu).
 struct HistoryRow<Actions: View>: View {
     let entry: HistoryEntry
-    /// "├─ " or "└─ " for a branch listed under the chat it came from, as Desktop draws it
-    /// (`session-status-dot.tsx:144-148`, `session-row.tsx:455`).
-    var branchStem: String? = nil
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
         HStack(spacing: 6) {
-            // On the title's baseline, the time under the title.
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                if let branchStem {
-                    Text(branchStem)
-                        .uiFont(.caption, design: .monospaced)
-                        .foregroundStyle(.tertiary)
-                        .padding(.leading, 6)
-                        .accessibilityHidden(true)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
+                    .lineLimit(1)
+                if let started = entry.summary.startedAt, started > 0 {
+                    Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
+                        .uiFont(.caption)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    if let started = entry.summary.startedAt, started > 0 {
-                        Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
-                            .uiFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

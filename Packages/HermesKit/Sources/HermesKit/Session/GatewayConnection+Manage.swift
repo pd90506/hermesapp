@@ -118,7 +118,6 @@ extension GatewayConnection {
         guard !isProtected(entry) else { throw SessionActionError.botChatProtected }
         guard let client else { throw GatewayClientError.notConnected }
         let branched = try await client.branchStoredSession(parentID: entry.summary.id, profile: entry.profile)
-        noteBranch(branched.storedSessionID, of: entry.summary.id, profile: entry.profile)
         // The row exists now: list it, so the copy opens with its title and selected.
         if listProfile == entry.profile { await refreshSessionList() }
         let row = history.first { $0.profile == entry.profile && $0.summary.id == branched.storedSessionID }
@@ -136,7 +135,6 @@ extension GatewayConnection {
         let branched = try await session.branch(at: item)
         // A chat of the launch profile (no profile name) opens as one.
         guard let profile = session.profile else { return try await open(SessionSummary(id: branched.storedSessionID)) }
-        noteBranch(branched.storedSessionID, of: session.storedSessionID ?? branched.parent, profile: profile)
         if listProfile == profile { await refreshSessionList() }
         let row = history.first { $0.profile == profile && $0.summary.id == branched.storedSessionID }
             ?? HistoryEntry(profile: profile, summary: SessionSummary(id: branched.storedSessionID))

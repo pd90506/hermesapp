@@ -709,11 +709,8 @@ public struct SessionBranchResult: Sendable, Hashable, Codable {
     /// The new session's stored id; its row already exists.
     public var storedSessionID: String
     public var messageCount: Int?
-    /// The parent's stored id (`session.branch` only, `methods_session_branch.py:133-134`).
-    public var parent: String?
 
     enum CodingKeys: String, CodingKey {
-        case parent
         case sessionID = "session_id"
         case storedSessionID = "stored_session_id"
         case messageCount = "message_count"

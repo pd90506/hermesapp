@@ -36,7 +36,7 @@ final class LiveChatUITests: XCTestCase {
     #if os(iOS)
     /// A new chat gets its reply. On macOS `testEachProfileReturnsToItsLastChat` sends
     /// and waits for a reply the same way. The reply's Branch in New Chat opens a branch,
-    /// which the list shows under the chat it came from.
+    /// which the list shows.
     @MainActor
     func testNewChatSendsAndShowsTheReply() throws {
         continueAfterFailure = false
@@ -81,7 +81,7 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(branch.waitForExistence(timeout: 5), "Branch in the menu")
         attach(app, "the reply's menu")
 
-        // The branch opens; back on the list it is under the chat it came from.
+        // The branch opens, and the list shows it.
         branch.tap()
         // Its title is the parent's next in lineage ("Title #2") once the parent has one,
         // else the gateway's own, so the screenshots show it rather than a title check.
@@ -92,7 +92,7 @@ final class LiveChatUITests: XCTestCase {
         if back.exists { back.tap() }
         XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 10), "back on the list")
         RunLoop.current.run(until: Date().addingTimeInterval(2))
-        attach(app, "the branch under its parent")
+        attach(app, "the branch in the list")
     }
     #endif
 

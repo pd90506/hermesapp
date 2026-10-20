@@ -3,8 +3,8 @@ import XCTest
 
 /// The row under a Mac reply: a small grey Copy, a "…" menu and the time it was written.
 /// The menu's Branch in New Chat opens a new chat holding the conversation up to that
-/// reply (`session.branch`), listed under the chat it came from as Desktop nests it, and
-/// opened again from its row. Screenshots of the row, the menu, the branch and the list.
+/// reply (`session.branch`), listed in the session list and opened again from its row after
+/// another chat. Screenshots of the row, the menu, the branch and the list.
 /// Needs a reply, so the VM's Hermes needs its model key; skipped without
 /// `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`. The script's sweep deletes the chats.
 final class MessageActionsUITests: XCTestCase {
@@ -46,9 +46,8 @@ final class MessageActionsUITests: XCTestCase {
             while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
             XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
         }
-        // The parent's first exchange, then a chat in between, then the parent's second
-        // exchange: a branch from the first reply is as old as that reply, so the list,
-        // sorted by each chat's newest message, would put the other chat above it.
+        // The parent's first exchange, then another chat, then the parent's second exchange,
+        // and a branch from the first reply: an older reply than the newest chats.
         press(newChat)
         ask(first)
         let parentTitle = try XCTUnwrap(chatTitle(of: window, timeout: 60), "the parent is titled")
@@ -95,17 +94,11 @@ final class MessageActionsUITests: XCTestCase {
                        "and not the second")
         attach(app, "3 the branch")
 
-        // Listed right under its parent, above the chat in between, as Desktop nests it.
+        // Listed, as any chat is, and opened again from its row after another chat.
         let branchTitle = try XCTUnwrap(chatTitle(of: window, timeout: 10), "the branch is titled")
         XCTAssertNotNil(row(titled: branchTitle, in: list, timeout: 15),
                         "the branch “\(branchTitle)” is listed: \(rowTitles(list))")
-        let parentRow = try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 5), "the parent is listed")
-        let branchRow = try XCTUnwrap(row(titled: branchTitle, in: list, timeout: 5), "the branch is listed")
-        // Found by its marker: its title may still change from the first one the window showed.
-        let middleRow = try XCTUnwrap(row(containing: middle, in: list, timeout: 15), "the other chat is listed")
-        XCTAssertEqual(branchRow.frame.minY, parentRow.frame.maxY, accuracy: 4, "the branch right under its parent")
-        XCTAssertGreaterThan(middleRow.frame.minY, branchRow.frame.minY, "the chat in between below them")
-        attach(app, "4 the branch under its parent")
+        attach(app, "4 the branch in the list")
 
         // Another chat, then back to the branch from its row.
         press(try XCTUnwrap(row(containing: middle, in: list, timeout: 5)))

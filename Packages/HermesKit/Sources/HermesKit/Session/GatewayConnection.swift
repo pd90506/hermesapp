@@ -67,16 +67,6 @@ public final class GatewayConnection {
     public var sourceSettings = SessionSourceSettings()
     /// `history` without the rows of hidden sources: what the session list shows.
     public var visibleHistory: [HistoryEntry] { history.filter { sourceSettings.shows($0.summary) } }
-    /// Per profile, a branch's stored id to the stored id it was branched from: made here
-    /// (`branch`, `fork`), or read from the dashboard (`readBranchLinks`).
-    public internal(set) var branchParents: [String: [String: String]] = [:]
-    /// Per profile, the stored ids whose parent is known or known to be none.
-    @ObservationIgnored var branchLinksChecked: [String: Set<String>] = [:]
-    @ObservationIgnored var branchLinksReading: Set<String> = []
-    /// `entries` (rows of the list profile) with each branch under the chat it came from.
-    public func sessionTree(_ entries: [HistoryEntry]) -> [SessionTreeRow] {
-        SessionBranchTree.flatten(entries, parents: listProfile.flatMap { branchParents[$0] } ?? [:])
-    }
     /// The sources of the rows in `history`, hidden ones included.
     public var historySources: Set<String> {
         Set(history.compactMap { SessionSourceSettings.normalized($0.summary.source) })
@@ -267,9 +257,6 @@ public final class GatewayConnection {
         listProfile = nil
         sessionListToken += 1
         sessionListLimits = [:]
-        branchParents = [:]
-        branchLinksChecked = [:]
-        branchLinksReading = []
         sessionListLoading = false
         sessionListError = nil
         notifications = []
@@ -415,7 +402,6 @@ public final class GatewayConnection {
     /// REST reads of stored transcripts, with this connection's credential.
     var messagesSource: (any SessionMessagesSource)? { connector?.messagesSource }
     var cronSource: (any CronSource)? { connector?.cronSource }
-    var sessionLinkSource: (any SessionLinkSource)? { connector?.sessionLinkSource }
 
     /// `session.resume` with a bounded ack, and the newest transcript page read
     /// alongside it, as Desktop opens chats (`use-session-actions/index.ts:2169-2194`).

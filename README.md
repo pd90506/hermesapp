@@ -7,87 +7,61 @@ The apps don't add anything to Hermes. They connect to the dashboard's existing 
 JSON-RPC WebSocket (`/api/ws`), the same interface the official Electron desktop app uses for a
 remote gateway. See [`docs/protocol.md`](docs/protocol.md).
 
-Status: foundation only.
-- The shared package is real and tested on Linux.
-- The app UIs are minimal shells: connection settings, three columns (a narrow profile rail,
-  the selected profile's session list, and the chat), and a chat with approval/clarify cards.
-  - The rail shows every Hermes profile as an avatar with its activity badge. Picking one lists
-    its sessions in the middle column, so profiles never mix; on iPhone the columns become a
-    stack (profiles, sessions, chat). A Settings button sits at the rail's bottom (on iPhone,
-    in the session list's toolbar).
-  - The session list pins the profile's one permanent "Bot Chat" (shared with Hermes Desktop's
-    Bot Mode) above its other sessions. On macOS the profile's name is the column's title, in
-    the title bar level with the window buttons.
-  - Every session has Pin, Rename, Fork, Archive and Delete, in its context menu and in a "…"
-    button at the row's end. Pinned sessions list first; pins are this app's own
-    (`docs/protocol.md` §10.9).
-  - Settings is a sheet on the window, with Done (and Esc, Command-W). On macOS, opened from
-    that button, a click anywhere else in the window also closes it, as Done would, and the
-    click does nothing else. When the app can't connect without them (no server yet, or the
-    launch connect failed), clicks elsewhere don't close it. Edits apply in place either
-    way; Connect saves them.
-  - A "New chat" row for the selected profile is pinned under the profile's name; only the
-    session list scrolls. The connection status sits in the footer, with error and "waiting"
-    notices just above it. Right-click the Bot Chat row to start a side chat.
-  - On macOS every row and borderless control shows a soft rounded fill under the pointer
-    (`Apps/Shared/Views/Hover.swift`); iOS keeps its native look.
-- Opening a chat loads only its newest 120 messages; older ones load page by page as you scroll
-  up, as in Hermes Desktop.
-- Assistant replies (and reasoning) render as Markdown: headings, lists, quotes, code blocks,
-  GFM tables and LaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`), typeset natively with SwiftMath.
-  User messages and tool rows stay plain text; images sent with a message show as image cards.
-- Switching back to a chat opened earlier shows it at once and catches up in the background; a
-  first open shows the chat's title right away (`docs/protocol.md` §4.2).
-- The composer follows Hermes Desktop's: a text area that grows with its text, image attachments
-  shown as cards (`+`, paste or Command-V anywhere in the chat window, drag and drop), and
-  per-chat model and reasoning-effort pickers.
-  On macOS, Return sends and Shift-Return inserts a newline. On iOS, Return inserts a newline and
-  the Send button (or Command-Return) sends. While a reply runs, Send sits beside Stop as soon as
-  there is something to send. A message with images is queued as the next turn. Text alone
-  follows Hermes's busy-input setting, which by default redirects or stops the running reply.
-  Voice input is not available yet
-  (`docs/protocol.md` §10.4).
-- Both apps build on the Mac with Xcode.
-- The package's session layer goes further than the UI uses so far. `ChatComposer`,
-  `ChatSession` and `GatewayConnection` also expose:
-  - file and PDF attachments (`file.attach`);
-  - slash commands (catalog, completion, run, with skills sent as prompts);
-  - a transcript with tool activity, interim messages, steers and provider waits;
-  - steer / redirect / `/btw` / `/bg`;
-  - side-chat rename, archive and delete, with Bot Chats protected;
-  - a live sidebar driven by server pushes, gateway notices, and reclaimed chats that resume
-    on their next action;
-  - clarify multi-select.
+## Current features
 
-  See `docs/protocol.md` §5, §10.5-10.9 and §11.
+- **Native macOS and iOS chat.** The Mac has a collapsible profile rail, session list and chat;
+  iPhone shows profiles in a drawer, then sessions or chat. Profiles are scoped to their server.
+  Each profile has a permanent Bot Chat shared with Hermes Desktop, plus side chats and other
+  sessions. Pin, rename, fork, archive and delete are available from session rows; the Bot Chat
+  remains protected. A second tab lists the profile's Cron Jobs, recent runs and actions to run,
+  pause/resume, change delivery or delete a job. Creating a job is not a form in the app.
+- **Connections.** The app can keep several dashboards connected simultaneously. The Mac app can
+  also start its own local `hermes serve --isolated` backend ("This Mac"). Server credentials
+  live in Keychain. Settings have native Mac panes and an iOS settings page for servers,
+  appearance, Markdown colours and session sources.
+- **Conversation.** Chats show recent messages first and page older history on demand. They
+  reopen immediately while catching up in the background. Streaming replies, reasoning,
+  tool-call summaries and details, interim/waiting rows, notices and approval/clarify cards are
+  displayed. Assistant Markdown includes GFM tables and native SwiftMath rendering of LaTeX;
+  code blocks and message copying are supported. The chat can jump to the latest prompt or
+  scroll to the bottom without losing its place while older pages load.
+- **Composer.** Send images and files (including PDFs) using `+`, paste or drag-and-drop; files
+  sent by Hermes appear in the transcript and can be saved. Pick the model and reasoning effort
+  per chat. Slash suggestions and command dispatch work, including skills, `/compress`, `/btw`,
+  `/bg` and `/stop`; some client-side commands still have no UI (see limitations). A Send button
+  is available during a running turn; text follows Hermes's busy-input mode, while messages with
+  images queue as the next turn. On macOS Return sends and Shift-Return inserts a newline; on iOS
+  Return inserts a newline and Send (or Command-Return) submits.
+- **Themes.** Light/dark/system appearance, colour themes and adjustable UI/content/code sizes;
+  Markdown colours have their own settings. The Mac uses pointer hover feedback and the iPhone
+  uses a floating composer and profile drawer.
+
+The shared Swift package builds and tests on Linux; the SwiftUI apps are built and tested on the
+Mac under the workflow below. The Linux CI does **not** verify Apple UI builds. Voice input and
+native token-refresh wiring are not in the apps yet. See [Known limitations](#known-limitations)
+and [`docs/protocol.md`](docs/protocol.md) for details.
 
 ## Layout
 
 ```
-Packages/HermesKit/        Swift package — all non-UI logic. Builds and tests on Linux and macOS.
-  Sources/HermesProtocol/    Codable wire types: JSON-RPC envelope, JSONValue, gateway methods,
-                             events, server→client requests.
-  Sources/HermesKit/         Transport (URLSession WebSocket), GatewayClient (id correlation,
-                             event/request dispatch, heartbeat, replay), dashboard auth
-                             (ticket, password login, PKCE), REST transcript pages, Transcript
-                             reducer (paging; stored rows are the source of truth), ChatSession and
-                             GatewayConnection (@Observable, reconnect + resume), Markdown/LaTeX
-                             parsing for chat rendering (Markdown/), composer state: image and
-                             file attachments, model and effort pickers (Composer/), slash
-                             commands, steering, side-chat management, live sidebar (Session/).
-  Tests/                     Swift Testing suites driven by a fake transport and a fake HTTP client.
-Apps/Shared/               SwiftUI code compiled into both apps (AppModel, views, Keychain,
-                           Markdown and math views; math uses SwiftMath, see AGENTS.md; the
-                           composer's text view, image loading and pickers in Composer/).
-Apps/macOS/, Apps/iOS/     Per-platform @main entry points.
-Apps/Tests/macOS/          AppKit tests of the composer's text view and clipboard handling
-                           (`xcodebuild test -scheme HermesMacTests -destination platform=macOS`).
-project.yml                XcodeGen spec: the source of truth for the Xcode project.
-Config/                    xcconfigs (signing placeholders); Generated/ is written by XcodeGen.
-backend/                   Reserved for NUC-side helpers (e.g. a push relay). Empty on purpose.
+Packages/HermesKit/        Linux-compatible Swift package for protocol, networking, auth,
+                           multi-server/session state, transcript, composer, slash commands,
+                           Markdown, appearance, files and Cron Jobs.
+  Sources/HermesProtocol/    Codable JSON-RPC methods, events and server requests.
+  Sources/HermesKit/         Shared client and presentation logic (no SwiftUI).
+  Tests/HermesKitTests/     Fake-transport and fake-HTTP Swift Testing suites.
+  Tests/HermesLiveTests/    Opt-in real-dashboard tests; run only inside the test VM.
+Apps/Shared/               SwiftUI views, AppModel, composer, Markdown/SwiftMath and Keychain.
+Apps/macOS/, Apps/iOS/     Platform entry points and native settings/window support.
+Apps/Tests/macOS/          AppKit window and component tests, run inside the test VM.
+Apps/UITests/              macOS and iOS UI tests, run inside the test VM.
+project.yml                XcodeGen source of truth; never commit the generated .xcodeproj.
+Config/                    Shared settings and ignored local signing configuration.
+backend/                   Reserved for NUC-side helpers (e.g. a push relay).
 docs/protocol.md           Source-cited protocol notes for native clients.
-scripts/check-project-spec.py  Linux sanity check of project.yml.
-.github/workflows/         Linux-only CI: `swift test` for the package.
+scripts/check-project-spec.py  Static check of project.yml on Linux.
+scripts/vm-test.sh         Mac-hosted build, VM-only automated test runner.
+.github/workflows/         Linux-only Swift package CI.
 ```
 
 ## Workflows
@@ -106,36 +80,49 @@ python3 scripts/check-project-spec.py        # after editing project.yml or addi
 Toolchain: Swift 6.x via swiftly (`source ~/.local/share/swiftly/env.sh`). The manifest pins
 `swift-tools-version: 6.2`, the version in Xcode 26, so it resolves on both hosts.
 
-### On the Mac (Xcode 26)
+### On the Mac (Xcode)
+
+Keep the primary checkout (`~/repo/fun/hermesapp`) clean, on local `main`, and synchronized with
+`origin/main`. For a feature, create a separate worktree from the latest `origin/main`; do not
+build or test a PR from the primary checkout. Read [`AGENTS.md`](AGENTS.md) before work.
+
+For a **merged** `main` build only, run the following in the primary checkout (not a feature
+worktree). PR builds must go through `scripts/vm-test.sh` below:
 
 ```sh
-brew install xcodegen          # once
-xcodegen generate              # creates Hermes.xcodeproj (git-ignored); re-run after pulling
-open Hermes.xcodeproj
+brew install xcodegen                              # once
+xcodegen generate                                  # after pulling or changing app sources/project.yml
+python3 scripts/check-project-spec.py
+xcodebuild -project Hermes.xcodeproj -scheme HermesMac -configuration Debug build
 ```
 
-- Build and run the **HermesMac** and **HermesiOS** schemes.
-- `swift test --package-path Packages/HermesKit` works on the Mac too, or open
-  `Packages/HermesKit/Package.swift` in Xcode to run the tests there.
-- If you add, remove or move an app source file, re-run `xcodegen generate`. Folder contents are
-  picked up automatically; only `project.yml` changes need a regenerate.
-- The app icon, `Apps/Shared/AppIcon.icon`, is adapted from Hermes Desktop's Icon Composer
-  document (`apps/desktop/assets/icon.icon` in hermes-agent, MIT, Nous Research; see
-  `THIRD_PARTY_NOTICES.md`): its white art on black in every appearance, so it doesn't look like
-  Hermes Desktop's white light-mode icon. Both apps use it.
+This uses Xcode's default DerivedData. For iOS, build `HermesiOS` in Xcode or with `xcodebuild` after signing is configured;
+installing on a paired phone requires it to be unlocked. `Apps/Shared/AppIcon.icon` is adapted
+from Hermes Desktop's Icon Composer asset (MIT; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 
-### Live tests (Mac)
+### Automated tests: Mac-hosted Tart VM only
 
-`scripts/live-test.sh` runs end-to-end tests against real dashboards, in the `hermesapp-test`
-profile only, then deletes the chats they made. `--ui` adds the iOS-simulator UI test (headless).
-`scripts/vm-test.sh` runs the tests in a headless Tart VM (macOS 27 + Xcode 27 image) instead,
-so nothing runs on your Mac: the package live tests and the macOS window and UI tests (`--ios`
-adds the iOS-simulator UI test, slow in the VM). The VM installs its own Hermes on the first run
-and tests against it; its model key comes from the git-ignored `.env.vm-hermes`. Rules and env files: AGENTS.md, "Testing conventions".
-While iterating, `--only window` (or `live`, `ui`, comma-separated) or
-`--test HermesMacTests/HoverTests` (repeatable, down to one test) runs just that part, and
-`--keep` leaves the VM running for the next run. Runs queue for the VM one at a time, and each
-prints how long its steps took.
+**Never run automated tests, a test dashboard or `scripts/live-test.sh` on the Mac host.** The
+host compiles test products; the single `hermesapp-test-vm` runs all package live, macOS window
+and macOS UI tests. Run this from the feature's own worktree:
+
+```sh
+scripts/vm-test.sh                          # full live + window + macOS UI suite
+scripts/vm-test.sh --ios                    # full suite plus iOS simulator UI tests
+scripts/vm-test.sh --only window            # focused iteration; live,window,ui can be combined
+scripts/vm-test.sh --test HermesMacTests/HoverTests  # one suite or test
+```
+
+`--keep` leaves the VM running only for an immediate follow-up run. Runs queue on a single VM
+lock; build intermediates stay in that worktree's ignored `build/vm-test`, screenshots return to
+`build/vm-test/screenshots/`, and test app bundles are removed from the host afterwards. The VM
+uses only its own `hermesapp-test` Hermes profile. The ignored `.env.vm-hermes` supplies the
+model key to the VM; never commit it or put it in logs. Without it, tests requiring model
+responses skip or fail. **Before reporting a PR ready to merge, run the full suite without
+`--only` or `--test`** (and add `--ios` if iOS changed). Show VM screenshots for visible UI
+changes. Panda explicitly approves each merge; afterwards sync the primary checkout, build
+`main` with default DerivedData and relaunch only this app, not the official Hermes Desktop.
+See [`AGENTS.md`](AGENTS.md) for the complete host/VM rules.
 
 ### Why XcodeGen
 
@@ -152,11 +139,10 @@ between the NUC and the Mac.
 - **Xcode 16+ synchronized folders** reduce `project.pbxproj` churn, but the pbxproj is still a
   committed, hand-merged artefact.
 
-XcodeGen can't be run on the NUC. Linux support is not something this repo relies on, and this
-environment has no network to fetch it. So `scripts/check-project-spec.py` checks the spec
-statically (YAML parses, paths exist, local package products exist, remote packages use https and
-pin a version, every app Swift file belongs to a target). The real check is `xcodegen generate`
-on the Mac.
+The NUC does not use XcodeGen to validate Apple builds. `scripts/check-project-spec.py` checks
+the spec statically (YAML parses, paths exist, local package products exist, remote packages use
+HTTPS and pin a version, every app Swift file belongs to a target). The real check is
+`xcodegen generate` and an Xcode build on the Mac.
 
 ## Signing
 
@@ -225,23 +211,21 @@ on the Mac.
 
 ## Known limitations
 
+- **Voice input** is not available yet (`docs/protocol.md` §10.4).
 - The package refreshes native token pairs through `/auth/native/refresh`
   (`GatewayCredential.native`), but the apps don't use it yet. The "Access token (ticket)" mode
   takes an access token only, which can't be refreshed. `basic` access tokens last 12 h, so
   re-enter the token after that.
-- **Package-only features.** The app's views don't use these session-layer APIs yet: file
-  attachments, slash commands, steering and `/btw` / `/bg`, tool details (`ToolActivity`),
-  interim and steer markers, provider waits, side-chat rename/archive/delete, notifications and
-  multi-select clarify. In the UI, clarify `multi_select` is still shown as a single choice,
-  although the package models it (`ClarifySelection`), and a draft starting with `/` is sent as a
-  prompt (`ChatSession.runSlash` is not called yet).
-- **Slash commands.** Desktop's client-side slash actions that need UI (`/new` in a side chat,
-  `/model`, `/resume`, `/branch`, `/help`, `/skin`, …) come back from `ChatSession.runSlash` as
-  `.clientAction` and are not implemented yet. They are never sent to the gateway. The package
-  runs `/compress`, `/bg`, `/save`, `/status`, `/btw`, `/title` and `/stop` itself (`/stop`, like
-  Desktop, interrupts the turn and stops every background process). In a Bot Chat, `/new`,
-  `/reset` and `/clear` compress instead. `ChatComposer.submit` never routes slash commands: the
-  app checks the draft with `SlashCommand.isCommand` and calls `ChatSession.runSlash` instead.
+- **Clarify multi-select.** The UI still presents `multi_select` as a single-choice Picker,
+  although the package models it (`ClarifySelection`).
+- **Slash-command UI.** The composer calls `ChatComposer.submitSlash()` for drafts starting with
+  `/`, and the package handles server-side commands and supported client actions. `/new`,
+  `/reset` and `/clear` create a chat outside a Bot Chat (inside it, they compress instead);
+  `/help` lists commands; `/model` and `/reasoning` change the chat's choices. `/resume` opens a
+  matching session only when its ID is already in History. Other Desktop client-side actions
+  such as `/branch` and `/skin` have no slash UI here yet; the app shows a local note instead of
+  sending them as prompts. Forking a session is available from its row or message action menu.
+  `/profile` cannot switch the profile of a new chat from the composer.
 - **Local rows.** Slash-command output, notices and `/btw` / `/bg` answers exist on this device
   only (Hermes never stores them; Desktop loses them on reload too). They keep their place while
   the stored transcript is re-read, but a cold resume (reconnect to a restarted backend, a

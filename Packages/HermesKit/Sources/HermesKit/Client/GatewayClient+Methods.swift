@@ -186,9 +186,10 @@ extension GatewayClient {
 
     /// Copies a stored session into a new one (Fork). 4008 when the parent has no
     /// visible turns yet ("send a message first").
-    public func branchStoredSession(parentID: String, profile: String?) async throws -> SessionBranchResult {
+    public func branchStoredSession(parentID: String, profile: String?,
+                                    source: String? = nil) async throws -> SessionBranchResult {
         try await call(GatewayMethod.sessionBranchStored,
-                       params: SessionBranchStoredParams(parentSessionID: parentID, profile: profile))
+                       params: SessionBranchStoredParams(parentSessionID: parentID, profile: profile, source: source))
     }
 
     /// Copies a live session's first `count` visible turns into a new session (Branch).

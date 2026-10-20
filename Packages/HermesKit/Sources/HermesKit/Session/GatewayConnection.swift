@@ -417,7 +417,12 @@ public final class GatewayConnection {
                 prefetch started: Task<LatestHistory, any Error>? = nil) async throws -> ResumedChat {
         let prefetch = started ?? latestPageRead(key, profile: profile)
         do {
-            let snapshot = try await client.resumeSession(storedSessionID: key, profile: profile)
+            // The source the app's sessions carry, as Desktop sends `desktop`
+            // (`use-session-actions/index.ts:2084-2088`): the runtime takes it, and a branch
+            // made from it stores it (`_branch_live`, `methods_session_branch.py:110`).
+            // Without it the runtime is `tui`, so a branch was listed under `tui`.
+            let snapshot = try await client.resumeSession(storedSessionID: key, source: sourceSettings.newSessionSource,
+                                                          profile: profile)
             if snapshot.hydrating == true, (snapshot.storedKey ?? key) == key { return ResumedChat(snapshot: snapshot, prefetch: prefetch) }
             prefetch?.cancel()
             return ResumedChat(snapshot: snapshot, prefetch: nil)

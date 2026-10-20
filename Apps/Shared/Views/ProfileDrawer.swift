@@ -25,8 +25,8 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
     /// beside it, as Slack's.
     static func width(in screen: CGFloat) -> CGFloat { min((screen * 0.85).rounded(), 360) }
 
-    /// The panel's trailing corners, about the screen's.
-    private static var cornerRadius: CGFloat { 36 }
+    /// How far the panel floats in from the screen's leading, top and bottom edges.
+    private static var inset: CGFloat { 8 }
 
     var body: some View {
         GeometryReader { proxy in
@@ -54,17 +54,20 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
                         .accessibilityAction { slide(open: false) }
 
                     rail
-                        .frame(width: width)
+                        .frame(width: width - Self.inset)
                         .frame(maxHeight: .infinity)
                         .background {
-                            UnevenRoundedRectangle(bottomTrailingRadius: Self.cornerRadius,
-                                                   topTrailingRadius: Self.cornerRadius, style: .continuous)
-                                // The theme's frame, as the Mac's profile rail.
-                                .fill(surfaces.frame)
-                                // Off screen, none along the screen's edge.
-                                .shadow(color: .black.opacity(0.15 * shown / width), radius: 12)
+                            // A panel of Liquid Glass floating in from the screen's edges, as
+                            // iOS 26's sidebars, its corners concentric with the screen's:
+                            // tinted deep with the theme's frame, as the Mac's profile rail.
+                            Color.clear
+                                .glassEffect(.regular.tint(surfaces.frame.opacity(0.85)),
+                                             in: ConcentricRectangle(corners: .concentric(minimum: 28),
+                                                                     isUniform: true))
+                                .padding(.vertical, Self.inset)
                                 .ignoresSafeArea()
                         }
+                        .padding(.leading, Self.inset)
                         // A swipe left closes it; the profiles still scroll up and down.
                         .simultaneousGesture(closingDrag(width: width))
                         .offset(x: shown - width)

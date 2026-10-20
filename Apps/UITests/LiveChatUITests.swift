@@ -626,11 +626,14 @@ final class LiveChatUITests: XCTestCase {
         // The panel floats 8 pt in from the screen's edge (its glass, rim and all): from
         // where the colour was read, inside it, or nothing of it there yet.
         let start = Int(20 * scale)
+        // The glass shows a little of the list and its shade through it, which change as
+        // it slides: near its colour, not exactly it.
+        func off(_ pixel: [Int]) -> Bool { zip(pixel, colour).contains { abs($0 - $1) > 20 } }
         guard let first = rgb(shot, x: 20, y: y, in: size) else { return -1 }
-        if differ(first, colour) { return 0 }
+        if off(first) { return 0 }
         for px in start..<image.width {
             guard let pixel = rgb(shot, x: CGFloat(px) / scale, y: y, in: size) else { return -1 }
-            if differ(pixel, colour) { return CGFloat(px) / scale }
+            if off(pixel) { return CGFloat(px) / scale }
         }
         return size.width
     }

@@ -4,7 +4,8 @@ import XCTest
 /// The row under a Mac reply: a small grey Copy, a "…" menu and the time it was written.
 /// The menu's Branch in New Chat opens a new chat holding the conversation up to that
 /// reply (`session.branch`), listed in the session list and opened again from its row after
-/// another chat. Screenshots of the row, the menu, the branch and the list.
+/// another chat, also from a resumed chat with `tui` rows hidden, as on the user's Mac.
+/// Screenshots of the row, the menu, the branch and the list.
 /// Needs a reply, so the VM's Hermes needs its model key; skipped without
 /// `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`. The script's sweep deletes the chats.
 final class MessageActionsUITests: XCTestCase {
@@ -37,7 +38,6 @@ final class MessageActionsUITests: XCTestCase {
         let window = app.windows.firstMatch
         let list = app.outlines.firstMatch
         let first = "ALPHA-\(Int.random(in: 1000...9999))"
-        let middle = "MIDDLE-\(Int.random(in: 1000...9999))"
         let second = "BRAVO-\(Int.random(in: 1000...9999))"
         let composer = app.textViews["composer"]
         func ask(_ marker: String) {
@@ -50,33 +50,21 @@ final class MessageActionsUITests: XCTestCase {
             while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
             XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
         }
-        // The parent's first exchange, then another chat, then the parent's second exchange,
-        // and a branch from the first reply: an older reply than the newest chats.
+        // Two exchanges, then the app relaunched: the chat is resumed from its row
+        // (`session.resume`), as an older chat is. Its runtime takes the source the resume
+        // sends, and a branch from it takes the runtime's.
         press(newChat)
         ask(first)
-        let parentTitle = try XCTUnwrap(chatTitle(of: window, timeout: 60), "the parent is titled")
-        XCTAssertNotNil(row(titled: parentTitle, in: list, timeout: 30),
-                        "the parent “\(parentTitle)” is listed: \(rowTitles(list))")
-        press(newChat)
-        ask(middle)
-        XCTAssertNotNil(chatTitle(of: window, timeout: 60) { $0 != parentTitle }, "the other chat is titled")
-        // Rows are found again before each click: a row element is bound to its place.
-        press(try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 30)))
-        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == parentTitle }, "the parent shown again")
         ask(second)
-        // The row is written once the turn ends.
-        RunLoop.current.run(until: Date().addingTimeInterval(3))
-        // Relaunched, the parent is resumed from its row (`session.resume`), as an older chat
-        // is: its runtime takes the source the resume sends, and the branch takes the runtime's.
+        RunLoop.current.run(until: Date().addingTimeInterval(3))  // the rows are written once the turn ends
         app.terminate()
         app.launch()
         if !app.windows.firstMatch.waitForExistence(timeout: 10) { app.typeKey("n", modifierFlags: .command) }
         XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected again")
-        press(try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 30),
-                            "the parent is listed: \(rowTitles(list))"))
-        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == parentTitle }, "the parent shown again")
+        // Found by its first prompt's marker: its title may still be changing.
+        press(try XCTUnwrap(row(containing: first, in: list, timeout: 30), "the chat is listed: \(rowTitles(list))"))
         XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", second)).firstMatch
-            .waitForExistence(timeout: 30), "the parent's transcript read back")
+            .waitForExistence(timeout: 30), "the chat's transcript read back")
         RunLoop.current.run(until: Date().addingTimeInterval(2))
 
         // The first reply: hovered, its row shows Copy, "…" and the time.
@@ -116,9 +104,11 @@ final class MessageActionsUITests: XCTestCase {
                         "the branch “\(branchTitle)” is listed: \(rowTitles(list))")
         attach(app, "4 the branch in the list")
 
-        // Another chat, then back to the branch from its row.
-        press(try XCTUnwrap(row(containing: middle, in: list, timeout: 5)))
-        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 != branchTitle }, "the other chat shown")
+        // The Bot Chat, then back to the branch from its row.
+        let botChat = app.descendants(matching: .any).matching(identifier: "pinnedBotChat").firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 5), "the Bot Chat")
+        press(botChat)
+        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 != branchTitle }, "another chat shown")
         press(try XCTUnwrap(row(titled: branchTitle, in: list, timeout: 5)))
         XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == branchTitle },
                         "back on the branch from its row: \(window.title)")

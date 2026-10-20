@@ -101,10 +101,17 @@ struct ChatView: View {
             // ran off the screen's right edge (VM, 2026-10-19).
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
             #endif
-            // The messages blur away under the composer's bar, down to the window's or screen's
-            // edge, as in the Claude app. The automatic style, which the bar alone gave, left
-            // them sharp under and around the card (VM, 2026-10-19).
+            #if os(macOS)
+            // No edge of the system's under the composer: the Mac drew it, a grey band and a
+            // line, only while the pointer was over the chat (VM, 2026-10-20). The messages
+            // fade into the bar of their own (`composerRow`) instead.
+            .scrollEdgeEffectHidden(true, for: .bottom)
+            #else
+            // The messages blur away under the composer's bar, down to the screen's edge, as
+            // in the Claude app. The automatic style, which the bar alone gave, left them
+            // sharp under and around the card (VM, 2026-10-19).
             .scrollEdgeEffectStyle(.soft, for: .bottom)
+            #endif
             #if os(iOS)
             // The keyboard goes as on iOS's own chats: a drag down on the transcript takes
             // it along under the finger (back up, it stays), and a tap on the transcript
@@ -160,8 +167,10 @@ struct ChatView: View {
     }
 
     /// The composer, as wide as the messages' text (the content width less its padding):
-    /// a glass card floating over the chat, as the Claude app's, the messages blurring
-    /// away under it (`scrollEdgeEffectStyle`).
+    /// a glass card floating over the chat, as the Claude app's. On iOS the messages blur
+    /// away under it (`scrollEdgeEffectStyle`); on the Mac they fade into the chat's colour
+    /// from the bar's top to the card's middle, so the card's glass shows them blurred
+    /// under its top as they go.
     private var composerRow: some View {
         ComposerView(composer: composer, isConnected: server.isConnected)
             .environment(\.chatIsShown, isShown)
@@ -172,6 +181,12 @@ struct ChatView: View {
             .padding(.horizontal, 16)
             .padding(.horizontal, PromptRail.room)
             .padding(.vertical, 10)
+            .background {
+                LinearGradient(stops: [.init(color: surfaces.chat.opacity(0), location: 0),
+                                       .init(color: surfaces.chat, location: 0.55)],
+                               startPoint: .top, endPoint: .bottom)
+                    .allowsHitTesting(false)
+            }
             #else
             .padding(.horizontal, 12)
             // Room above the card inside the bar: the blur (`scrollEdgeEffectStyle`) starts

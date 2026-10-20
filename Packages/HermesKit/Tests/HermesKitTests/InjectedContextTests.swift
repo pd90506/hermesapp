@@ -59,6 +59,76 @@ import Testing
             == [["/home/u/.hermes/profiles/daily/images/upload_1.png"], ["/h/images/a.png"]])
     }
 
+    /// A prompt with an attached Markdown file, stored as the gateway expanded it for the
+    /// model (`agent/context_references.py:240-246,386`, `tui_gateway/prompt_turn.py:705-722`).
+    static let fileTurn = """
+    @file:attachments/notes.md
+
+    Summarize this
+
+    --- Attached Context ---
+
+    📄 @file:attachments/notes.md (12 tokens)
+    ```markdown
+    # Notes
+    - @image:not-an-image.png
+    - [screenshot]
+    ```
+    """
+
+    @Test func attachedFilesShowAsFilesNotTheirText() {
+        #expect(InjectedContext.userTurn(Self.fileTurn) == ("@file:attachments/notes.md\n\nSummarize this", []))
+        // A file-only turn keeps just its reference.
+        let fileOnly = "@file:a.md\n\n--- Attached Context ---\n\n📄 @file:a.md (3 tokens)\n```markdown\nhi\n```"
+        #expect(InjectedContext.userTurn(fileOnly) == ("@file:a.md", []))
+    }
+
+    @Test func contextWarningsAreNotTheUsersText() {
+        let warned = "@file:gone.md\n\nread it\n\n--- Context Warnings ---\n- @file:gone.md: file not found"
+        #expect(InjectedContext.userTurn(warned) == ("@file:gone.md\n\nread it", []))
+        let both = "@file:big.md\nhi\n\n--- Context Warnings ---\n- @ context injection warning: 9 tokens\n\n"
+            + "--- Attached Context ---\n\n📄 @file:big.md (9 tokens)\n```markdown\nx\n```"
+        #expect(InjectedContext.userTurn(both) == ("@file:big.md\nhi", []))
+    }
+
+    @Test func aFileThePromptNoLongerNamesComesBack() {
+        // An older gateway took the token out of the prompt; Desktop hoists it (`hydration.ts:137-145`).
+        let older = "Summarize this\n\n--- Attached Context ---\n\n📄 @file:notes.md (2 tokens)\n```markdown\nx\n```\n\n"
+            + "📁 @folder:src (4 tokens)\nsrc/\n  a.swift"
+        #expect(InjectedContext.userTurn(older) == ("@file:notes.md\n@folder:src\n\nSummarize this", []))
+        // One typed mid-prose is already there, so it is not listed twice.
+        let inline = "Compare @file:a.md\n\n--- Attached Context ---\n\n📄 @file:a.md (1 tokens)\n```\nx\n```"
+        #expect(InjectedContext.userTurn(inline) == ("Compare @file:a.md", []))
+    }
+
+    @Test func imagesSentWithAFileStay() {
+        // `_build_persist_message_with_image_refs` appends the `@image:` lines after the
+        // expanded prompt (`tui_gateway/session_history.py:51-60`).
+        let turn = Self.fileTurn + "\n@image:/h/images/a.png"
+        #expect(InjectedContext.userTurn(turn).text
+            == "@file:attachments/notes.md\n\nSummarize this\n@image:/h/images/a.png")
+        let hinted = "@file:a.md\n\nlook\n\n--- Attached Context ---\n\n📄 @file:a.md (1 tokens)\n```\nx\n```\n\n"
+            + "[Image attached at: /h/a.png]\n[screenshot]"
+        #expect(InjectedContext.userTurn(hinted) == ("@file:a.md\n\nlook", ["/h/a.png"]))
+    }
+
+    @Test func markersTypedInsideALineStayText() {
+        let typed = "Hermes appends --- Attached Context --- to prompts"
+        #expect(InjectedContext.userTurn(typed) == (typed, []))
+    }
+
+    @Test func storedFileRowsShowTheFileAndThePrompt() {
+        var calls: StoredMessageProjection.ToolCalls = [:]
+        let rows = [
+            StoredMessage(id: 1, role: "user", content: .string(Self.fileTurn + "\n@image:/h/images/a.png")),
+        ]
+        let items = StoredMessageProjection.items(from: rows, toolCalls: &calls)
+        #expect(items.map(\.text) == ["Summarize this"])
+        #expect(items.first?.attachments == ["notes.md"])
+        #expect(items.first?.attachmentPaths == ["attachments/notes.md"])
+        #expect(items.first?.images.map(\.path) == ["/h/images/a.png"])
+    }
+
     @Test func snapshotRowsToo() throws {
         let payload: JSONValue = [
             "session_id": "sid", "message_count": 1,

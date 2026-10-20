@@ -677,6 +677,14 @@ the round began.
   them as `TranscriptItem.attachments` (file names) and the rest as its text, like Desktop's
   `splitLeadingAttachmentRefs` (`apps/desktop/src/components/assistant-ui/reference-kinds.ts:177-197`).
   Only the leading run is lifted; a reference typed mid-prose stays text.
+- Such a row is stored as Hermes expanded it for the model: the prompt, then a
+  `--- Context Warnings ---` section and an `--- Attached Context ---` section holding each
+  file's whole text (`agent/context_references.py:240-246`; the expanded prompt is the stored
+  one, `tui_gateway/prompt_turn.py:705-722,782-783`). Like Desktop's `displayContentForMessage`
+  (`apps/desktop/src/lib/chat-messages/hydration.ts:129-145`), both sections are dropped
+  (`InjectedContext.strippingAttachedContext`), so the bubble shows the file as an attachment and
+  not its text. A file named only in the attached section (`📄 @file:… (N tokens)`) comes back
+  as a leading `@file:` line; the `@image:` lines Hermes appends after the expansion stay.
 - A snapshot that does carry messages (`session.create`, or a gateway that ignored
   `omit_messages`) is read the same way from `_history_to_messages`' shape
   (`{role:"tool", name, context, args?, tool_call_id?, content?}`, `session_history.py:285-362`).

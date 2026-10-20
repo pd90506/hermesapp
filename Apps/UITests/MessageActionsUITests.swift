@@ -61,10 +61,18 @@ final class MessageActionsUITests: XCTestCase {
         app.launch()
         if !app.windows.firstMatch.waitForExistence(timeout: 10) { app.typeKey("n", modifierFlags: .command) }
         XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected again")
-        // Found by its first prompt's marker: its title may still be changing.
-        press(try XCTUnwrap(row(containing: first, in: list, timeout: 30), "the chat is listed: \(rowTitles(list))"))
-        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", second)).firstMatch
-            .waitForExistence(timeout: 30), "the chat's transcript read back")
+        // Found by its first prompt's marker: its title may still be changing. Clicked again
+        // if the first click, right after the launch, didn't take.
+        let readBack = app.textViews.matching(NSPredicate(format: "value == %@", second)).firstMatch
+        for _ in 0..<3 where !readBack.exists {
+            let title = list.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
+                                                                  first, first)).firstMatch
+            XCTAssertTrue(title.waitForExistence(timeout: 30), "the chat is listed: \(rowTitles(list))")
+            title.click()
+            _ = readBack.waitForExistence(timeout: 15)
+        }
+        attach(app, "0 the chat after a relaunch")
+        XCTAssertTrue(readBack.exists, "the chat's transcript read back")
         RunLoop.current.run(until: Date().addingTimeInterval(2))
 
         // The first reply: hovered, its row shows Copy, "…" and the time.
@@ -123,7 +131,9 @@ final class MessageActionsUITests: XCTestCase {
                            _ test: (String) -> Bool = { _ in true }) -> String? {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            let title = window.title.components(separatedBy: " · ").dropLast().joined(separator: " · ")
+            // A Bot Chat's window title is the bot's name alone.
+            let parts = window.title.components(separatedBy: " · ")
+            let title = parts.count > 1 ? parts.dropLast().joined(separator: " · ") : window.title
             if !title.isEmpty, !["New Chat", "Side chat", "Chat", "Untitled chat"].contains(title), test(title) {
                 return title
             }

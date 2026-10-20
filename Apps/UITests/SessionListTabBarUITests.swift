@@ -50,10 +50,12 @@ final class SessionListTabBarUITests: XCTestCase {
 
             let difference = try XCTUnwrap(Self.meanDifference(away.image, over.image, in: strip, window: window.frame))
             XCTAssertLessThan(difference, 3, "the bar changes under the pointer (\(name)): mean difference \(difference)")
-            // The capsule is set in from the list's edges, not a band across it.
-            let list = app.descendants(matching: .any)["sessionListBottomBar"].firstMatch.frame
-            XCTAssertGreaterThan(tabs.minX - list.minX, 6, "the tabs inset from the list's leading edge (\(name))")
-            XCTAssertGreaterThan(list.maxX - tabs.maxX, 6, "the tabs inset from the list's trailing edge (\(name))")
+            // The capsule is set in from the list's edges, not a band across it: clear of
+            // the profile rail beside the list, and inside New chat's trailing edge above.
+            let rail = app.descendants(matching: .any)["profileRail"].firstMatch.frame
+            let newChat = app.buttons["New chat"].firstMatch.frame
+            XCTAssertGreaterThan(tabs.minX - rail.maxX, 6, "the tabs inset from the list's leading edge (\(name)): \(tabs), \(rail)")
+            XCTAssertLessThan(tabs.maxX, newChat.maxX - 2, "the tabs inset from the list's trailing edge (\(name)): \(tabs), \(newChat)")
         }
     }
 

@@ -622,7 +622,12 @@ final class LiveChatUITests: XCTestCase {
     private static func drawerEdge(in shot: XCUIScreenshot, y: CGFloat, colour: [Int], size: CGSize) -> CGFloat {
         guard let image = shot.image.cgImage else { return -1 }
         let scale = CGFloat(image.width) / size.width
-        for px in 0..<image.width {
+        // The panel floats 8 pt in from the screen's edge (its glass, rim and all): from
+        // where the colour was read, inside it, or nothing of it there yet.
+        let start = Int(20 * scale)
+        guard let first = rgb(shot, x: 20, y: y, in: size) else { return -1 }
+        if differ(first, colour) { return 0 }
+        for px in start..<image.width {
             guard let pixel = rgb(shot, x: CGFloat(px) / scale, y: y, in: size) else { return -1 }
             if differ(pixel, colour) { return CGFloat(px) / scale }
         }
@@ -693,7 +698,7 @@ final class LiveChatUITests: XCTestCase {
 
         avatar.tap()
         XCTAssertTrue(rail.waitForExistence(timeout: 5), "the avatar opens the drawer")
-        XCTAssertTrue(eventually { abs(rail.frame.minX) < 1 }, "the drawer at the screen's leading edge: \(rail.frame)")
+        XCTAssertTrue(eventually { abs(rail.frame.minX - 8) < 1 }, "the drawer floating 8 pt in from the screen's leading edge: \(rail.frame)")
         XCTAssertGreaterThan(rail.frame.width, screen.width * 0.7, "a wide drawer: \(rail.frame)")
         XCTAssertLessThan(rail.frame.width, screen.width - 30, "the list's edge shows beside it: \(rail.frame)")
         XCTAssertTrue(rail.staticTexts["Profiles"].exists, "titled Profiles")
@@ -709,7 +714,7 @@ final class LiveChatUITests: XCTestCase {
 
         list.swipeRight()
         XCTAssertTrue(rail.waitForExistence(timeout: 5), "a swipe right opens the drawer")
-        XCTAssertTrue(eventually { abs(rail.frame.minX) < 1 }, "fully open after the swipe: \(rail.frame)")
+        XCTAssertTrue(eventually { abs(rail.frame.minX - 8) < 1 }, "fully open after the swipe: \(rail.frame)")
         // A tap on the shade, beside the drawer, closes it.
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
         XCTAssertTrue(eventually { !rail.exists }, "a tap beside the drawer closes it")
@@ -746,7 +751,7 @@ final class LiveChatUITests: XCTestCase {
                 .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: end),
                        withVelocity: 600, thenHoldForDuration: 0.1)
             XCTAssertTrue(rail.waitForExistence(timeout: 5), "the swipe opened the drawer")
-            XCTAssertTrue(eventually { abs(rail.frame.minX) < 1 }, "fully open: \(rail.frame)")
+            XCTAssertTrue(eventually { abs(rail.frame.minX - 8) < 1 }, "fully open: \(rail.frame)")
             attach(app, "drawer swiped open \(start.dy) to \(end.dy)")
             XCTAssertEqual(botChat.frame.minY, resting.minY, accuracy: 1, "the list stayed where it was")
             window.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()

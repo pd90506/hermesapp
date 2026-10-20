@@ -61,12 +61,20 @@ struct ChatView: View {
         #endif
     }
 
+    /// On the Mac the composer's card and the scroll-to-bottom pill in one glass container,
+    /// so their glass morphs: the pill grows out of the card and melts back into it. Not on
+    /// iOS (VM, 2026-10-20): around the chat, the container lost the messages' blur under
+    /// the composer's bar and the composer's keyboard; around the bar alone, the pill over
+    /// it, outside the bar, took no taps.
     var body: some View {
-        // The composer's card and the pill in one container, so their glass morphs.
+        #if os(macOS)
         GlassEffectContainer(spacing: Self.pillGap) {
             chat
         }
         .environment(\.chatGlass, ChatGlass(namespace: glass))
+        #else
+        chat
+        #endif
     }
 
     private var chat: some View {

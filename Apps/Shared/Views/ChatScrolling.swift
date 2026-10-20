@@ -90,6 +90,13 @@ struct SteadyColumn: ViewModifier {
     /// Whether the chat's end is on screen, for the prompt it is at (`PromptRail`).
     /// Observed, and set only when it changes.
     private(set) var isAtEnd = true
+    /// Whether the chat is scrolled well up from its end, for the scroll-to-bottom
+    /// button (`ScrollToBottomButton`). Observed, and set only when it changes.
+    private(set) var isAwayFromEnd = false
+
+    /// How far up from the end the button shows: Desktop's (use-stick-to-bottom's
+    /// near-bottom band, 70 px), so a nudge or a reply's last lines don't bring it up.
+    nonisolated static let awayFromEndDistance: CGFloat = 70
 
     /// Makes `change` (a fold opening or closing) and keeps the content on screen where
     /// it was, in the same update.
@@ -108,12 +115,34 @@ struct SteadyColumn: ViewModifier {
     /// Whether the content's bottom is on screen, within a few points: the bottom of the
     /// visible area (above the composer's inset) is at or past it.
     nonisolated static func isAtEnd(_ geometry: ScrollGeometry) -> Bool {
-        let shownBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
-        return shownBottom >= geometry.contentSize.height - 8
+        shownBottom(geometry) >= geometry.contentSize.height - 8
+    }
+
+    /// The bottom of the visible area, in the content: the top of it (`shownY`) plus
+    /// `containerSize`, which is already the part between the insets. At the end it is
+    /// the content's height: on the Mac offset 2458 + container 442 = content 2900 (no
+    /// top inset, a 158 pt composer under it); on iPhone offset 1397 + top inset 116 +
+    /// container 304 = content 1817 (a 454 pt bar and keyboard under it; VM 2026-10-19).
+    /// Taking the bottom inset off again left a chat at its end that much short of it.
+    nonisolated static func shownBottom(_ geometry: ScrollGeometry) -> CGFloat {
+        shownY(geometry) + geometry.containerSize.height
+    }
+
+    /// Whether the visible area's bottom is more than `awayFromEndDistance` above the
+    /// content's bottom.
+    nonisolated static func isAwayFromEnd(_ geometry: ScrollGeometry) -> Bool {
+        shownBottom(geometry) < geometry.contentSize.height - awayFromEndDistance
+    }
+
+    /// The scroll-to-bottom button: down to the newest message, smoothly; at once with
+    /// Reduce Motion.
+    func scrollToEnd(reduceMotion: Bool = false) {
+        withAnimation(reduceMotion ? nil : Motion.scrollToEnd) { position.scrollTo(edge: .bottom) }
     }
 
     fileprivate func scrolled(to y: CGFloat) { shownY = y }
     fileprivate func reachedEnd(_ atEnd: Bool) { isAtEnd = atEnd }
+    fileprivate func leftEnd(_ away: Bool) { isAwayFromEnd = away }
 }
 
 extension EnvironmentValues {
@@ -144,6 +173,9 @@ private struct ChatScrolling: ViewModifier {
             }
             .onScrollGeometryChange(for: Bool.self, of: { ChatScroll.isAtEnd($0) }) { _, atEnd in
                 scroll.reachedEnd(atEnd)
+            }
+            .onScrollGeometryChange(for: Bool.self, of: { ChatScroll.isAwayFromEnd($0) }) { _, away in
+                scroll.leftEnd(away)
             }
     }
 }

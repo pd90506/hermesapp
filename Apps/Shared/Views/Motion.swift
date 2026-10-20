@@ -25,6 +25,13 @@ enum Motion {
     /// One control taking another's place, such as Stop for Send while a reply runs.
     static var swap: Animation { slowed(.snappy(duration: 0.2)) }
 
+    /// The chat's scroll-to-bottom button coming and going: in from a little larger,
+    /// out to a little smaller, as Desktop's (`thread-jump-button`, 200 ms in).
+    static var jumpButton: Animation { slowed(.smooth(duration: 0.2)) }
+
+    /// The chat scrolling down to its newest message from that button.
+    static var scrollToEnd: Animation { slowed(.smooth(duration: 0.35)) }
+
     /// Under UI tests, `HERMES_UITEST_MOTION_SCALE` times slower, so a test can take
     /// screenshots part way through.
     private static func slowed(_ animation: Animation) -> Animation {

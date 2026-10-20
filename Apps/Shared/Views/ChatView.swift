@@ -105,6 +105,16 @@ struct ChatView: View {
                 }
             }
             .promptScrolling(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks, proxy: proxy)
+            // Over the chat, not the composer: at the bottom of the safe area, which ends
+            // where the composer's inset (Mac) or bar (iOS) begins, so the button sits just
+            // above the card, clear of the bar's blur and inside its own hit area.
+            .overlay(alignment: .bottom) {
+                ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
+                    #if os(macOS)
+                    // 16 pt above the card, as Desktop's, with the bar's 10 pt padding.
+                    .padding(.bottom, 6)
+                    #endif
+            }
         }
         #if os(macOS)
         .safeAreaInset(edge: .bottom) { composerRow }

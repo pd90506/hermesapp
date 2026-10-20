@@ -119,16 +119,17 @@ final class ScrollToBottomUITests: XCTestCase {
         composer.typeText("/model")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         press(app.buttons["Send"].firstMatch)
-        let reload = app.buttons["Reload Models"].firstMatch
-        if reload.waitForExistence(timeout: 10) {
+        let list = app.descendants(matching: .any)["modelPickerList"].firstMatch
+        if list.waitForExistence(timeout: 10) {
             RunLoop.current.run(until: Date().addingTimeInterval(1))
             attach(app, "4 model list, \(name)")
             #if os(macOS)
             app.typeKey(.escape, modifierFlags: [])
             #else
-            app.swipeDown(velocity: .fast)
+            // A tap above the half-height sheet, on the chat it dims.
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
             #endif
-            XCTAssertTrue(eventually(timeout: 5) { !reload.exists }, "the model list closed (\(name))")
+            XCTAssertTrue(eventually(timeout: 5) { !list.exists }, "the model list closed (\(name))")
         } else {
             attach(app, "4 no model list, \(name)")
         }

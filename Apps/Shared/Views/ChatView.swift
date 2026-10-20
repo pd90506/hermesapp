@@ -101,18 +101,11 @@ struct ChatView: View {
             // ran off the screen's right edge (VM, 2026-10-19).
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
             #endif
-            #if os(macOS)
-            // No edge of the system's under the composer: the Mac drew it, a grey band and a
-            // line, only while the pointer was over the chat (VM, 2026-10-20). The messages
-            // fade into the bar of their own (`composerRow`) instead.
-            .scrollEdgeEffectHidden(true, for: .bottom)
-            #else
+            #if os(iOS)
             // The messages blur away under the composer's bar, down to the screen's edge, as
             // in the Claude app. The automatic style, which the bar alone gave, left them
             // sharp under and around the card (VM, 2026-10-19).
             .scrollEdgeEffectStyle(.soft, for: .bottom)
-            #endif
-            #if os(iOS)
             // The keyboard goes as on iOS's own chats: a drag down on the transcript takes
             // it along under the finger (back up, it stays), and a tap on the transcript
             // puts it away. Before, nothing did, once the composer had the keyboard.
@@ -151,8 +144,15 @@ struct ChatView: View {
                     #endif
             }
         }
+        #if os(macOS)
+        // An inset, not a bar: under a bar the Mac drew its edge, a grey band and a line,
+        // only while the pointer was over the chat (VM, 2026-10-20). The messages fade into
+        // the inset of their own (`composerRow`).
+        .safeAreaInset(edge: .bottom) { composerRow }
+        #else
         // A bar, so the messages blur away under the floating card, as under iOS's own bars.
         .safeAreaBar(edge: .bottom) { composerRow }
+        #endif
         #if os(iOS)
         // The theme's chat colour, as the Mac's chat card: not the system's black in dark.
         .background { surfaces.chat.ignoresSafeArea() }

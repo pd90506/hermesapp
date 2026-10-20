@@ -586,8 +586,9 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(Self.differ(list, drawer), "the drawer stands apart from the list: \(drawer) vs \(list)")
         for (name, shots, from, to) in [("opening", opening, CGFloat(0), width), ("closing", closing, width, 0)] {
             let edges = shots.map { Self.drawerEdge(in: $0, y: y, colour: drawer, size: screen) }
-            XCTAssertEqual(edges.first ?? -1, from, accuracy: 3, "\(name): the drawer's edge before: \(edges)")
-            XCTAssertEqual(edges.last ?? -1, to, accuracy: 3, "\(name): the drawer's edge after: \(edges)")
+            XCTAssertEqual(edges.first ?? -1, from, accuracy: 8, "\(name): the drawer's edge before: \(edges)")
+            // Within the glass's rim, which shades its last few points.
+            XCTAssertEqual(edges.last ?? -1, to, accuracy: 8, "\(name): the drawer's edge after: \(edges)")
             XCTAssertTrue(edges.contains { $0 > 20 && $0 < width - 20 }, "\(name): no frame part way: \(edges)")
             let steps = zip(edges, edges.dropFirst()).map { $1 - $0 }
             XCTAssertFalse(steps.contains { to < from ? $0 > 2 : $0 < -2 }, "\(name): the edge went back: \(edges)")

@@ -617,6 +617,7 @@ private struct ModelPickerList: View {
         .frame(minWidth: 260, idealWidth: 300, minHeight: 200, idealHeight: 360)
         // The sheet's or popover's own Liquid Glass shows through, not the list's page.
         .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("modelPickerList")
         #if os(iOS)
         .presentationDetents([.medium, .large])
         #endif

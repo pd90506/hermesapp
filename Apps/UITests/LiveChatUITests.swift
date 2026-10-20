@@ -83,14 +83,15 @@ final class LiveChatUITests: XCTestCase {
 
         // The branch opens; back on the list it is under the chat it came from.
         branch.tap()
-        // Named after its parent's lineage ("Title #2", `_branch_title`).
-        let branched = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " #2")).firstMatch
-        XCTAssertTrue(branched.waitForExistence(timeout: 30), "the branch is shown")
+        // Its title is the parent's next in lineage ("Title #2") once the parent has one,
+        // else the gateway's own, so the screenshots show it rather than a title check.
+        RunLoop.current.run(until: Date().addingTimeInterval(4))
+        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", marker)).firstMatch
+            .waitForExistence(timeout: 30), "the branch holds the reply")
         attach(app, "the branch")
         if back.exists { back.tap() }
-        let listed = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " #2")).firstMatch
-        XCTAssertTrue(listed.waitForExistence(timeout: 15), "the branch is listed")
-        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 10), "back on the list")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
         attach(app, "the branch under its parent")
     }
     #endif

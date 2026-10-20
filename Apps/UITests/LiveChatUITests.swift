@@ -1452,8 +1452,10 @@ final class LiveChatUITests: XCTestCase {
         #if os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([file as NSURL])
+        defer { NSPasteboard.general.clearContents() }
         #else
         UIPasteboard.general.setItems([[UTType.fileURL.identifier: file, UTType.url.identifier: file]])
+        defer { UIPasteboard.general.items = [] }
         #endif
         composer.typeKey("v", modifierFlags: .command)
         #if os(iOS)

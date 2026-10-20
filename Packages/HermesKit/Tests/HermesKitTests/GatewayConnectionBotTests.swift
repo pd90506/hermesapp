@@ -390,6 +390,19 @@ struct GatewayConnectionBotTests {
         #expect(log.requests("session.create").map { $0["params"]?["source"] } == ["desktop", "desktop"])
     }
 
+    /// A chat opened from the list runs under the chosen source too, as Desktop resumes with
+    /// `desktop`: a branch made from it is stored under its runtime's source, so without it a
+    /// branch was stored as `tui` and a list hiding `tui` left it out.
+    @Test func openedChatsRunUnderTheChosenSource() async throws {
+        let log = FrameLog()
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
+        try await connection.open(HistoryEntry(profile: "coder", summary: SessionSummary(id: "coder-side")))
+        connection.sourceSettings.newSessionSource = "desktop"
+        try await connection.open(HistoryEntry(profile: "coder", summary: SessionSummary(id: "coder-other")))
+
+        #expect(log.requests("session.resume").map { $0["params"]?["source"] } == [nil, "desktop"])
+    }
+
     @Test func listLeavesOutRowsOfHiddenSources() async throws {
         let rows: JSONValue = [
             listRow(id: "from-desktop"),

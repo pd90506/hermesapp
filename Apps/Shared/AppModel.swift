@@ -175,6 +175,7 @@ final class AppModel {
             self.selectedServerID = servers.first?.id
             self.sessionsServerID = servers.first?.id
             self.settingsPresentation = SettingsPresentation(hasServer: true)
+            if let sources = launch.sourceSettings { self.sourceSettings = sources }
             applySourceSettings()
             return
         }
@@ -636,6 +637,8 @@ struct UITestLaunch {
     var dropsSocketsInBackground = false
     /// Seconds a reconnect stays quiet (`GatewayConnection.tryingNoticeDelay`), if not 5.
     var reconnectNoticeDelay: Double?
+    /// Settings ▸ Session Sources, as JSON (`SessionSourceSettings`), if not the defaults.
+    var sourceSettings: SessionSourceSettings?
 
     static let current: UITestLaunch? = {
         let env = ProcessInfo.processInfo.environment
@@ -645,7 +648,10 @@ struct UITestLaunch {
         return UITestLaunch(serverURL: url, token: token, profile: env["HERMES_UITEST_PROFILE"],
                             serverCount: max(1, Int(env["HERMES_UITEST_SERVERS"] ?? "") ?? 1),
                             dropsSocketsInBackground: env["HERMES_UITEST_DROP_IN_BACKGROUND"] == "1",
-                            reconnectNoticeDelay: env["HERMES_UITEST_RECONNECT_NOTICE_DELAY"].flatMap(Double.init))
+                            reconnectNoticeDelay: env["HERMES_UITEST_RECONNECT_NOTICE_DELAY"].flatMap(Double.init),
+                            sourceSettings: env["HERMES_UITEST_SOURCE_SETTINGS"].flatMap {
+                                try? JSONDecoder().decode(SessionSourceSettings.self, from: Data($0.utf8))
+                            })
     }()
 }
 #endif

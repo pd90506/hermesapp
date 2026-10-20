@@ -35,7 +35,8 @@ final class LiveChatUITests: XCTestCase {
 
     #if os(iOS)
     /// A new chat gets its reply. On macOS `testEachProfileReturnsToItsLastChat` sends
-    /// and waits for a reply the same way.
+    /// and waits for a reply the same way. The reply's Branch in New Chat opens a branch,
+    /// which the list shows.
     @MainActor
     func testNewChatSendsAndShowsTheReply() throws {
         continueAfterFailure = false
@@ -76,8 +77,22 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(more.waitForExistence(timeout: 10), "the reply's … menu")
         attach(app, "reply and its row")
         more.tap()
-        XCTAssertTrue(app.buttons["Branch in New Chat"].firstMatch.waitForExistence(timeout: 5), "Branch in the menu")
+        let branch = app.buttons["Branch in New Chat"].firstMatch
+        XCTAssertTrue(branch.waitForExistence(timeout: 5), "Branch in the menu")
         attach(app, "the reply's menu")
+
+        // The branch opens, and the list shows it.
+        branch.tap()
+        // Its title is the parent's next in lineage ("Title #2") once the parent has one,
+        // else the gateway's own, so the screenshots show it rather than a title check.
+        RunLoop.current.run(until: Date().addingTimeInterval(4))
+        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", marker)).firstMatch
+            .waitForExistence(timeout: 30), "the branch holds the reply")
+        attach(app, "the branch")
+        if back.exists { back.tap() }
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 10), "back on the list")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "the branch in the list")
     }
     #endif
 

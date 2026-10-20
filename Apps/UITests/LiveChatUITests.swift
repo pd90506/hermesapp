@@ -1,6 +1,9 @@
+import UniformTypeIdentifiers
 import XCTest
 #if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 /// Drives the real app against a live Hermes dashboard, in the `hermesapp-test`
@@ -1375,6 +1378,96 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "Prompt rail: dark mode")
     }
     #endif
+
+    /// A Markdown file pasted into the composer goes as a file, as Desktop sends it: a card
+    /// before sending, then a file chip on the prompt, never the file's text. Hermes stores
+    /// the prompt with the file's whole text appended for the model (`--- Attached
+    /// Context ---`, `agent/context_references.py:240-246`); the user's report (2026-10-20)
+    /// was that text filling the bubble once the turn's rows were read back.
+    @MainActor
+    func testAttachedMarkdownFileShowsAsAFileNotItsText() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        #if os(iOS)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        #endif
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+
+        // The file's text has a line of its own to look for in the chat.
+        let tag = Int.random(in: 1000...9999)
+        let name = "notes-\(tag).md"
+        let fileLine = "FILE-BODY-\(tag) should only reach the model"
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try "# Release notes\n\n- \(fileLine)\n- Second point\n- Third point\n".write(to: file, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        press(composer)
+        paste(file, into: composer, in: app)
+        // The card's combined label: a label on iOS, a static text's value on macOS.
+        let card = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label BEGINSWITH %@ OR value BEGINSWITH %@", "File \(name),", "File \(name),")).firstMatch
+        if !card.waitForExistence(timeout: 30) {
+            attach(app, "Attached file: no card")
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.name = "Attached file: tree"
+            tree.lifetime = .keepAlways
+            add(tree)
+        }
+        XCTAssertTrue(card.exists, "the pasted file is a card in the composer")
+        attach(app, "Attached file: card in the composer")
+
+        let marker = "MD-\(tag)"
+        press(composer)
+        composer.typeText("Reply with exactly \(marker) and nothing else. Do not use tools.")
+        press(app.buttons["Send"].firstMatch)
+        let reply = app.textViews.matching(NSPredicate(format: "value == %@", marker))
+        let deadline = Date().addingTimeInterval(150)
+        while reply.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        if reply.count < 1 { attach(app, "Attached file: no reply") }
+        XCTAssertGreaterThanOrEqual(reply.count, 1, "reply \(marker) shown")
+        // The turn's rows are read back (`ChatSession.rereadIfNeeded`) and replace the live bubble.
+        RunLoop.current.run(until: Date().addingTimeInterval(6))
+        attach(app, "Attached file: the prompt after the reply")
+
+        let chip = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label == %@ OR value == %@", "File \(name)", "File \(name)")).firstMatch
+        XCTAssertTrue(chip.waitForExistence(timeout: 10), "the prompt shows the file as a chip")
+        XCTAssertFalse(waitForText(in: app, fileLine, timeout: 1), "the file's text is not in the chat")
+        XCTAssertFalse(waitForText(in: app, "Attached Context", timeout: 1), "nor Hermes' expansion of it")
+        XCTAssertTrue(waitForText(in: app, "Reply with exactly \(marker)", timeout: 5), "the typed prompt is")
+    }
+
+    /// Pastes `file` into the focused composer as a copied file: a Finder copy on macOS
+    /// (its file URL), a file URL on iOS.
+    @MainActor
+    private func paste(_ file: URL, into composer: XCUIElement, in app: XCUIApplication) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([file as NSURL])
+        defer { NSPasteboard.general.clearContents() }
+        #else
+        UIPasteboard.general.setItems([[UTType.fileURL.identifier: file, UTType.url.identifier: file]])
+        defer { UIPasteboard.general.items = [] }
+        #endif
+        composer.typeKey("v", modifierFlags: .command)
+        #if os(iOS)
+        // Without a hardware keyboard the shortcut does nothing: the edit menu's Paste.
+        let card = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "File ")).firstMatch
+        if !card.waitForExistence(timeout: 5) {
+            composer.press(forDuration: 1)
+            let paste = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.buttons["Paste"]
+            if paste.waitForExistence(timeout: 5) { paste.tap() }
+        }
+        #endif
+    }
 
     /// Whether some text containing `text` shows up: a static text (macOS keeps its
     /// string in the value, iOS in the label) or a combined element's label.

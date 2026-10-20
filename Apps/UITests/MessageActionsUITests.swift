@@ -20,6 +20,10 @@ final class MessageActionsUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        // As the user's Mac: new chats are `desktop`, `tui` rows hidden. A branch is stored
+        // under its parent's runtime source, which was `tui` when a chat was resumed
+        // without one, so the list left the branch out.
+        app.launchEnvironment["HERMES_UITEST_SOURCE_SETTINGS"] = #"{"newSessionSource":"desktop","hiddenSources":["tui"]}"#
         // A window even if the last run's app was killed without one.
         app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
         app.launch()
@@ -60,8 +64,20 @@ final class MessageActionsUITests: XCTestCase {
         press(try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 30)))
         XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == parentTitle }, "the parent shown again")
         ask(second)
-        // The row is written once the turn ends; let the transcript read it back.
+        // The row is written once the turn ends.
         RunLoop.current.run(until: Date().addingTimeInterval(3))
+        // Relaunched, the parent is resumed from its row (`session.resume`), as an older chat
+        // is: its runtime takes the source the resume sends, and the branch takes the runtime's.
+        app.terminate()
+        app.launch()
+        if !app.windows.firstMatch.waitForExistence(timeout: 10) { app.typeKey("n", modifierFlags: .command) }
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected again")
+        press(try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 30),
+                            "the parent is listed: \(rowTitles(list))"))
+        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == parentTitle }, "the parent shown again")
+        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", second)).firstMatch
+            .waitForExistence(timeout: 30), "the parent's transcript read back")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
 
         // The first reply: hovered, its row shows Copy, "…" and the time.
         let firstReply = app.textViews.matching(NSPredicate(format: "value == %@", first)).firstMatch

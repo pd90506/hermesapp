@@ -183,28 +183,31 @@ struct ProfileRailView: View {
         }
     }
 
-    /// The gear under the profiles. On iOS the system's Liquid Glass circle, as the
-    /// toolbar's buttons (user, 2026-10-18); on macOS a plain glyph with a hover circle.
+    /// The gear under the profiles, on a circle of Liquid Glass, as the toolbar's buttons
+    /// (user, 2026-10-18; on the Mac too since 2026-10-20). On iOS the system's glass
+    /// button; on the Mac, where that button took the theme's accent as a solid fill, the
+    /// glass itself, clear, round a grey gear.
     @ViewBuilder private var settingsButton: some View {
         #if os(macOS)
-        Button("Settings", systemImage: "gearshape") {
-            // The Settings window, as the app menu's Settings… opens it.
-            openSettings()
+        Button(action: openSettingsWindow) {
+            Image(systemName: "gearshape")
+                .uiFont(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .contentShape(.circle)
         }
-        .labelStyle(.iconOnly)
-        .uiFont(.title3)
-        .foregroundStyle(.secondary)
-        .hoverButtonStyle(.circle, padding: 8)
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
         .help("Settings")
-        #else
-        Button("Settings", systemImage: "gearshape") {
-            model.settingsPresentation.toggle()
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
+        .accessibilityLabel("Settings")
         .accessibilityIdentifier("settingsButton")
+        #else
+        Button("Settings", systemImage: "gearshape", action: openSettingsWindow)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .accessibilityIdentifier("settingsButton")
         #endif
     }
 

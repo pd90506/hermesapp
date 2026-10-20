@@ -68,7 +68,8 @@ struct ColumnTitle: View {
 }
 
 /// New chat: an icon-only button (the compose glyph) at the trailing edge of the list's
-/// header, that starts a chat with the profile picked in the profile rail.
+/// header, that starts a chat with the profile picked in the profile rail. On iOS the
+/// system's Liquid Glass circle, as the toolbar's buttons and the gear under the profiles.
 struct NewChatButton: View {
     var isEnabled: Bool
     /// Read by VoiceOver while the button is disabled.
@@ -79,9 +80,9 @@ struct NewChatButton: View {
         Button("New chat", systemImage: "square.and.pencil", action: action)
             .labelStyle(.iconOnly)
             #if os(iOS)
-            .uiFont(.title3)
-            .frame(width: 44, height: 44)
-            .contentShape(.rect)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
             #else
             .uiFont(.title3)
             .hoverButtonStyle(.circle, padding: 6)

@@ -2,13 +2,14 @@
 import AppKit
 import XCTest
 
-/// The Sessions and Cron Jobs tabs at the bottom of the Mac session list sit on their own
-/// band under a hairline, with or without the pointer over the list (the system's edge
-/// effect drew them only under the pointer). Screenshots of both, in light and dark.
+/// The Sessions and Cron Jobs tabs at the bottom of the Mac session list float on a capsule
+/// of glass, inset from the list's edges, and look the same with or without the pointer
+/// over the list (the system's edge effect drew a band and a line only under the pointer).
+/// Screenshots of both, in light and dark.
 /// Skipped without `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
 final class SessionListTabBarUITests: XCTestCase {
     @MainActor
-    func testTheTabBarLooksTheSameWithAndWithoutThePointer() throws {
+    func testTheTabBarFloatsAndLooksTheSameWithAndWithoutThePointer() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
@@ -49,8 +50,12 @@ final class SessionListTabBarUITests: XCTestCase {
 
             let difference = try XCTUnwrap(Self.meanDifference(away.image, over.image, in: strip, window: window.frame))
             XCTAssertLessThan(difference, 3, "the bar changes under the pointer (\(name)): mean difference \(difference)")
-            let hairline = try XCTUnwrap(Self.rowContrast(away.image, in: strip, window: window.frame))
-            XCTAssertGreaterThan(hairline, 6, "no hairline over the bar at rest (\(name)): \(hairline)")
+            // The capsule is set in from the list's edges, not a band across it: clear of
+            // the profile rail beside the list, and inside New chat's trailing edge above.
+            let rail = app.descendants(matching: .any)["profileRail"].firstMatch.frame
+            let newChat = app.buttons["New chat"].firstMatch.frame
+            XCTAssertGreaterThan(tabs.minX - rail.maxX, 6, "the tabs inset from the list's leading edge (\(name)): \(tabs), \(rail)")
+            XCTAssertLessThan(tabs.maxX, newChat.maxX - 2, "the tabs inset from the list's trailing edge (\(name)): \(tabs), \(newChat)")
         }
     }
 
@@ -87,23 +92,6 @@ final class SessionListTabBarUITests: XCTestCase {
             for c in 0..<3 { total += abs(Int(x.bytes[i + c]) - Int(y.bytes[i + c])) }
         }
         return Double(total) / Double(x.bytes.count / 4 * 3)
-    }
-
-    /// The largest step in brightness between neighbouring rows in the strip's top part,
-    /// left of the tabs' content (a hairline is such a step).
-    private static func rowContrast(_ image: NSImage, in rect: CGRect, window: CGRect) -> Double? {
-        let top = CGRect(x: rect.minX, y: rect.minY, width: 12, height: 18)
-        guard let p = pixels(image, top, window: window) else { return nil }
-        func row(_ r: Int) -> Double {
-            var sum = 0
-            for column in 0..<p.width {
-                let i = (r * p.width + column) * 4
-                sum += Int(p.bytes[i]) + Int(p.bytes[i + 1]) + Int(p.bytes[i + 2])
-            }
-            return Double(sum) / Double(p.width * 3)
-        }
-        let rows = (0..<p.height).map(row)
-        return zip(rows, rows.dropFirst()).map { abs($0 - $1) }.max()
     }
 }
 #endif

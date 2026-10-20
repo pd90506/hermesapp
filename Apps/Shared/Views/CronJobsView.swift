@@ -22,17 +22,31 @@ enum SessionListTab: String, CaseIterable {
     }
 }
 
-/// The two tabs, side by side, a symbol over each label as in a tab bar.
+/// The two tabs, side by side, a symbol over each label, on a capsule of Liquid Glass
+/// floating over the list's bottom, as iOS 26's tab bar: the picked tab on a pill of the
+/// theme's accent, which slides to the other tab. The rows scroll under it. The same on
+/// the Mac, where it replaced a band with a hairline (2026-10-20).
 struct SessionListTabBar: View {
     @Binding var tab: SessionListTab
     /// Jobs whose last run failed, shown on the Cron Jobs tab.
     var cronAlerts = 0
+    @Namespace private var pill
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// How far the capsule floats in from the list's edges.
+    static var inset: CGFloat {
+        #if os(macOS)
+        Hover.rowInset
+        #else
+        16
+        #endif
+    }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(SessionListTab.allCases, id: \.self) { item in
                 Button {
-                    tab = item
+                    withAnimation(reduceMotion ? nil : Motion.swap) { tab = item }
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: item.systemImage)
@@ -47,41 +61,47 @@ struct SessionListTabBar: View {
                             .uiFont(.caption2, weight: tab == item ? .semibold : nil)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
-                    .contentShape(.rect)
+                    .padding(.vertical, Self.itemPadding)
+                    .background {
+                        if tab == item {
+                            Capsule()
+                                .fill(.tint.opacity(0.15))
+                                .matchedGeometryEffect(id: "pill", in: pill)
+                        }
+                    }
+                    .contentShape(.capsule)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(tab == item ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .hoverHighlight()
+                .hoverHighlight(in: Capsule(), isEnabled: tab != item)
                 .accessibilityIdentifier("sessionListTab.\(item.rawValue)")
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
             }
         }
-        .padding(.horizontal, Hover.rowInset)
-        .padding(.vertical, 4)
+        .padding(4)
+        .themedGlass(in: .capsule, interactive: true)
+        .padding(.horizontal, Self.inset)
+        .padding(.top, 6)
+        .padding(.bottom, Self.bottomPadding)
+    }
+
+    private static var itemPadding: CGFloat {
+        #if os(macOS)
+        4
+        #else
+        6
+        #endif
+    }
+
+    /// Off the window's bottom on the Mac; on iOS the home indicator's safe area is below.
+    private static var bottomPadding: CGFloat {
+        #if os(macOS)
+        Hover.rowInset
+        #else
+        4
+        #endif
     }
 }
-
-#if os(macOS)
-/// The band behind the session list's bottom bar and the hairline over it, always shown.
-/// The system's scroll edge effect drew them only while the pointer was over the list
-/// (asked for by the user, 2026-10-19: the hover look as the resting look). A light veil,
-/// not the opaque `.bar`, which showed as a white strip on the panel's colour.
-struct SessionListBottomBand: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Rectangle()
-            .fill(Color.white.opacity(colorScheme == .dark ? 0.05 : 0.4))
-            // A hairline of its own: a bare `Divider` in an overlay stood upright.
-            .overlay(alignment: .top) {
-                Rectangle().fill(.separator).frame(height: 1)
-            }
-            .ignoresSafeArea(edges: .bottom)
-            .accessibilityHidden(true)
-    }
-}
-#endif
 
 /// The selected profile's scheduled jobs (the Cron Jobs tab): Desktop's sidebar Cron
 /// section as a list (`apps/desktop/src/app/chat/sidebar/cron-jobs-section.tsx`). A

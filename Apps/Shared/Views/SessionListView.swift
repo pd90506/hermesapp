@@ -84,6 +84,9 @@ struct SessionListView: View {
             }
         }
         #if os(macOS)
+        // No edge of the system's at the bottom: the Mac drew it, a band and a line, only
+        // while the pointer was over the list. The rows scroll under the tabs' glass.
+        .scrollEdgeEffectHidden(true, for: .bottom)
         // No title of its own: the window's is the chat's (`RootView`), which a title here
         // took over once the two were no longer a split view's columns.
         // On the panel's own colour (`WindowLayout`).
@@ -107,15 +110,14 @@ struct SessionListView: View {
         }
         // Pinned above the Bot Chat and the list: it never scrolls away.
         .safeAreaBar(edge: .top) { header }
-        // A bar like the header's: rows fade out under it instead of showing through the
-        // status text, and it keeps the sidebar's material (an opaque .bar did not).
+        // A bar like the header's: the banners and the tabs float over the rows, each on
+        // its own glass (`SessionListTabBar`).
         .safeAreaBar(edge: .bottom) {
             VStack(spacing: 0) {
                 banners
                 SessionListTabBar(tab: $tab, cronAlerts: cronAlerts)
             }
             #if os(macOS)
-            .background { SessionListBottomBand() }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("sessionListBottomBar")
             #endif
@@ -323,8 +325,19 @@ struct SessionListView: View {
         return "\(server.id):\(connection.listProfile ?? ""):\(server.isConnected)"
     }
 
-    /// Above the footer, so they never push the rows (or New chat) around.
+    /// Above the tabs, so they never push the rows (or New chat) around: on glass, as the
+    /// tabs, so the rows under them don't show through the text.
     @ViewBuilder private var banners: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        if model.actionError != nil || waitingCount > 0 {
+            VStack(spacing: 0) { bannerRows }
+                .themedGlass(in: shape)
+                .padding(.horizontal, SessionListTabBar.inset)
+                .padding(.top, 6)
+        }
+    }
+
+    @ViewBuilder private var bannerRows: some View {
         if let error = model.actionError {
             HStack(alignment: .top) {
                 Label(error, systemImage: "exclamationmark.triangle")

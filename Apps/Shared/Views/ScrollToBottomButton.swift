@@ -38,8 +38,6 @@ struct ScrollToBottomButton: View {
         let count: Int
         let action: () -> Void
         @State private var isHovered = false
-        @Environment(\.surfaces) private var surfaces
-        @Environment(\.colorScheme) private var colorScheme
 
         var body: some View {
             Button(action: action) {
@@ -57,11 +55,11 @@ struct ScrollToBottomButton: View {
                 .contentShape(.capsule)
             }
             .buttonStyle(.plain)
-            // Liquid Glass in the theme's composer colour, as the composer card on iPhone,
-            // with the same hairline edge: Desktop's pill is the composer's fill, blurred.
-            .glassEffect(.regular.tint(surfaces.composer.opacity(colorScheme == .dark ? 0.55 : 0.4)).interactive(),
-                         in: .capsule)
-            .overlay { Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1) }
+            // Liquid Glass in the theme's composer colour, as the composer's card (Desktop's
+            // pill is the composer's fill, blurred), in the chat's glass with it: it grows
+            // out of the card and melts back into it (`ChatView`).
+            .themedGlass(in: .capsule, interactive: true)
+            .chatGlassID("scrollToBottom")
             .animation(Motion.swap, value: count)
             .animation(Motion.reveal, value: isHovered)
             .onHover { isHovered = $0 }

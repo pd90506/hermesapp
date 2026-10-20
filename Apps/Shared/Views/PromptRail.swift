@@ -94,6 +94,7 @@ struct PromptRail: View {
     @State private var overRail = false
     @State private var overPanel = false
     @State private var isOpen = false
+    @Environment(\.surfaces) private var surfaces
 
     /// The rail's width.
     static let width: CGFloat = 22
@@ -210,9 +211,10 @@ struct PromptRail: View {
         .frame(maxHeight: maxHeight)
         .fixedSize(horizontal: false, vertical: true)
         .frame(width: Self.panelWidth)
-        .background(.background, in: .rect(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+        // Liquid Glass, as a panel floating over the chat: in the chat card's colour, so the
+        // theme carries through, the messages under it blurred. The glass has its own rim
+        // and shadow.
+        .glassEffect(.regular.tint(surfaces.chat.opacity(0.5)), in: .rect(cornerRadius: 12))
     }
 }
 

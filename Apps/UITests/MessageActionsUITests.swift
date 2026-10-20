@@ -56,7 +56,7 @@ final class MessageActionsUITests: XCTestCase {
                         "the parent “\(parentTitle)” is listed: \(rowTitles(list))")
         press(newChat)
         ask(middle)
-        let middleTitle = try XCTUnwrap(chatTitle(of: window, timeout: 60) { $0 != parentTitle }, "the other chat is titled")
+        XCTAssertNotNil(chatTitle(of: window, timeout: 60) { $0 != parentTitle }, "the other chat is titled")
         // Rows are found again before each click: a row element is bound to its place.
         press(try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 30)))
         XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == parentTitle }, "the parent shown again")
@@ -101,14 +101,15 @@ final class MessageActionsUITests: XCTestCase {
                         "the branch “\(branchTitle)” is listed: \(rowTitles(list))")
         let parentRow = try XCTUnwrap(row(titled: parentTitle, in: list, timeout: 5), "the parent is listed")
         let branchRow = try XCTUnwrap(row(titled: branchTitle, in: list, timeout: 5), "the branch is listed")
-        let middleRow = try XCTUnwrap(row(titled: middleTitle, in: list, timeout: 5), "the other chat is listed")
+        // Found by its marker: its title may still change from the first one the window showed.
+        let middleRow = try XCTUnwrap(row(containing: middle, in: list, timeout: 15), "the other chat is listed")
         XCTAssertEqual(branchRow.frame.minY, parentRow.frame.maxY, accuracy: 4, "the branch right under its parent")
         XCTAssertGreaterThan(middleRow.frame.minY, branchRow.frame.minY, "the chat in between below them")
         attach(app, "4 the branch under its parent")
 
         // Another chat, then back to the branch from its row.
-        press(try XCTUnwrap(row(titled: middleTitle, in: list, timeout: 5)))
-        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == middleTitle }, "the other chat shown")
+        press(try XCTUnwrap(row(containing: middle, in: list, timeout: 5)))
+        XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 != branchTitle }, "the other chat shown")
         press(try XCTUnwrap(row(titled: branchTitle, in: list, timeout: 5)))
         XCTAssertNotNil(chatTitle(of: window, timeout: 30) { $0 == branchTitle },
                         "back on the branch from its row: \(window.title)")
@@ -137,6 +138,21 @@ final class MessageActionsUITests: XCTestCase {
     private func rowTitles(_ list: XCUIElement) -> String {
         list.staticTexts.allElementsBoundByIndex.map { $0.label.isEmpty ? "\($0.value ?? "")" : $0.label }
             .joined(separator: " | ")
+    }
+
+    /// The session list's row whose title contains `text`, once it is there.
+    @MainActor
+    private func row(containing text: String, in list: XCUIElement, timeout: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        let match = NSPredicate(format: "label CONTAINS %@", text)
+        repeat {
+            if let row = list.outlineRows.allElementsBoundByIndex
+                .first(where: { $0.staticTexts.matching(match).firstMatch.exists }) {
+                return row
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        return nil
     }
 
     /// The session list's row showing `title`, once it is there.

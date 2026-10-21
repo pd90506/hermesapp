@@ -110,15 +110,32 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   user tries the app on the Mac by hand; agents don't run package live tests, UI tests or
   window tests on the host, start a test dashboard there, or open a build on its screens.
   Building on the host is fine.
-  - While iterating on a change, run only the parts it touches (`scripts/vm-test.sh --keep
-    --only window`, or `--test HermesMacTests/HoverTests`). Run the whole set once, with no
-    `--only`/`--test`, before reporting a PR as ready to merge (decided by the user, 2026-10-16).
+  - While iterating on a change, run only the tests it needs (decided by the user, 2026-10-21;
+    a full run with `--ios` takes about 25 minutes, nearly all of it in the UI tests):
+    - `scripts/vm-test.sh --changed` picks them from the files the branch changed
+      (`scripts/vm-test-pick.py`, which prints its reasons; run it alone to see the pick).
+      It maps window test files and the app files the window tests compile to their
+      suites, and app files to the UI tests that share a string with them (identifiers,
+      labels), or else to one quick smoke test per platform.
+    - The pick is a starting point: add or narrow by hand with `--only window` or
+      `--test HermesMacTests/HoverTests` when you know better.
+  - Run the whole set once, with no `--only`/`--test`/`--changed` (and `--ios` when the
+    change can affect iOS), right before reporting a PR as ready to merge, and not before
+    (decided by the user, 2026-10-16 and 2026-10-21).
+  - Each run ends with its step times and its slowest tests; every test's time is kept in
+    `build/vm-test/durations/<result>.tsv`.
   - Run `scripts/vm-test.sh` from the PR's own worktree. It builds the apps and their tests on
     the host (decided by the user, 2026-10-18), streams the built products into the VM, which
     only runs them, and then deletes them from the host. Only one run uses the VM at a time (a
     kernel lock in `/tmp` that goes with its run however the run ends), so a second run, from
     any worktree, waits its turn, naming the run it waits for and that run's step; it builds
     while it waits.
+  - Runs queue by priority (decided by the user, 2026-10-21: runs from different worktrees
+    taking turns blocked each other): a worktree whose last run had `--keep` keeps the VM
+    for its next run (while it builds, or for 3 minutes, and for at most 30 minutes in
+    all while others wait); then whole-set runs; then the others, in the order they
+    started (`scripts/vm-test-lock.py`). So pass `--keep` when another run of the same
+    batch follows, and leave it off the last one.
   - A run from another worktree than the last restarts the VM first (decided by the user,
     2026-10-18): leftovers of another thread's run, such as a hung `xcodebuild`, slowed or
     broke the next one.

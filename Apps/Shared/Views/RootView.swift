@@ -449,10 +449,18 @@ private struct KeptChats: View {
 }
 
 #if os(macOS)
-/// The chat title at the window's top, on the continuous themed chat surface.
-/// The window also retains its navigation title for accessibility and the Window menu.
+/// The chat's title at the window's top, level with the window buttons; also the
+/// window's title (`navigationTitle`), for the Window menu.
+///
+/// On a band of Liquid Glass, as the App Store's title bar: the messages scroll under it,
+/// blurred (#54; #90 left the title bare, and scrolled text ran through it, 2026-10-21).
+/// The glass is tinted with the chat's colour, so the theme carries through, and runs past
+/// the band, cut to it: its rims drew a bright line along the band's edges. In dark a shade
+/// over it, as the glass alone was a light slab there. Clear glass showed the rows sharp
+/// and materials drew a solid band (2026-10-18).
 private struct ChatHeader: View {
     let title: String
+    @Environment(\.surfaces) private var surfaces
     @Environment(\.windowHeaderHeight) private var headerHeight
 
     var body: some View {
@@ -460,15 +468,27 @@ private struct ChatHeader: View {
             .uiFont(.headline)
             .lineLimit(1)
             .truncationMode(.middle)
+            .opacity(title.isEmpty ? 0 : 1)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
             .frame(height: headerHeight)
+            .background {
+                Self.shade
+                    .background {
+                        Color.clear
+                            .glassEffect(.regular.tint(surfaces.chat.opacity(0.5)), in: .rect)
+                            .padding(.vertical, -24)
+                    }
+                    .clipped()
+            }
             .contentShape(.rect)
             .gesture(WindowDragGesture())
-            .opacity(title.isEmpty ? 0 : 1)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier("chatTitle")
     }
 
+    private static let shade = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(white: 0, alpha: 0.2) : .clear
+    })
 }
 #endif

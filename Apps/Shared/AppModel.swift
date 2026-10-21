@@ -158,6 +158,7 @@ final class AppModel {
     }
 
     init() {
+        AppSignposts.install()
         #if DEBUG
         if let launch = UITestLaunch.current {
             // UI tests: never read or write the user's saved settings or Keychain.

@@ -16,7 +16,7 @@ public struct MarkdownDocument: Sendable, Hashable {
     /// unclosed fences and math stay stable instead of reflowing, and a table
     /// header shows as a table before its delimiter row arrives.
     public init(parsing text: String, streaming: Bool = false) {
-        self.blocks = MarkdownParser(streaming: streaming).parse(text)
+        self.blocks = Tracing.measure("Markdown parse") { MarkdownParser(streaming: streaming).parse(text) }
     }
 }
 

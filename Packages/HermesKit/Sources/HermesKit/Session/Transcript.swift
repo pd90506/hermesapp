@@ -432,6 +432,10 @@ public struct Transcript: Sendable, Hashable {
     /// Replaces the history with the newest page (`order=latest`, chronological).
     /// - Parameter rereadable: the page came from a gateway that pages by `order=latest`.
     public mutating func installLatestPage(_ rows: [StoredMessage], hasOlder: Bool, rereadable: Bool = true) {
+        Tracing.measure("History page") { installLatestPageNow(rows, hasOlder: hasOlder, rereadable: rereadable) }
+    }
+
+    private mutating func installLatestPageNow(_ rows: [StoredMessage], hasOlder: Bool, rereadable: Bool) {
         replaceHistory(from: 0, with: rows, startsSession: !hasOlder)
         heldRowIDs = Set(rows.compactMap(\.id))
         paging = HistoryPaging(isLoaded: true, hasOlder: hasOlder, rowsLoaded: rows.count, rereadable: rereadable)
@@ -466,6 +470,10 @@ public struct Transcript: Sendable, Hashable {
     /// Offsets drift (see `nextOlderOffset`), so the page can overlap rows already
     /// held (Desktop: `transcript-backfill.ts:10-16`). It is cut at its first held row.
     public mutating func prependOlderPage(_ rows: [StoredMessage], hasOlder: Bool) {
+        Tracing.measure("History page") { prependOlderPageNow(rows, hasOlder: hasOlder) }
+    }
+
+    private mutating func prependOlderPageNow(_ rows: [StoredMessage], hasOlder: Bool) {
         paging.rowsLoaded += rows.count
         let firstHeld = rows.firstIndex { $0.id.map(heldRowIDs.contains) == true } ?? rows.endIndex
         heldRowIDs.formUnion(rows.compactMap(\.id))
@@ -703,6 +711,10 @@ public struct Transcript: Sendable, Hashable {
     ///
     /// - Parameter reachesStart: the re-read reached the session's first row.
     public mutating func installRereadPage(_ rows: [StoredMessage], ticket: RereadTicket, reachesStart: Bool) {
+        Tracing.measure("History page") { installRereadPageNow(rows, ticket: ticket, reachesStart: reachesStart) }
+    }
+
+    private mutating func installRereadPageNow(_ rows: [StoredMessage], ticket: RereadTicket, reachesStart: Bool) {
         let page = turnActive ? rowsBeforeOpenTurn(rows) : rows
         let cut = page.count < rows.count
         let rows = page

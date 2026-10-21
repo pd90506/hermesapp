@@ -137,7 +137,7 @@ public final class ChatSession: Identifiable {
         self.storedSessionID = snapshot.storedKey ?? storedSessionID
         self.title = title ?? snapshot.info?.title
         self.info = snapshot.info
-        self.transcript = Transcript(snapshot: snapshot)
+        self.transcript = Tracing.measure("Snapshot rebuild") { Transcript(snapshot: snapshot) }
         self.profile = profile
         self.kind = kind
         self.connection = connection
@@ -158,7 +158,7 @@ public final class ChatSession: Identifiable {
         // Built from the snapshot and stored rows only: no bubble is carried over. The
         // old stored rows stay on screen until the newest page replaces them.
         let old = transcript
-        transcript = Transcript(snapshot: snapshot, localIDsAfter: old.lastLocalID)
+        transcript = Tracing.measure("Snapshot rebuild") { Transcript(snapshot: snapshot, localIDsAfter: old.lastLocalID) }
         current.holdStoredRows(of: old)
         current.adoptSentImages(of: old)
         returnFailedPrompts(of: old)

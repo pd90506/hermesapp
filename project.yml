@@ -95,6 +95,7 @@ targets:
       - path: Apps/Shared/Views/TextSizes.swift
       - path: Apps/Shared/Views/ThemeColors.swift
       - path: Apps/Shared/Views/Markdown
+      - path: Apps/Shared/AppSignposts.swift
       - path: Apps/macOS/WindowFrameAutosave.swift
     dependencies:
       - package: SwiftMath

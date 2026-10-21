@@ -63,9 +63,17 @@ struct WindowLayout<Rail: View, List: View, Chat: View>: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
-    /// Keep the current titlebar sizing, including full-screen fallback.
+    /// The window's top band: the window buttons, the sidebar's header and the chat's title
+    /// on one line through its middle. As tall as a toolbar's title bar (the App Store's,
+    /// #54): with no toolbar the title bar is 32 pt and the band was cramped against the
+    /// window's top edge (the user, 2026-10-21). The window buttons are moved down to its
+    /// middle (`WindowButtonsReader`), as Hermes Desktop places them on its title bar.
+    static var headerHeight: CGFloat { 52 }
+
+    /// As tall again below the window buttons as above them; the band's own height in
+    /// full screen, where they aren't in the window.
     private var headerHeight: CGFloat {
-        windowButtons.map { min(max(($0.midY * 2).rounded(), 32), 64) } ?? 52
+        windowButtons.map { min(max(($0.midY * 2).rounded(), 32), 64) } ?? Self.headerHeight
     }
 
 }
@@ -157,8 +165,18 @@ private struct WindowButtonsReader: NSViewRepresentable {
                     window.standardWindowButton(type)?.isHidden = false
                 }
             }
+            // AppKit lays its title bar out again (a resize, full screen, key changes):
+            // the buttons go back to its top each time, so they're moved down again.
+            if let container = Self.titlebarContainer(of: window) {
+                container.postsFrameChangedNotifications = true
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification, object: container, queue: .main) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.report() }
+                    })
+            }
             for name in [NSWindow.didResizeNotification, NSWindow.didEnterFullScreenNotification,
-                         NSWindow.didExitFullScreenNotification] {
+                         NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification,
+                         NSWindow.didResignKeyNotification] {
                 observers.append(NotificationCenter.default.addObserver(
                     forName: name, object: window, queue: .main) { [weak self] _ in
                         MainActor.assumeIsolated { self?.report() }
@@ -174,6 +192,7 @@ private struct WindowButtonsReader: NSViewRepresentable {
 
         func report() {
             guard let window else { return }
+            placeButtons(in: window)
             var frame: CGRect?
             if !window.styleMask.contains(.fullScreen) {
                 for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
@@ -190,6 +209,58 @@ private struct WindowButtonsReader: NSViewRepresentable {
             // After the update in progress: this changes view state.
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated { self?.onChange?(frame) }
+            }
+        }
+
+        /// The view holding the title bar and its window buttons (AppKit's
+        /// `NSTitlebarContainerView`), along the window's top.
+        static func titlebarContainer(of window: NSWindow) -> NSView? {
+            guard let close = window.standardWindowButton(.closeButton) else { return nil }
+            var view = close.superview
+            while let candidate = view {
+                if String(describing: type(of: candidate)).contains("TitlebarContainer") { return candidate }
+                view = candidate.superview
+            }
+            return close.superview?.superview
+        }
+
+        /// The title bar as tall as the window's top band, and the window buttons in its
+        /// middle, where they were left of it: as Electron's `trafficLightPosition`, which
+        /// Hermes Desktop uses, it grows AppKit's title bar container to the band and moves
+        /// the buttons down in it. Taller, the title bar still lets clicks through to the
+        /// sidebar's header under it, as it did at its own height. Left alone in full
+        /// screen, where the title bar slides down from the top on its own.
+        private func placeButtons(in window: NSWindow) {
+            guard !window.styleMask.contains(.fullScreen),
+                  let close = window.standardWindowButton(.closeButton),
+                  let container = Self.titlebarContainer(of: window),
+                  let row = close.superview else { return }
+            let height = WindowLayout<EmptyView, EmptyView, EmptyView>.headerHeight
+            let top = window.frame.height
+            if container.frame.height != height || container.frame.maxY != top {
+                let old = container.frame.height
+                container.frame = NSRect(x: container.frame.minX, y: top - height,
+                                         width: container.frame.width, height: height)
+                // The views between it and the buttons that filled it fill it still.
+                var path: [NSView] = []
+                var view: NSView? = row
+                while let inner = view, inner !== container { path.insert(inner, at: 0); view = inner.superview }
+                for inner in path where inner.frame.height == old {
+                    inner.frame = NSRect(x: inner.frame.minX, y: 0, width: inner.frame.width,
+                                         height: inner.superview?.bounds.height ?? height)
+                }
+            }
+            if row.frame.height >= height {
+                // The buttons straight on the title bar: each in its middle.
+                for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                    guard let button = window.standardWindowButton(type) else { continue }
+                    let y = ((row.bounds.height - button.frame.height) / 2).rounded()
+                    if button.frame.minY != y { button.setFrameOrigin(NSPoint(x: button.frame.minX, y: y)) }
+                }
+            } else if let parent = row.superview {
+                // The buttons in a group of their own: the group in the middle.
+                let y = ((parent.bounds.height - row.frame.height) / 2).rounded()
+                if row.frame.minY != y { row.setFrameOrigin(NSPoint(x: row.frame.minX, y: y)) }
             }
         }
     }

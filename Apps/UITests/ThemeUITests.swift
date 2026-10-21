@@ -116,15 +116,16 @@ final class ThemeUITests: XCTestCase {
         let composer = app.textViews["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
         click(composer)
+        // Taller than the window, so the shots show the reply's top under the chat's title.
         composer.typeText("""
-            Do not use tools. Reply with only this Markdown: a level-3 heading "Themes" and \
-            two short lines about window layout.
+            Do not use tools. Reply with only this Markdown: a level-3 heading "Themes", then \
+            30 numbered lines, each one short sentence about window layout.
             """)
         click(app.buttons["Send"].firstMatch)
-        let heading = app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "Themes"))
-        let deadline = Date().addingTimeInterval(150)
-        while heading.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
-        XCTAssertGreaterThanOrEqual(heading.count, 1, "the reply is shown")
+        // The reply's row under it (Copy, "…", its time) once the turn has ended. Its
+        // text isn't one text view to look for: the transcript draws long replies in blocks.
+        let replyMenu = app.descendants(matching: .any).matching(identifier: "messageMoreMenu").firstMatch
+        XCTAssertTrue(replyMenu.waitForExistence(timeout: 150), "the reply is shown")
         // A new chat has no title until Hermes names it, after the first reply.
         let chatTitle = app.descendants(matching: .any)["chatTitle"].firstMatch
         let titled = Date().addingTimeInterval(45)
@@ -138,6 +139,10 @@ final class ThemeUITests: XCTestCase {
             XCTAssertTrue(close.exists && close.isHittable, "\(state): native close button")
             XCTAssertTrue(window.buttons[XCUIIdentifierMinimizeWindow].isHittable, "\(state): native minimize button")
             XCTAssertLessThan(window.frame.width, screen.width, "\(state): windowed, not full screen: \(window.frame) on \(screen)")
+            // Moved down from the title bar's top to the middle of the 52 pt band
+            // (`WindowLayout.headerHeight`), with room above them.
+            XCTAssertEqual(close.frame.midY - window.frame.minY, 26, accuracy: 2,
+                           "\(state): the window buttons in the middle of the top band: \(close.frame) in \(window.frame)")
             let title = chatTitle
             XCTAssertTrue(title.exists && !title.label.isEmpty, "\(state): the chat's top title '\(title.label)' \(title.frame)")
             // The top row: traffic lights | toggle | profile title | New chat at the list's edge.

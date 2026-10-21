@@ -23,7 +23,9 @@ import SwiftUI
     nonisolated static let margin: CGFloat = 1200
     /// How far a drawn block goes before it is cleared again: farther than `margin`, so a
     /// scroll back and forth over a few lines does not draw the same rows again and again.
-    nonisolated static let keepMargin: CGFloat = 2400
+    /// Wide: drawing a block again cost more than keeping it (a scroll up and down a few
+    /// screens drew hundreds of text views again, 2026-10-21).
+    nonisolated static let keepMargin: CGFloat = 6000
     /// How long the width stays put before a resize counts as settled.
     nonisolated static let settleDelay = Duration.milliseconds(300)
 
@@ -95,15 +97,20 @@ extension EnvironmentValues {
 
 extension View {
     /// Draws this block only near the screen, when the chat asks for it
-    /// (`TranscriptLaziness`).
-    func nearScreen() -> some View {
-        modifier(NearScreen())
+    /// (`TranscriptLaziness`), and reports whether it is on screen to `visibleBlocks`.
+    func nearScreen(id: String, visibleBlocks: VisibleBlocks?) -> some View {
+        modifier(NearScreen(id: id, visibleBlocks: visibleBlocks))
     }
 }
 
 /// A block drawn while it is near the screen, and clear space of its last height while
 /// it is not. Drawn when it has no height yet or its height was taken at another width.
+///
+/// One reading of the block's place a frame serves both its drawing and its visibility
+/// (`VisibleBlocks`): two, each block's own, were 175,000 updates in 16 s of scrolling.
 private struct NearScreen: ViewModifier {
+    let id: String
+    let visibleBlocks: VisibleBlocks?
     @Environment(\.transcriptLaziness) private var laziness
     /// Whether the block is drawn: since the area around it (`TranscriptLaziness.margin`)
     /// came on screen, until the wider one (`keepMargin`) left it. Nil until its first
@@ -111,21 +118,30 @@ private struct NearScreen: ViewModifier {
     @State private var isNear: Bool?
     @State private var measured: CGSize?
 
-    /// How far the block is from the visible area (`TranscriptLaziness.margin`,
-    /// `keepMargin`).
-    enum Distance: Equatable {
-        case near, between, far
+    /// Where the block is from the visible area (`TranscriptLaziness.margin`,
+    /// `keepMargin`), and whether it is on screen.
+    struct Place: Equatable {
+        enum Distance { case near, between, far }
+        var distance: Distance
+        /// At least 1% of the block on screen, as `onScrollVisibilityChange(threshold: 0.01)`.
+        var isVisible: Bool
 
         init(_ proxy: GeometryProxy) {
             // The scroll view's visible area, in the block's own coordinates.
-            guard let visible = proxy.bounds(of: .scrollView) else { self = .near; return }
+            guard let visible = proxy.bounds(of: .scrollView) else {
+                self.distance = .near
+                self.isVisible = true
+                return
+            }
             let block = CGRect(origin: .zero, size: proxy.size)
+            let shown = visible.intersection(block)
+            isVisible = !shown.isNull && shown.height >= max(block.height * 0.01, 0.5)
             if visible.insetBy(dx: 0, dy: -TranscriptLaziness.margin).intersects(block) {
-                self = .near
+                distance = .near
             } else if visible.insetBy(dx: 0, dy: -TranscriptLaziness.keepMargin).intersects(block) {
-                self = .between
+                distance = .between
             } else {
-                self = .far
+                distance = .far
             }
         }
     }
@@ -142,15 +158,17 @@ private struct NearScreen: ViewModifier {
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { measured = $0 }
                 }
             }
-            .onGeometryChange(for: Distance.self) { Distance($0) } action: { distance in
-                switch distance {
+            .onGeometryChange(for: Place.self) { Place($0) } action: { place in
+                switch place.distance {
                 case .near: isNear = true
                 case .far: isNear = false
                 case .between: if isNear == nil { isNear = true }
                 }
+                visibleBlocks?.set(id, visible: place.isVisible)
             }
+            .onDisappear { visibleBlocks?.set(id, visible: false) }
         } else {
-            content
+            content.modifier(BlockVisibility(id: id, blocks: visibleBlocks))
         }
     }
 }

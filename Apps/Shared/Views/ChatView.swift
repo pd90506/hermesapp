@@ -95,6 +95,7 @@ struct ChatView: View {
                     }
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { laziness.widthChanged($0) }
+                .quietWhileScrolling(scroll)
                 .padding()
                 .steadyColumn(maxWidth: Self.contentWidth(textSize: sizes.content), sideRoom: Self.sideRoom,
                               in: chatWidth)

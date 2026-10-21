@@ -35,7 +35,7 @@ enum MathRenderer {
     static func render(_ latex: String, fontSize: CGFloat, display: Bool) -> Rendered? {
         let key = "\(display ? "D" : "T")\(fontSize)|\(latex)" as NSString
         if let entry = cache.object(forKey: key) { return entry.rendered }
-        let rendered = typeset(latex, fontSize: fontSize, display: display)
+        let rendered = AppSignposts.measure("Math typeset") { typeset(latex, fontSize: fontSize, display: display) }
         cache.setObject(Entry(rendered), forKey: key)
         return rendered
     }

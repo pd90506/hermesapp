@@ -5,7 +5,7 @@ import SwiftUI
 /// a small glass pill centered just above the composer, shown only while the chat is
 /// scrolled well up from its end (`ChatScroll.isAwayFromEnd`). It reads "Scroll to bottom"
 /// with a down arrow, or how many messages are below the screen ("3 messages",
-/// `MessagesBelow`). It comes in from a little larger and goes out to a little smaller,
+/// `MessagesBelow`, changing at once). It comes in from a little larger and goes out to a little smaller,
 /// and a click or tap scrolls the chat smoothly down to the newest message.
 ///
 /// A view of its own, as the prompt rail: it reads the blocks on screen, which change as
@@ -44,9 +44,11 @@ struct ScrollToBottomButton: View {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down")
                         .font(.system(size: 12, weight: .semibold))
+                    // The count changes at once. Rolled in (`numericText`), each change
+                    // blurred its digits on the CPU, and in a scroll it changes every few
+                    // lines: a tenth of the main thread (Instruments, 2026-10-21).
                     Text(MessagesBelow.title(count: count))
                         .monospacedDigit()
-                        .contentTransition(.numericText(value: Double(count)))
                 }
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
@@ -60,7 +62,6 @@ struct ScrollToBottomButton: View {
             // out of the card and melts back into it (`ChatView`).
             .themedGlass(in: .capsule, interactive: true)
             .chatGlassID("scrollToBottom")
-            .animation(Motion.swap, value: count)
             .animation(Motion.reveal, value: isHovered)
             .onHover { isHovered = $0 }
             .accessibilityLabel(MessagesBelow.accessibilityLabel(count: count))

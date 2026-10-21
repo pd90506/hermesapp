@@ -8,8 +8,8 @@ import HermesKit
 /// Hermes Desktop, latch the gesture instead.
 ///
 /// One local monitor sees every wheel event before its window does: a gesture's first
-/// event picks the innermost scroll view under the pointer; a later event over a
-/// different scroll view goes to that one directly and is not delivered.
+/// event picks the innermost scroll view under the pointer; continuations go to that
+/// owner directly and are consumed, avoiding another content-tree hit test.
 @MainActor
 enum ScrollLatching {
     private static var monitor: Any?
@@ -40,16 +40,19 @@ enum ScrollLatching {
             kind = .continued
         }
         let starts = latch.startsGesture(kind, at: event.timestamp)
+        // The owner already determines the destination, regardless of what is now
+        // under the pointer (including nested horizontal scrollers). Do not walk the
+        // content tree just to decide whether to dispatch here or through AppKit.
+        // Weak ownership plus attachment checks avoid routing to a removed view.
+        if !starts, let owner, owner.window === window,
+           owner === content || owner.isDescendant(of: content) {
+            owner.scrollWheel(with: event)
+            return nil
+        }
         // An event made without a window (tests) carries a screen location.
         let point = event.window == nil ? window.convertPoint(fromScreen: event.locationInWindow) : event.locationInWindow
-        let under = scrollView(at: point, in: content)
-        if starts || owner?.window !== window {
-            owner = under
-            return event
-        }
-        guard let owner, owner !== under else { return event }
-        owner.scrollWheel(with: event)
-        return nil
+        owner = scrollView(at: point, in: content)
+        return event
     }
 
     /// The innermost scroll view under `point` (window coordinates).

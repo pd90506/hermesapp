@@ -896,8 +896,7 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
                     }
                 }
             }
-            .nearScreen()
-            .modifier(BlockVisibility(id: block.id, blocks: visibleBlocks))
+            .nearScreen(id: block.id, visibleBlocks: visibleBlocks)
         }
         let waiting = transcript.waiting
         if let waiting {
@@ -1021,7 +1020,10 @@ extension View {
 @MainActor @Observable final class VisibleBlocks {
     private(set) var ids: Set<String> = []
 
+    /// Changes `ids` only when the block's visibility did: each change redraws the
+    /// prompt rail and the scroll-to-bottom button.
     func set(_ id: String, visible: Bool) {
+        guard ids.contains(id) != visible else { return }
         if visible { ids.insert(id) } else { ids.remove(id) }
     }
 }
@@ -1031,8 +1033,9 @@ extension EnvironmentValues {
     @Entry var visibleBlocks: VisibleBlocks? = nil
 }
 
-/// Reports a block's visibility to `visibleBlocks`, when one is set.
-private struct BlockVisibility: ViewModifier {
+/// Reports a block's visibility to `visibleBlocks`, when one is set: for a chat drawn
+/// whole (`NearScreen` reports it in a lazy one).
+struct BlockVisibility: ViewModifier {
     let id: String
     let blocks: VisibleBlocks?
 

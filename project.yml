@@ -90,6 +90,7 @@ targets:
       - path: Apps/Shared/Views/Motion.swift
       - path: Apps/Shared/Views/ChatScrolling.swift
       - path: Apps/Shared/Views/MessageRowContent.swift
+      - path: Apps/Shared/Views/TranscriptLaziness.swift
       - path: Apps/Shared/Views/ScrollLatching.swift
       - path: Apps/Shared/Views/PromptRail.swift
       - path: Apps/Shared/Views/TextSizes.swift

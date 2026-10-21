@@ -75,6 +75,8 @@ struct RootView: View {
         // iPhone (`restoreProfileChat`).
         .onChange(of: model.pendingProfileChat) { _, _ in restoreProfileChat() }
         .onChange(of: shownProfile) { _, _ in restoreProfileChat() }
+        // Instruments: where a chat switch starts (docs/performance-tracing.md).
+        .onChange(of: selection) { _, _ in AppSignposts.event("Chat selected") }
         .task {
             // Auto-connect on launch when settings exist.
             if model.servers.contains(where: \.hasURL) {

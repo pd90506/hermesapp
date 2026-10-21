@@ -252,6 +252,10 @@ public enum TranscriptGrouping {
     /// Splits the items into turns (a user row starts one; a steer joins the running
     /// turn) and folds each turn's work before its answer into one block (`TurnWork`).
     public static func blocks(_ items: [TranscriptItem], isRunning: Bool) -> [TranscriptBlock] {
+        Tracing.measure("Transcript grouping") { group(items, isRunning: isRunning) }
+    }
+
+    private static func group(_ items: [TranscriptItem], isRunning: Bool) -> [TranscriptBlock] {
         var turns: [[TranscriptItem]] = []
         for item in items {
             if turns.isEmpty || (item.role == .user && !item.isSteer) {

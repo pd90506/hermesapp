@@ -43,7 +43,9 @@ final class CronJobsUITests: XCTestCase {
         let back = app.navigationBars.buttons.element(boundBy: 0)
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
         #endif
-        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected, the session list shown")
+        let connected = app.buttons["New chat"].waitForExistence(timeout: 30)
+        if !connected { attachLaunchState(of: app, "not connected") }
+        XCTAssertTrue(connected, "connected, the session list shown")
 
         let sessionsTab = app.buttons["sessionListTab.sessions"].firstMatch
         let cronTab = app.buttons["sessionListTab.cron"].firstMatch

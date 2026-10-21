@@ -14,6 +14,15 @@ import Testing
     @MainActor @Observable final class Chats {
         var transcripts: [Transcript] = []
         var shown = 0
+        /// Each chat's own scroll geometry, as its pane last reported it: kept chats are
+        /// several scroll views at once, so finding one in the window may find a hidden one.
+        @ObservationIgnored var geometry: [Int: ChatGeometry] = [:]
+    }
+
+    struct ChatGeometry: Equatable {
+        var contentHeight: CGFloat
+        /// How much content is below the visible part.
+        var remainingBelow: CGFloat
     }
 
     enum Mode: CaseIterable {
@@ -35,12 +44,12 @@ import Testing
         var body: some View {
             switch mode {
             case .allAtOnce, .newestFirst:
-                ChatPane(transcript: chats.transcripts[chats.shown], windowed: mode == .newestFirst)
+                ChatPane(chats: chats, index: chats.shown, windowed: mode == .newestFirst)
                     .id(chats.shown)
             case .kept:
                 ZStack {
                     ForEach(chats.transcripts.indices.filter { built.contains($0) || $0 == chats.shown }, id: \.self) { index in
-                        ChatPane(transcript: chats.transcripts[index], windowed: true)
+                        ChatPane(chats: chats, index: index, windowed: true)
                             .keptChat(isShown: index == chats.shown)
                     }
                 }
@@ -50,9 +59,12 @@ import Testing
     }
 
     private struct ChatPane: View {
-        let transcript: Transcript
+        let chats: Chats
+        let index: Int
         let windowed: Bool
         @State private var window = TranscriptWindow()
+
+        private var transcript: Transcript { chats.transcripts[index] }
 
         var body: some View {
             ScrollView {
@@ -77,6 +89,14 @@ import Testing
                 .frame(maxWidth: .infinity)
             }
             .defaultScrollAnchor(.bottom)
+            .onScrollGeometryChange(for: ChatGeometry.self) { geometry in
+                ChatGeometry(contentHeight: geometry.contentSize.height,
+                             remainingBelow: geometry.contentSize.height - geometry.visibleRect.maxY)
+            } action: { _, geometry in
+                chats.geometry[index] = geometry
+            }
+            // A pane built afresh (not kept) starts from nothing, not its last visit's height.
+            .onDisappear { chats.geometry[index] = nil }
             .transcriptWindow(windowed ? window : nil, isEmpty: transcript.items.isEmpty) { transcript.blocks }
         }
     }
@@ -157,21 +177,11 @@ import Testing
             return Date().timeIntervalSince(start)
         }
 
-        var scrollView: NSScrollView? {
-            func find(_ view: NSView) -> NSScrollView? {
-                (view as? NSScrollView) ?? view.subviews.lazy.compactMap(find).first
-            }
-            return find(host)
-        }
+        /// The chat on screen's (`Chats.geometry`).
+        var contentHeight: CGFloat { chats.geometry[chats.shown]?.contentHeight ?? 0 }
 
-        var contentHeight: CGFloat { scrollView?.documentView?.frame.height ?? 0 }
-
-        /// How much content is below the visible part.
-        var remainingBelow: CGFloat? {
-            guard let scroll = scrollView, let document = scroll.documentView else { return nil }
-            let bounds = scroll.contentView.bounds
-            return document.isFlipped ? document.frame.height - bounds.maxY : bounds.minY
-        }
+        /// How much of the chat on screen is below its visible part.
+        var remainingBelow: CGFloat? { chats.geometry[chats.shown]?.remainingBelow }
 
         struct Switch {
             /// From the click to the end of the first run-loop turn: the new chat's

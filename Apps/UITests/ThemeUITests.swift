@@ -23,7 +23,9 @@ final class ThemeUITests: XCTestCase {
         // A chat with a reply that has Markdown in it.
         let newChat = app.buttons["New chat"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
-        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 60), .completed, "New chat enabled")
+        let wait = XCTWaiter().wait(for: [enabled], timeout: 60)
+        if wait != .completed { attachLaunchState(of: app, "New chat not enabled") }
+        XCTAssertEqual(wait, .completed, "New chat enabled")
         click(newChat)
         let composer = app.textViews["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
@@ -43,10 +45,7 @@ final class ThemeUITests: XCTestCase {
 
         // Each theme in light and dark, the window as a whole: Nous dark, then
         // Catppuccin dark and light.
-        app.typeKey(",", modifierFlags: .command)
-        let appearanceTab = app.toolbars.buttons["Appearance"].firstMatch
-        XCTAssertTrue(appearanceTab.waitForExistence(timeout: 10), "the Settings window")
-        click(appearanceTab)
+        openAppearance(app)
         let catppuccin = app.buttons["colorTheme.catppuccin"].firstMatch
         XCTAssertTrue(catppuccin.waitForExistence(timeout: 10), "the theme swatches")
         XCTAssertTrue(app.buttons["colorTheme.nous"].firstMatch.isSelected, "Nous is the default")
@@ -55,7 +54,7 @@ final class ThemeUITests: XCTestCase {
         showChat(app)
         attach(app, "chat, Nous, dark")
 
-        app.typeKey(",", modifierFlags: .command)
+        openAppearance(app)
         XCTAssertTrue(catppuccin.waitForExistence(timeout: 10), "the theme swatches")
         click(catppuccin)
         let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: catppuccin)
@@ -64,7 +63,7 @@ final class ThemeUITests: XCTestCase {
         showChat(app)
         attach(app, "chat, Catppuccin, dark")
 
-        app.typeKey(",", modifierFlags: .command)
+        openAppearance(app)
         XCTAssertTrue(catppuccin.waitForExistence(timeout: 10), "the theme swatches")
         pickMode("Light", in: app)
         showChat(app)
@@ -73,15 +72,122 @@ final class ThemeUITests: XCTestCase {
         // The other themes, so they can be told apart: each in light, then in dark.
         for (mode, themes) in [("Light", ["github", "everforest", "solarized", "codex", "claudeCode"]), ("Dark", ["github", "everforest", "solarized", "codex", "claudeCode"])] {
             for theme in themes {
-                app.typeKey(",", modifierFlags: .command)
+                openAppearance(app)
                 let swatch = app.buttons["colorTheme.\(theme)"].firstMatch
                 XCTAssertTrue(swatch.waitForExistence(timeout: 10), "the \(theme) swatch")
                 click(swatch)
                 pickMode(mode, in: app)
                 showChat(app)
                 attach(app, "chat, \(theme), \(mode.lowercased())")
+                let collapse = app.buttons["collapseProfiles"]
+                click(collapse)
+                RunLoop.current.run(until: Date().addingTimeInterval(1))
+                attach(app, "chat, \(theme), \(mode.lowercased()), profiles hidden")
+                click(collapse)
+
             }
         }
+    }
+
+    /// A windowed (not full-screen) window with a populated chat, for visual review: the
+    /// native traffic lights, the chat's top title, profiles shown and hidden, in
+    /// Everforest dark and Nous light. The compact list width comes from a launch
+    /// argument, so no stored preference is read or written.
+    @MainActor
+    func testWindowedOverlayPreview() throws {
+        continueAfterFailure = true
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+            throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
+        }
+        let app = XCUIApplication()
+        app.launchArguments += ["-compactSessionListWidth", "260"]
+        app.launchEnvironment["HERMES_UITEST_URL"] = url
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        app.launchWithMainWindow()
+        defer { app.terminate() }
+
+        let newChat = app.buttons["New chat"]
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 60), .completed, "New chat enabled")
+        click(newChat)
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        click(composer)
+        composer.typeText("""
+            Do not use tools. Reply with only this Markdown: a level-3 heading "Themes" and \
+            two short lines about window layout.
+            """)
+        click(app.buttons["Send"].firstMatch)
+        let heading = app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "Themes"))
+        let deadline = Date().addingTimeInterval(150)
+        while heading.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        XCTAssertGreaterThanOrEqual(heading.count, 1, "the reply is shown")
+        // A new chat has no title until Hermes names it, after the first reply.
+        let chatTitle = app.descendants(matching: .any)["chatTitle"].firstMatch
+        let titled = Date().addingTimeInterval(45)
+        while chatTitle.label.isEmpty, Date() < titled { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        attach(app, "windowed, reply shown")
+
+        func checkWindowed(_ state: String) {
+            let window = app.windows.firstMatch
+            let screen = XCUIScreen.main.screenshot().image.size
+            let close = window.buttons[XCUIIdentifierCloseWindow]
+            XCTAssertTrue(close.exists && close.isHittable, "\(state): native close button")
+            XCTAssertTrue(window.buttons[XCUIIdentifierMinimizeWindow].isHittable, "\(state): native minimize button")
+            XCTAssertLessThan(window.frame.width, screen.width, "\(state): windowed, not full screen: \(window.frame) on \(screen)")
+            let title = chatTitle
+            XCTAssertTrue(title.exists && !title.label.isEmpty, "\(state): the chat's top title '\(title.label)' \(title.frame)")
+            // The top row: traffic lights | toggle | profile title | New chat at the list's edge.
+            let lights = [XCUIIdentifierZoomWindow, XCUIIdentifierFullScreenWindow]
+                .map { window.buttons[$0] }.first { $0.exists } ?? close
+            let toggle = window.buttons["collapseProfiles"].firstMatch
+            let profile = app.descendants(matching: .any)["sidebarProfileTitle"].firstMatch
+            let newChat = app.buttons["New chat"].firstMatch
+            let list = app.outlines.firstMatch.frame
+            XCTAssertGreaterThan(toggle.frame.minX, lights.frame.maxX, "\(state): toggle after the traffic lights")
+            XCTAssertLessThanOrEqual(toggle.frame.minX - lights.frame.maxX, 16, "\(state): toggle right beside the traffic lights")
+            XCTAssertGreaterThanOrEqual(profile.frame.minX, list.minX + 16, "\(state): profile title at/after the list's text inset")
+            XCTAssertGreaterThanOrEqual(profile.frame.minX, toggle.frame.maxX, "\(state): profile title after the toggle")
+            XCTAssertLessThanOrEqual(profile.frame.maxX, newChat.frame.minX, "\(state): profile title before New chat")
+            XCTAssertEqual(newChat.frame.maxX, list.maxX - 10, accuracy: 2, "\(state): New chat at the list's trailing edge")
+            print("PREVIEW \(state): window \(window.frame), screen \(screen), close \(close.frame), lights \(lights.frame), toggle \(toggle.frame), profile '\(profile.label)' \(profile.frame), newChat \(newChat.frame), title '\(title.label)' \(title.frame), list \(list)")
+        }
+
+        for (theme, mode) in [("everforest", "Dark"), ("nous", "Light")] {
+            openAppearance(app)
+            let swatch = app.buttons["colorTheme.\(theme)"].firstMatch
+            XCTAssertTrue(swatch.waitForExistence(timeout: 10), "the \(theme) swatch")
+            click(swatch)
+            pickMode(mode, in: app)
+            showChat(app)
+            checkWindowed("\(theme) \(mode)")
+            attach(app, "windowed, \(theme), \(mode.lowercased())")
+            let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            screen.name = "whole screen, \(theme), \(mode.lowercased())"
+            screen.lifetime = .keepAlways
+            add(screen)
+            let collapse = app.windows.firstMatch.buttons["collapseProfiles"].firstMatch
+            XCTAssertTrue(collapse.waitForExistence(timeout: 10), "the collapse button")
+            click(collapse)
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+            checkWindowed("\(theme) \(mode), profiles hidden")
+            attach(app, "windowed, \(theme), \(mode.lowercased()), profiles hidden")
+            click(collapse)
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
+    }
+
+    /// Settings on its Appearance tab. A Settings window opened afresh starts on its first
+    /// tab: with `-ApplePersistenceIgnoreState` it doesn't come back on the last one.
+    @MainActor
+    private func openAppearance(_ app: XCUIApplication) {
+        app.typeKey(",", modifierFlags: .command)
+        let tab = app.toolbars.buttons["Appearance"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "the Settings window")
+        click(tab)
     }
 
     /// Settings ▸ Appearance's light or dark mode.

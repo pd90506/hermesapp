@@ -164,15 +164,16 @@ import Testing
     }
 
     /// The main thread while a long reply streams, a delta every 16 ms (60 a second), at
-    /// the end of a chat of two pages of stored rows, as before and now; then as now in a
-    /// chat of the reply alone, for what the stored rows add. Prints the numbers, so the
-    /// VM log carries them.
+    /// the end of a chat of two pages of stored rows, as before and now. Prints the
+    /// numbers, so the VM log carries them. (A third pass, in a chat of the reply alone,
+    /// only printed what the stored rows add: dropped, as it took a third of the test's
+    /// 40 seconds in the VM.)
     @Test(.timeLimit(.minutes(5))) func aStreamingReplyLeavesTheMainThreadMostlyFree() async throws {
         let deltas = Self.streamedReply()
         var busy: [Mode: Double] = [:]
         var report = "streaming \(deltas.count) deltas, one every 16 ms, after \(2 * ChatSession.pageSize) stored rows:"
-        for (mode, pages) in [(Mode.eachDelta, 2), (.batches, 2), (.batches, 0)] {
-            let ui = UI(pages: pages)
+        for mode in Mode.allCases {
+            let ui = UI(pages: 2)
             defer { ui.close() }
             await ui.settle()
             _ = ui.chat.transcript.appendUserPrompt("Write a long answer")
@@ -193,8 +194,8 @@ import Testing
             }
             while !queue.isEmpty { _ = await ui.turn() }
             _ = await ui.turn()
-            if pages > 0 { busy[mode] = load.busy }
-            report += "\n  \(mode)\(pages > 0 ? "" : ", no stored rows"): \(load.stop())"
+            busy[mode] = load.busy
+            report += "\n  \(mode): \(load.stop())"
             #expect(chat.transcript.items.last?.text == deltas.joined())
         }
         print(report)

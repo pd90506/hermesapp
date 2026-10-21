@@ -26,10 +26,7 @@ final class MessageActionsUITests: XCTestCase {
         // so the list left it out. (A resume here reuses the runtime the gateway keeps for
         // 10 minutes, so this test can't make one cold; the package tests cover the resume.)
         app.launchEnvironment["HERMES_UITEST_SOURCE_SETTINGS"] = #"{"newSessionSource":"desktop","hiddenSources":["tui"]}"#
-        // A window even if the last run's app was killed without one.
-        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
-        app.launch()
-        if !app.windows.firstMatch.waitForExistence(timeout: 10) { app.typeKey("n", modifierFlags: .command) }
+        app.launchWithMainWindow()
         defer { app.terminate() }
 
         let newChat = app.buttons["New chat"]

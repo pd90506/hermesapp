@@ -32,7 +32,7 @@ final class LiveChatUITests: XCTestCase {
         if let reconnectNoticeDelay {
             app.launchEnvironment["HERMES_UITEST_RECONNECT_NOTICE_DELAY"] = String(reconnectNoticeDelay)
         }
-        app.launch()
+        app.launchWithMainWindow()
         return app
     }
 

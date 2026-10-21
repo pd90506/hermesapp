@@ -11,7 +11,8 @@ untracked; `--base REF` for another starting point) and maps them to tests:
 - A window test file (Apps/Tests/macOS): its suites. An app file the window tests
   compile (project.yml, HermesMacTests sources): the suites that name a type it
   declares, or else every window suite.
-- A UI test file (Apps/UITests): its classes, on the platforms they have tests for.
+- A UI test file (Apps/UITests): its classes, on the platforms they have tests for;
+  a helper file there with no test class: every UI test.
   An app file (Apps/Shared, Apps/macOS, Apps/iOS): the UI test classes whose string
   literals (accessibility identifiers, labels, launch variables) it also uses, on the
   platforms it is compiled for (`#if os(...)` included).
@@ -283,6 +284,11 @@ def pick(files):
                     for p in t["platforms"]:
                         ui[p].add(f"{t['class']}/{t['name']}")
             names = sorted({t["class"] for t in tests if t["file"] == f})
+            if not names:  # a helper the UI tests share: all of them
+                for t in tests:
+                    for p in t["platforms"]:
+                        ui[p].add(f"{t['class']}/{t['name']}")
+                names = ["every UI test (shared helper)"]
             why.append(("UI " + ", ".join(names), f))
     for f in app_files:
         lits = literals(read(f))

@@ -483,6 +483,8 @@ final class MarkdownSelectionTextView: NSTextView {
         let styleChanged = isReasoning != appliedReasoning || palette != appliedPalette || tableHeader != appliedTableHeader
         guard selection != selectionModel || sizesChanged || styleChanged,
               let storage = textStorage else { return }
+        let span = AppSignposts.begin("Text apply")
+        defer { span.end() }
         let oldRange = selectedRange()
         if !sizesChanged, !styleChanged {
             // Streaming appends or edits the tail: keep the unchanged leading runs.
@@ -547,6 +549,8 @@ final class MarkdownSelectionTextView: NSTextView {
     func fittingHeight(width: CGFloat) -> CGFloat {
         if let measured, measured.width == width { return measured.height }
         guard let textStorage, let liveManager = layoutManager, let liveContainer = textContainer else { return 0 }
+        let span = AppSignposts.begin("Text measure")
+        defer { span.end() }
         // The width it will be placed at (a table cell's column): lay out live at it.
         if let fixedWidth, fixedWidth == width, frame.width != width {
             setFrameSize(NSSize(width: width, height: frame.height))
@@ -667,6 +671,8 @@ final class MarkdownSelectionTextView: NSTextView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let span = AppSignposts.begin("Text draw")
+        defer { span.end() }
         decorationRects = currentDecorationRects()
         if !decorationRects.isEmpty {
             let codeCount = decorations.code.count, quoteCount = decorations.quotes.count
@@ -852,6 +858,8 @@ final class MarkdownSelectionTextView: UITextView {
         let sizesChanged = bodySize != appliedBodySize || codeSize != appliedCodeSize
         let styleChanged = isReasoning != appliedReasoning || palette != appliedPalette || tableHeader != appliedTableHeader
         guard selection != selectionModel || sizesChanged || styleChanged else { return }
+        let span = AppSignposts.begin("Text apply")
+        defer { span.end() }
         let oldRange = selectedRange
         if !sizesChanged, !styleChanged {
             // Streaming appends or edits the tail: keep the unchanged leading runs.
@@ -884,6 +892,8 @@ final class MarkdownSelectionTextView: UITextView {
     /// Height for `width`; layout is only redone when the width or the text changed.
     func fittingHeight(width: CGFloat) -> CGFloat {
         if let measured, measured.width == width { return measured.height }
+        let span = AppSignposts.begin("Text measure")
+        defer { span.end() }
         let height = ceil(sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height)
         measured = (width, height)
         return height

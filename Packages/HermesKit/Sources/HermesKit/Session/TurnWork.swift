@@ -232,7 +232,7 @@ extension TranscriptItem {
 
 extension Transcript {
     /// The transcript as the chat draws it (`TranscriptGrouping.blocks`).
-    public var blocks: [TranscriptBlock] { TranscriptGrouping.blocks(items, isRunning: isRunning) }
+    public var blocks: [TranscriptBlock] { derived.derived.blocks(items, isRunning: isRunning) }
 
     /// The id of the block that draws `itemID` now, or nil when no block holds it.
     /// A block's id can change when an older page lands (a turn's work is named after

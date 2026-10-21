@@ -195,6 +195,8 @@ public struct RereadTicket: Sendable, Hashable {
 /// (`init(snapshot:)`) has none.
 public struct Transcript: Sendable, Hashable {
     public private(set) var items: [TranscriptItem] = []
+    /// Its blocks and prompts, kept until the rows change (`TranscriptDerived`).
+    var derived = TranscriptDerivedBox()
     /// `items[..<historyCount]` came from stored pages, or are local rows placed among them.
     public private(set) var historyCount = 0
     public private(set) var paging = HistoryPaging()

@@ -24,6 +24,10 @@ struct ChatView: View {
     @State private var window: TranscriptWindow
     /// The scroll view's own width, scroller included (`steadyColumn`); macOS only.
     @State private var chatWidth: CGFloat?
+    /// Only the blocks near the screen are drawn (`TranscriptLaziness`); what the rows
+    /// remember meanwhile (`RowMemory`).
+    @State private var laziness = TranscriptLaziness()
+    @State private var rowMemory = RowMemory()
     @Environment(\.textSizes) private var sizes
     @Environment(\.surfaces) private var surfaces
     /// The composer's card and the scroll-to-bottom pill, as one glass (`ChatGlass`).
@@ -90,6 +94,7 @@ struct ChatView: View {
                         }
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { laziness.widthChanged($0) }
                 .padding()
                 .steadyColumn(maxWidth: Self.contentWidth(textSize: sizes.content), sideRoom: Self.sideRoom,
                               in: chatWidth)
@@ -114,6 +119,8 @@ struct ChatView: View {
             .simultaneousGesture(TapGesture().onEnded { Self.dismissKeyboard() })
             #endif
             .environment(\.visibleBlocks, visibleBlocks)
+            .environment(\.transcriptLaziness, laziness)
+            .environment(\.rowMemory, rowMemory)
             .environment(\.sessionFolder, session.info?.cwd)
             .transcriptWindow(window, isEmpty: session.transcript.items.isEmpty) { [session] in
                 session.transcript.blocks
@@ -308,7 +315,7 @@ private struct MessageRow: View {
     var body: some View {
         // Background work Hermes reported as a user turn: a line, not a prompt bubble.
         if let notice = item.backgroundNotice {
-            BackgroundNoticeRow(notice: notice)
+            BackgroundNoticeRow(notice: notice, id: item.id)
                 .contextMenu { copyMenu }
         } else {
             row

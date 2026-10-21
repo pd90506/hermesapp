@@ -14,6 +14,23 @@ import Testing
         ])
     }
 
+    /// Blocks and prompts are kept until the rows change (`TranscriptDerived`): a copy
+    /// that changes sees its own, the one it was copied from keeps its.
+    @Test func derivedBlocksAndPromptsFollowTheRows() {
+        var transcript = Transcript()
+        let first = transcript.appendUserPrompt("What is a monad?")
+        #expect(transcript.promptMarks.map(\.id) == [first])
+        #expect(transcript.blocks.map(\.id) == transcript.blocks.map(\.id))
+        let before = transcript
+        let second = transcript.appendUserPrompt("And a functor?")
+        #expect(transcript.promptMarks.map(\.id) == [first, second])
+        #expect(transcript.blocks.count == 2)
+        #expect(before.promptMarks.map(\.id) == [first])
+        #expect(before.blocks.count == 1)
+        #expect(transcript.promptMarks.map(\.id) == [first, second])
+        #expect(before != transcript)
+    }
+
     @Test func repliesAndBackgroundNoticesAreNotMarked() {
         let items = [
             TranscriptItem(id: "u", role: .user, text: "Build it"),

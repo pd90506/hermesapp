@@ -68,13 +68,13 @@ struct AssistantMessageContent: View {
 /// while open.
 struct ReasoningFold: View {
     let item: TranscriptItem
-    @State private var isExpanded: Bool
+    @Remembered private var isExpanded: Bool
 
     static let accessibilityIdentifier = "reasoningToggle"
 
     init(item: TranscriptItem, isExpanded: Bool = false) {
         self.item = item
-        _isExpanded = State(initialValue: isExpanded)
+        _isExpanded = Remembered(wrappedValue: isExpanded, "reasoning:\(item.id)")
     }
 
     var body: some View {
@@ -179,13 +179,13 @@ struct FoldButton<Label: View>: View {
 struct ToolMessageContent: View {
     let item: TranscriptItem
     /// The user's choice; until then an edit with a diff is open and the rest closed.
-    @State private var toggled: Bool?
+    @Remembered private var toggled: Bool?
 
     static let accessibilityIdentifier = "toolCallRow"
 
     init(item: TranscriptItem, isExpanded: Bool? = nil) {
         self.item = item
-        _toggled = State(initialValue: isExpanded)
+        _toggled = Remembered(wrappedValue: isExpanded, "tool:\(item.id)")
     }
 
     var body: some View {
@@ -514,9 +514,15 @@ struct ToolTextBox: View {
 /// Desktop's `BackgroundResult` shows it, opening to the command and output.
 struct BackgroundNoticeRow: View {
     let notice: BackgroundNotice
-    @State private var isExpanded = false
+    @Remembered private var isExpanded: Bool
 
     static let accessibilityIdentifier = "backgroundNotice"
+
+    /// - Parameter id: the notice's row, under which the chat remembers it open.
+    init(notice: BackgroundNotice, id: String) {
+        self.notice = notice
+        _isExpanded = Remembered(wrappedValue: false, "notice:\(id)")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -547,9 +553,9 @@ struct TurnWorkView<Message: View>: View {
     let work: TurnWork
     @ViewBuilder let message: (TranscriptItem) -> Message
     /// The user's choice; until then open exactly while the turn works.
-    @State private var toggled: Bool?
+    @Remembered private var toggled: Bool?
     /// When this view saw the work end, for a turn whose rows carry no time yet.
-    @State private var settledAt: Date?
+    @Remembered private var settledAt: Date?
     /// For a turn this chat did not send: count from when the line appeared.
     @State private var appeared = Date()
 
@@ -558,7 +564,8 @@ struct TurnWorkView<Message: View>: View {
     init(work: TurnWork, isExpanded: Bool? = nil, @ViewBuilder message: @escaping (TranscriptItem) -> Message) {
         self.work = work
         self.message = message
-        _toggled = State(initialValue: isExpanded)
+        _toggled = Remembered(wrappedValue: isExpanded, "work:\(work.id)")
+        _settledAt = Remembered(wrappedValue: nil, "work-settled:\(work.id)")
     }
 
     var body: some View {
@@ -612,13 +619,13 @@ struct TurnWorkView<Message: View>: View {
 /// commands").
 struct StepGroupView: View {
     let group: StepGroup
-    @State private var isExpanded: Bool
+    @Remembered private var isExpanded: Bool
 
     static let accessibilityIdentifier = "workGroupRow"
 
     init(group: StepGroup, isExpanded: Bool = false) {
         self.group = group
-        _isExpanded = State(initialValue: isExpanded)
+        _isExpanded = Remembered(wrappedValue: isExpanded, "group:\(group.id)")
     }
 
     /// The step the group's line shows: its newest, while the turn works in it.
@@ -657,13 +664,13 @@ struct StepGroupView: View {
 /// its card (`WorkStepCard`).
 struct WorkStepView: View {
     let step: WorkStep
-    @State private var isExpanded: Bool
+    @Remembered private var isExpanded: Bool
 
     static let accessibilityIdentifier = "workStepRow"
 
     init(step: WorkStep, isExpanded: Bool = false) {
         self.step = step
-        _isExpanded = State(initialValue: isExpanded)
+        _isExpanded = Remembered(wrappedValue: isExpanded, "step:\(step.id)")
     }
 
     var body: some View {
@@ -889,6 +896,7 @@ struct TranscriptMessages<Message: View, Requests: View>: View {
                     }
                 }
             }
+            .nearScreen()
             .modifier(BlockVisibility(id: block.id, blocks: visibleBlocks))
         }
         let waiting = transcript.waiting

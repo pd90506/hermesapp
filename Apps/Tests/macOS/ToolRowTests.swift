@@ -61,7 +61,7 @@ import Testing
         let text = "[IMPORTANT: Background process proc_1 completed normally (exit code 0).\nCommand: make\nOutput:\n"
             + (1...80).map { "build step \($0)" }.joined(separator: "\n") + "]"
         let notice = try #require(BackgroundNotice(text))
-        let line = height(BackgroundNoticeRow(notice: notice))
+        let line = height(BackgroundNoticeRow(notice: notice, id: "notice"))
         #expect(line < 24, "the notice is \(line) pt tall")
     }
 

@@ -49,8 +49,10 @@ xcrun xctrace record --template SwiftUI --instrument 'Points of Interest' --atta
 open ~/Desktop/hermes-scroll.trace
 ```
 
-A Debug build (what Xcode's Run makes) runs SwiftUI unoptimised, slower than a Release
-build: compare against a Release build before reading too much into a Debug trace.
+A Debug build (what Xcode's Run makes) runs only the app's own code unoptimised; SwiftUI,
+AppKit and the rest are the system's, the same in either. A trace whose time is mostly in
+them reads the same from a Debug build (the stuttering scroll of 2026-10-21: the app's
+own code was under 2% of the main thread).
 
 ## Recording on the iPhone
 

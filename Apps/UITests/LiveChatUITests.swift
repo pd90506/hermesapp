@@ -189,6 +189,17 @@ final class LiveChatUITests: XCTestCase {
         let rail = app.descendants(matching: .any)["profileRail"].firstMatch
         try require(rail.waitForExistence(timeout: 10), "the profile rail")
 
+        let close = app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow]
+        try require(close.waitForExistence(timeout: 5), "windowed preview requires real native traffic lights")
+        XCTAssertTrue(close.isHittable, "native close control is unobscured")
+        for identifier in [XCUIIdentifierMinimizeWindow, XCUIIdentifierZoomWindow] {
+            let button = app.windows.firstMatch.buttons[identifier]
+            // macOS can expose the green control as Full Screen instead of Zoom.
+            let native = identifier == XCUIIdentifierZoomWindow && !button.exists
+                ? app.windows.firstMatch.buttons[XCUIIdentifierFullScreenWindow] : button
+            XCTAssertTrue(native.exists && native.isHittable, "native traffic control: \(identifier)")
+        }
+
         checkProfileRailIsFixed(app, rail: rail)
         checkNewChatSitsAtTheSessionColumnsTrailingEdge(app, newChat: newChat, list: list)
         checkNewChatHoldsStill(app, newChat: newChat, "no chat")
@@ -202,6 +213,20 @@ final class LiveChatUITests: XCTestCase {
         let composer = app.textViews["composer"]
         try require(composer.waitForExistence(timeout: 30), "composer shown")
 
+        // Any type: the title is also the window's drag area (a gesture), which can make
+        // it a group around its text, as the sidebar's title.
+        let chatTitle = app.descendants(matching: .any)["chatTitle"].firstMatch
+        if !chatTitle.waitForExistence(timeout: 5) {
+            let tree = XCTAttachment(string: app.windows.firstMatch.debugDescription)
+            tree.name = "window elements, no chat title"
+            tree.lifetime = .keepAlways
+            add(tree)
+        }
+        try require(chatTitle.exists, "populated chat has a visible top title")
+        let titleText = chatTitle.label.isEmpty ? chatTitle.staticTexts.firstMatch.label : chatTitle.label
+        XCTAssertFalse(titleText.isEmpty, "chat title has content")
+        XCTAssertEqual(chatTitle.frame.midY, close.frame.midY, accuracy: 10,
+                       "chat title is aligned with the native controls")
         checkNewChatHoldsStill(app, newChat: newChat, "a chat open")
         checkFrameIsOneColourAroundThePanel(app, newChat: newChat, list: list, rail: rail, "a chat open")
         checkHoveringTheTitleBarDoesNotShadeTheChat(app, composer: composer)
@@ -261,13 +286,12 @@ final class LiveChatUITests: XCTestCase {
     @MainActor
     private func panelEdges(_ app: XCUIApplication, press button: XCUIElement, _ name: String) -> [CGFloat] {
         let window = app.windows.firstMatch
-        let size = window.frame.size
         func edge(_ shot: XCUIScreenshot, _ label: String) -> CGFloat {
             let attachment = XCTAttachment(screenshot: shot)
             attachment.name = "\(name) \(label)"
             attachment.lifetime = .keepAlways
             add(attachment)
-            return Self.panelEdge(in: shot.image, size: size)
+            return app.outlines.firstMatch.frame.minX - window.frame.minX
         }
         var edges = [edge(window.screenshot(), "00 before")]
         let start = Date()
@@ -278,32 +302,6 @@ final class LiveChatUITests: XCTestCase {
             edges.append(edge(shot, String(format: "%02d at %d ms", edges.count, Int(t * 1000))))
         }
         return edges
-    }
-
-    /// The panel's leading edge in window points: along a line at mid-height (under the
-    /// profiles, over the empty rail), the first pixel off the frame's colour, which the
-    /// strip over the window shows at its middle.
-    private static func panelEdge(in image: NSImage, size: CGSize) -> CGFloat {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return -1 }
-        let width = cg.width, height = cg.height
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                                          bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
-            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        guard drawn else { return -1 }
-        let scale = CGFloat(width) / size.width
-        // The bitmap's first row is the image's top row.
-        func pixel(_ x: Int, _ y: Int) -> [Int] { (0..<3).map { Int(bytes[(y * width + x) * 4 + $0]) } }
-        let frameColour = pixel(width / 2, Int(6 * scale))
-        let row = min(height - 1, Int(size.height * 0.6 * scale))
-        for x in 0..<min(width, Int(200 * scale)) where zip(pixel(x, row), frameColour).contains(where: { abs($0 - $1) > 6 }) {
-            return CGFloat(x) / scale
-        }
-        return -1
     }
 
     /// Stops the test when a step the later checks need didn't happen.
@@ -381,17 +379,26 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertNil(Self.firstDifference(away, titleBar), "the header changes under the pointer")
     }
 
-    /// New chat is in the session list's header at its trailing edge (where the rows'
-    /// "…" are), under the window's strip, as Slack's compose button.
+    /// New chat shares the native header and remains within the sidebar.
     @MainActor
     private func checkNewChatSitsAtTheSessionColumnsTrailingEdge(_ app: XCUIApplication, newChat: XCUIElement,
                                                                  list: XCUIElement) {
         let close = app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow]
         XCTAssertTrue(close.exists, "the window's close button")
         let button = newChat.frame, column = list.frame
-        XCTAssertLessThanOrEqual(abs(button.maxX - (column.maxX - 10)), 6,
-                                 "New chat ends at the column's trailing edge: \(button) in \(column)")
-        XCTAssertGreaterThan(button.minY, close.frame.maxY, "New chat is under the window's strip: \(button)")
+        XCTAssertEqual(button.maxX, column.maxX - 10, accuracy: 2,
+                       "New chat is anchored to the list's trailing content edge")
+        let title = app.descendants(matching: .any)["sidebarProfileTitle"].firstMatch
+        XCTAssertTrue(title.exists, "dynamic profile identity is present")
+        let toggle = app.buttons["collapseProfiles"]
+        XCTAssertGreaterThanOrEqual(title.frame.minX, column.minX + 16,
+                                    "title begins at or after the session text inset")
+        XCTAssertGreaterThanOrEqual(title.frame.minX, toggle.frame.maxX + 7,
+                                    "title clears the toggle's hit region")
+        XCTAssertLessThanOrEqual(title.frame.maxX, button.minX - 7,
+                                 "title truncates before New chat")
+        XCTAssertEqual(button.midY, close.frame.midY, accuracy: 10,
+                       "New chat shares the native header")
     }
 
     /// The collapse button sits after the window buttons, level with them, and hides the
@@ -416,11 +423,13 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(list.exists, "the session list stays")
         XCTAssertLessThan(list.frame.minX, listX - 40, "the session list moves to the window's edge: \(list.frame)")
         XCTAssertEqual(list.frame.width, width, accuracy: 1, "at its width")
+        checkNewChatSitsAtTheSessionColumnsTrailingEdge(app, newChat: app.buttons["New chat"], list: list)
         attach(app, "profiles collapsed")
         press(collapse)
         XCTAssertTrue(rail.waitForExistence(timeout: 5), "the profile rail shows again")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         XCTAssertEqual(list.frame.minX, listX, accuracy: 1, "the session list back beside it")
+        checkNewChatSitsAtTheSessionColumnsTrailingEdge(app, newChat: app.buttons["New chat"], list: list)
     }
 
     /// New chat holds still in the title bar, with a chat open and with none. It
@@ -453,9 +462,8 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "profile rail")
     }
 
-    /// The frame, one deeper tint of the theme, runs along the top (the window buttons on
-    /// it) and down the profile rail, around the panel with the session list and the
-    /// chat's card, which stands apart from it.
+    /// The shared sidebar runs behind the native controls and the rail; the flat chat
+    /// has its own surface all the way to the top.
     /// Nor does the pointer over the strip shade the chat (macOS 26 shaded the title bar
     /// under the pointer).
     @MainActor
@@ -466,7 +474,15 @@ final class LiveChatUITests: XCTestCase {
         let close = window.buttons[XCUIIdentifierCloseWindow]
         XCTAssertTrue(close.exists, "the window's close button")
         XCTAssertLessThan(rail.frame.maxX, list.frame.minX + 2, "the rail is beside the list: \(rail.frame) \(list.frame)")
-        XCTAssertLessThan(close.frame.maxY, newChat.frame.minY, "the window buttons are on the strip, over the panel")
+        XCTAssertEqual(close.frame.midY, newChat.frame.midY, accuracy: 10,
+                       "native controls and profile identity share the header")
+        XCTAssertGreaterThan(rail.frame.minY, close.frame.maxY,
+                             "profiles begin below the native controls")
+        let title = app.descendants(matching: .any)["chatTitle"].firstMatch
+        if title.exists {
+            XCTAssertEqual(title.frame.midY, close.frame.midY, accuracy: 10,
+                           "chat title occupies the actual top header")
+        }
         // Points away from any text or button: the strip over the rail and over the chat,
         // the rail low down, and the chat well under the strip.
         let railX = rail.frame.midX - frame.minX
@@ -487,9 +503,9 @@ final class LiveChatUITests: XCTestCase {
         let stripOverRail = color(at: railX, 6, in: shot), stripOverChat = color(at: chatX, 6, in: shot)
         let railLow = color(at: railX, frame.height * 0.75, in: shot)
         let chat = color(at: chatX, 160, in: shot)
-        XCTAssertTrue(same(stripOverRail, stripOverChat), "\(state): the strip is one colour: \(stripOverRail) \(stripOverChat)")
+        XCTAssertFalse(same(stripOverRail, stripOverChat), "\(state): sidebar and chat remain independent themed surfaces")
         XCTAssertTrue(same(stripOverRail, railLow), "\(state): the rail is the strip's colour: \(railLow) vs \(stripOverRail)")
-        XCTAssertFalse(same(stripOverRail, chat), "\(state): the chat's card is set off from the chrome: \(chat)")
+        XCTAssertFalse(same(stripOverRail, chat), "\(state): the flat chat is set off from the chrome: \(chat)")
         // The pointer over the strip leaves it and the chat alone.
         window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: chatX, dy: 8)).hover()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
@@ -603,7 +619,7 @@ final class LiveChatUITests: XCTestCase {
               let drawer = Self.rgb(openShot, x: 20, y: y, in: screen) else { return XCTFail("read the screenshots") }
         XCTAssertTrue(Self.differ(list, drawer), "the drawer stands apart from the list: \(drawer) vs \(list)")
         for (name, shots, from, to) in [("opening", opening, CGFloat(0), width), ("closing", closing, width, 0)] {
-            let edges = shots.map { Self.drawerEdge(in: $0, y: y, colour: drawer, size: screen) }
+            let edges = shots.map { Self.drawerEdge(in: $0, y: y, size: screen) }
             XCTAssertEqual(edges.first ?? -1, from, accuracy: 8, "\(name): the drawer's edge before: \(edges)")
             // Within the glass's rim, which shades its last few points.
             XCTAssertEqual(edges.last ?? -1, to, accuracy: 8, "\(name): the drawer's edge after: \(edges)")
@@ -636,22 +652,31 @@ final class LiveChatUITests: XCTestCase {
     }
 
     /// How far the drawer reaches across the screen, in points, along the line `y`: the
-    /// first pixel from the leading edge off the drawer's `colour`.
+    /// first pixel from inside it nearer the list's colour than the drawer's, both read in
+    /// the same screenshot (the drawer's where the drawer starts, the list's at the
+    /// screen's trailing edge, which it never reaches). Not against the open drawer's
+    /// colour: its glass shows the shade fading in under it, so it darkens while it slides
+    /// (from rgb(191,212,251) to (164,194,246) over the slowed second, VM 2026-10-20),
+    /// and part way it read as no drawer at all, a step back. Compared without their
+    /// brightness: the shade darkens the list evenly, deepest beside the drawer, where
+    /// the drawer's tint stands apart in hue (37 or more, the list's shading 2 at most).
     @MainActor
-    private static func drawerEdge(in shot: XCUIScreenshot, y: CGFloat, colour: [Int], size: CGSize) -> CGFloat {
+    private static func drawerEdge(in shot: XCUIScreenshot, y: CGFloat, size: CGSize) -> CGFloat {
         guard let image = shot.image.cgImage else { return -1 }
         let scale = CGFloat(image.width) / size.width
+        func hue(_ pixel: [Int]) -> [Double] {
+            let mean = Double(pixel.reduce(0, +)) / 3
+            return pixel.map { Double($0) - mean }
+        }
+        func distance(_ a: [Int], _ b: [Int]) -> Double { zip(hue(a), hue(b)).reduce(0) { $0 + abs($1.0 - $1.1) } }
         // The panel floats 8 pt in from the screen's edge (its glass, rim and all): from
-        // where the colour was read, inside it, or nothing of it there yet.
-        let start = Int(20 * scale)
-        // The glass shows a little of the list and its shade through it, which change as
-        // it slides: near its colour, not exactly it.
-        func off(_ pixel: [Int]) -> Bool { zip(pixel, colour).contains { abs($0 - $1) > 20 } }
-        guard let first = rgb(shot, x: 20, y: y, in: size) else { return -1 }
-        if off(first) { return 0 }
-        for px in start..<image.width {
+        // where its colour is read, inside it, or nothing of it there yet.
+        guard let drawer = rgb(shot, x: 20, y: y, in: size), let list = rgb(shot, x: size.width - 4, y: y, in: size)
+        else { return -1 }
+        if distance(drawer, list) <= 15 { return 0 }
+        for px in Int(20 * scale)..<image.width {
             guard let pixel = rgb(shot, x: CGFloat(px) / scale, y: y, in: size) else { return -1 }
-            if off(pixel) { return CGFloat(px) / scale }
+            if distance(pixel, list) < distance(pixel, drawer) { return CGFloat(px) / scale }
         }
         return size.width
     }
@@ -1457,15 +1482,15 @@ final class LiveChatUITests: XCTestCase {
         UIPasteboard.general.setItems([[UTType.fileURL.identifier: file, UTType.url.identifier: file]])
         defer { UIPasteboard.general.items = [] }
         #endif
+        #if os(macOS)
         composer.typeKey("v", modifierFlags: .command)
-        #if os(iOS)
-        // Without a hardware keyboard the shortcut does nothing: the edit menu's Paste.
-        let card = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "File ")).firstMatch
-        if !card.waitForExistence(timeout: 5) {
-            composer.press(forDuration: 1)
-            let paste = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.buttons["Paste"]
-            if paste.waitForExistence(timeout: 5) { paste.tap() }
-        }
+        #else
+        // The edit menu's Paste, never Command-V: a typeKey is a hardware keyboard to the
+        // simulator, which then remembers one in its keyboard preferences and keeps its
+        // software keyboard below the screen in every later test (VM, 2026-10-20).
+        composer.press(forDuration: 1)
+        let paste = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.buttons["Paste"]
+        if paste.waitForExistence(timeout: 5) { paste.tap() }
         #endif
     }
 

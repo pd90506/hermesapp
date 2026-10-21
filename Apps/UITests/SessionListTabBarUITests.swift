@@ -24,10 +24,7 @@ final class SessionListTabBarUITests: XCTestCase {
             app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
             app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
             app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
-            // A window even if the last run's app was killed without one.
-            app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
-            app.launch()
-            if !app.windows.firstMatch.waitForExistence(timeout: 10) { app.typeKey("n", modifierFlags: .command) }
+            app.launchWithMainWindow()
             defer { app.terminate() }
             let sessionsTab = app.buttons["sessionListTab.sessions"].firstMatch
             XCTAssertTrue(sessionsTab.waitForExistence(timeout: 30), "the tabs")

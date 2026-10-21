@@ -17,7 +17,7 @@ final class ThemeUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
-        app.launch()
+        app.launchWithMainWindow()
         defer { app.terminate() }
 
         // A chat with a reply that has Markdown in it.
@@ -134,7 +134,7 @@ final class ThemeUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
-        app.launch()
+        app.launchWithMainWindow()
         defer { app.terminate() }
 
         // Settings ▸ Appearance, through the profiles drawer's gear.

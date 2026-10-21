@@ -12,6 +12,9 @@ public struct TranscriptItem: Sendable, Hashable, Identifiable {
     public var text: String
     /// Assistant reasoning/thinking streamed alongside the reply.
     public var reasoning: String = ""
+    /// Local submission state, never a claim of delivery.
+    public var outgoingStatus: String?
+
     /// Tool rows: the tool name.
     public var toolName: String?
     /// Tool rows: short context at start (command/path), summary when done.
@@ -238,6 +241,9 @@ public struct Transcript: Sendable, Hashable {
     private var unstoredByReceipt: [String: Set<Int>] = [:]
     /// Prompts sent here, and how far they got.
     private var prompts: [String: PromptState] = [:]
+    /// Carried across a snapshot: a known stored-row acknowledgement must actually
+    /// appear in history before this local row can leave.
+    private var rebuiltPendingPrompts: Set<String> = []
     /// Answered prompts one quiet re-read has seen settled; the next one drops them.
     private var quietOnce: Set<String> = []
     /// `starts` when each prompt sent here was shown.
@@ -446,6 +452,9 @@ public struct Transcript: Sendable, Hashable {
             needsReread = true
         }
         rereadWhenLoaded = false
+        // A late initial page can already contain an acknowledged pending row.
+        // Reconcile by its server id before exposing both copies to the view.
+        dropPromptsShownByRows()
         absorbLocalRows()
     }
 
@@ -747,6 +756,7 @@ public struct Transcript: Sendable, Hashable {
         var eligible: Set<String> = [], storedAtSubmit: Set<String> = []
         for (id, state) in prompts where quiet {
             guard case .answered(let at, let storedRow) = state, at <= ticket.clock else { continue }
+            if rebuiltPendingPrompts.contains(id), let storedRow, !heldRowIDs.contains(storedRow) { continue }
             eligible.insert(id)
             if storedRow != nil { storedAtSubmit.insert(id) }
         }
@@ -789,6 +799,7 @@ public struct Transcript: Sendable, Hashable {
         })
         guard !proven.isEmpty else { return }
         keepSentImages(of: proven)
+        rebuiltPendingPrompts.subtract(proven)
         prompts = prompts.filter { !proven.contains($0.key) }
         quietOnce.subtract(proven)
         removeLiveItems { proven.contains($0.id) }
@@ -818,6 +829,25 @@ public struct Transcript: Sendable, Hashable {
         var shown = item
         shown.images = images
         return shown
+    }
+
+    /// Takes over only the unresolved local ids owned by this ChatSession's sends.
+    /// Snapshot/server echoes have no local ownership; acknowledgement uses row ids.
+    mutating func adoptPendingPrompts(of old: Transcript, ids: Set<String>) {
+        for item in old.items where ids.contains(item.id) && old.prompts[item.id] == .sent {
+            guard !items.contains(where: { $0.id == item.id }) else { continue }
+            items.append(item)
+            prompts[item.id] = .sent
+            rebuiltPendingPrompts.insert(item.id)
+            promptSentAtStarts[item.id] = starts
+            expectedStarts.insert(item.id)
+        }
+        refreshRunning()
+    }
+
+    mutating func updatePromptImages(_ images: [TranscriptImage], itemID: String) {
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
+        items[index].images = images
     }
 
     /// Takes over the images of prompts the transcript this one replaces sent (a
@@ -955,6 +985,7 @@ public struct Transcript: Sendable, Hashable {
         sealActiveAssistant()
         counter += 1
         var item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
+        item.outgoingStatus = "Sending…"
         item.images = images
         item.attachments = attachments
         item.attachmentPaths = attachmentPaths
@@ -976,6 +1007,7 @@ public struct Transcript: Sendable, Hashable {
     /// `session.redirect`); the spinner stops unless a turn runs.
     public mutating func withdrawPrompt(_ itemID: String) {
         guard prompts.removeValue(forKey: itemID) != nil else { return }
+        rebuiltPendingPrompts.remove(itemID)
         promptSentAtStarts[itemID] = nil
         expectedStarts.remove(itemID)
         queuedStarts.remove(itemID)
@@ -1035,6 +1067,7 @@ public struct Transcript: Sendable, Hashable {
     /// finished (`finishedItems`). If no turn ever starts, it stays: no row holds it.
     public mutating func promptAnswered(itemID: String, status: String? = nil, userRowID: Int? = nil) {
         guard prompts[itemID] != nil else { return }
+        if let index = items.firstIndex(where: { $0.id == itemID }) { items[index].outgoingStatus = status == "queued" ? "Queued" : nil }
         defer { refreshRunning() }
         let queueCleared = queueClearedBeforeAnswer.remove(itemID) != nil
         switch status {
@@ -1081,10 +1114,15 @@ public struct Transcript: Sendable, Hashable {
 
     /// Marks a failed submit: the bubble stays (only it holds the text), and the
     /// spinner stops unless a turn is running.
-    public mutating func submitFailed(_ message: String, itemID: String? = nil) {
+    /// - Parameter dispatched: `prompt.submit` went out, so Hermes may have run it:
+    ///   "Not confirmed". Otherwise it never left: "Not sent".
+    public mutating func submitFailed(_ message: String, itemID: String? = nil, dispatched: Bool = true) {
         lastError = message
         if let itemID, prompts[itemID] != nil {
             prompts[itemID] = .failed
+            if let index = items.firstIndex(where: { $0.id == itemID }) {
+                items[index].outgoingStatus = (dispatched ? "Not confirmed · " : "Not sent · ") + message
+            }
             promptSentAtStarts[itemID] = nil
             expectedStarts.remove(itemID)
             queuedStarts.remove(itemID)

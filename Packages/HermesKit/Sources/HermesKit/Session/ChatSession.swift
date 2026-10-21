@@ -155,12 +155,23 @@ public final class ChatSession: Identifiable {
             self.info = info
             if let title = info.title, !title.isEmpty { self.title = title }
         }
-        // Built from the snapshot and stored rows only: no bubble is carried over. The
-        // old stored rows stay on screen until the newest page replaces them.
+        // Keep stored rows while the newest page loads, and the bubbles of sends still
+        // awaiting their acknowledgement, including RPCs dispatched before this rebuild.
+        // Their owning send still settles the exact local id, never a text match.
         let old = transcript
         transcript = Tracing.measure("Snapshot rebuild") { Transcript(snapshot: snapshot, localIDsAfter: old.lastLocalID) }
         current.holdStoredRows(of: old)
         current.adoptSentImages(of: old)
+        // A dispatched prompt the snapshot runs (`inflight.user`) already shows as its
+        // echo: carrying its bubble too would show it twice, after the turn's reply.
+        // It settles without its bubble, as before this rebuild-carry existed.
+        let echoed = snapshot.inflight?.user.map(StoredMessageProjection.userDisplayText)
+        let carried = sendingPrompts.filter { id in
+            !dispatchedPrompts.contains(id) || echoed == nil
+                || old.items.first { $0.id == id }.map(\.text) != echoed
+        }
+        rebuiltDispatchedPrompts.formUnion(carried.intersection(dispatchedPrompts))
+        current.adoptPendingPrompts(of: old, ids: carried)
         returnFailedPrompts(of: old)
         lastSeq = nil
         isRuntimeGone = false
@@ -554,14 +565,9 @@ public final class ChatSession: Identifiable {
     // MARK: - Actions
 
     /// Shows the prompt immediately, then submits it. The reply streams in as events.
-    /// Throws `ComposerError.strandedImages`, before showing anything, when
-    /// images a failed send left queued could not be detached first. Cancelling
-    /// the caller while it waits for that throws `CancellationError`, also
-    /// before showing anything; once the prompt is shown it is submitted
-    /// regardless of cancellation.
-    ///
-    /// A chat whose runtime was reclaimed (`isRuntimeGone`) is resumed first; when
-    /// that fails, the prompt shows as failed with the reason.
+    /// Recovery, stranded-image cleanup and uploads happen after a local Sending row
+    /// appears. Pre-dispatch cancellation stops the send; once dispatched the RPC is
+    /// uncancellable. Failures retain an unconfirmed row without automatic retry.
     public func send(_ text: String) async throws {
         try await send(text, images: [], files: [])
     }
@@ -583,11 +589,53 @@ public final class ChatSession: Identifiable {
     /// the text and the files' names. Images: see `sendWithImages`.
     public func send(_ text: String, images: [ComposerAttachment], files: [ComposerFile]) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !images.isEmpty || !files.isEmpty else { return }
+        let shown = images.enumerated().map { index, image in
+            TranscriptImage(name: image.filename, localID: image.id, position: index)
+        }
+        let itemID = current.appendUserPrompt(trimmed, images: shown, attachments: files.map(\.name),
+                                              attachmentPaths: files.map(\.refPath))
+        sendingPrompts.insert(itemID)
+        defer {
+            sendingPrompts.remove(itemID)
+            dispatchedPrompts.remove(itemID)
+            rebuiltDispatchedPrompts.remove(itemID)
+        }
+        do {
+            try await performSend(text, images: images, files: files, itemID: itemID)
+        } catch {
+            let dispatched = dispatchedPrompts.contains(itemID)
+            if !dispatched, error is ComposerError || error is CancellationError || !images.isEmpty || !files.isEmpty {
+                // Nothing went out, and the composer takes the text and cards back
+                // (`ChatComposer.submit`): the bubble goes, so the message shows once.
+                current.withdrawPrompt(itemID)
+                if !(error is ComposerError || error is CancellationError) {
+                    current.keepError(GatewayConnection.describe(error))
+                }
+            } else {
+                // Only the bubble holds the text. A dispatched submit may have run.
+                current.submitFailed(GatewayConnection.describe(error), itemID: itemID, dispatched: dispatched)
+            }
+            throw error
+        }
+    }
+
+    /// Prompts of sends in flight whose `prompt.submit` went out: a failure after that
+    /// is ambiguous (Hermes may have taken it), one before it is not.
+    @ObservationIgnored private var dispatchedPrompts: Set<String> = []
+    /// Prompts of sends in flight, dispatched or not.
+    @ObservationIgnored private var sendingPrompts: Set<String> = []
+    /// Explicit ownership of RPCs spanning this object's transcript generations.
+    @ObservationIgnored private var rebuiltDispatchedPrompts: Set<String> = []
+
+    private func performSend(_ text: String, images: [ComposerAttachment], files: [ComposerFile],
+                             itemID: String) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let names = files.map(\.name)
         let paths = files.map(\.refPath)
         let prompt = ([files.map(\.refText).joined(separator: "\n"), trimmed].filter { !$0.isEmpty })
             .joined(separator: "\n\n")
-        if !images.isEmpty { return try await sendWithImages(trimmed, prompt: prompt, images: images, files: names, filePaths: paths) }
+        if !images.isEmpty { return try await sendWithImages(trimmed, prompt: prompt, images: images, files: names, filePaths: paths, itemID: itemID) }
         guard !prompt.isEmpty else { return }
         try await settleIdentity()
         // A failed resume shows on the prompt's bubble, like a failed submit.
@@ -602,20 +650,19 @@ public final class ChatSession: Identifiable {
         if reviveError == nil, let client = connection?.client {
             try await clearStrandedImages(using: client)
         }
-        let itemID = current.appendUserPrompt(trimmed, attachments: names, attachmentPaths: paths)
         do {
             if let reviveError { throw reviveError }
             let client = try currentClient()
+            dispatchedPrompts.insert(itemID)
             let result = try await Self.submitUncancellably(client, sessionID: sessionID, text: prompt)
             promptAnswered(itemID: itemID, status: result.status, userRowID: result.userRowID)
         } catch {
-            let message = GatewayConnection.describe(error)
-            if transcript.holdsPrompt(itemID) {
-                current.submitFailed(message, itemID: itemID)
-            } else {
+            // Keep the review's single-copy failure recovery after a rebuild.
+            if rebuiltDispatchedPrompts.contains(itemID) { current.withdrawPrompt(itemID) }
+            if !transcript.holdsPrompt(itemID) {
                 // A rebuild replaced the bubble meanwhile: its text goes back to the draft
                 // (with files, the composer already keeps the cards and the text).
-                current.keepError(message)
+                current.keepError(GatewayConnection.describe(error))
                 if files.isEmpty { returnToDraft(trimmed) }
             }
             throw error
@@ -629,19 +676,15 @@ public final class ChatSession: Identifiable {
     ///   with this prompt as their own turn; a prompt with images is never
     ///   steered into the running one (`tui_gateway/session_auto_continue.py:414-448`).
     ///
-    /// Throws `ComposerError` before anything is shown or submitted when the
-    /// app is offline, stranded images can't be cleared, or an upload fails;
-    /// the images already queued are then detached. A failed submit detaches
-    /// them too. Cancelling the caller before the prompt is shown throws
-    /// `CancellationError` and detaches the uploads; after that the prompt is
-    /// submitted regardless. A reclaimed runtime is resumed before any upload; a
-    /// failed resume shows as the transcript's error, nothing else is shown.
+    /// The local pending bubble already shows before recovery, cleanup and uploads.
+    /// Failures retain it with an unconfirmed status; successful uploads update its
+    /// image paths in place. Submission itself remains uncancellable once dispatched.
     /// - Parameters:
     ///   - trimmed: the caption the bubble shows; `prompt`: the text submitted
     ///     (the caption behind the files' references).
     ///   - files: the names of the files the prompt references; `filePaths` their paths.
     private func sendWithImages(_ trimmed: String, prompt: String, images: [ComposerAttachment],
-                                files: [String], filePaths: [String]) async throws {
+                                files: [String], filePaths: [String], itemID: String) async throws {
         try await settleIdentity()
         do {
             try await reviveIfGone()
@@ -686,8 +729,9 @@ public final class ChatSession: Identifiable {
         let shown = zip(images, queued).enumerated().map { position, pair in
             TranscriptImage(name: pair.0.filename, path: pair.1, localID: pair.0.id, position: position)
         }
-        let itemID = current.appendUserPrompt(trimmed, images: shown, attachments: files, attachmentPaths: filePaths)
+        current.updatePromptImages(shown, itemID: itemID)
         do {
+            dispatchedPrompts.insert(itemID)
             let result = try await Self.submitUncancellably(client, sessionID: sid, text: prompt)
             // The bubble settles like any prompt (and like a row-less `streaming`
             // one when the caption is empty), never by matching text or images.
@@ -698,12 +742,8 @@ public final class ChatSession: Identifiable {
             // detach below settles as `detached: false`, and a retry runs the
             // message again; the client cannot tell the two cases apart.
             // Bubble gone (a rebuild): the composer takes back the text and cards.
-            let message = GatewayConnection.describe(error)
-            if transcript.holdsPrompt(itemID) {
-                current.submitFailed(message, itemID: itemID)
-            } else {
-                current.keepError(message)
-            }
+            // The bubble, when still shown, is marked by `send`.
+            if !transcript.holdsPrompt(itemID) { current.keepError(GatewayConnection.describe(error)) }
             await detach(queued, using: client, sessionID: sid)
             throw error
         }
@@ -721,6 +761,7 @@ public final class ChatSession: Identifiable {
         } else {
             current.requestReread()
         }
+        if rebuiltDispatchedPrompts.contains(itemID) { current.requestReread() }
         rereadIfNeeded()
     }
 

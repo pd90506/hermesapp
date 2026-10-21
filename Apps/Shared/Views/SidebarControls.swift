@@ -426,11 +426,14 @@ enum AvatarImages {
     }
 }
 
-/// A session of the selected profile: its title and when it started (the profile is
+/// A session of the selected profile: its title and latest stored message date (the profile is
 /// the list's, so it isn't repeated on every row), and its actions behind a "…" button
 /// at the trailing edge (the same as its context menu).
 struct HistoryRow<Actions: View>: View {
     let entry: HistoryEntry
+    var timestampRevision: String = ""
+    var loadTimestamp: () async -> Date? = { nil }
+    @State private var latestMessageDate: Date?
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
@@ -438,11 +441,16 @@ struct HistoryRow<Actions: View>: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
                     .lineLimit(1)
-                if let started = entry.summary.startedAt, started > 0 {
-                    Text(Date(timeIntervalSince1970: started), format: .relative(presentation: .named))
+                if let latestMessageDate {
+                    #if os(macOS)
+                    SessionRelativeTime(date: latestMessageDate)
+                    #else
+                    Text(latestMessageDate, format: .relative(presentation: .named))
                         .uiFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .accessibilityIdentifier("sessionMessageDate")
+                    #endif
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -466,6 +474,11 @@ struct HistoryRow<Actions: View>: View {
         }
         .padding(.vertical, 2)
         .contextMenu { actions() }
+        .task(id: "\(entry.id)/\(timestampRevision)") {
+            let date = await loadTimestamp()
+            guard !Task.isCancelled else { return }
+            latestMessageDate = date
+        }
     }
 }
 
@@ -513,3 +526,32 @@ extension GatewayConnection.State {
         }
     }
 }
+
+#if os(macOS)
+extension EnvironmentValues {
+    @Entry var sessionListClock: Date = .now
+}
+
+/// Uses the sidebar's single clock explicitly: macOS's implicit relative Text
+/// formatter otherwise keeps showing its initial value until an unrelated redraw.
+private struct SessionRelativeTime: View {
+    let date: Date
+    @Environment(\.sessionListClock) private var now
+    private static let formatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter
+    }()
+
+    var body: some View {
+        // The tick can be up to a minute old when a newer message's date arrives (and the
+        // server's clock may run ahead): never "in 40 seconds".
+        let reference = max(now, .now)
+        Text(Self.formatter.localizedString(for: min(date, reference), relativeTo: reference))
+            .uiFont(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .accessibilityIdentifier("sessionMessageDate")
+    }
+}
+#endif

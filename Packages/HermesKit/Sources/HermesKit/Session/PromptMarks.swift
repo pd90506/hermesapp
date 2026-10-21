@@ -48,7 +48,7 @@ public struct PromptMark: Sendable, Hashable, Identifiable {
 
 extension Transcript {
     /// The prompts of this transcript, oldest first (`PromptMark.marks`).
-    public var promptMarks: [PromptMark] { PromptMark.marks(in: items) }
+    public var promptMarks: [PromptMark] { derived.derived.marks(items) }
 
     /// The prompt the chat is at with the blocks `visibleBlockIDs` on screen
     /// (`PromptMark.current`). Nil when the transcript has no prompts or no block is

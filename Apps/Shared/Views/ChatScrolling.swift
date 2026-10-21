@@ -93,6 +93,9 @@ struct SteadyColumn: ViewModifier {
     /// Whether the chat is scrolled well up from its end, for the scroll-to-bottom
     /// button (`ScrollToBottomButton`). Observed, and set only when it changes.
     private(set) var isAwayFromEnd = false
+    /// Whether the user is scrolling the chat (a wheel, a trackpad and its momentum).
+    /// Observed, and set only when it changes.
+    private(set) var isScrolling = false
 
     /// How far up from the end the button shows: Desktop's (use-stick-to-bottom's
     /// near-bottom band, 70 px), so a nudge or a reply's last lines don't bring it up.
@@ -143,6 +146,10 @@ struct SteadyColumn: ViewModifier {
     fileprivate func scrolled(to y: CGFloat) { shownY = y }
     fileprivate func reachedEnd(_ atEnd: Bool) { isAtEnd = atEnd }
     fileprivate func leftEnd(_ away: Bool) { isAwayFromEnd = away }
+    fileprivate func scrollPhase(_ phase: ScrollPhase) {
+        let scrolling = phase == .interacting || phase == .decelerating
+        if scrolling != isScrolling { isScrolling = scrolling }
+    }
 }
 
 extension EnvironmentValues {
@@ -177,6 +184,32 @@ private struct ChatScrolling: ViewModifier {
             .onScrollGeometryChange(for: Bool.self, of: { ChatScroll.isAwayFromEnd($0) }) { _, away in
                 scroll.leftEnd(away)
             }
+            .onScrollPhaseChange { _, phase in scroll.scrollPhase(phase) }
+    }
+}
+
+extension View {
+    /// The chat's rows take no pointer while the user scrolls them (Mac).
+    ///
+    /// Each frame of a scroll moved the rows under a still pointer, and AppKit and SwiftUI
+    /// hit-tested every row again: the cursor's shape, and the hover of each row and
+    /// button, about 15% of the main thread in a long chat (Instruments on the user's Mac,
+    /// 2026-10-21). Browsers, and so Hermes Desktop, leave hover alone while scrolling
+    /// too. The wheel goes to the scroll view all the same (`ScrollLatching`).
+    func quietWhileScrolling(_ scroll: ChatScroll) -> some View {
+        modifier(QuietWhileScrolling(scroll: scroll))
+    }
+}
+
+private struct QuietWhileScrolling: ViewModifier {
+    let scroll: ChatScroll
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content.allowsHitTesting(!scroll.isScrolling)
+        #else
+        content
+        #endif
     }
 }
 

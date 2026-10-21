@@ -15,6 +15,7 @@ import Testing
         let scroll = ChatScroll()
         let laziness = TranscriptLaziness()
         let memory = RowMemory()
+        let visible = VisibleBlocks()
         @ObservationIgnored var contentHeight: CGFloat = 0
         @ObservationIgnored var containerHeight: CGFloat = 0
     }
@@ -41,6 +42,7 @@ import Testing
             }
             .environment(\.transcriptLaziness, lazy ? chat.laziness : nil)
             .environment(\.rowMemory, lazy ? chat.memory : nil)
+            .environment(\.visibleBlocks, chat.visible)
             .transcriptWindow(window, isEmpty: chat.transcript.items.isEmpty) { chat.transcript.blocks }
             .defaultScrollAnchor(.bottom)
             .chatScrolling(chat.scroll)
@@ -196,11 +198,19 @@ import Testing
         #expect(abs(ui.chat.scroll.shownY) < 1, "reached the top: \(ui.chat.scroll.shownY)")
         let atTop = ui.textViews
         #expect(atTop < allTextViews / 3, "text views at the top: \(atTop) of \(allTextViews)")
+        // The blocks on screen, for the prompt rail and the scroll-to-bottom button: the
+        // first at the top, not the last, and only a screen's worth.
+        let blocks = ui.chat.transcript.blocks.map(\.id)
+        let shownAtTop = ui.chat.visible.ids
+        #expect(shownAtTop.contains(blocks[0]) && !shownAtTop.contains(blocks[blocks.count - 1]), "\(shownAtTop)")
+        #expect(shownAtTop.count < 12, "\(shownAtTop.count) blocks on screen at the top")
 
         let down = await ui.scroll(to: ui.maxY, step: 40)
         let downSpread = (down.heights.max() ?? 0) - (down.heights.min() ?? 0)
         #expect(downSpread < 1, "the content's height moved by \(downSpread) pt on the way down")
         #expect(abs(ui.chat.contentHeight - fullHeight) < 1)
+        let shownAtBottom = ui.chat.visible.ids
+        #expect(shownAtBottom.contains(blocks[blocks.count - 1]) && !shownAtBottom.contains(blocks[0]), "\(shownAtBottom)")
 
         let lazyFrames = up.frames.sorted()
         func median(_ values: [TimeInterval]) -> TimeInterval { values[values.count / 2] }

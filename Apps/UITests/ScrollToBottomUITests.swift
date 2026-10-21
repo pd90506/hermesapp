@@ -20,29 +20,26 @@ final class ScrollToBottomUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
-        #if os(macOS)
-        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
-        #endif
-        app.launch()
+        app.launchWithMainWindow()
         defer {
             app.terminate()
             XCUIDevice.shared.appearance = .light
         }
-        #if os(macOS)
-        if !app.windows.firstMatch.waitForExistence(timeout: 10) { app.typeKey("n", modifierFlags: .command) }
-        #endif
 
+        var chat: Chat?
         for name in ["light", "dark"] {
-            // The Mac follows the system's appearance; on iPhone the app's own setting
-            // (the simulator's appearance did not change it in the VM), and a chat of its
-            // own for each, as Settings is reached from the Sessions page.
+            // The Mac follows the system's appearance, so one chat serves both (its replies
+            // were most of the test's time); on iPhone the app's own setting (the
+            // simulator's appearance did not change it in the VM), and a chat of its own
+            // for each, as Settings is reached from the Sessions page.
             #if os(macOS)
             XCUIDevice.shared.appearance = name == "dark" ? .dark : .light
             #else
             showSessions(app)
             pick(mode: name == "dark" ? "Dark" : "Light", in: app)
+            chat = nil
             #endif
-            try checkTheButton(name, in: app)
+            chat = try checkTheButton(name, in: chat, app: app)
         }
         #if os(iOS)
         showSessions(app)
@@ -50,11 +47,15 @@ final class ScrollToBottomUITests: XCTestCase {
         #endif
     }
 
-    /// A new chat with a long reply, then a short exchange under it: at its end no button;
-    /// scrolled to the top, the button over the composer, the second prompt and its reply
-    /// below the screen; pressed, back at the end and the button gone.
+    /// A chat with a long reply, then a short exchange under it.
+    private struct Chat {
+        let composer: XCUIElement
+        let short: String
+    }
+
+    /// A new chat: a long reply, then a short exchange under it, the keyboard away.
     @MainActor
-    private func checkTheButton(_ name: String, in app: XCUIApplication) throws {
+    private func newChat(in app: XCUIApplication) throws -> Chat {
         let newChat = app.buttons["New chat"]
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(
@@ -74,6 +75,16 @@ final class ScrollToBottomUITests: XCTestCase {
         // The keyboard away, as when reading: a tap on the transcript.
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
         #endif
+        return Chat(composer: composer, short: short)
+    }
+
+    /// In `chat`, or else a new one: at its end no button; scrolled to the top, the button
+    /// over the composer, the second prompt and its reply below the screen; pressed, back
+    /// at the end and the button gone.
+    @MainActor
+    private func checkTheButton(_ name: String, in chat: Chat?, app: XCUIApplication) throws -> Chat {
+        let chat = try chat ?? newChat(in: app)
+        let composer = chat.composer, short = chat.short
         RunLoop.current.run(until: Date().addingTimeInterval(3))
 
         let button = app.buttons["scrollToBottom"].firstMatch
@@ -133,6 +144,7 @@ final class ScrollToBottomUITests: XCTestCase {
         } else {
             attach(app, "4 no model list, \(name)")
         }
+        return chat
     }
 
     #if os(iOS)

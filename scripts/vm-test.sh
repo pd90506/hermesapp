@@ -414,6 +414,46 @@ for line in sys.stdin:
         chunk.append(line)
 flush()
 ' "$durations" || true
+# Where a slow test's time goes: the steps (activities) of each test over a minute, with
+# the second each began, in build/vm-test/durations/<result>.steps.txt.
+for tsv in "$durations"/*.tsv; do
+  [[ -f $tsv ]] || continue
+  result=$(basename "$tsv" .tsv)
+  awk -F'\t' '$1 >= 60 { print $3 }' "$tsv" | while IFS= read -r id; do
+    printf '### %s\n' "$id"
+    vexec "xcrun xcresulttool get test-results activities --path ~/results/$result.xcresult --test-id '$id'" </dev/null 2>/dev/null
+  done | python3 -c '
+import json, sys
+def walk(acts, depth, t0, out):
+    for a in acts:
+        start = a.get("startTime")
+        if start is not None:
+            out.append("%7.1fs %s%s" % (start - t0, "  " * depth, a.get("title", "")[:110]))
+        if depth < 1:  # deeper are the steps XCUITest takes itself
+            walk(a.get("childActivities", []), depth + 1, t0, out)
+name, chunk = None, []
+def flush():
+    if not name or not chunk:
+        return
+    try:
+        runs = json.loads("".join(chunk)).get("testRuns", [])
+    except ValueError:
+        return
+    for run in runs[:1]:
+        acts = run.get("activities", [])
+        starts = [a["startTime"] for a in acts if "startTime" in a]
+        out = []
+        walk(acts, 0, min(starts) if starts else 0, out)
+        print("### " + name)
+        print("\n".join(out))
+for line in sys.stdin:
+    if line.startswith("### "):
+        flush(); name, chunk = line[4:].strip(), []
+    else:
+        chunk.append(line)
+flush()
+' >"$durations/$result.steps.txt" || true
+done
 # The tests' screenshots, out of the VM before the next run clears its results: into
 # build/vm-test/screenshots/<result>/, named by the test's attachment names.
 step "copy the screenshots out"

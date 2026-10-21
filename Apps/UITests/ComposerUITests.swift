@@ -25,7 +25,7 @@ final class ComposerUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
-        app.launch()
+        app.launchWithMainWindow()
         defer { app.terminate() }
 
         let back = app.navigationBars.buttons.element(boundBy: 0)
@@ -148,7 +148,7 @@ final class ComposerUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
-        app.launch()
+        app.launchWithMainWindow()
         defer {
             XCUIDevice.shared.orientation = .portrait
             app.terminate()
@@ -190,7 +190,7 @@ final class ComposerUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
-        app.launch()
+        app.launchWithMainWindow()
         defer { app.terminate() }
 
         let back = app.navigationBars.buttons.element(boundBy: 0)

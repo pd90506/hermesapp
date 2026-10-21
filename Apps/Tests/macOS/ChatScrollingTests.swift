@@ -137,8 +137,10 @@ import Testing
         #expect(try #require(ui.remainingBelow) < 2, "the chat opens at its end")
         var heights: [CGFloat] = []
         var y = height
+        // Steps shorter than the visible part (480 pt less the insets), so every row is
+        // laid out on the way, and twice the 140 pt they were: 44 s in the VM then.
         while y > 0 {
-            y -= 140
+            y -= 280
             ui.scroll(toY: max(y, 0))
             heights.append(try #require(ui.contentHeight))
         }

@@ -282,6 +282,17 @@ for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=
         if "iOS" in runtime and d["name"].startswith("iPhone"):
             print(d["udid"]); sys.exit()')
   [[ -n $sim ]] || { echo "No iPhone simulator in the VM." >&2; return 1; }
+  # A typeKey in an iOS UI test is a hardware keyboard to the simulator. It remembers one
+  # in its keyboard preferences (AutomaticMinimizationEnabled, HardwareKeyboardLastSeen,
+  # KeyboardHardwareKeyboardsSeen) and from then on keeps its software keyboard below the
+  # screen, through reboots, in every later run, whichever branch ran the typeKey (VM,
+  # 2026-10-20). Back to an unused simulator's state before it boots.
+  vexec "f=~/Library/Developer/CoreSimulator/Devices/$sim/data/Library/Preferences/com.apple.keyboard.preferences.plist
+    if [[ -f \$f ]] && plutil -p \$f | grep -qE '\"(AutomaticMinimizationEnabled|HardwareKeyboardLastSeen|KeyboardHardwareKeyboardsSeen)\"'; then
+      xcrun simctl shutdown $sim >/dev/null 2>&1
+      for k in AutomaticMinimizationEnabled HardwareKeyboardLastSeen KeyboardHardwareKeyboardsSeen; do plutil -remove \$k \$f >/dev/null 2>&1; done
+      echo 'The simulator remembered a hardware keyboard: forgotten, so its own keyboard shows.'
+    fi" || true
   vexec "xcrun simctl boot $sim 2>&1 | grep -v 'current state: Booted' || true"
 }
 runs window || boot_sim || status=1

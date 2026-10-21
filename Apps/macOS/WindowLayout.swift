@@ -2,110 +2,78 @@ import AppKit
 import HermesKit
 import SwiftUI
 
-/// The Mac window, as Slack's: a frame along the top (the window buttons and the
-/// profile rail's collapse button on it) and down the profile rail, in a deeper tint of
-/// the theme (`ThemeSurfaces.frame`), around a panel rounded at its top-leading corner,
-/// on the theme's chrome: the session list, and the chat as a card set in from the
-/// window's edges, as Hermes Desktop lays its transcript on the sidebar's colour. The
-/// frame was the accent's deep shade; the user asked for a calmer look, with the
-/// profiles still standing apart (2026-10-19).
-///
-/// The title bar shows no background and no title: the strip under it is the frame's,
-/// as tall as the title bar (centred on the window buttons). The collapse button is the
-/// title bar's own item after the window buttons, so the title bar still drags the window
-/// and takes clicks as it does (a button drawn under it, with no title bar, got none).
+/// One continuous themed sidebar, with native window controls above the rail and list.
+/// The chat occupies its own flat column from the window's top to its bottom.
 struct WindowLayout<Rail: View, List: View, Chat: View>: View {
     @ViewBuilder var rail: Rail
     @ViewBuilder var list: List
     @ViewBuilder var chat: Chat
 
     @Environment(\.surfaces) private var surfaces
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("profileRailShown") private var isRailShown = true
-    @AppStorage("sessionListWidth") private var listWidth = 320.0
+    // A separate layout preference leaves the previous sidebar width untouched while
+    // existing installs see the compact default. Subsequent drags persist normally.
+    @AppStorage("compactSessionListWidth") private var listWidth = 260.0
     /// The window buttons, in the window (top-left origin); nil in full screen, where
     /// they aren't in the window.
     @State private var windowButtons: CGRect?
 
-    static var listWidths: ClosedRange<Double> { 260...480 }
-    /// The card's corners: concentric with the window's, set in `cardInset` from them.
-    static var cardRadius: CGFloat { 12 }
-    /// How far the card is set in from the window's trailing and bottom edges.
-    static var cardInset: CGFloat { 8 }
-
+    static var listWidths: ClosedRange<Double> { 220...360 }
     var body: some View {
-        VStack(spacing: 0) {
-            strip
-            HStack(spacing: 0) {
-                if isRailShown {
-                    rail
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    if isRailShown {
+                        rail
+                            .padding(.top, headerHeight)
+                            .overlay(alignment: .trailing) {
+                                Rectangle().fill(.primary.opacity(0.08)).frame(width: 1)
+                                    .padding(.top, headerHeight)
+                            }
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                    list
+                        .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
                 }
-                panel
             }
-            // The rail slides out (in) and the panel with it, in one motion. Here, not in
-            // the button: the toggle comes from the title bar's own item (and its ⌃⌘S),
-            // whose `withAnimation` didn't reach this view, so the panel jumped.
-            .animation(Motion.rail(reduceMotion: reduceMotion), value: isRailShown)
+            .background(surfaces.chrome)
+            .overlay(alignment: .trailing) {
+                ColumnResizer(width: $listWidth, range: Self.listWidths)
+            }
+            Rectangle().fill(.primary.opacity(0.12)).frame(width: 1)
+            chat
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .backgroundStyle(surfaces.chat)
+                .background(surfaces.chat)
         }
-        .background(surfaces.frame)
+        // Preserve the existing rail's transition and the space it releases to chat.
+        .animation(Motion.rail(reduceMotion: reduceMotion), value: isRailShown)
+        .environment(\.profileRailVisibility, $isRailShown)
+        // Header geometry is measured in this same window-content coordinate space,
+        // so native control clearance follows the actual list position during collapse.
+        .environment(\.nativeButtonsTrailing, windowButtons?.maxX ?? 78)
+        .environment(\.windowHeaderHeight, headerHeight)
+        .coordinateSpace(name: "mainWindowContent")
         .ignoresSafeArea(.container, edges: .top)
         .background(WindowButtonsReader { windowButtons = $0 })
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                CollapseButton(isRailShown: $isRailShown)
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
         .toolbar(removing: .title)
-        // No toolbar background: the frame shows through (macOS 26 also showed one
+        // No toolbar background: the themed columns show through (macOS 26 also showed one
         // only under the pointer).
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
-    /// Under the title bar: as tall again below the window buttons as above them.
-    private var strip: some View {
-        let height = windowButtons.map { min(max(($0.midY * 2).rounded(), 32), 64) } ?? 52
-        return Color.clear.frame(height: height)
+    /// Keep the current titlebar sizing, including full-screen fallback.
+    private var headerHeight: CGFloat {
+        windowButtons.map { min(max(($0.midY * 2).rounded(), 32), 64) } ?? 52
     }
 
-    /// The session list and the chat's card, on the chrome. The card is set in from the
-    /// panel's top as from the window's edges; the list's header stays level with its title.
-    private var panel: some View {
-        HStack(spacing: 0) {
-            list
-                .frame(width: CGFloat(listWidth.clamped(to: Self.listWidths)))
-                .overlay(alignment: .trailing) {
-                    ColumnResizer(width: $listWidth, range: Self.listWidths)
-                }
-            card
-        }
-        .padding(.top, Self.cardInset)
-        .background(surfaces.chrome)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: Self.cardRadius, style: .continuous))
-    }
-
-    /// The chat on its card: a hairline edge, and in light mode a soft shadow, lift it
-    /// off the chrome. Views in it that paint `.background` paint the card's colour.
-    private var card: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
-        return chat
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .backgroundStyle(surfaces.chat)
-            .background(surfaces.chat)
-            .clipShape(shape)
-            .overlay { shape.strokeBorder(.primary.opacity(colorScheme == .dark ? 0.1 : 0.07), lineWidth: 1) }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0 : 0.05), radius: 3, y: 1)
-            .padding(.trailing, Self.cardInset)
-            .padding(.bottom, Self.cardInset)
-    }
 }
 
 /// Hides or shows the profile rail, after the window buttons (⌃⌘S, the system's sidebar
 /// shortcut), as Slack's toggle hides its workspaces (the user, 2026-10-18: the profiles,
 /// not the sessions). Shown again, it is the way to switch profiles.
-private struct CollapseButton: View {
+struct CollapseButton: View {
     @Binding var isRailShown: Bool
 
     var body: some View {
@@ -126,7 +94,7 @@ private struct CollapseButton: View {
     }
 }
 
-/// The session list's trailing edge, against the chat's card: drags to resize the list.
+/// The session list's trailing edge, against the chat: drags to resize the list.
 private struct ColumnResizer: View {
     @Binding var width: Double
     let range: ClosedRange<Double>
@@ -141,12 +109,12 @@ private struct ColumnResizer: View {
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
-                        let from = start ?? width
+                        let from = start ?? width.clamped(to: range)
                         start = from
                         width = (from + value.translation.width).clamped(to: range)
                     }
                     .onEnded { _ in start = nil })
-            // Over the list's edge and the card's.
+            // Straddle the sidebar/chat boundary.
             .offset(x: 4)
             .accessibilityHidden(true)
     }
@@ -177,6 +145,18 @@ private struct WindowButtonsReader: NSViewRepresentable {
             observers = []
             reported = nil
             guard let window else { return }
+            // Keep AppKit's real titlebar and standard buttons above full-size content.
+            // No replacement traffic lights or toolbar material: the SwiftUI columns
+            // paint all the way to the top while AppKit retains native window dragging.
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.toolbar = nil
+            if !window.styleMask.contains(.fullScreen) {
+                for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                    window.standardWindowButton(type)?.isHidden = false
+                }
+            }
             for name in [NSWindow.didResizeNotification, NSWindow.didEnterFullScreenNotification,
                          NSWindow.didExitFullScreenNotification] {
                 observers.append(NotificationCenter.default.addObserver(
@@ -217,4 +197,10 @@ private struct WindowButtonsReader: NSViewRepresentable {
 
 private extension Double {
     func clamped(to range: ClosedRange<Double>) -> Double { min(max(self, range.lowerBound), range.upperBound) }
+}
+
+extension EnvironmentValues {
+    @Entry var nativeButtonsTrailing: CGFloat = 78
+    @Entry var profileRailVisibility: Binding<Bool> = .constant(true)
+    @Entry var windowHeaderHeight: CGFloat = 52
 }

@@ -53,6 +53,11 @@ struct SessionListView: View {
     /// Sessions or Cron Jobs. Not kept across launches: the app opens on the sessions.
     /// (Kept per window, a run left on Cron Jobs opened the next launch there.)
     @State private var tab: SessionListTab = .sessions
+    #if os(macOS)
+    @Environment(\.nativeButtonsTrailing) private var nativeButtonsTrailing
+    @Environment(\.windowHeaderHeight) private var windowHeaderHeight
+    @Environment(\.profileRailVisibility) private var profileRailVisibility
+    #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -109,7 +114,23 @@ struct SessionListView: View {
             }
         }
         // Pinned above the Bot Chat and the list: it never scrolls away.
+        #if os(macOS)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            GeometryReader { geometry in
+                let listLeading = geometry.frame(in: .named("mainWindowContent")).minX
+                header
+                    .padding(.leading, max(0, nativeButtonsTrailing + 12 - listLeading))
+                    // Explicitly use the list's proposal, never the title's intrinsic width.
+                    .frame(width: geometry.size.width, height: windowHeaderHeight)
+                    // A container, so its buttons keep their own identifiers.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("sharedSidebarHeader")
+            }
+            .frame(height: windowHeaderHeight)
+        }
+        #else
         .safeAreaBar(edge: .top) { header }
+        #endif
         // A bar like the header's: the banners and the tabs float over the rows, each on
         // its own glass (`SessionListTabBar`).
         .safeAreaBar(edge: .bottom) {
@@ -162,7 +183,18 @@ struct SessionListView: View {
             SessionListHeader(title: profileName ?? "No profile", subtitle: subtitle, newChat: newChatButton)
         }
         #else
-        SessionListHeader(title: profileName ?? "No profile", subtitle: subtitle, newChat: newChatButton)
+        HStack(spacing: 8) {
+            CollapseButton(isRailShown: profileRailVisibility)
+                .fixedSize()
+            ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+                .gesture(WindowDragGesture())
+                .accessibilityIdentifier("sidebarProfileTitle")
+            if let newChatButton { newChatButton.fixedSize() }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, Hover.rowInset)
         #endif
     }
 

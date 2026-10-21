@@ -120,10 +120,12 @@ final class ThemeUITests: XCTestCase {
         composer.typeText("""
             Do not use tools. Reply with only this Markdown: a level-3 heading "Themes", then \
             30 numbered lines, each one short sentence about window layout, then a last line \
-            with only the word Finished.
+            with only the words ALL DONE, in lowercase.
             """)
         click(app.buttons["Send"].firstMatch)
-        let end = app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "Finished"))
+        // The reply's last line, which the prompt (in capitals) doesn't match.
+        let end = app.descendants(matching: .any).matching(
+            NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "all done", "all done"))
         let deadline = Date().addingTimeInterval(150)
         while end.count < 1, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
         XCTAssertGreaterThanOrEqual(end.count, 1, "the reply is shown")

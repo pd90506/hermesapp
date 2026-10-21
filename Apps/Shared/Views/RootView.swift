@@ -481,6 +481,15 @@ private struct ChatHeader: View {
                     }
                     .clipped()
             }
+            // The messages fade in under its edge, as under Hermes Desktop's title bar
+            // (`titlebarHeaderShadowClass`), not cut off sharp along it.
+            .overlay(alignment: .bottom) {
+                LinearGradient(colors: [surfaces.chat, surfaces.chat.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 16)
+                    .offset(y: 16)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             .contentShape(.rect)
             .gesture(WindowDragGesture())
             .accessibilityAddTraits(.isHeader)

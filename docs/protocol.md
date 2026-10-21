@@ -1627,6 +1627,43 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
     before its row was read back, by role and text counted from the end (`MessageBranch`).
   - `[client choice]` Refused while a turn runs (`MessageBranchError.busy`, Desktop's
     `branchStopCurrent`); not offered in a Bot Chat. The branch opens as Fork's copy does.
+- **Pending rows across a rebuild** `[client choice]`: the owning `ChatSession` retains
+  unresolved local ids across transcript generations, including dispatched RPCs. An
+  acknowledged carried row with `user_row_id` stays until that exact stored row is installed,
+  including when a stale initial page arrives first. Failure still uses the existing
+  single-copy draft/card recovery; no RPC is replayed by this UI preservation.
+- **macOS sidebar relative dates** `[client choice]`: one minute-level `TimelineView`
+  supplies an explicit reference date to labels. This ages the cached latest-message
+  date without changing list-read revisions, cache keys, or network refresh frequency.
+- **Local outgoing visibility** `[client choice]`: a user row with local text/image ids/file
+  names appears before runtime recovery, image cleanup, uploads or `prompt.submit` acknowledgement.
+  It says “Sending…” until acknowledgement; `queued` says “Queued” (Hermes stores a queued
+  prompt's row when it accepts it, `tui_gateway/session_auto_continue.py:435-450`). Upload
+  paths update the existing row. A same-chat runtime rebuild preserves unresolved prompts.
+  Acknowledgement and stored `user_row_id` use the existing prompt reconciliation, never a
+  text-only echo match.
+  - A failure after `prompt.submit` went out keeps the bubble with “Not confirmed” and the
+    error: a dropped socket may have lost the answer of a submit Hermes ran.
+  - A failure before it went out is not ambiguous. When the composer takes the message back
+    (a `ComposerError`, a cancel, or a send with images or files) the bubble goes, so the
+    message shows once. A text-only one (offline, failed runtime resume) keeps its bubble with
+    “Not sent”; a rebuild returns its text to the draft, as before.
+  - No automatic retry or durable offline queue is introduced. Existing composer draft/card
+    recovery remains in effect, including preservation of newer typing.
+- **Sidebar relative dates** use the newest stored message, not session creation.
+  - `session.list` sends `started_at` and omits latest-message/activity metadata
+    (`tui_gateway/methods_session.py:110-122`); its ordering already uses latest activity
+    (`:148`). The app preserves that server order and its existing pinned grouping.
+  - `[client choice]` Materialized session rows request one newest stored message with
+    `GET /api/sessions/{id}/messages?order=latest&limit=1`, scoped to the row's profile
+    and compression tip (`hermes_cli/web_routers/sessions.py:726-768`). This date can
+    represent a user, assistant, tool or system message; it is not runtime activity.
+    Rows ask again on each list refresh (`sessions.changed`, completed turns); the
+    connection reuses a read while the row's profile, tip id and `message_count` are
+    unchanged (every stored message bumps it, `hermes_state_messages.py:376-387`), so a
+    refresh reads only rows with new messages. Failed reads are not kept.
+    No transcript walk or per-row whole-history fallback is made. Missing, nonpositive,
+    nonfinite, failed reads or unsupported paging show no date, never creation time.
 - **Pin** is not on the JSON-RPC surface.
   - Hermes keeps it in `sessions.pinned` and Desktop writes it through the dashboard's fenced
     REST `PATCH /api/sessions/{id} {pinned}` (`apps/desktop/src/api/sessions.ts:374-428`).

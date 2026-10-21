@@ -375,8 +375,14 @@ final class AppModel {
                 await server.connection.disconnect()
                 if activeServerID == server.id { activeServerID = nil }
             }
-            try await server.connection.connect(
-                using: DashboardConnector(endpoint: endpoint, credential: server.config.credential(secret: server.secret)))
+            #if DEBUG
+            let connector = DashboardConnector(
+                endpoint: endpoint, credential: server.config.credential(secret: server.secret),
+                makeSocket: { UITestSubmitNetwork.wrap(URLSessionWebSocketTransport(request: $0)) })
+            #else
+            let connector = DashboardConnector(endpoint: endpoint, credential: server.config.credential(secret: server.secret))
+            #endif
+            try await server.connection.connect(using: connector)
             server.connectedEndpoint = endpoint
             syncPages()
             #if DEBUG
@@ -654,6 +660,40 @@ struct UITestLaunch {
                                 try? JSONDecoder().decode(SessionSourceSettings.self, from: Data($0.utf8))
                             })
     }()
+}
+
+/// UI tests only (`SendStateUITests`): a bad network for one message, picked by its text.
+/// With `HERMES_UITEST_SUBMIT_DELAY` (seconds), a `prompt.submit` whose text holds
+/// `SLOW-` waits that long before it goes out, as on a stalled uplink; one holding
+/// `LOST-` never goes out and the socket drops, as when the network goes mid-send.
+/// Everything else, and every send outside UI tests, goes straight through.
+final class UITestSubmitNetwork: MessageTransport {
+    private let base: any MessageTransport
+    private let delay: Duration
+
+    static func wrap(_ base: any MessageTransport) -> any MessageTransport {
+        guard UITestLaunch.current != nil,
+            let seconds = ProcessInfo.processInfo.environment["HERMES_UITEST_SUBMIT_DELAY"].flatMap(Double.init)
+        else { return base }
+        return UITestSubmitNetwork(base: base, delay: .milliseconds(Int(seconds * 1000)))
+    }
+
+    private init(base: any MessageTransport, delay: Duration) {
+        self.base = base
+        self.delay = delay
+    }
+
+    func connect() async throws { try await base.connect() }
+    var inbound: AsyncThrowingStream<String, any Error> { base.inbound }
+    func close() async { await base.close() }
+
+    func send(_ text: String) async throws {
+        if text.contains("\"prompt.submit\"") {
+            if text.contains("LOST-") { throw TransportError.closed(code: nil, reason: "UI test: network lost") }
+            if text.contains("SLOW-") { try await Task.sleep(for: delay) }
+        }
+        try await base.send(text)
+    }
 }
 #endif
 

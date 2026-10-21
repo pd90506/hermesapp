@@ -5,8 +5,8 @@ import Testing
 @testable import HermesKit
 
 // A rebuild (`ChatSession.reset`, after a cold resume or a reconnect, §7) shows only the
-// snapshot and the stored rows. Nothing typed is lost: a failed prompt's text goes back
-// to the composer, a send in flight settles itself, and a row-less prompt is stored by
+// snapshot and the stored rows, plus explicitly owned unresolved sends. Nothing typed
+// is lost: a failed prompt's text goes back to the composer, and a row-less prompt is stored by
 // its turn (docs/protocol.md §4.2).
 
 private func occurrences(_ transcript: Transcript, _ segment: String) -> Int {
@@ -150,7 +150,14 @@ struct ChatSessionRebuildTests {
         let sending = Task { try await session.send("在路上") }
         let request = try #require(await submit(in: log, after: count))
 
+        let other = try await connection.open(SessionSummary(id: "stored-2"))
+        await settle(other)
+        #expect(occurrences(other.transcript, "在路上") == 0)
         try await rebuild(session, server: server)
+        #expect(occurrences(other.transcript, "在路上") == 0)
+        #expect(occurrences(session.transcript, "在路上") == 1,
+                "pending content must remain visible while acknowledgement is stalled")
+        #expect(session.transcript.items.last?.outgoingStatus == "Sending…")
         // Hermes took it: the row is stored at submit (`methods_prompt.py:817-820`).
         server.store.append([storedRow(id: 301, role: "user", text: "在路上")])
         transport.respond(to: request, result: ["status": "streaming", "user_row_id": 301])
@@ -160,6 +167,36 @@ struct ChatSessionRebuildTests {
         #expect(await eventually { session.rereadTask == nil && !session.transcript.needsReread })
         #expect(occurrences(session.transcript, "在路上") == 1)
         #expect(session.transcript.items.last?.rowID == 301)
+        #expect(connection.composer(for: session).draft.isEmpty)
+        expectWellFormed(session.transcript)
+    }
+
+    /// Hermes took the submit and runs its turn, but the answer is still on the way when
+    /// the chat is rebuilt: the snapshot echoes the prompt (`inflight.user`). The bubble
+    /// is not carried as well: it would show the prompt again, after the turn's reply.
+    @Test func aDispatchedSendTheRebuiltSnapshotRunsIsNotCarriedTwice() async throws {
+        let (session, connection, transport, server, log) = try await open()
+        server.holdSubmits.withLock { $0 = true }
+        let count = log.requests("prompt.submit").count
+        let sending = Task { try await session.send("在路上") }
+        let request = try #require(await submit(in: log, after: count))
+        server.store.append([storedRow(id: 301, role: "user", text: "在路上")])
+
+        try await rebuild(session, server: server, running: ["user": "在路上", "assistant": "好", "streaming": true])
+        let pending = session.transcript.items.filter { $0.text == "在路上" && $0.rowID == nil }
+        #expect(pending.count == 1, "only the snapshot's echo, no carried bubble")
+        #expect(pending.first?.outgoingStatus == nil)
+        #expect(session.transcript.items.last?.role == .assistant)
+
+        transport.respond(to: request, result: ["status": "streaming", "user_row_id": 301])
+        try await sending.value
+        server.store.append([storedRow(id: 302, role: "assistant", text: "好了")])
+        transport.sendEvent("message.complete", sessionID: "rt-90", seq: 1, payload: completePayload("好了", rows: [301, 302]))
+        #expect(await eventually {
+            !session.transcript.isRunning && session.rereadTask == nil && !session.transcript.needsReread
+                && session.transcript.items.last?.rowID == 302
+        })
+        #expect(occurrences(session.transcript, "在路上") == 1)
         #expect(connection.composer(for: session).draft.isEmpty)
         expectWellFormed(session.transcript)
     }
@@ -179,6 +216,8 @@ struct ChatSessionRebuildTests {
         session.reset(to: try ack.decode(LiveSessionSnapshot.self), storedSessionID: "stored-1")
         session.loadHistory()
         #expect(await eventually { server.store.heldCount == 1 })
+        #expect(occurrences(session.transcript, "在路上") == 1,
+                "cold rebuild must keep pending row even before the page arrives")
 
         transport.respond(to: request, result: ["status": "streaming", "user_row_id": 301])
         try await sending.value
@@ -187,7 +226,8 @@ struct ChatSessionRebuildTests {
         // The page, read before the row was stored.
         server.store.releaseOldest()
         #expect(await eventually { session.transcript.paging.isLoaded })
-        #expect(occurrences(session.transcript, "在路上") == 0)
+        #expect(occurrences(session.transcript, "在路上") == 1,
+                "an obsolete initial page must not remove the accepted local row")
         // Hermes stored the row at submit (`methods_prompt.py:817-820`); the re-read finds it.
         server.store.append([storedRow(id: 301, role: "user", text: "在路上")])
         server.store.release()

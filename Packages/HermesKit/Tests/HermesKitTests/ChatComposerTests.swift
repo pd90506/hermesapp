@@ -140,6 +140,96 @@ struct ChatComposerTests {
         ComposerAttachment(filename: name, data: Data([0x89, 0x50, 0x4E, 0x47]), pixelWidth: 2, pixelHeight: 1)
     }
 
+    /// The UIKit bridge supplies its visible text before invoking this model path.
+    /// This tests the submit boundary only; it does not emulate an input method.
+    @Test func visiblePinyinDraftSendsOnceAndKeepsTextTypedDuringSubmit() async throws {
+        let log = FrameLog()
+        let (composer, transport) = try await makeComposer(log: log, unanswered: { method, _ in
+            method == "prompt.submit"
+        })
+        let visible = "请检查这个问题v"
+        composer.draft = visible
+        let sending = Task { await composer.submit() }
+        try #require(await eventually { !log.requests("prompt.submit").isEmpty })
+        #expect(composer.draft.isEmpty)
+        let pending = try #require(composer.session.transcript.items.first(where: { $0.role == .user }))
+        #expect(pending.text == visible)
+        #expect(pending.outgoingStatus == "Sending…")
+        #expect(log.requests("prompt.submit").count == 1)
+        #expect(log.requests("prompt.submit").first?["params"]?["text"] == .string(visible))
+        composer.draft = "下一条消息"
+        // A duplicate tap while the first submit is pending cannot submit again.
+        await composer.submit()
+        #expect(log.requests("prompt.submit").count == 1)
+        let request = try #require(log.requests("prompt.submit").first)
+        transport.respond(to: request, result: ["status": "streaming"])
+        await sending.value
+        #expect(composer.draft == "下一条消息")
+        #expect(composer.session.transcript.items.filter { $0.role == .user }.count == 1)
+        #expect(composer.session.transcript.items.first(where: { $0.id == pending.id })?.outgoingStatus == nil)
+    }
+
+    @Test func pendingImageShowsBeforeUploadAndFailureKeepsSameRow() async throws {
+        let log = FrameLog()
+        let (composer, transport) = try await makeComposer(log: log, unanswered: { method, _ in
+            method == "image.attach_bytes"
+        })
+        let image = png("pending.png")
+        composer.attach(image)
+        composer.draft = "caption"
+        let sending = Task { await composer.submit() }
+        try #require(await eventually { !log.requests("image.attach_bytes").isEmpty })
+        let pending = try #require(composer.session.transcript.items.first(where: { $0.role == .user }))
+        #expect(pending.outgoingStatus == "Sending…")
+        #expect(pending.text == "caption" && pending.images.first?.localID == image.id)
+        #expect(pending.images.first?.path == nil)
+        #expect(log.requests("prompt.submit").isEmpty)
+        composer.draft = "new text"
+        let request = try #require(log.requests("image.attach_bytes").first)
+        transport.respondError(to: request, code: 4018, message: "image too large")
+        await sending.value
+        // Never submitted: the message goes back to the composer, shown once there.
+        #expect(composer.session.transcript.items.isEmpty)
+        #expect(composer.draft == "caption\nnew text")
+        #expect(composer.attachments.map(\.id) == [image.id])
+        #expect(composer.error?.contains("image too large") == true)
+        #expect(log.requests("prompt.submit").isEmpty)
+    }
+
+    /// A submit that went out and failed may have run: the bubble keeps the text and says
+    /// so, and nothing is sent again by itself.
+    @Test func failedDispatchedSubmitStaysUnconfirmedAndIsNotRetried() async throws {
+        let log = FrameLog()
+        let (composer, transport) = try await makeComposer(log: log, unanswered: { method, _ in
+            method == "prompt.submit"
+        })
+        composer.draft = "hello"
+        let sending = Task { await composer.submit() }
+        let request = try #require(await eventually { !log.requests("prompt.submit").isEmpty } ? log.requests("prompt.submit").first : nil)
+        transport.respondError(to: request, code: 5000, message: "agent crashed")
+        await sending.value
+        let failed = try #require(composer.session.transcript.items.last)
+        #expect(failed.text == "hello")
+        #expect(failed.outgoingStatus?.hasPrefix("Not confirmed") == true)
+        #expect(composer.session.transcript.failedPrompts.map(\.id) == [failed.id])
+        #expect(composer.draft.isEmpty)
+        #expect(log.requests("prompt.submit").count == 1)
+    }
+
+    /// Text-only, offline: the submit never went out, and the bubble says that.
+    @Test func undispatchedTextOnlyFailureSaysNotSent() async throws {
+        let log = FrameLog()
+        let (composer, _) = try await makeComposer(log: log)
+        try await #require(connections.all.last).disconnect()
+        composer.draft = "offline"
+        await composer.submit()
+        let failed = try #require(composer.session.transcript.items.last)
+        #expect(failed.text == "offline")
+        #expect(failed.outgoingStatus?.hasPrefix("Not sent") == true)
+        #expect(composer.session.transcript.failedPrompts.count == 1)
+        #expect(log.requests("prompt.submit").isEmpty)
+    }
+
     @Test func sendingUploadsEachImageThenSubmitsAndClearsTheCards() async throws {
         let log = FrameLog()
         let (composer, _) = try await makeComposer(log: log)
@@ -433,7 +523,7 @@ struct ChatComposerTests {
         #expect(composer.attachments.map(\.filename) == ["a.png", "b.png"])
         #expect(composer.session.strandedImagePaths == [Self.strandedPath])
 
-        // Text-only sends are held back the same way, before anything is shown.
+        // Text-only sends are held back the same way: the bubble goes, the draft comes back.
         composer.removeAttachment(id: composer.attachments[0].id)
         composer.removeAttachment(id: composer.attachments[0].id)
         await composer.submit()

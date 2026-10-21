@@ -14,6 +14,7 @@ struct ComposerView: View {
     let composer: ChatComposer
     var isConnected: Bool
 
+    @State private var inputHandle = ComposerInputHandle()
     @State private var textHeight: CGFloat = 0
     /// An input method's marked text shows in the field (`ComposerTextView.onComposingChange`).
     @State private var isComposing = false
@@ -234,7 +235,8 @@ struct ComposerView: View {
                 #if os(iOS)
                 isFocused = focused
                 #endif
-            }
+            },
+            inputHandle: inputHandle
         )
         .frame(height: min(max(textHeight, 28), maxTextHeight))
         .overlay(alignment: .topLeading) {
@@ -536,6 +538,12 @@ struct ComposerView: View {
     // MARK: Actions
 
     private func submit() {
+        #if os(iOS)
+        // Capture marked/native text before checking or starting the async send.
+        // Keep the keyboard; ordinary candidate selection and Return do not use this path.
+        guard !composer.isSubmitting, isConnected else { return }
+        inputHandle.prepareSubmission?()
+        #endif
         guard composer.canSubmit else { return }
         if SlashCommand.isCommand(composer.draft) {
             Task { await composer.submitSlash() }

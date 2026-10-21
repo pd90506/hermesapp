@@ -63,6 +63,18 @@ struct SessionListView: View {
     #endif
 
     var body: some View {
+        #if os(macOS)
+        // One clock for the whole sidebar. It only ages labels; row read tasks keep
+        // their existing revisions/cache and issue no extra network refreshes.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content.environment(\.sessionListClock, context.date)
+        }
+        #else
+        content
+        #endif
+    }
+
+    private var content: some View {
         // On macOS the Bot Chat above the list, not in a bar over it: always in reach, and
         // the rows scroll under nothing. As a bar the list's rows scrolled under, the system
         // drew a line across the column at its bottom, only under the pointer (or with
@@ -286,7 +298,8 @@ struct SessionListView: View {
 
     private func sessionRow(_ entry: HistoryEntry, on server: ServerConnection) -> some View {
         let item = SidebarItem.history(server: server.id, id: entry.id)
-        return HistoryRow(entry: entry) {
+        return HistoryRow(entry: entry, timestampRevision: "\(server.id)/\(server.connection.sessionListReads)",
+                          loadTimestamp: { await server.connection.latestMessageDate(for: entry) }) {
             sessionActions(entry, on: server)
         }
         .sidebarRowHighlight(isSelected: selection == item)

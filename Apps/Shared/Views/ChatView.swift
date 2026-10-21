@@ -349,7 +349,8 @@ private struct MessageRow: View {
                                 .background(surfaces.userBubble, in: .rect(cornerRadius: 12))
                         }
                         MessageActionBar(isHovering: isHovering, isNewest: isNewest,
-                                         alignment: .trailing, timestamp: item.timestamp, copy: copyMessage)
+                                         alignment: .trailing, timestamp: item.timestamp,
+                                         outgoingStatus: item.outgoingStatus, copy: copyMessage)
                     }
                 }
             }

@@ -324,6 +324,23 @@ extension GatewayConnection {
         cron.reset(to: profile)
     }
 
+    /// Called by visible sidebar rows after list refreshes; failures leave the date unknown.
+    /// A row whose stored message count did not change since its last read reuses that
+    /// read, so a list refresh does not re-read every visible row.
+    public func latestMessageDate(for entry: HistoryEntry) async -> Date? {
+        let key = SessionRowTimestamp.cacheKey(for: entry)
+        if let key, let cached = latestMessageDates[key] { return cached }
+        guard let source = messagesSource else { return nil }
+        do {
+            let date = try await SessionRowTimestamp.latest(for: entry, from: source)
+            if let key { latestMessageDates[key] = .some(date) }
+            return date
+        } catch {
+            // A failed read is not kept: the next refresh tries again.
+            return nil
+        }
+    }
+
     public func refreshSessionListIfVisible() async {
         guard navigationPage == .sessions else { return }
         await refreshSessionList()

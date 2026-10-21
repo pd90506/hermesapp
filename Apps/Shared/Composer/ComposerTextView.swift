@@ -1,6 +1,12 @@
 import HermesKit
 import SwiftUI
 
+@MainActor
+final class ComposerInputHandle {
+    /// Installed by the native editor. Weak captures keep kept-chat editors releasable.
+    var prepareSubmission: (() -> Void)?
+}
+
 /// The composer's multi-line text area. It reports the height its text needs
 /// (`contentHeight`); the caller caps it at `maxHeight`, and the view scrolls past
 /// the cap. Below the cap no scroller is ever shown, not even for one frame.
@@ -39,6 +45,7 @@ struct ComposerTextView {
     var onSlashKey: (SlashKey) -> Bool = { _ in false }
     /// iOS: the text view took or gave up the keyboard.
     var onFocusChange: (Bool) -> Void = { _ in }
+    var inputHandle: ComposerInputHandle? = nil
 
     static let verticalInset: CGFloat = 4
 
@@ -551,6 +558,10 @@ extension ComposerTextView: UIViewRepresentable {
         }
 
         func bind(_ textView: ComposerUITextView) {
+            parent.inputHandle?.prepareSubmission = { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.prepareSubmission(in: textView)
+            }
             textView.onProviders = { [weak self] in self?.parent.onProviders($0) }
             textView.onLayout = { [weak self, weak textView] in
                 if let textView { self?.measure(textView, deferred: true) }
@@ -564,6 +575,7 @@ extension ComposerTextView: UIViewRepresentable {
         private var composing = false
 
         func reportComposing(_ textView: UITextView) {
+            guard !isPreparingSubmission else { return }
             let now = textView.markedTextRange.map { !$0.isEmpty } ?? false
             guard now != composing else { return }
             composing = now
@@ -584,6 +596,7 @@ extension ComposerTextView: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            guard !isPreparingSubmission else { return }
             reportComposing(textView)
             if let held {
                 guard textView.markedTextRange == nil else { return measure(textView, deferred: false) }
@@ -593,6 +606,28 @@ extension ComposerTextView: UIViewRepresentable {
             }
             known = textView.text
             parent.text = known
+            measure(textView, deferred: false)
+        }
+
+        private var isPreparingSubmission = false
+
+        /// Send is an explicit end to composition. Preserve exactly what is visible,
+        /// rather than letting unmarkText select a different candidate. Finish this
+        /// synchronously before ChatComposer snapshots/clears its draft; otherwise
+        /// showDraft would hold that clear behind the still-active input method.
+        func prepareSubmission(in textView: UITextView) {
+            var visible = textView.text ?? ""
+            if let held {
+                visible = DraftMerge.merge(base: held.base, theirs: held.draft, mine: visible).text
+            }
+            isPreparingSubmission = true
+            held = nil
+            textView.unmarkText()
+            show(visible, caret: (visible as NSString).length, in: textView)
+            known = visible
+            parent.text = visible
+            isPreparingSubmission = false
+            reportComposing(textView)
             measure(textView, deferred: false)
         }
 

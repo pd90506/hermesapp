@@ -109,6 +109,8 @@ public final class GatewayConnection {
     @ObservationIgnored var strandedImages: [StrandedImage] = []
     /// The running detach flush of each runtime session that has stranded images.
     @ObservationIgnored var strandedImageFlushes: [String: Task<Void, Never>] = [:]
+    /// Sidebar dates read so far, by `SessionRowTimestamp.cacheKey` (`latestMessageDate`).
+    @ObservationIgnored var latestMessageDates: [String: Date?] = [:]
     /// Bumped by every connect/disconnect; async work started under an older
     /// generation discards its result (and closes its socket) instead of
     /// overwriting newer state.
@@ -701,6 +703,10 @@ public final class GatewayConnection {
             // before accepting, which surfaces as a bare HTTP 403 on the upgrade.
             return "The gateway refused the WebSocket (expired ticket/token or host check): \(detail)"
         case GatewayClientError.readyTimeout: return "The gateway did not respond."
+        // A send's bubble shows these ("Not confirmed · …"): plain words, not the enum.
+        case GatewayClientError.connectionClosed: return "The connection to the gateway was lost."
+        case GatewayClientError.notConnected: return "Not connected to the gateway."
+        case GatewayClientError.timeout: return "The gateway did not answer in time."
         case HistoryReadError.noProgress:
             return "This gateway's chat history cannot be read page by page. Updating Hermes fixes this."
         case HistoryReadError.tooLong(let rows):

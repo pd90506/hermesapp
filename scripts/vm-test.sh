@@ -268,6 +268,63 @@ if ! tart list | awk -v vm="$VM" '$2 == vm && $NF == "running"' | grep -q .; the
 fi
 for _ in $(seq 1 90); do tart exec "$VM" true >/dev/null 2>&1 && break; sleep 2; done
 vexec() { tart exec "$VM" /bin/zsh -lc "export PATH=\$HOME/.local/bin:\$PATH; $1"; }
+# The simulator's keyboard preferences, set for the iOS UI tests before it boots
+# (`forget`, or `seed` for a run with SendStateUITests) and put back after them (`restore`).
+# A typeKey in an iOS UI test is a hardware keyboard to the simulator. It remembers one
+# (AutomaticMinimizationEnabled, HardwareKeyboardLastSeen, KeyboardHardwareKeyboardsSeen)
+# and from then on keeps its software keyboard below the screen, through reboots, in
+# every later run, whichever branch ran the typeKey (VM, 2026-10-20): `forget` and `seed`
+# forget it.
+# On iOS 26 a globe tap goes to the keyboard used before the current one
+# (KeyboardsCurrentAndNext), not along the keyboard list, so SendStateUITests reaches
+# Pinyin (in the list) only if it is that one (VM, 2026-10-20). `seed` sets that for the
+# run, after a backup (a backup left by a stopped run is kept); `restore` puts the backup
+# back, all of it, and checks it is still there 10 s later.
+# They shut the simulator down (`forget` only when there is something to forget) and wait
+# until it is: `simctl shutdown` can return while
+# the simulator still writes its preferences, which overwrote a restore made right after
+# it (VM, 2026-10-20).
+sim_keyboard() {  # forget | seed | restore
+  tart exec -i "$VM" /bin/zsh -s -- "$1" "$sim" <<'ZSH'
+mode=$1 u=$2 backup=~/keyboard-preferences.plist
+f=~/Library/Developer/CoreSimulator/Devices/$u/data/Library/Preferences/com.apple.keyboard.preferences.plist
+[[ -n $u && -f $f ]] || { echo "keyboard preferences ($mode): no simulator $u or no preferences file"; exit 0; }
+[[ $mode == restore && ! -f $backup ]] && exit 0
+remembered() { plutil -p $f | grep -qE '"(AutomaticMinimizationEnabled|HardwareKeyboardLastSeen|KeyboardHardwareKeyboardsSeen)"'; }
+[[ $mode == forget ]] && ! remembered && exit 0
+xcrun simctl shutdown $u >/dev/null 2>&1
+waited=0
+until xcrun simctl list devices | grep -qF "($u) (Shutdown)" && ! pgrep -f "Devices/$u/" >/dev/null; do
+  (( waited++ < 60 )) || { echo "keyboard preferences ($mode): $u not shut down after 60 s"; exit 1; }
+  sleep 1
+done
+sleep 2
+if [[ $mode != restore ]]; then
+  if remembered; then
+    for k in AutomaticMinimizationEnabled HardwareKeyboardLastSeen KeyboardHardwareKeyboardsSeen; do plutil -remove $k $f >/dev/null 2>&1; done
+    echo 'The simulator remembered a hardware keyboard: forgotten, so its own keyboard shows.'
+  fi
+  [[ $mode == forget ]] && exit
+  if [[ -f $backup ]]; then echo "keyboard preferences: keeping the backup a stopped run left"
+  else cp -p $f $backup || { echo "keyboard preferences (seed): no backup, so not seeded"; exit 1; }; fi
+  plutil -replace KeyboardsCurrentAndNext -json '["en_US@sw=QWERTY;hw=Automatic", "en_US@sw=QWERTY;hw=Automatic", "zh_Hans-Pinyin@sw=Pinyin-Simplified;hw=Automatic"]' $f
+  exit
+fi
+python3 - $backup $f <<'PY' && rm $backup
+import plistlib, sys, time
+backup, f = sys.argv[1:]
+want = plistlib.load(open(backup, "rb"))
+with open(f, "wb") as out:
+    plistlib.dump(want, out, fmt=plistlib.FMT_BINARY)
+time.sleep(10)
+got = plistlib.load(open(f, "rb"))
+keys = sorted(k for k in set(want) | set(got) if want.get(k) != got.get(k))
+print("keyboard preferences (restore): " + ("back as before the run, still 10 s later" if not keys
+      else "NOT restored, changed again: %s (the backup stays in %s)" % (", ".join(keys), backup)))
+sys.exit(1 if keys else 0)
+PY
+ZSH
+}
 # The iOS simulator boots while other steps run, not in the iOS step: its boot took
 # about a minute of every iOS run. `simctl boot` returns once the boot has started;
 # the iOS step's xcodebuild waits for the rest. It starts after the window tests, so
@@ -282,17 +339,11 @@ for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=
         if "iOS" in runtime and d["name"].startswith("iPhone"):
             print(d["udid"]); sys.exit()')
   [[ -n $sim ]] || { echo "No iPhone simulator in the VM." >&2; return 1; }
-  # A typeKey in an iOS UI test is a hardware keyboard to the simulator. It remembers one
-  # in its keyboard preferences (AutomaticMinimizationEnabled, HardwareKeyboardLastSeen,
-  # KeyboardHardwareKeyboardsSeen) and from then on keeps its software keyboard below the
-  # screen, through reboots, in every later run, whichever branch ran the typeKey (VM,
-  # 2026-10-20). Back to an unused simulator's state before it boots.
-  vexec "f=~/Library/Developer/CoreSimulator/Devices/$sim/data/Library/Preferences/com.apple.keyboard.preferences.plist
-    if [[ -f \$f ]] && plutil -p \$f | grep -qE '\"(AutomaticMinimizationEnabled|HardwareKeyboardLastSeen|KeyboardHardwareKeyboardsSeen)\"'; then
-      xcrun simctl shutdown $sim >/dev/null 2>&1
-      for k in AutomaticMinimizationEnabled HardwareKeyboardLastSeen KeyboardHardwareKeyboardsSeen; do plutil -remove \$k \$f >/dev/null 2>&1; done
-      echo 'The simulator remembered a hardware keyboard: forgotten, so its own keyboard shows.'
-    fi" || true
+  # Pinyin as the other keyboard only for a run with SendStateUITests: `seed` and its
+  # `restore` each cost the simulator a reboot.
+  local filter=$(only_testing HermesiOSUITests)
+  if [[ -z $filter || $filter == *SendStateUITests* ]]; then sim_keyboard seed || true
+  else sim_keyboard forget || true; fi
   vexec "xcrun simctl boot $sim 2>&1 | grep -v 'current state: Booted' || true"
 }
 runs window || boot_sim || status=1
@@ -383,6 +434,7 @@ if runs window; then xctest "window tests (run)" HermesMacTests mac-window platf
 if runs ui; then xctest "macOS UI tests (run)" HermesMacUITests mac-ui platform=macOS; fi
 if ((ios)); then
   xctest "iOS UI tests (run)" HermesiOSUITests ios-ui "platform=iOS Simulator,id=$sim"
+  sim_keyboard restore || status=1
 fi
 vexec "for r in ~/results/*.xcresult; do
     [[ -f \$r/Info.plist ]] || { echo \"\$(basename \$r .xcresult): no results (the run did not finish)\"; continue; }

@@ -10,13 +10,15 @@ struct MessageActionBar: View {
     let isNewest: Bool
     var alignment: HorizontalAlignment = .leading
     var timestamp: Date? = nil
+    /// Replaces the time in its slot (Sending…, Queued, a failure); see `body`.
+    var outgoingStatus: String? = nil
     /// Branch in New Chat, in the "…" menu; without it there is no menu.
     var branch: (() -> Void)? = nil
     let copy: () -> Void
 
     var isVisible: Bool {
         #if os(macOS)
-        isHovering || isNewest
+        outgoingStatus != nil || isHovering || isNewest
         #else
         true
         #endif
@@ -56,7 +58,22 @@ struct MessageActionBar: View {
                 .accessibilityIdentifier("messageMoreMenu")
             }
             if let timestamp {
-                MessageTimeLabel(date: timestamp)
+                // The slot is as wide as the time or "Sending…", whichever is wider, in
+                // both states: Copy stays put from Sending… (or Queued) to the time. A
+                // failure ("Not confirmed · …") widens it to stay readable; no time follows it.
+                ZStack(alignment: .trailing) {
+                    // Hidden, not transparent: out of accessibility too (iOS still listed it).
+                    if outgoingStatus == nil {
+                        MessageTimeLabel(date: timestamp)
+                    } else {
+                        MessageTimeLabel(date: timestamp).hidden()
+                    }
+                    Text("Sending…").uiFont(.caption2).hidden()
+                    if let outgoingStatus { statusLabel(outgoingStatus) }
+                }
+                    .padding(.horizontal, 4)
+            } else if let outgoingStatus {
+                statusLabel(outgoingStatus)
                     .padding(.horizontal, 4)
             }
             if alignment == .leading { Spacer(minLength: 0) }
@@ -72,6 +89,17 @@ struct MessageActionBar: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("messageActionBar")
     }
+
+    private func statusLabel(_ status: String) -> some View {
+        Text(status)
+            .uiFont(.caption2)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .help(status)
+            .accessibilityLabel(status)
+            .accessibilityIdentifier("outgoingStatus")
+    }
+
 }
 
 /// "3:27 PM" today, "Yesterday, 3:27 PM", else "Sep 28, 3:27 PM" (`MessageTimestamp`), with

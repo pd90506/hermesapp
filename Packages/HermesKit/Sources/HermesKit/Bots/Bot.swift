@@ -147,3 +147,28 @@ enum RestoreError: Error {
 extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }
+
+/// The newest persisted message date, not session creation or runtime activity.
+/// `session.list` omits this metadata (`tui_gateway/methods_session.py:110-122`).
+/// Read only one newest row through the existing REST paging interface.
+public enum SessionRowTimestamp {
+    public static func latest(for entry: HistoryEntry, from source: any SessionMessagesSource) async throws -> Date? {
+        let page = try await source.messagesPage(SessionMessagesQuery(
+            sessionID: entry.summary.resolvedID ?? entry.summary.id,
+            profile: entry.profile, order: .latest, limit: 1))
+        // Older servers can ignore paging/order. Never walk the transcript or label
+        // an oldest page as newest. No creation-time fallback for missing metadata.
+        guard page.pagination?.order == "latest", page.messages.count <= 1,
+              let seconds = page.messages.last?.timestamp, seconds.isFinite, seconds > 0 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    /// What a read for `entry` depends on: its profile, its compression tip and the
+    /// tip's stored message count, which every stored message bumps
+    /// (`_bump_session_counters`, `hermes_state_messages.py:376-387`). Nil without a
+    /// count: such a row is read each time.
+    public static func cacheKey(for entry: HistoryEntry) -> String? {
+        guard let count = entry.summary.messageCount else { return nil }
+        return "\(entry.profile)/\(entry.summary.resolvedID ?? entry.summary.id)/\(count)"
+    }
+}

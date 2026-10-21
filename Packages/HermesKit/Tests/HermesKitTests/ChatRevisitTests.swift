@@ -302,10 +302,14 @@ struct ChatRevisitTests {
         let sending = Task { try await first.send("hi") }
         try await Task.sleep(for: .milliseconds(100))
         #expect(log.requests("prompt.submit").count == submits)  // held until the chat is resumed
-        #expect(occurrences(first.transcript, "hi") == 0)
+        // Shown at once, as sending; the resume's rebuild keeps the bubble.
+        #expect(occurrences(first.transcript, "hi") == 1)
+        #expect(first.transcript.items.last?.outgoingStatus == "Sending…")
 
         _ = server.held.withLock { $0.remove("session.resume") }
         transport.respond(to: resume, result: try #require(server.answer("session.resume", resume["params"] ?? nil)))
+        #expect(await eventually { first.sessionID != oldSID })
+        #expect(occurrences(first.transcript, "hi") == 1)
         try await sending.value
 
         let submit = try #require(log.requests("prompt.submit").last)

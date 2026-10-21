@@ -16,9 +16,12 @@
 #
 #   scripts/vm-test.sh          # all of the above
 #   scripts/vm-test.sh --ios    # also the iOS-simulator UI test, run in the VM
-#   scripts/vm-test.sh --keep   # leave the VM running afterwards (faster next run)
+#   scripts/vm-test.sh --keep   # leave the VM running afterwards, and keep it for this
+#                               #  worktree's next run for 3 minutes (a batch of runs)
 #
 # While iterating, run only what the change touches; run the whole set once before merge:
+#   scripts/vm-test.sh --changed                               # what scripts/vm-test-pick.py
+#                                                              #  picks for this branch's changes
 #   scripts/vm-test.sh --only window                           # just the window tests
 #   scripts/vm-test.sh --only live,ui                          # suites: live, window, ui
 #   scripts/vm-test.sh --test HermesMacTests/HoverTests        # one suite (repeatable;
@@ -30,7 +33,8 @@
 # dashboard mid-run), saying whose run it waits for and which step that run is on. The
 # lock goes with its run however the run ends, even kill -9, so a run never waits on
 # one that has finished or been killed.
-# Each step's time is printed at the end.
+# Each step's time is printed at the end, with the slowest tests; every test's time goes
+# to build/vm-test/durations/<result>.tsv.
 #
 # scripts/live-test.sh stays for running the live tests on this Mac by hand.
 #
@@ -52,8 +56,8 @@ VM=${HERMES_VM_NAME:-hermesapp-test-vm}
 PROFILE=hermesapp-test
 PORT=9139
 KEY_FILE=.env.vm-hermes
-keep=0 ios=0 only="" tests=()
-usage() { echo "usage: $0 [--keep] [--ios] [--only live,window,ui] [--test Scheme/Suite[/test]]..." >&2; exit 2; }
+keep=0 ios=0 only="" tests=() changed=0
+usage() { echo "usage: $0 [--keep] [--ios] [--changed | [--only live,window,ui] [--test Scheme/Suite[/test]]...]" >&2; exit 2; }
 while (($#)); do
   case $1 in
     --keep) keep=1 ;;
@@ -62,10 +66,30 @@ while (($#)); do
     --only=*) only=${1#*=} ;;
     --test) tests+=("${2:?--test needs Scheme/Suite[/test]}"); shift ;;
     --test=*) tests+=("${1#*=}") ;;
+    --changed) changed=1 ;;
     *) usage ;;
   esac
   shift
 done
+# --changed: the tests scripts/vm-test-pick.py picks for what this branch changed.
+if ((${changed:-0})); then
+  [[ -z $only && ${#tests[@]} -eq 0 ]] || { echo "--changed picks the tests itself: drop --only and --test" >&2; exit 2; }
+  scripts/vm-test-pick.py | sed 's/^/  /' >&2
+  picked=()
+  while IFS= read -r arg; do picked+=("$arg"); done < <(scripts/vm-test-pick.py --args)
+  set -- ${picked[@]+"${picked[@]}"}
+  while (($#)); do
+    case $1 in
+      --ios) ios=1 ;;
+      --only) only=$2; shift ;;
+      --test) tests+=("$2"); shift ;;
+    esac
+    shift
+  done
+  if [[ $only == none && ${#tests[@]} -eq 0 ]] && ! ((ios)); then
+    echo "Nothing to run in the VM for this change."; exit 0
+  fi
+fi
 # Which parts run: everything by default; with --test, only the schemes it names.
 if [[ -z $only && ${#tests[@]} -gt 0 ]]; then
   for t in "${tests[@]}"; do
@@ -78,7 +102,9 @@ if [[ -z $only && ${#tests[@]} -gt 0 ]]; then
   done
   only=${only#,}; [[ -n $only ]] || only=none
 fi
-[[ -n $only ]] || only=live,window,ui
+# The whole set (no --only or --test) is the run right before a merge: it goes first.
+full=0
+[[ -n $only ]] || { only=live,window,ui; full=1; }
 for part in ${only//,/ }; do
   case $part in live|window|ui|none) ;; *) usage ;; esac
 done
@@ -108,10 +134,47 @@ report_times() { step ""; [[ -n $timings ]] && printf 'vm-test.sh step times (to
 
 SECONDS=0
 
-# 0. Build the apps and their tests here, before taking the VM: a run waiting for the VM
-#    builds meanwhile. One scheme per step, so the step times show them apart.
 dd=$repo/build/vm-test
 products=$dd/Build/Products
+
+# One run at a time, in turn. scripts/vm-test-lock.py files this run in the queue now,
+# so it keeps its place while it builds, then takes the VM in its turn: first the
+# worktree whose last run had --keep (for its next run), then whole-set runs, then the
+# others in the order they started (see that script). It holds the kernel's lock
+# (flock) on $lockfile until this script ends, however it ends (done, failed, Ctrl-C,
+# kill -9), so a run waits only while another live run holds the VM. The
+# pid-in-a-directory lock this replaced could be left behind, and a waiter then waited
+# on an idle VM.
+# Fixed paths, so runs from any worktree or shell (whatever its TMPDIR) share them.
+lockfile=/tmp/hermesapp-vm-test.flock
+holder_file=/tmp/hermesapp-vm-test.holder
+queue=/tmp/hermesapp-vm-test.queue
+lease_file=/tmp/hermesapp-vm-test.lease
+legacy=/tmp/hermesapp-vm-test.lock
+lock_token=$$-$RANDOM$RANDOM
+python3 scripts/vm-test-lock.py "$lockfile" "$lock_token" "$queue" "$lease_file" "$repo" "$full" &
+watcher=$!
+release_vm() {
+  [[ $(cat "$legacy/pid" 2>/dev/null) != "$$" ]] || rm -rf "$legacy"
+  if [[ -n ${vm_since:-} ]]; then
+    rm -f "$holder_file"
+    # With --keep (another run follows), this worktree keeps the VM for that run a
+    # little while (vm-test-lock.py); without it, the next run in line takes it at once.
+    if ((keep)); then
+      printf '%s\t%s\t%s\n' "$repo" $(($(date +%s) + ${HERMES_VM_LEASE:-180})) "$batch_since" >"$lease_file.$$" \
+        && mv -f "$lease_file.$$" "$lease_file"
+    else
+      rm -f "$lease_file"
+    fi
+  fi
+  rm -f "$queue/$$.json" "$queue/$$.ready"
+  kill -KILL "$watcher" 2>/dev/null || true
+}
+trap 'remove_products; release_vm' EXIT
+trap 'exit 130' INT TERM HUP
+
+# 0. Build the apps and their tests here, before taking the VM: a run waiting for the VM
+#    builds meanwhile. One scheme per step, so the step times show them apart.
 schemes=()
 if runs window; then schemes+=(HermesMacTests); fi
 if runs ui; then schemes+=(HermesMacUITests); fi
@@ -139,51 +202,8 @@ if ((${#schemes[@]})); then
   done
 fi
 
-# One run at a time. The lock is the kernel's (flock) on $lockfile, held by a small
-# python3 watcher for as long as this script lives: the kernel drops it the moment the
-# watcher ends, and the watcher ends as soon as this script does, however it ends
-# (done, failed, Ctrl-C, kill -9). So a run waits only while another live run holds the
-# VM. The pid-in-a-directory lock this replaces could be left behind: by a run killed
-# before it wrote its pid (never taken over), or with a pid the system had since given
-# to another process (pids here come round again within hours), and a waiter then
-# waited on an idle VM; two waiters taking over the same stale lock could also delete
-# each other's.
 step "wait for the VM"
-# Fixed paths, so runs from any worktree or shell (whatever its TMPDIR) share them.
-lockfile=/tmp/hermesapp-vm-test.flock
-holder_file=/tmp/hermesapp-vm-test.holder
-legacy=/tmp/hermesapp-vm-test.lock
-lock_token=$$-$RANDOM$RANDOM
-# It ignores the signals that stop this script, so the lock outlasts the EXIT trap's
-# stopping of the VM; the trap then ends it.
-python3 -c '
-import fcntl, os, signal, sys, time
-path, token = sys.argv[1:]
-for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-    signal.signal(s, signal.SIG_IGN)
-script = os.getppid()
-fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
-while True:
-    if os.getppid() != script:
-        sys.exit()
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        break
-    except BlockingIOError:
-        time.sleep(1)
-os.ftruncate(fd, 0)
-os.write(fd, token.encode())
-while os.getppid() == script:
-    time.sleep(1)
-' "$lockfile" "$lock_token" &
-watcher=$!
-release_vm() {
-  [[ $(cat "$legacy/pid" 2>/dev/null) != "$$" ]] || rm -rf "$legacy"
-  [[ -z ${vm_since:-} ]] || rm -f "$holder_file"
-  kill -KILL "$watcher" 2>/dev/null || true
-}
-trap 'remove_products; release_vm' EXIT
-trap 'exit 130' INT TERM HUP
+mkdir -p "$queue" && touch "$queue/$$.ready"
 shown="" polls=0
 until [[ $(cat "$lockfile" 2>/dev/null) == "$lock_token" ]]; do
   kill -0 "$watcher" 2>/dev/null || { echo "The VM lock's watcher (python3) quit." >&2; exit 1; }
@@ -196,9 +216,9 @@ until [[ $(cat "$lockfile" 2>/dev/null) == "$lock_token" ]]; do
     msg="The VM is in use by the vm-test.sh run from ${hrepo##*/} (pid $hpid, on the VM for"
     msg+=" $((($(date +%s) - hsince) / 60)) min, now at: $hstep); waiting for it..."
   else
-    seen="?" msg="Another vm-test.sh run is using the VM; waiting for it..."
+    seen="" msg=""  # the VM is free: vm-test-lock.py says whose turn it is
   fi
-  [[ $seen == "$shown" ]] || { echo "$msg"; shown=$seen; }
+  [[ $seen == "$shown" ]] || { [[ -z $msg ]] || echo "$msg"; shown=$seen; }
   sleep 2
 done
 # Runs from worktrees made before this lock take only the old one, a directory holding
@@ -217,6 +237,13 @@ until mkdir "$legacy" 2>/dev/null; do
 done
 echo $$ >"$legacy/pid"
 vm_since=$(date +%s)
+# The batch this run belongs to: the same as the last run's, if that came from this
+# worktree and left it the VM; vm-test-lock.py caps how long a batch keeps the VM.
+batch_since=$vm_since
+IFS=$'\t' read -r lrepo luntil lsince 2>/dev/null <"$lease_file" || true
+if [[ ${lrepo:-} == "$repo" && ${lsince:-} =~ ^[0-9]+$ ]] && ((vm_since - lsince < ${HERMES_VM_BATCH:-1800})); then
+  batch_since=$lsince
+fi
 note_holder
 
 # 1. The VM: cloned once, headless. No folder is shared: the code is streamed in (step 4).
@@ -241,6 +268,23 @@ if ! tart list | awk -v vm="$VM" '$2 == vm && $NF == "running"' | grep -q .; the
 fi
 for _ in $(seq 1 90); do tart exec "$VM" true >/dev/null 2>&1 && break; sleep 2; done
 vexec() { tart exec "$VM" /bin/zsh -lc "export PATH=\$HOME/.local/bin:\$PATH; $1"; }
+# The iOS simulator boots while other steps run, not in the iOS step: its boot took
+# about a minute of every iOS run. `simctl boot` returns once the boot has started;
+# the iOS step's xcodebuild waits for the rest. It starts after the window tests, so
+# the boot doesn't slow their timing checks, or here, when there are none.
+sim=""
+boot_sim() {
+  ((ios)) && [[ -z $sim ]] || return 0
+  sim=$(vexec "xcrun simctl list devices available -j" | python3 -c '
+import json, sys
+for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=True):
+    for d in devices:
+        if "iOS" in runtime and d["name"].startswith("iPhone"):
+            print(d["udid"]); sys.exit()')
+  [[ -n $sim ]] || { echo "No iPhone simulator in the VM." >&2; return 1; }
+  vexec "xcrun simctl boot $sim 2>&1 | grep -v 'current state: Booted' || true"
+}
+runs window || boot_sim || status=1
 trap 'remove_products; ((keep)) || tart stop "$VM" >/dev/null 2>&1 || true; report_times; release_vm' EXIT
 
 # 2. The VM's own Hermes: installed once, a hermesapp-test profile on the test model
@@ -324,17 +368,52 @@ xctest() {  # step name, scheme, result name, destination
     xcodebuild test-without-building -xctestrun \$(ls ~/products/$2_*.xctestrun | head -1) -destination \"$4\" \
       -resultBundlePath ~/results/$3.xcresult -collect-test-diagnostics never -quiet$(only_testing "$2")" || status=1
 }
-if runs window; then xctest "window tests (run)" HermesMacTests mac-window platform=macOS; fi
+if runs window; then xctest "window tests (run)" HermesMacTests mac-window platform=macOS; boot_sim || status=1; fi
 if runs ui; then xctest "macOS UI tests (run)" HermesMacUITests mac-ui platform=macOS; fi
 if ((ios)); then
-  sim=$(vexec "xcrun simctl list devices available" | sed -n 's/^ *\(iPhone [^(]*\) (.*/\1/p' | head -1 | sed 's/ *$//')
-  xctest "iOS UI tests (run)" HermesiOSUITests ios-ui "platform=iOS Simulator,name=$sim"
+  xctest "iOS UI tests (run)" HermesiOSUITests ios-ui "platform=iOS Simulator,id=$sim"
 fi
 vexec "for r in ~/results/*.xcresult; do
     [[ -f \$r/Info.plist ]] || { echo \"\$(basename \$r .xcresult): no results (the run did not finish)\"; continue; }
     printf '%s: ' \"\$(basename \$r .xcresult)\"
     xcrun xcresulttool get test-results summary --path \"\$r\" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[\"result\"], d[\"passedTests\"], \"passed,\", d[\"failedTests\"], \"failed\"); [print(\"  \", f[\"testName\"], \"|\", f[\"failureText\"][:300]) for f in d.get(\"testFailures\", [])]'
   done" || true
+# Each test's time, from the result bundles: the slowest are printed, and every one goes
+# to build/vm-test/durations/<result>.tsv (seconds, result, Suite/test), to see where a
+# run's time went.
+durations=$dd/durations
+rm -rf "$durations" && mkdir -p "$durations"
+vexec "cd ~/results && for r in *.xcresult; do
+    [[ -f \$r/Info.plist ]] || continue
+    print -r -- \"### \${r%.xcresult}\"
+    xcrun xcresulttool get test-results tests --path \$r
+  done" 2>/dev/null | python3 -c '
+import json, os, sys
+out, name, chunk = sys.argv[1], None, []
+def flush():
+    if not name or not chunk:
+        return
+    rows = []
+    def walk(node, suite):
+        if node.get("nodeType") == "Test Case":
+            rows.append((node.get("durationInSeconds", 0), node.get("result", "?"), suite + "/" + node["name"]))
+        for child in node.get("children", []):
+            walk(child, node["name"] if node.get("nodeType") == "Test Suite" else suite)
+    for node in json.loads("".join(chunk)).get("testNodes", []):
+        walk(node, "")
+    rows.sort(reverse=True)
+    with open(os.path.join(out, name + ".tsv"), "w") as f:
+        f.writelines(f"{d:.1f}\t{r}\t{t}\n" for d, r, t in rows)
+    print(f"{name}: {len(rows)} tests, {sum(r[0] for r in rows):.0f}s in tests; the slowest:")
+    for d, r, t in rows[:8]:
+        print(f"  {d:6.1f}s  {t}" + ("" if r == "Passed" else f"  ({r})"))
+for line in sys.stdin:
+    if line.startswith("### "):
+        flush(); name, chunk = line[4:].strip(), []
+    else:
+        chunk.append(line)
+flush()
+' "$durations" || true
 # The tests' screenshots, out of the VM before the next run clears its results: into
 # build/vm-test/screenshots/<result>/, named by the test's attachment names.
 step "copy the screenshots out"

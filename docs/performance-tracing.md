@@ -15,6 +15,9 @@ costs one check. Nothing leaves the device but what you record yourself.
 | Snapshot rebuild | interval | `ChatSession` building its transcript from a session's snapshot |
 | Math typeset | interval | `MathRenderer`: a formula typeset by SwiftMath (cached afterwards) |
 | Chat selected | event | the sidebar's selection changes: where a chat switch starts |
+| Text apply | interval | a message's text view takes new text or style (`MarkdownSelectionTextView.apply`); unchanged updates mark nothing |
+| Text measure | interval | a message's text laid out for its height (`fittingHeight`), when the width or text changed |
+| Text draw | interval | Mac only: a message's text view drawing (`draw(_:)`), e.g. as it scrolls into view |
 
 HermesKit stays Foundation-only: it names its spans through `Tracing` (`WorkTracer`),
 and the apps install the tracer that turns them into signposts (`AppSignposts`).

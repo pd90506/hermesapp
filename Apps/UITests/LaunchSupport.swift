@@ -10,6 +10,10 @@ extension XCUIApplication {
     func launchWithMainWindow() {
         #if os(macOS)
         launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
+        // The split view's own default widths: AppKit keeps the sidebar's last width in
+        // the app's defaults, and a run that left it squeezed (VM, 2026-10-22) squeezed
+        // every later run's. An empty value here hides the saved one.
+        launchArguments += ["-NSSplitView Subview Frames main-AppWindow-1, SidebarNavigationSplitView", "()"]
         #endif
         launch()
         #if os(macOS)

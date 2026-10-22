@@ -145,7 +145,7 @@ final class SendStateUITests: XCTestCase {
         defer { app.terminate() }
         let composer = try openNewChat(app)
 
-        send("Write the whole numbers from 1 to 1000 as English words, each on its own line, and nothing else. "
+        send("Write the whole numbers from 1 to 300 as English words, each on its own line, and nothing else. "
              + "Do not use tools.", composer: composer, in: app)
         XCTAssertTrue(waitForMessage("twenty", exactly: false, in: app, timeout: 150), "the reply streams")
         let slow = "SLOW-\(Int.random(in: 1000...9999))"
@@ -170,10 +170,9 @@ final class SendStateUITests: XCTestCase {
     /// answer, when given, below it.
     @MainActor
     private func checkOrder(correction: String, answer: String?, in app: XCUIApplication, _ moment: String) {
-        let texts = app.descendants(matching: .any).matching(NSPredicate(
-            format: "identifier != 'composer' AND (elementType == %d OR elementType == %d)",
-            XCUIElement.ElementType.staticText.rawValue, XCUIElement.ElementType.textView.rawValue))
-            .allElementsBoundByIndex.filter { $0.frame.height > 0 }
+        // The two kinds of text separately: one query over every element timed out on iOS.
+        let texts = (app.textViews.allElementsBoundByIndex + app.staticTexts.allElementsBoundByIndex)
+            .filter { $0.identifier != "composer" && $0.frame.height > 0 }
         func text(_ element: XCUIElement) -> String {
             let value = element.value as? String ?? ""
             return value.isEmpty ? element.label : value

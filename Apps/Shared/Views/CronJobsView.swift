@@ -22,10 +22,14 @@ enum SessionListTab: String, CaseIterable {
     }
 }
 
-/// The two tabs, side by side, a symbol over each label, on a capsule of Liquid Glass
-/// floating over the list's bottom, as iOS 26's tab bar: the picked tab on a pill of the
-/// theme's accent, which slides to the other tab. The rows scroll under it. The same on
-/// the Mac, where it replaced a band with a hairline (2026-10-20).
+#if os(macOS)
+/// The two tabs on the Mac, side by side, a symbol beside each label, on a capsule of
+/// clear Liquid Glass floating over the list's bottom: the glass of the window's other
+/// buttons, the rail's Settings beside it and the toolbar's, and as tall (asked for by
+/// the user, 2026-10-22). The picked tab is in the accent on a grey pill, as a segmented
+/// control's in a toolbar, which slides to the other tab. The rows scroll under it.
+/// macOS has no tab bar of the system's (its tab view is a segmented control over a box);
+/// on iOS the tabs are the system's tab bar.
 struct SessionListTabBar: View {
     @Binding var tab: SessionListTab
     /// Jobs whose last run failed, shown on the Cron Jobs tab.
@@ -34,13 +38,9 @@ struct SessionListTabBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How far the capsule floats in from the list's edges.
-    static var inset: CGFloat {
-        #if os(macOS)
-        Hover.rowInset
-        #else
-        16
-        #endif
-    }
+    static let inset = Hover.rowInset
+    /// The rail's Settings button's height (`ProfileRailView`).
+    private static let height: CGFloat = 34
 
     var body: some View {
         HStack(spacing: 0) {
@@ -48,24 +48,35 @@ struct SessionListTabBar: View {
                 Button {
                     withAnimation(reduceMotion ? nil : Motion.swap) { tab = item }
                 } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: item.systemImage)
-                            .symbolVariant(tab == item ? .fill : .none)
-                            .uiFont(.body)
-                            .overlay(alignment: .topTrailing) {
-                                if item == .cron && cronAlerts > 0 {
-                                    Circle().fill(.red).frame(width: 7, height: 7).offset(x: 4, y: -2)
-                                }
+                    HStack(spacing: 5) {
+                        // Room for the symbol and the title in either look, picked or not:
+                        // the filled symbol and the semibold title are a little bigger, and
+                        // the bar grew and shrank by a hair at each switch.
+                        ZStack {
+                            Image(systemName: item.systemImage).symbolVariant(.fill).hidden()
+                            Image(systemName: item.systemImage).symbolVariant(.none).hidden()
+                            Image(systemName: item.systemImage)
+                                .symbolVariant(tab == item ? .fill : .none)
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            if item == .cron && cronAlerts > 0 {
+                                Circle().fill(.red).frame(width: 7, height: 7).offset(x: 4, y: -2)
                             }
-                        Text(item.title)
-                            .uiFont(.caption2, weight: tab == item ? .semibold : nil)
+                        }
+                        ZStack {
+                            Text(item.title).uiFont(.callout, weight: .semibold).hidden()
+                            Text(item.title).uiFont(.callout).hidden()
+                            Text(item.title)
+                                .uiFont(.callout, weight: tab == item ? .semibold : nil)
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Self.itemPadding)
+                    .uiFont(.callout)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background {
                         if tab == item {
                             Capsule()
-                                .fill(.tint.opacity(0.15))
+                                .fill(.primary.opacity(0.1))
                                 .matchedGeometryEffect(id: "pill", in: pill)
                         }
                     }
@@ -78,30 +89,18 @@ struct SessionListTabBar: View {
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
             }
         }
-        .padding(4)
-        .themedGlass(in: .capsule, interactive: true)
+        .padding(3)
+        .frame(height: Self.height)
+        .glassEffect(.regular.interactive(), in: .capsule)
         .padding(.horizontal, Self.inset)
         .padding(.top, 6)
         .padding(.bottom, Self.bottomPadding)
     }
 
-    private static var itemPadding: CGFloat {
-        #if os(macOS)
-        4
-        #else
-        6
-        #endif
-    }
-
-    /// Off the window's bottom on the Mac; on iOS the home indicator's safe area is below.
-    private static var bottomPadding: CGFloat {
-        #if os(macOS)
-        Hover.rowInset
-        #else
-        4
-        #endif
-    }
+    /// Off the window's bottom.
+    private static let bottomPadding = Hover.rowInset
 }
+#endif
 
 /// The selected profile's scheduled jobs (the Cron Jobs tab): Desktop's sidebar Cron
 /// section as a list (`apps/desktop/src/app/chat/sidebar/cron-jobs-section.tsx`). A

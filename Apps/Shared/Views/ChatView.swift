@@ -166,12 +166,6 @@ struct ChatView: View {
         .background { surfaces.chat.ignoresSafeArea() }
         #endif
         // The title is the column's (`RootView`), as several chats are kept built.
-        #if os(macOS)
-        // No toolbar background over the chat. Its title bar holds no controls, and
-        // macOS 26 showed that background while the pointer was over the title bar or
-        // the top of the chat: a gray band down to the first message, with a line under it.
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        #endif
     }
 
     /// The composer, as wide as the messages' text (the content width less its padding):

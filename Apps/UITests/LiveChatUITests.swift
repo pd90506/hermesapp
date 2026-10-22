@@ -201,10 +201,8 @@ final class LiveChatUITests: XCTestCase {
         }
 
         checkProfileRailIsFixed(app, rail: rail)
-        checkNewChatSitsAtTheSessionColumnsTrailingEdge(app, newChat: newChat, list: list)
+        checkToolbarHoldsTheSidebarsButtons(app, newChat: newChat, list: list, rail: rail)
         checkNewChatHoldsStill(app, newChat: newChat, "no chat")
-        checkSessionListHeaderLooksTheSameUnderThePointer(app, newChat: newChat)
-        checkFrameIsOneColourAroundThePanel(app, newChat: newChat, list: list, rail: rail, "no chat")
         checkCollapseButtonHidesTheProfiles(app, list: list, rail: rail)
 
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
@@ -213,23 +211,13 @@ final class LiveChatUITests: XCTestCase {
         let composer = app.textViews["composer"]
         try require(composer.waitForExistence(timeout: 30), "composer shown")
 
-        // Any type: the title is also the window's drag area (a gesture), which can make
-        // it a group around its text, as the sidebar's title.
-        let chatTitle = app.descendants(matching: .any)["chatTitle"].firstMatch
-        if !chatTitle.waitForExistence(timeout: 5) {
-            let tree = XCTAttachment(string: app.windows.firstMatch.debugDescription)
-            tree.name = "window elements, no chat title"
-            tree.lifetime = .keepAlways
-            add(tree)
-        }
-        try require(chatTitle.exists, "populated chat has a visible top title")
-        let titleText = chatTitle.label.isEmpty ? chatTitle.staticTexts.firstMatch.label : chatTitle.label
-        XCTAssertFalse(titleText.isEmpty, "chat title has content")
-        XCTAssertEqual(chatTitle.frame.midY, close.frame.midY, accuracy: 10,
-                       "chat title is aligned with the native controls")
+        // The chat's title is the window's, which the toolbar shows (`RootView`).
+        let window = app.windows.firstMatch
+        let titled = Date().addingTimeInterval(10)
+        while window.title.isEmpty, Date() < titled { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
+        XCTAssertFalse(window.title.isEmpty, "the chat's title is the window's")
         checkNewChatHoldsStill(app, newChat: newChat, "a chat open")
-        checkFrameIsOneColourAroundThePanel(app, newChat: newChat, list: list, rail: rail, "a chat open")
-        checkHoveringTheTitleBarDoesNotShadeTheChat(app, composer: composer)
+        attach(app, "a chat open")
         checkAttachMenuHasNoPaste(app)
 
         try checkBotChatStaysPinnedAboveTheSessions(app, newChat: newChat, list: list)
@@ -271,10 +259,12 @@ final class LiveChatUITests: XCTestCase {
         let shown = panelEdges(app, press: collapse, "hiding the profiles")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         let hidden = panelEdges(app, press: collapse, "showing the profiles")
-        for (name, edges, from, to) in [("hiding", shown, CGFloat(54), CGFloat(0)), ("showing", hidden, 0, 54)] {
+        // The list's edge with the rail hidden: the sidebar's own inset from the window's.
+        let inset = shown.last ?? 0
+        for (name, edges, from, to) in [("hiding", shown, inset + 54, inset), ("showing", hidden, inset, inset + 54)] {
             XCTAssertEqual(edges.first ?? -1, from, accuracy: 2, "\(name): the panel's edge before: \(edges)")
             XCTAssertEqual(edges.last ?? -1, to, accuracy: 2, "\(name): the panel's edge after: \(edges)")
-            XCTAssertTrue(edges.contains { $0 > 6 && $0 < 48 }, "\(name): no frame part way, a jump: \(edges)")
+            XCTAssertTrue(edges.contains { $0 > inset + 6 && $0 < inset + 48 }, "\(name): no frame part way, a jump: \(edges)")
             let steps = zip(edges, edges.dropFirst()).map { $1 - $0 }
             XCTAssertFalse(steps.contains { to < from ? $0 > 1 : $0 < -1 }, "\(name): the edge went back: \(edges)")
         }
@@ -310,95 +300,25 @@ final class LiveChatUITests: XCTestCase {
         _ = try XCTUnwrap(ok ? true : nil, message, file: file, line: line)
     }
 
-    /// The pointer over the title bar, or over the top of the chat, leaves the chat
-    /// column alone. macOS 26 showed the window toolbar's background there: a band
-    /// from the top of the window down to the first message, with a line under it
-    /// (gray in dark mode; in the VM's light mode only the line shows). Needs a new
-    /// chat open: one short line at the bottom, so the top of the chat column is empty.
+    /// The window's toolbar holds the sidebar's buttons over the sidebar, level with the
+    /// window buttons: the profiles' toggle after them, New chat at the sidebar's end.
+    /// The profile's name and the rail start under it.
     @MainActor
-    private func checkHoveringTheTitleBarDoesNotShadeTheChat(_ app: XCUIApplication, composer: XCUIElement) {
-        // Compared: a column of pixels from just under the title bar to the composer,
-        // away from where the pointer goes.
-        let window = app.windows.firstMatch
-        let frame = window.frame
-        let x = composer.frame.midX - frame.minX
-        let column = (x: x + 120, from: CGFloat(56), to: composer.frame.minY - frame.minY - 16)
-        func hover(_ y: CGFloat) {
-            window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: x - 120, dy: y)).hover()
-            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        }
-        func pixels(_ name: String) -> [[UInt8]] {
-            let shot = window.screenshot()
-            let attachment = XCTAttachment(screenshot: shot)
-            attachment.name = name
-            attachment.lifetime = .keepAlways
-            add(attachment)
-            return Self.pixels(of: shot.image, column: column, in: frame.size)
-        }
-
-        composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        let away = pixels("pointer on the composer")
-        XCTAssertFalse(away.isEmpty, "read the chat column")
-        hover(16)
-        let titleBar = pixels("pointer on the title bar")
-        hover(220)
-        let top = pixels("pointer on the top of the chat")
-        XCTAssertNil(Self.firstDifference(away, titleBar), "the title bar under the pointer shades the chat")
-        XCTAssertNil(Self.firstDifference(away, top), "the top of the chat under the pointer shades it")
-    }
-
-    /// The session list's header (title bar, New chat) keeps one look: the same glass
-    /// whether or not the pointer is over the title bar. macOS 26 showed the toolbar's
-    /// glass only on hover (or with rows scrolled under it), so the header changed as
-    /// the pointer crossed it.
-    @MainActor
-    private func checkSessionListHeaderLooksTheSameUnderThePointer(_ app: XCUIApplication, newChat: XCUIElement) {
-        // From the top of the window to a little under the title bar, just left of New
-        // chat (at the column's trailing edge), away from where the pointer goes.
-        let window = app.windows.firstMatch
-        let frame = window.frame
-        let row = newChat.frame
-        let column = (x: row.minX - 12 - frame.minX, from: CGFloat(4), to: row.maxY + 24 - frame.minY)
-        func shot(_ name: String) -> [[UInt8]] {
-            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-            let shot = window.screenshot()
-            let attachment = XCTAttachment(screenshot: shot)
-            attachment.name = name
-            attachment.lifetime = .keepAlways
-            add(attachment)
-            return Self.pixels(of: shot.image, column: column, in: frame.size)
-        }
-
-        window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
-        let away = shot("pointer on the chat column")
-        XCTAssertFalse(away.isEmpty, "read the session list's header")
-        window.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: row.minX - 60 - frame.minX, dy: 16)).hover()
-        let titleBar = shot("pointer on the session list's title bar")
-        XCTAssertNil(Self.firstDifference(away, titleBar), "the header changes under the pointer")
-    }
-
-    /// New chat shares the native header and remains within the sidebar.
-    @MainActor
-    private func checkNewChatSitsAtTheSessionColumnsTrailingEdge(_ app: XCUIApplication, newChat: XCUIElement,
-                                                                 list: XCUIElement) {
+    private func checkToolbarHoldsTheSidebarsButtons(_ app: XCUIApplication, newChat: XCUIElement,
+                                                     list: XCUIElement, rail: XCUIElement) {
         let close = app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow]
         XCTAssertTrue(close.exists, "the window's close button")
-        let button = newChat.frame, column = list.frame
-        XCTAssertEqual(button.maxX, column.maxX - 10, accuracy: 2,
-                       "New chat is anchored to the list's trailing content edge")
-        let title = app.descendants(matching: .any)["sidebarProfileTitle"].firstMatch
-        XCTAssertTrue(title.exists, "dynamic profile identity is present")
         let toggle = app.buttons["collapseProfiles"]
-        XCTAssertGreaterThanOrEqual(title.frame.minX, column.minX + 16,
-                                    "title begins at or after the session text inset")
-        XCTAssertGreaterThanOrEqual(title.frame.minX, toggle.frame.maxX + 7,
-                                    "title clears the toggle's hit region")
-        XCTAssertLessThanOrEqual(title.frame.maxX, button.minX - 7,
-                                 "title truncates before New chat")
-        XCTAssertEqual(button.midY, close.frame.midY, accuracy: 10,
-                       "New chat shares the native header")
+        XCTAssertEqual(newChat.frame.midY, close.frame.midY, accuracy: 4, "New chat in the toolbar: \(newChat.frame)")
+        XCTAssertEqual(toggle.frame.midY, close.frame.midY, accuracy: 4, "the toggle in the toolbar: \(toggle.frame)")
+        XCTAssertLessThanOrEqual(newChat.frame.maxX, list.frame.maxX + 2,
+                                 "New chat over the sidebar: \(newChat.frame) \(list.frame)")
+        let title = app.descendants(matching: .any)["sidebarProfileTitle"].firstMatch
+        XCTAssertTrue(title.exists, "the profile's name")
+        XCTAssertGreaterThan(title.frame.minY, close.frame.maxY, "the profile's name under the toolbar")
+        XCTAssertGreaterThan(rail.frame.minY, close.frame.maxY, "the profiles under the toolbar")
+        XCTAssertLessThan(rail.frame.maxX, list.frame.minX + 2, "the rail beside the list: \(rail.frame) \(list.frame)")
+        attach(app, "toolbar")
     }
 
     /// The collapse button sits after the window buttons, level with them, and hides the
@@ -413,23 +333,19 @@ final class LiveChatUITests: XCTestCase {
         let collapse = window.buttons["collapseProfiles"]
         guard collapse.exists else { return XCTFail("the collapse button") }
         XCTAssertGreaterThan(collapse.frame.minX, zoom.frame.maxX, "after the window buttons: \(collapse.frame)")
-        XCTAssertLessThan(collapse.frame.minX, zoom.frame.maxX + 30, "right after them: \(collapse.frame)")
-        XCTAssertLessThanOrEqual(abs(collapse.frame.midY - zoom.frame.midY), 2, "level with them: \(collapse.frame)")
-        let listX = list.frame.minX, width = list.frame.width
+        XCTAssertLessThanOrEqual(abs(collapse.frame.midY - zoom.frame.midY), 4, "level with them: \(collapse.frame)")
+        let listX = list.frame.minX
         press(collapse)
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: rail)
         XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 5), .completed, "the profile rail hides")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         XCTAssertTrue(list.exists, "the session list stays")
         XCTAssertLessThan(list.frame.minX, listX - 40, "the session list moves to the window's edge: \(list.frame)")
-        XCTAssertEqual(list.frame.width, width, accuracy: 1, "at its width")
-        checkNewChatSitsAtTheSessionColumnsTrailingEdge(app, newChat: app.buttons["New chat"], list: list)
         attach(app, "profiles collapsed")
         press(collapse)
         XCTAssertTrue(rail.waitForExistence(timeout: 5), "the profile rail shows again")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         XCTAssertEqual(list.frame.minX, listX, accuracy: 1, "the session list back beside it")
-        checkNewChatSitsAtTheSessionColumnsTrailingEdge(app, newChat: app.buttons["New chat"], list: list)
     }
 
     /// New chat holds still in the title bar, with a chat open and with none. It
@@ -460,58 +376,6 @@ final class LiveChatUITests: XCTestCase {
             XCTAssertFalse(app.menuBars.menuItems[title].exists, "the menus offer \(title)")
         }
         attach(app, "profile rail")
-    }
-
-    /// The shared sidebar runs behind the native controls and the rail; the flat chat
-    /// has its own surface all the way to the top.
-    /// Nor does the pointer over the strip shade the chat (macOS 26 shaded the title bar
-    /// under the pointer).
-    @MainActor
-    private func checkFrameIsOneColourAroundThePanel(_ app: XCUIApplication, newChat: XCUIElement,
-                                                     list: XCUIElement, rail: XCUIElement, _ state: String) {
-        let window = app.windows.firstMatch
-        let frame = window.frame
-        let close = window.buttons[XCUIIdentifierCloseWindow]
-        XCTAssertTrue(close.exists, "the window's close button")
-        XCTAssertLessThan(rail.frame.maxX, list.frame.minX + 2, "the rail is beside the list: \(rail.frame) \(list.frame)")
-        XCTAssertEqual(close.frame.midY, newChat.frame.midY, accuracy: 10,
-                       "native controls and profile identity share the header")
-        XCTAssertGreaterThan(rail.frame.minY, close.frame.maxY,
-                             "profiles begin below the native controls")
-        let title = app.descendants(matching: .any)["chatTitle"].firstMatch
-        if title.exists {
-            XCTAssertEqual(title.frame.midY, close.frame.midY, accuracy: 10,
-                           "chat title occupies the actual top header")
-        }
-        // Points away from any text or button: the strip over the rail and over the chat,
-        // the rail low down, and the chat well under the strip.
-        let railX = rail.frame.midX - frame.minX
-        let chatX = list.frame.maxX + (frame.maxX - list.frame.maxX) * 0.75 - frame.minX
-        func color(at x: CGFloat, _ y: CGFloat, in shot: XCUIScreenshot) -> [UInt8] {
-            Self.pixels(of: shot.image, column: (x: x, from: y, to: y + 1), in: frame.size).first ?? []
-        }
-        func same(_ a: [UInt8], _ b: [UInt8], within: Int = 3) -> Bool {
-            !a.isEmpty && a.count == b.count && zip(a, b).allSatisfy { abs(Int($0) - Int($1)) <= within }
-        }
-        window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.6)).hover()
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        let shot = window.screenshot()
-        let attachment = XCTAttachment(screenshot: shot)
-        attachment.name = "window frame, \(state)"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        let stripOverRail = color(at: railX, 6, in: shot), stripOverChat = color(at: chatX, 6, in: shot)
-        let railLow = color(at: railX, frame.height * 0.75, in: shot)
-        let chat = color(at: chatX, 160, in: shot)
-        XCTAssertFalse(same(stripOverRail, stripOverChat), "\(state): sidebar and chat remain independent themed surfaces")
-        XCTAssertTrue(same(stripOverRail, railLow), "\(state): the rail is the strip's colour: \(railLow) vs \(stripOverRail)")
-        XCTAssertFalse(same(stripOverRail, chat), "\(state): the flat chat is set off from the chrome: \(chat)")
-        // The pointer over the strip leaves it and the chat alone.
-        window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: chatX, dy: 8)).hover()
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        let hovered = window.screenshot()
-        XCTAssertTrue(same(color(at: chatX, 6, in: hovered), stripOverChat), "\(state): the strip changed under the pointer")
-        XCTAssertTrue(same(color(at: chatX, 160, in: hovered), chat), "\(state): the chat changed under the pointer")
     }
 
     /// The Bot Chat is pinned above the session list: scrolling the list leaves it where

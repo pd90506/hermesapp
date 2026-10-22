@@ -6,10 +6,11 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: SidebarItem?
+    @State private var columns = NavigationSplitViewVisibility.all
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.surfaces) private var surfaces
     #else
-    @State private var columns = NavigationSplitViewVisibility.all
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// The column shown when the split view is collapsed (iPhone): the session list,
     /// with the profiles' drawer over it (`ProfileDrawer`), or the chat. A new side chat
@@ -86,19 +87,21 @@ struct RootView: View {
         }
     }
 
-    /// On macOS the profile rail (it collapses) and the session list on the theme's chrome,
-    /// beside the flat chat column (`WindowLayout`). On iPad three
-    /// columns. On iPhone two, which collapse into a navigation stack (sessions → chat),
+    /// On macOS two columns: the profile rail (it collapses) and the session list in the
+    /// sidebar (`MacSidebar`), and the chat. On iPad three columns. On iPhone two, which collapse into a navigation stack (sessions → chat),
     /// with the profiles in a drawer over the session list: as a column of their own, Back
     /// from the list showed them alone, stretched over the screen (2026-10-18).
     @ViewBuilder private var split: some View {
         #if os(macOS)
-        WindowLayout {
-            ProfileRailView()
-        } list: {
-            sessionList
-        } chat: {
+        NavigationSplitView(columnVisibility: $columns) {
+            MacSidebar {
+                ProfileRailView()
+            } list: {
+                sessionList
+            }
+        } detail: {
             chat
+                .background(surfaces.chat)
         }
         #else
         if sizeClass == .compact {
@@ -181,12 +184,6 @@ struct RootView: View {
         }
         #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #if os(macOS)
-        // The title bar shows no title (`WindowLayout`): the chat's title is over it.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            ChatHeader(title: chatTitle)
-        }
-        #endif
     }
 
     /// On iPhone, whether the chat on screen is still the one shown before the row just
@@ -447,57 +444,3 @@ private struct KeptChats: View {
         return chats.sorted { $0.id < $1.id }
     }
 }
-
-#if os(macOS)
-/// The chat's title at the window's top, level with the window buttons; also the
-/// window's title (`navigationTitle`), for the Window menu.
-///
-/// On a band of Liquid Glass, as the App Store's title bar: the messages scroll under it,
-/// blurred (#54; #90 left the title bare, and scrolled text ran through it, 2026-10-21).
-/// The glass is tinted with the chat's colour, so the theme carries through, and runs past
-/// the band, cut to it: its rims drew a bright line along the band's edges. In dark a shade
-/// over it, as the glass alone was a light slab there. Clear glass showed the rows sharp
-/// and materials drew a solid band (2026-10-18).
-private struct ChatHeader: View {
-    let title: String
-    @Environment(\.surfaces) private var surfaces
-    @Environment(\.windowHeaderHeight) private var headerHeight
-
-    var body: some View {
-        Text(title)
-            .uiFont(.headline)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .opacity(title.isEmpty ? 0 : 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .frame(height: headerHeight)
-            .background {
-                Self.shade
-                    .background {
-                        Color.clear
-                            .glassEffect(.regular.tint(surfaces.chat.opacity(0.5)), in: .rect)
-                            .padding(.vertical, -24)
-                    }
-                    .clipped()
-            }
-            // The messages fade in under its edge, as under Hermes Desktop's title bar
-            // (`titlebarHeaderShadowClass`), not cut off sharp along it.
-            .overlay(alignment: .bottom) {
-                LinearGradient(colors: [surfaces.chat, surfaces.chat.opacity(0)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 16)
-                    .offset(y: 16)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-            .contentShape(.rect)
-            .gesture(WindowDragGesture())
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityIdentifier("chatTitle")
-    }
-
-    private static let shade = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(white: 0, alpha: 0.2) : .clear
-    })
-}
-#endif

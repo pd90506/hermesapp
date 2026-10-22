@@ -90,9 +90,8 @@ final class ThemeUITests: XCTestCase {
     }
 
     /// A windowed (not full-screen) window with a populated chat, for visual review: the
-    /// native traffic lights, the chat's top title, profiles shown and hidden, in
-    /// Everforest dark and Nous light. The compact list width comes from a launch
-    /// argument, so no stored preference is read or written.
+    /// native traffic lights and toolbar with the chat's title, profiles shown and hidden,
+    /// in Everforest dark and Nous light.
     @MainActor
     func testWindowedOverlayPreview() throws {
         continueAfterFailure = true
@@ -101,7 +100,6 @@ final class ThemeUITests: XCTestCase {
             throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
         }
         let app = XCUIApplication()
-        app.launchArguments += ["-compactSessionListWidth", "260"]
         app.launchEnvironment["HERMES_UITEST_URL"] = url
         app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
@@ -127,9 +125,10 @@ final class ThemeUITests: XCTestCase {
         let replyMenu = app.descendants(matching: .any).matching(identifier: "messageMoreMenu").firstMatch
         XCTAssertTrue(replyMenu.waitForExistence(timeout: 150), "the reply is shown")
         // A new chat has no title until Hermes names it, after the first reply.
-        let chatTitle = app.descendants(matching: .any)["chatTitle"].firstMatch
+        // The chat's title is the window's, in its toolbar (`RootView`).
+        let window = app.windows.firstMatch
         let titled = Date().addingTimeInterval(45)
-        while chatTitle.label.isEmpty, Date() < titled { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+        while window.title.isEmpty, Date() < titled { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
         attach(app, "windowed, reply shown")
 
         func checkWindowed(_ state: String) {
@@ -139,13 +138,9 @@ final class ThemeUITests: XCTestCase {
             XCTAssertTrue(close.exists && close.isHittable, "\(state): native close button")
             XCTAssertTrue(window.buttons[XCUIIdentifierMinimizeWindow].isHittable, "\(state): native minimize button")
             XCTAssertLessThan(window.frame.width, screen.width, "\(state): windowed, not full screen: \(window.frame) on \(screen)")
-            // Moved down from the title bar's top to the middle of the 52 pt band
-            // (`WindowLayout.headerHeight`), with room above them.
-            XCTAssertEqual(close.frame.midY - window.frame.minY, 26, accuracy: 2,
-                           "\(state): the window buttons in the middle of the top band: \(close.frame) in \(window.frame)")
-            let title = chatTitle
-            XCTAssertTrue(title.exists && !title.label.isEmpty, "\(state): the chat's top title '\(title.label)' \(title.frame)")
-            // The top row: traffic lights | toggle | profile title | New chat at the list's edge.
+            XCTAssertFalse(window.title.isEmpty, "\(state): the chat's title is the window's")
+            // The toolbar's row: traffic lights | toggle … New chat over the sidebar; the
+            // profile's name under it.
             let lights = [XCUIIdentifierZoomWindow, XCUIIdentifierFullScreenWindow]
                 .map { window.buttons[$0] }.first { $0.exists } ?? close
             let toggle = window.buttons["collapseProfiles"].firstMatch
@@ -153,12 +148,10 @@ final class ThemeUITests: XCTestCase {
             let newChat = app.buttons["New chat"].firstMatch
             let list = app.outlines.firstMatch.frame
             XCTAssertGreaterThan(toggle.frame.minX, lights.frame.maxX, "\(state): toggle after the traffic lights")
-            XCTAssertLessThanOrEqual(toggle.frame.minX - lights.frame.maxX, 16, "\(state): toggle right beside the traffic lights")
-            XCTAssertGreaterThanOrEqual(profile.frame.minX, list.minX + 16, "\(state): profile title at/after the list's text inset")
-            XCTAssertGreaterThanOrEqual(profile.frame.minX, toggle.frame.maxX, "\(state): profile title after the toggle")
-            XCTAssertLessThanOrEqual(profile.frame.maxX, newChat.frame.minX, "\(state): profile title before New chat")
-            XCTAssertEqual(newChat.frame.maxX, list.maxX - 10, accuracy: 2, "\(state): New chat at the list's trailing edge")
-            print("PREVIEW \(state): window \(window.frame), screen \(screen), close \(close.frame), lights \(lights.frame), toggle \(toggle.frame), profile '\(profile.label)' \(profile.frame), newChat \(newChat.frame), title '\(title.label)' \(title.frame), list \(list)")
+            XCTAssertEqual(toggle.frame.midY, close.frame.midY, accuracy: 4, "\(state): toggle in the toolbar's row")
+            XCTAssertEqual(newChat.frame.midY, close.frame.midY, accuracy: 4, "\(state): New chat in the toolbar's row")
+            XCTAssertGreaterThan(profile.frame.minY, close.frame.maxY, "\(state): profile title under the toolbar")
+            print("PREVIEW \(state): window \(window.frame), screen \(screen), close \(close.frame), lights \(lights.frame), toggle \(toggle.frame), profile '\(profile.label)' \(profile.frame), newChat \(newChat.frame), title '\(window.title)', list \(list)")
         }
 
         for (theme, mode) in [("everforest", "Dark"), ("nous", "Light")] {

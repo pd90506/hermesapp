@@ -26,9 +26,9 @@ enum SidebarItem: Hashable {
 ///
 /// - The profile's name (and server) heads the list, with New chat (`NewChatButton`, a
 ///   compose icon) at its trailing edge, in the pinned `SessionListHeader`; rows scroll
-///   under it. On the Mac it is the top of the panel, under the window's strip
-///   (`WindowLayout`); on iPhone the page's top, with no navigation bar over it, led by
-///   the profile's avatar.
+///   under it. On the Mac New chat is in the window's toolbar over the sidebar
+///   (`MacSidebar`), and the name under it; on iPhone the page's top, with no navigation
+///   bar over it, led by the profile's avatar.
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
 /// - Settings is at the bottom of the profile rail (on iPhone, of the profiles' drawer).
@@ -53,11 +53,6 @@ struct SessionListView: View {
     /// Sessions or Cron Jobs. Not kept across launches: the app opens on the sessions.
     /// (Kept per window, a run left on Cron Jobs opened the next launch there.)
     @State private var tab: SessionListTab = .sessions
-    #if os(macOS)
-    @Environment(\.nativeButtonsTrailing) private var nativeButtonsTrailing
-    @Environment(\.windowHeaderHeight) private var windowHeaderHeight
-    @Environment(\.profileRailVisibility) private var profileRailVisibility
-    #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -106,7 +101,7 @@ struct SessionListView: View {
         .scrollEdgeEffectHidden(true, for: .bottom)
         // No title of its own: the window's is the chat's (`RootView`), which a title here
         // took over once the two were no longer a split view's columns.
-        // On the panel's own colour (`WindowLayout`).
+        // On the sidebar's own panel (`MacSidebar`).
         .scrollContentBackground(.hidden)
         #else
         // On the theme's page, as the chat is on its chat colour (`ChatView`).
@@ -127,18 +122,16 @@ struct SessionListView: View {
         }
         // Pinned above the Bot Chat and the list: it never scrolls away.
         #if os(macOS)
+        // Under the window's toolbar, which holds New chat over the sidebar (`MacSidebar`).
         .safeAreaInset(edge: .top, spacing: 0) {
-            GeometryReader { geometry in
-                let listLeading = geometry.frame(in: .named("mainWindowContent")).minX
-                header
-                    .padding(.leading, max(0, nativeButtonsTrailing + 12 - listLeading))
-                    // Explicitly use the list's proposal, never the title's intrinsic width.
-                    .frame(width: geometry.size.width, height: windowHeaderHeight)
-                    // A container, so its buttons keep their own identifiers.
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("sharedSidebarHeader")
+            header
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("sharedSidebarHeader")
+        }
+        .toolbar {
+            if let newChatButton {
+                ToolbarItem(placement: .primaryAction) { newChatButton }
             }
-            .frame(height: windowHeaderHeight)
         }
         #else
         .safeAreaBar(edge: .top) { header }
@@ -195,18 +188,11 @@ struct SessionListView: View {
             SessionListHeader(title: profileName ?? "No profile", subtitle: subtitle, newChat: newChatButton)
         }
         #else
-        HStack(spacing: 8) {
-            CollapseButton(isRailShown: profileRailVisibility)
-                .fixedSize()
-            ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
-                .gesture(WindowDragGesture())
-                .accessibilityIdentifier("sidebarProfileTitle")
-            if let newChatButton { newChatButton.fixedSize() }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, Hover.rowInset)
+        ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Hover.rowContentInset)
+            .padding(.bottom, 6)
+            .accessibilityIdentifier("sidebarProfileTitle")
         #endif
     }
 

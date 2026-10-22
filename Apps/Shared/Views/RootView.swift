@@ -100,7 +100,9 @@ struct RootView: View {
                 sessionList
             }
         } detail: {
+            // The chat's colour, also as the `.background` style its views fill with.
             chat
+                .backgroundStyle(surfaces.chat)
                 .background(surfaces.chat)
         }
         #else

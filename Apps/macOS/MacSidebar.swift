@@ -14,6 +14,8 @@ struct MacSidebar<Rail: View, List: View>: View {
     @ViewBuilder var list: List
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Whether the rail shows. Its toggle is in the sidebar's part of the toolbar, with
+    /// New chat (`SessionListView`).
     @AppStorage("profileRailShown") private var isRailShown = true
 
     /// The session list's widths, beside the rail when it shows.
@@ -38,11 +40,6 @@ struct MacSidebar<Rail: View, List: View>: View {
         // The rail's toggle stands for the system's sidebar button: it hides the profiles,
         // not the sessions (`CollapseButton`).
         .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                CollapseButton(isRailShown: $isRailShown)
-            }
-        }
     }
 
     private var railWidth: CGFloat { isRailShown ? ProfileRailItem.width : 0 }

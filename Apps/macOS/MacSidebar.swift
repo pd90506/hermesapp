@@ -30,7 +30,9 @@ struct MacSidebar<Rail: View, List: View>: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
             list
-                .frame(maxWidth: .infinity)
+                // At least its least width: the column's own (below) was not enough, and
+                // the system opened the sidebar at 145 pt (VM, 2026-10-22).
+                .frame(minWidth: Self.listWidths.lowerBound, maxWidth: .infinity)
         }
         .animation(Motion.rail(reduceMotion: reduceMotion), value: isRailShown)
         .navigationSplitViewColumnWidth(min: railWidth + Self.listWidths.lowerBound,

@@ -39,12 +39,6 @@ struct HermesMacApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        #if DEBUG
-        UITestLaunch.forgetSplitViewWidths()
-        #endif
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         ScrollLatching.install()
         AppearanceTheme.apply(model.appearance.theme)
@@ -66,18 +60,6 @@ extension HermesMacApp {
 
 #if DEBUG
 extension UITestLaunch {
-    /// Under UI tests, the split view at its default widths: AppKit keeps the sidebar's
-    /// last width in the app's defaults (`NSSplitView Subview Frames …`), and a run that
-    /// left it squeezed squeezed every later run's (VM, 2026-10-22).
-    @MainActor
-    static func forgetSplitViewWidths() {
-        guard current != nil else { return }
-        let defaults = UserDefaults.standard
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("NSSplitView Subview Frames") {
-            defaults.removeObject(forKey: key)
-        }
-    }
-
     /// Under UI tests, keep the app's windows on the Mac's built-in display, away
     /// from the external displays the user works on.
     @MainActor

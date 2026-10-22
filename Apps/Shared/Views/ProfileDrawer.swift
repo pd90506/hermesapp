@@ -47,7 +47,6 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
                         .ignoresSafeArea()
                         .contentShape(.rect)
                         .onTapGesture { slide(open: false) }
-                        .gesture(closingDrag(width: width))
                         .allowsHitTesting(shown > 0)
                         .accessibilityLabel("Close profiles")
                         .accessibilityAddTraits(.isButton)
@@ -68,18 +67,23 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
                                 .ignoresSafeArea()
                         }
                         .padding(.leading, Self.inset)
-                        // A swipe left closes it; the profiles still scroll up and down.
-                        .simultaneousGesture(closingDrag(width: width))
                         .offset(x: shown - width)
                         .allowsHitTesting(isOpen)
                 }
             }
-            // Anywhere on the list, as iOS 26's Back swipe works anywhere on a page.
-            .gesture(OpeningPan(isEnabled: !isOpen,
-                                changed: { drag = $0 },
-                                ended: { translation, velocity in
-                                    slide(open: translation + velocity * 0.15 > width / 2)
-                                }))
+            // A swipe right anywhere on the list opens it, as iOS 26's Back swipe works
+            // anywhere on a page; a swipe left anywhere on the panel or the shade closes
+            // it. The panel follows the finger, and a flick is enough either way.
+            .gesture(DrawerPan(isOpen: isOpen,
+                               changed: { drag = isOpen ? min($0, 0) : max($0, 0) },
+                               ended: { translation, velocity in
+                                   let open = Self.settles(open: isOpen, translation: translation,
+                                                           velocity: velocity, width: width)
+                                   // What is left of the way, for the finger's speed to carry on.
+                                   let rest = open ? width - shown : shown
+                                   let toward = open ? velocity : -velocity
+                                   slide(open: open, velocity: rest > 1 ? min(max(toward / rest, 0), 20) : 0)
+                               }))
         }
         .environment(\.toggleProfiles, ToggleProfiles { slide(open: !isOpen) })
         // Closed (here or by picking a profile): gone once it has slid away.
@@ -90,24 +94,22 @@ struct ProfileDrawer<Rail: View, Content: View>: View {
         }
     }
 
-    /// A swipe left on the panel or the shade while it shows. Only a sideways one, so a
-    /// scroll through the profiles never moves the panel.
-    private func closingDrag(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onChanged { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                drag = min(value.translation.width, 0)
-            }
-            .onEnded { value in
-                guard drag != 0 else { return }
-                let moved = value.translation.width + (value.predictedEndTranslation.width - value.translation.width) * 0.15
-                slide(open: moved > -width / 2)
-            }
+    /// How fast a swipe, in points a second, goes its way however short it was, as the
+    /// system's: a flick opens or closes the drawer; a slower one goes past halfway.
+    static var flickSpeed: CGFloat { 300 }
+
+    /// Whether a swipe let go of with this `translation` and `velocity` (points, points
+    /// a second; rightwards positive) leaves the drawer open.
+    static func settles(open isOpen: Bool, translation: CGFloat, velocity: CGFloat,
+                        width: CGFloat) -> Bool {
+        if abs(velocity) >= flickSpeed { return velocity > 0 }
+        let shown = (isOpen ? width : 0) + translation
+        return shown > width / 2
     }
 
-    private func slide(open: Bool) {
+    private func slide(open: Bool, velocity: CGFloat = 0) {
         let move = {
-            withAnimation(Motion.drawer) {
+            withAnimation(velocity == 0 ? Motion.drawer : Motion.drawer(velocity: velocity)) {
                 isOpen = open
                 drag = 0
             }
@@ -171,12 +173,16 @@ struct CurrentProfileAvatar: View {
     }
 }
 
-/// A pan right that starts the drawer opening: horizontal, so the list still scrolls
-/// on a vertical one. A UIKit recognizer, as a SwiftUI drag on the list took its
-/// scrolling. Once it has started, the list's scrolling stops: until then the list
-/// followed the finger up and down under the opening drawer (user, 2026-10-19).
-private struct OpeningPan: UIGestureRecognizerRepresentable {
-    var isEnabled: Bool
+/// The drawer's swipe: right on the list while it is closed, left on the panel or the
+/// shade while it is open. Only a sideways one starts it, so the list and the profiles
+/// still scroll on a vertical one. A UIKit recognizer, as a SwiftUI drag on the list took
+/// its scrolling, and on the panel, which moves with the finger, read the finger against
+/// the moving panel: it shook, and went half as far. Once it has started, the scrolling
+/// under it stops: until then the list followed the finger up and down under the opening
+/// drawer (user, 2026-10-19).
+private struct DrawerPan: UIGestureRecognizerRepresentable {
+    var isOpen: Bool
+    /// How far the finger has gone sideways, rightwards positive.
     var changed: (CGFloat) -> Void
     var ended: (_ translation: CGFloat, _ velocity: CGFloat) -> Void
 
@@ -189,14 +195,15 @@ private struct OpeningPan: UIGestureRecognizerRepresentable {
     }
 
     func updateUIGestureRecognizer(_ pan: UIPanGestureRecognizer, context: Context) {
-        pan.isEnabled = isEnabled
+        context.coordinator.opens = !isOpen
     }
 
     func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
+        // In the view under the whole drawer, which stays put while the panel moves.
         let translation = pan.translation(in: pan.view).x
         switch pan.state {
         case .began: context.coordinator.stopScrolling()
-        case .changed: changed(max(translation, 0))
+        case .changed: changed(translation)
         case .ended: ended(translation, pan.velocity(in: pan.view).x)
         case .cancelled, .failed: ended(0, 0)
         default: break
@@ -204,8 +211,10 @@ private struct OpeningPan: UIGestureRecognizerRepresentable {
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        /// The pans of the scroll views under the touch (the session list's), which
-        /// recognize beside this one.
+        /// Which way it starts: right to open, left to close.
+        var opens = true
+        /// The pans of the scroll views under the touch (the session list's, or the
+        /// profiles'), which recognize beside this one.
         private let scrollPans = NSHashTable<UIPanGestureRecognizer>.weakObjects()
 
         /// The drawer took the touch: the list stops where it is. Turning a recognizer
@@ -221,10 +230,11 @@ private struct OpeningPan: UIGestureRecognizerRepresentable {
         func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
             let velocity = pan.velocity(in: pan.view)
-            return velocity.x > 0 && velocity.x > abs(velocity.y) * 1.5
+            let sideways = opens ? velocity.x : -velocity.x
+            return sideways > 0 && sideways > abs(velocity.y) * 1.5
         }
 
-        // Beside the list's own scrolling, which otherwise could take the touch first.
+        // Beside the scrolling under it, which otherwise could take the touch first.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             if let scroll = other.view as? UIScrollView, other === scroll.panGestureRecognizer {

@@ -601,6 +601,91 @@ struct ChatComposerTests {
         #expect(composer.error == nil)
     }
 
+    /// A composer whose socket drops once `request` is waiting for its answer;
+    /// the second socket resumes the same live session.
+    private func dropDuring(_ request: String, _ action: @escaping @MainActor (ChatComposer) async -> Void)
+        async throws -> ChatComposer
+    {
+        let log = FrameLog()
+        let second = FakeTransport()
+        let server = composerServer(confirmModel: false)
+        second.serve(log: FrameLog()) { method, params in
+            switch method {
+            case "session.activate":
+                return ["session_id": "sid-1", "session_key": "stored-new", "message_count": 0, "messages": [],
+                        "info": ["model": "claude-opus-5-5"], "running": false, "status": "idle"]
+            case "session.resume":
+                return ["session_id": "sid-1", "session_key": "stored-new", "resumed": "stored-new",
+                        "message_count": 0, "messages": [], "info": ["model": "claude-opus-5-5"],
+                        "running": false, "status": "idle"]
+            case "session.events.since":
+                return ["events": [], "latest_seq": 1, "truncated": false, "count": 0, "epoch": "epoch-1",
+                        "open_requests": []]
+            case "commands.catalog": return ["pairs": []]
+            default: return server(method, params)
+            }
+        }
+        let (composer, first) = try await makeComposer(log: log, reconnectTo: [second]) { method, _ in
+            method == request
+        }
+        first.sendEvent("status.update", seq: 1, payload: ["kind": "status", "text": "ready"])
+        #expect(await eventually { composer.session.lastSeq == 1 })
+
+        let acting = Task { await action(composer) }
+        #expect(await eventually { !log.requests(request).isEmpty })
+        first.serverDrops()
+        await acting.value
+        let connection = try #require(connections.all.last)
+        #expect(await eventually { connection.state == .connected })
+        return composer
+    }
+
+    /// The screen after a drop: "Couldn't load models" stayed under the composer
+    /// although the reconnect loaded the models again.
+    @Test func aModelLoadLostWithTheConnectionClearsOnReconnect() async throws {
+        let composer = try await dropDuring("model.options") { await $0.loadOptions() }
+        #expect(composer.error == "Couldn't load models: The connection to the gateway was lost.")
+
+        await composer.loadCommandsAndOptions()  // what the composer runs on reconnecting
+        #expect(composer.error == nil)
+        #expect(composer.catalog != nil)
+    }
+
+    @Test func anEffortChangeLostWithTheConnectionClearsOnReconnect() async throws {
+        let composer = try await dropDuring("config.set") { await $0.selectEffort("max") }
+        #expect(composer.error == "Couldn't change the reasoning effort: The connection to the gateway was lost.")
+
+        await composer.loadCommandsAndOptions()
+        #expect(composer.error == nil)
+    }
+
+    /// A refusal is not the connection's doing: reloading the models keeps it.
+    @Test func aRefusedEffortChangeStaysAfterTheModelsReload() async throws {
+        let log = FrameLog()
+        let (composer, transport) = try await makeComposer(log: log) { method, _ in method == "config.set" }
+        let changing = Task { await composer.selectEffort("max") }
+        try await failNext("config.set", in: log, on: transport, code: 4001, message: "session not found")
+        await changing.value
+        await composer.loadOptions()
+        #expect(composer.error == "Couldn't change the reasoning effort: session not found")
+    }
+
+    /// "Reload Models" that works takes away the earlier failure.
+    @Test func aModelLoadThatWorksClearsTheEarlierFailure() async throws {
+        let log = FrameLog()
+        let (composer, transport) = try await makeComposer(log: log) { method, _ in
+            method == "model.options" && log.requests("model.options").count == 1
+        }
+        let loading = Task { await composer.loadOptions() }
+        try await failNext("model.options", in: log, on: transport, code: 5000, message: "inventory failed")
+        await loading.value
+        #expect(composer.error == "Couldn't load models: inventory failed")
+
+        await composer.loadOptions()
+        #expect(composer.error == nil)
+        #expect(composer.catalog != nil)
+    }
+
     @Test func switchesTheModelForThisSessionOnly() async throws {
         let log = FrameLog()
         let (composer, _) = try await makeComposer(log: log)

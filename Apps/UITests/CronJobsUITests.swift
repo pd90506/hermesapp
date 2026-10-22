@@ -47,8 +47,8 @@ final class CronJobsUITests: XCTestCase {
         if !connected { attachLaunchState(of: app, "not connected") }
         XCTAssertTrue(connected, "connected, the session list shown")
 
-        let sessionsTab = app.buttons["sessionListTab.sessions"].firstMatch
-        let cronTab = app.buttons["sessionListTab.cron"].firstMatch
+        let sessionsTab = app.sessionListTab("sessions")
+        let cronTab = app.sessionListTab("cron")
         XCTAssertTrue(sessionsTab.waitForExistence(timeout: 10), "the Sessions tab")
         XCTAssertTrue(cronTab.exists, "the Cron Jobs tab")
         XCTAssertEqual(sessionsTab.frame.midY, cronTab.frame.midY, accuracy: 2, "the tabs side by side")

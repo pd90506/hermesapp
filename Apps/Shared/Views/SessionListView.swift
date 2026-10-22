@@ -101,9 +101,9 @@ struct SessionListView: View {
             }
         }
         #if os(macOS)
-        // No edge of the system's at the bottom: the Mac drew it, a band and a line, only
-        // while the pointer was over the list. The rows scroll under the tabs' glass.
-        .scrollEdgeEffectHidden(true, for: .bottom)
+        // The system's hard edge under the tabs: the rows go under a backing, not through
+        // the segmented control. The soft one (the default) showed only under the pointer.
+        .scrollEdgeEffectStyle(.hard, for: .bottom)
         // No title of its own: the window's is the chat's (`RootView`), which a title here
         // took over once the two were no longer a split view's columns.
         // On the panel's own colour (`WindowLayout`).
@@ -143,8 +143,7 @@ struct SessionListView: View {
         #else
         .safeAreaBar(edge: .top) { header }
         #endif
-        // A bar like the header's: the banners and the tabs float over the rows, each on
-        // its own glass (`SessionListTabBar`).
+        // A bar like the header's: the banners and the tabs over the rows' bottom edge.
         .safeAreaBar(edge: .bottom) {
             VStack(spacing: 0) {
                 banners

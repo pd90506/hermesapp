@@ -13,27 +13,17 @@ enum SessionListTab: String, CaseIterable {
         case .cron: "Cron Jobs"
         }
     }
-
-    var systemImage: String {
-        switch self {
-        case .sessions: "bubble.left.and.bubble.right"
-        case .cron: "clock"
-        }
-    }
 }
 
-/// The two tabs, side by side, a symbol over each label, on a capsule of Liquid Glass
-/// floating over the list's bottom, as iOS 26's tab bar: the picked tab on a pill of the
-/// theme's accent, which slides to the other tab. The rows scroll under it. The same on
-/// the Mac, where it replaced a band with a hairline (2026-10-20).
+/// The two tabs at the list's bottom: the system's segmented control, as Finder's and
+/// Xcode's sidebars switch what they list. Jobs whose last run failed are counted in the
+/// Cron Jobs segment ("Cron Jobs (2)"), where the hand-drawn tab bar had a red dot.
 struct SessionListTabBar: View {
     @Binding var tab: SessionListTab
     /// Jobs whose last run failed, shown on the Cron Jobs tab.
     var cronAlerts = 0
-    @Namespace private var pill
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// How far the capsule floats in from the list's edges.
+    /// How far the control is set in from the list's edges.
     static var inset: CGFloat {
         #if os(macOS)
         Hover.rowInset
@@ -43,54 +33,24 @@ struct SessionListTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        Picker("Show", selection: $tab) {
             ForEach(SessionListTab.allCases, id: \.self) { item in
-                Button {
-                    withAnimation(reduceMotion ? nil : Motion.swap) { tab = item }
-                } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: item.systemImage)
-                            .symbolVariant(tab == item ? .fill : .none)
-                            .uiFont(.body)
-                            .overlay(alignment: .topTrailing) {
-                                if item == .cron && cronAlerts > 0 {
-                                    Circle().fill(.red).frame(width: 7, height: 7).offset(x: 4, y: -2)
-                                }
-                            }
-                        Text(item.title)
-                            .uiFont(.caption2, weight: tab == item ? .semibold : nil)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Self.itemPadding)
-                    .background {
-                        if tab == item {
-                            Capsule()
-                                .fill(.tint.opacity(0.15))
-                                .matchedGeometryEffect(id: "pill", in: pill)
-                        }
-                    }
-                    .contentShape(.capsule)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(tab == item ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .hoverHighlight(in: Capsule(), isEnabled: tab != item)
-                .accessibilityIdentifier("sessionListTab.\(item.rawValue)")
-                .accessibilityAddTraits(tab == item ? .isSelected : [])
+                Text(title(of: item))
+                    .accessibilityIdentifier("sessionListTab.\(item.rawValue)")
+                    .tag(item)
             }
         }
-        .padding(4)
-        .themedGlass(in: .capsule, interactive: true)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
+        .accessibilityIdentifier("sessionListTabs")
         .padding(.horizontal, Self.inset)
         .padding(.top, 6)
         .padding(.bottom, Self.bottomPadding)
     }
 
-    private static var itemPadding: CGFloat {
-        #if os(macOS)
-        4
-        #else
-        6
-        #endif
+    private func title(of item: SessionListTab) -> String {
+        item == .cron && cronAlerts > 0 ? "\(item.title) (\(cronAlerts))" : item.title
     }
 
     /// Off the window's bottom on the Mac; on iOS the home indicator's safe area is below.

@@ -2,14 +2,14 @@
 import AppKit
 import XCTest
 
-/// The Sessions and Cron Jobs tabs at the bottom of the Mac session list float on a capsule
-/// of glass, inset from the list's edges, and look the same with or without the pointer
-/// over the list (the system's edge effect drew a band and a line only under the pointer).
+/// The Sessions and Cron Jobs control at the bottom of the Mac session list (the system's
+/// segmented control) is inset from the list's edges, and looks the same with or without
+/// the pointer over the list (the system's soft edge effect drew a band only under it).
 /// Screenshots of both, in light and dark.
 /// Skipped without `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
 final class SessionListTabBarUITests: XCTestCase {
     @MainActor
-    func testTheTabBarFloatsAndLooksTheSameWithAndWithoutThePointer() throws {
+    func testTheTabsLookTheSameWithAndWithoutThePointer() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
@@ -26,10 +26,10 @@ final class SessionListTabBarUITests: XCTestCase {
             app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
             app.launchWithMainWindow()
             defer { app.terminate() }
-            let sessionsTab = app.buttons["sessionListTab.sessions"].firstMatch
+            let sessionsTab = app.sessionListTab("sessions")
             XCTAssertTrue(sessionsTab.waitForExistence(timeout: 30), "the tabs")
             let window = app.windows.firstMatch
-            let tabs = sessionsTab.frame.union(app.buttons["sessionListTab.cron"].firstMatch.frame)
+            let tabs = sessionsTab.frame.union(app.sessionListTab("cron").frame)
             // The bar and a few points above it, across the list's width.
             let strip = CGRect(x: tabs.minX - 8, y: tabs.minY - 12, width: tabs.width + 16, height: tabs.height + 16)
 
@@ -47,7 +47,7 @@ final class SessionListTabBarUITests: XCTestCase {
 
             let difference = try XCTUnwrap(Self.meanDifference(away.image, over.image, in: strip, window: window.frame))
             XCTAssertLessThan(difference, 3, "the bar changes under the pointer (\(name)): mean difference \(difference)")
-            // The capsule is set in from the list's edges, not a band across it: clear of
+            // The control is set in from the list's edges, not a band across it: clear of
             // the profile rail beside the list, and inside New chat's trailing edge above.
             let rail = app.descendants(matching: .any)["profileRail"].firstMatch.frame
             let newChat = app.buttons["New chat"].firstMatch.frame

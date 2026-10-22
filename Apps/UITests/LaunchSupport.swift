@@ -23,4 +23,15 @@ extension XCUIApplication {
         }
         #endif
     }
+
+    /// A segment of the session list's Sessions / Cron Jobs control (`SessionListTabBar`):
+    /// by its identifier, or by its title where the system's segments don't carry it.
+    @MainActor
+    func sessionListTab(_ rawValue: String) -> XCUIElement {
+        let byID = descendants(matching: .any)["sessionListTab.\(rawValue)"].firstMatch
+        if byID.waitForExistence(timeout: 2) { return byID }
+        let title = rawValue == "cron" ? "Cron Jobs" : "Sessions"
+        return descendants(matching: .any)["sessionListTabs"].descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+    }
 }

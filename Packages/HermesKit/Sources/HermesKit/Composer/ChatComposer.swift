@@ -28,6 +28,11 @@ public final class ChatComposer {
     /// A composer failure (attachment, model or effort change), shown in the
     /// composer. A failed `prompt.submit` shows in the transcript instead.
     public var error: String?
+    /// `error`, when a lost connection caused it (a model or effort request, or a
+    /// send made offline): a reconnect clears it, since the reason is gone.
+    private var linkError: String?
+    /// `error`, when it is `loadOptions()`'s failure: a later load that works clears it.
+    private var optionsError: String?
     public private(set) var slashSuggestions: [SlashSuggestion] = []
     public private(set) var slashSelection = 0
     public private(set) var slashIsOpen = false
@@ -80,6 +85,8 @@ public final class ChatComposer {
     /// chat and after a reconnect: a slow catalog (a skills scan) must not hold up
     /// the model and effort pickers.
     public func loadCommandsAndOptions() async {
+        if let linkError, error == linkError { error = nil }
+        linkError = nil
         async let commands: Void = loadSlashCommands()
         async let options: Void = loadOptions()
         _ = await (commands, options)
@@ -442,7 +449,7 @@ public final class ChatComposer {
             // or files the cards stay, so the text belongs with them. (A failed
             // text-only `prompt.submit` is already on the transcript, via `submitFailed`.)
             if failure != nil || !images.isEmpty || !files.isEmpty { restoreText(text) }
-            if let failure { self.error = failure.message }
+            if let failure { show(failure.message, cause: failure) }
         }
     }
 
@@ -565,10 +572,21 @@ public final class ChatComposer {
             if ReasoningEffort.normalized(session.info?.reasoningEffort) == nil {
                 fetchedEffort = ReasoningEffort.normalized(try await session.fetchReasoningEffort())
             }
+            if let optionsError, error == optionsError { error = nil }
+            optionsError = nil
         } catch is CancellationError {
         } catch {
-            self.error = "Couldn't load models: \(GatewayConnection.describe(error))"
+            let message = "Couldn't load models: \(GatewayConnection.describe(error))"
+            show(message, cause: error)
+            optionsError = message
         }
+    }
+
+    /// Shows `message` as the composer's error, remembering whether a reconnect
+    /// should clear it.
+    private func show(_ message: String, cause: any Error) {
+        error = message
+        linkError = GatewayConnection.isLinkFailure(cause) ? message : nil
     }
 
     /// Switches this session's model. A `confirm_required` answer becomes
@@ -616,7 +634,7 @@ public final class ChatComposer {
             fetchedEffort = ReasoningEffort.normalized(try? await session.fetchReasoningEffort())
         } catch {
             guard pick == modelPick else { return }
-            self.error = "Couldn't switch the model: \(GatewayConnection.describe(error))"
+            show("Couldn't switch the model: \(GatewayConnection.describe(error))", cause: error)
         }
     }
 
@@ -628,7 +646,7 @@ public final class ChatComposer {
         } catch let failure as ComposerError {
             self.error = failure.message
         } catch {
-            self.error = "Couldn't change the reasoning effort: \(GatewayConnection.describe(error))"
+            show("Couldn't change the reasoning effort: \(GatewayConnection.describe(error))", cause: error)
         }
     }
 

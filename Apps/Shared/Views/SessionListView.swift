@@ -132,11 +132,11 @@ struct SessionListView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("sharedSidebarHeader")
         }
-        // The sidebar's part of the toolbar: the rail's toggle after the window buttons,
-        // New chat at the column's end.
+        // The sidebar's part of the toolbar, after the window buttons: the rail's toggle,
+        // then New chat. (A flexible spacer between them, to put New chat at the column's
+        // end, squeezed the sidebar and sent New chat to the overflow menu, VM 2026-10-22.)
         .toolbar {
             ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
-            ToolbarSpacer(.flexible, placement: .primaryAction)
             if let newChatButton {
                 ToolbarItem(placement: .primaryAction) { newChatButton }
             }

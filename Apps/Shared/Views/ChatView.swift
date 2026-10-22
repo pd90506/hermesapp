@@ -24,6 +24,8 @@ struct ChatView: View {
     @State private var window: TranscriptWindow
     /// The scroll view's own width, scroller included (`steadyColumn`); macOS only.
     @State private var chatWidth: CGFloat?
+    /// The chat's height, for a short chat's blank space (Mac).
+    @State private var chatHeight: CGFloat?
     /// Only the blocks near the screen are drawn (`TranscriptLaziness`); what the rows
     /// remember meanwhile (`RowMemory`).
     @State private var laziness = TranscriptLaziness()
@@ -99,6 +101,13 @@ struct ChatView: View {
                 .padding()
                 .steadyColumn(maxWidth: Self.contentWidth(textSize: sizes.content), sideRoom: Self.sideRoom,
                               in: chatWidth)
+                #if os(macOS)
+                // A short chat starts at the top, under the title, as tall as the chat, with
+                // blank space below its last message (the user, 2026-10-22). At the bottom,
+                // with the space above it, the system drew its scroll edge from the window's
+                // top down to the first message, a band in dark (#54; VM 2026-10-22).
+                .frame(minHeight: chatHeight, alignment: .top)
+                #endif
             }
             #if os(macOS)
             // Not on iOS, which has no scroller to make room for: there the column took the
@@ -106,6 +115,11 @@ struct ChatView: View {
             // it, and so never measured the narrower one again; the chat and its composer
             // ran off the screen's right edge (VM, 2026-10-19).
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chatHeight = $0 }
+            #endif
+            #if os(macOS)
+            // The messages blur away under the toolbar's title.
+            .scrollEdgeEffectStyle(.soft, for: .top)
             #endif
             #if os(iOS)
             // The messages blur away under the composer's bar, down to the screen's edge, as
@@ -166,12 +180,6 @@ struct ChatView: View {
         .background { surfaces.chat.ignoresSafeArea() }
         #endif
         // The title is the column's (`RootView`), as several chats are kept built.
-        #if os(macOS)
-        // No toolbar background over the chat. Its title bar holds no controls, and
-        // macOS 26 showed that background while the pointer was over the title bar or
-        // the top of the chat: a gray band down to the first message, with a line under it.
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        #endif
     }
 
     /// The composer, as wide as the messages' text (the content width less its padding):

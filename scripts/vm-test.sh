@@ -339,10 +339,10 @@ for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=
         if "iOS" in runtime and d["name"].startswith("iPhone"):
             print(d["udid"]); sys.exit()')
   [[ -n $sim ]] || { echo "No iPhone simulator in the VM." >&2; return 1; }
-  # Pinyin as the other keyboard only for a run with SendStateUITests: `seed` and its
-  # `restore` each cost the simulator a reboot.
+  # Pinyin as the other keyboard only for a run with SendStateUITests or ComposerUITests
+  # (both type Pinyin): `seed` and its `restore` each cost the simulator a reboot.
   local filter=$(only_testing HermesiOSUITests)
-  if [[ -z $filter || $filter == *SendStateUITests* ]]; then sim_keyboard seed || true
+  if [[ -z $filter || $filter == *SendStateUITests* || $filter == *ComposerUITests* ]]; then sim_keyboard seed || true
   else sim_keyboard forget || true; fi
   vexec "xcrun simctl boot $sim 2>&1 | grep -v 'current state: Booted' || true"
 }

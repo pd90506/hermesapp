@@ -133,6 +133,69 @@ final class ComposerUITests: XCTestCase {
         pick(theme: "nous", mode: "System", in: app, screenshotSettings: false)
     }
 
+    /// A long prompt of Chinese and English wraps with every line at the same left edge
+    /// (on the Mac a line began with the space after 把, 2026-10-21), and Pinyin typed at
+    /// its end grows the field while it is still marked, so the letters never hide below
+    /// it. Screenshots of both. Uses the Bot Chat and leaves its draft empty. Needs Pinyin
+    /// as the simulator's other keyboard (scripts/vm-test.sh seeds it for this suite).
+    @MainActor
+    func testLongPromptWrapsAndPinyinGrowsTheField() throws {
+        continueAfterFailure = false
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+            throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HERMES_UITEST_URL"] = url
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        app.launchWithMainWindow()
+        // Run last first: the draft emptied and the keyboard back to English, then quit.
+        addTeardownBlock { XCUIApplication().terminate() }
+
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["profilesButton"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        let botChat = app.collectionViews.firstMatch.descendants(matching: .any)["botChatRow"].firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the Bot Chat row")
+        botChat.tap()
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "the Bot Chat opened")
+        composer.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard is up")
+        addTeardownBlock {
+            let app = XCUIApplication()
+            let composer = app.textViews["composer"]
+            guard composer.exists else { return }
+            if !app.keyboards.firstMatch.waitForExistence(timeout: 2) { composer.tap() }
+            composer.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.98)).tap()
+            composer.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 260))
+            let back = SendStateUITests.switchKeyboard(in: app) { $0.hasPrefix("English") }
+            XCTAssertTrue(back.last?.hasPrefix("English") ?? true, "the keyboard went back to English: \(back)")
+        }
+
+        // The user's prompt, cut to a few lines on the phone: under the field's cap, so
+        // the marked line has room to grow it.
+        let prompt = "我突然发现。我们的训练和 inference 有点脱节。我们重新来理一下 -- 首先我们的推理是想先算 batch E把 prompt的 latent input 算出来，"
+        composer.typeText(prompt)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "long prompt wrapped, iPhone")
+        let wrapped = composer.frame.height
+
+        let isPinyin = { (name: String) in name.localizedCaseInsensitiveContains("pinyin") || name.contains("拼音") }
+        let switches = SendStateUITests.switchKeyboard(in: app, to: isPinyin)
+        XCTAssertTrue(switches.last.map(isPinyin) ?? false, "the globe went to Pinyin: \(switches)")
+        // Enough letters to run past the line's end whatever is left on it.
+        for letter in "womenxiangshuodeshiqingyouhenduoerqiedouhenzhongyao" {
+            let key = app.keyboards.keys.matching(NSPredicate(format: "label ==[c] %@", String(letter))).firstMatch
+            guard key.waitForExistence(timeout: 3) else { return XCTFail("no on-screen key \(letter)") }
+            key.tap()
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "pinyin marked at the end, iPhone")
+        XCTAssertGreaterThan(composer.frame.height, wrapped, "the marked letters' line is in the field's height")
+    }
+
     /// Turned to landscape and back, the chat fits the screen again: the transcript's
     /// column and the composer as wide as the portrait screen, not the landscape one
     /// (the user saw the chat run off the screen's right edge, 2026-10-19).

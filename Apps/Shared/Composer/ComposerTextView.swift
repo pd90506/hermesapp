@@ -172,7 +172,13 @@ extension ComposerTextView: NSViewRepresentable {
             textView.onWindow = { [weak self] window in
                 if window == nil { self?.stopPasteMonitor() } else { self?.startPasteMonitor() }
             }
-            textView.onMarkedTextChange = { [weak self] in self?.reportComposing() }
+            // Marked text that wraps onto a new line needs the height now: AppKit doesn't
+            // report every marked-text edit as a text change (as Desktop's field, which
+            // grows with the composition).
+            textView.onMarkedTextChange = { [weak self] in
+                self?.reportComposing()
+                self?.measure(during: .edit)
+            }
         }
 
         /// Whether marked text showed when last reported.
@@ -355,9 +361,25 @@ final class ComposerClipView: NSClipView {
 /// glyphs: a line whose Chinese fell back to another font, or that shows an input
 /// method's marked text, is as tall as one of Latin letters, so the lines above it don't
 /// move while it is composed and committed.
+///
+/// And no line starts with a space. TextKit breaks Chinese after any character, so
+/// "E把 prompt" could wrap between 把 and the space, and the next line began a space to
+/// the right of the others (the user's report, 2026-10-21). Unicode line breaking
+/// (UAX #14, LB7), which Desktop's Chromium field follows, never breaks before a space.
 @MainActor
 final class UniformLines: NSObject, @preconcurrency NSLayoutManagerDelegate {
     weak var textView: NSTextView?
+
+    func layoutManager(_ layoutManager: NSLayoutManager, shouldBreakLineByWordBeforeCharacterAt charIndex: Int) -> Bool {
+        guard let string = layoutManager.textStorage?.string as NSString?, charIndex < string.length else { return true }
+        return !Self.isSpace(string.character(at: charIndex))
+    }
+
+    /// Spaces and tabs (U+0020, U+0009, U+00A0 and the other `Zs` spaces), not newlines.
+    nonisolated static func isSpace(_ unit: unichar) -> Bool {
+        guard let scalar = Unicode.Scalar(unit) else { return false }
+        return scalar == "\t" || scalar.properties.generalCategory == .spaceSeparator
+    }
 
     func layoutManager(_ layoutManager: NSLayoutManager,
                        shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
@@ -566,8 +588,11 @@ extension ComposerTextView: UIViewRepresentable {
             textView.onLayout = { [weak self, weak textView] in
                 if let textView { self?.measure(textView, deferred: true) }
             }
+            // Marked text that wraps grows the field at once, as on macOS.
             textView.onMarkedTextChange = { [weak self, weak textView] in
-                if let textView { self?.reportComposing(textView) }
+                guard let self, let textView else { return }
+                self.reportComposing(textView)
+                if !self.isPreparingSubmission { self.measure(textView, deferred: false) }
             }
         }
 

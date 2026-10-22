@@ -217,7 +217,17 @@ enum ImageLoader {
     /// Whether a dropped or pasted provider carries something to attach.
     nonisolated static func isAttachable(_ provider: NSItemProvider) -> Bool {
         provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-            || provider.registeredContentTypes.contains { $0.conforms(to: .image) || isFileContent($0) }
+            || provider.registeredContentTypes.contains { $0.conforms(to: .image) } || fileType(of: provider) != nil
+    }
+
+    /// The type of the file a provider carries without a file URL: a file's contents
+    /// (`isFileContent`), or text that has a file name, such as a Markdown file dragged
+    /// from Files. Text without a name is a snippet, which stays text.
+    nonisolated static func fileType(of provider: NSItemProvider) -> UTType? {
+        let types = provider.registeredContentTypes
+        if let type = types.first(where: isFileContent) { return type }
+        guard provider.suggestedName?.isEmpty == false else { return nil }
+        return types.first { $0.conforms(to: .text) }
     }
 
     /// Sources from dropped (or iOS-pasted) item providers: a file URL when the
@@ -236,7 +246,7 @@ enum ImageLoader {
                 let base = provider.suggestedName ?? "Image"
                 let ext = type.preferredFilenameExtension ?? "png"
                 sources.append(.data(data, filename: ImageAttachmentPolicy.filename(base, withExtension: ext)))
-            } else if let type = provider.registeredContentTypes.first(where: isFileContent),
+            } else if let type = fileType(of: provider),
                 let copy = await loadFileCopy(provider, type: type)
             {
                 sources.append(.file(copy))

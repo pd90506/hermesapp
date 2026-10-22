@@ -73,9 +73,19 @@ struct ComposerView: View {
                 .opacity(isDropTargeted ? 1 : 0)
         }
         .onDrop(of: [.fileURL, .image, .data], isTargeted: $isDropTargeted) { providers in
+            #if os(macOS)
+            // SwiftUI hands over a file from Finder by its contents' type alone: a Markdown
+            // file is one `net.daringfireball.markdown` provider, without its file URL or
+            // name (VM, 2026-10-22), so text files were turned away with no sign. The drag's
+            // own pasteboard still has the file URLs; read it as the text view reads a paste.
+            let sources = ImageLoader.sources(from: NSPasteboard(name: .drag))
+            guard !sources.isEmpty else { return false }
+            Task { await attach(sources) }
+            #else
             let attachable = providers.filter(ImageLoader.isAttachable)
             guard !attachable.isEmpty else { return false }
             Task { await attach(await ImageLoader.sources(from: attachable)) }
+            #endif
             return true
         }
         .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in

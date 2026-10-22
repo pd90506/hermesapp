@@ -83,9 +83,6 @@ struct NewChatButton: View {
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
             .controlSize(.large)
-            #else
-            .uiFont(.title3)
-            .hoverButtonStyle(.circle, padding: 6)
             #endif
             .disabled(!isEnabled)
             .help("New chat")

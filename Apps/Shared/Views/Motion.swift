@@ -6,7 +6,7 @@ import SwiftUI
 /// fades stay, as the system's do.
 enum Motion {
     /// The profile rail hiding or showing, the session list and the chat's card following
-    /// it (`WindowLayout`). Nil with Reduce Motion: the panel would still slide.
+    /// it (`MacSidebar`). Nil with Reduce Motion: the panel would still slide.
     static func rail(reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : slowed(.snappy(duration: 0.25))
     }

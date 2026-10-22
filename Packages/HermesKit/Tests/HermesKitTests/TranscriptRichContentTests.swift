@@ -91,6 +91,8 @@ import Testing
         transcript.apply(event("message.start"))
         transcript.apply(event("message.delta", ["text": "Draft one."]))
         let steer = transcript.appendUserPrompt("make it shorter", displayKind: "steer")
+        transcript.apply(event("tool.start", ["tool_id": "call_1", "name": "read_file"]))
+        transcript.apply(event("tool.complete", ["tool_id": "call_1", "name": "read_file"]))
         transcript.apply(event("message.delta", ["text": "Shorter."]))
         transcript.beginSideQuestion(taskID: "btw_1", question: "which file?")
         transcript.appendNote("Tokens: 12")
@@ -98,12 +100,12 @@ import Testing
         let plan = transcript.appendUserPrompt("/plan next")  // a queued skill kickoff
         transcript.apply(event("message.complete", ["text": "Shorter. Done.", "status": "complete"]))
 
-        #expect(transcript.items.map(\.text) == ["write the report", "Draft one.", "make it shorter", "Shorter.", "",
-                                                 "Tokens: 12", " Done.", "/plan next"])
+        #expect(transcript.items.map(\.text) == ["write the report", "Draft one.", "make it shorter", "", "Shorter.",
+                                                 "", "Tokens: 12", " Done.", "/plan next"])
         #expect(transcript.items[2].isSteer)
         #expect(transcript.items.filter(\.isActive).isEmpty)
         // The side question still waits for its answer, without spinning.
-        #expect(transcript.items[4].sideQuestion?.isPending == true)
+        #expect(transcript.items[5].sideQuestion?.isPending == true)
         // The prompts sent during the turn are not answered yet: they still wait (the
         // queued kickoff has a turn of its own to come), so the session is not idle.
         #expect(transcript.isRunning)
@@ -114,6 +116,77 @@ import Testing
         transcript.apply(event("message.complete", ["text": "", "status": "complete"]))
         #expect(!transcript.isRunning)
         expectWellFormed(transcript)
+    }
+
+    /// A redirect reaches Hermes a moment after its row shows: text the old call streamed
+    /// meanwhile stays in the reply above the row, as Hermes stores it. The corrected call's
+    /// first delta starts with a paragraph break (`stream_delivery.py:305-310`) and opens
+    /// the bubble below.
+    @Test func aRedirectKeepsTheOldReplysLateTextAboveIt() {
+        var transcript = Transcript()
+        transcript.appendUserPrompt("explain the encoder")
+        transcript.apply(event("message.start"))
+        transcript.apply(event("message.delta", ["text": "D reads it and A con"]))
+        transcript.appendUserPrompt("mostly the T+1 latent")
+        transcript.apply(event("message.delta", ["text": "verts it: the same one"]))
+        transcript.apply(event("message.delta", ["text": "."]))
+        transcript.apply(event("message.delta", ["text": "\n\nRight, T+1 is freer."]))
+        transcript.apply(event("message.delta", ["text": " Because"]))
+        transcript.apply(event("message.complete", ["text": "Right, T+1 is freer. Because", "status": "complete"]))
+
+        #expect(transcript.items.map(\.text) == ["explain the encoder", "D reads it and A converts it: the same one.",
+                                                 "mostly the T+1 latent", "\n\nRight, T+1 is freer. Because"])
+        #expect(transcript.items.filter(\.isActive).isEmpty)
+        expectWellFormed(transcript)
+    }
+
+    /// Any other event of the turn ends the old call's text: a reasoning delta of the
+    /// corrected call opens the bubble below, and so does its text after it.
+    @Test func aRedirectsLateTextEndsWithTheNextEvent() {
+        var transcript = Transcript()
+        transcript.appendUserPrompt("q")
+        transcript.apply(event("message.start"))
+        transcript.apply(event("message.delta", ["text": "Part"]))
+        transcript.appendUserPrompt("shorter")
+        transcript.apply(event("reasoning.delta", ["text": "The user wants it shorter."]))
+        transcript.apply(event("message.delta", ["text": "Short."]))
+
+        let texts = transcript.items.map(\.text)
+        #expect(texts == ["q", "Part", "shorter", "Short."])
+        #expect(transcript.items.last?.reasoning == "The user wants it shorter.")
+    }
+
+    /// A steer waits for a tool result, so the old reply's paragraphs stay above it
+    /// until its round ends.
+    @Test func aSteerKeepsTheRoundsTextAboveIt() {
+        var transcript = Transcript()
+        transcript.appendUserPrompt("q")
+        transcript.apply(event("message.start"))
+        transcript.apply(event("message.delta", ["text": "First."]))
+        let steer = transcript.appendUserPrompt("also check B", displayKind: "steer")
+        transcript.promptAnswered(itemID: steer, status: "steered")
+        transcript.apply(event("message.delta", ["text": "\n\nSecond."]))
+        transcript.apply(event("tool.start", ["tool_id": "call_1", "name": "read_file"]))
+        transcript.apply(event("tool.complete", ["tool_id": "call_1", "name": "read_file"]))
+        transcript.apply(event("message.delta", ["text": "\n\nChecked B."]))
+
+        #expect(transcript.items.map(\.text) == ["q", "First.\n\nSecond.", "also check B", "", "\n\nChecked B."])
+    }
+
+    /// A prompt sent while a reply streams goes out as `prompt.submit`; Hermes's busy mode
+    /// decides. Answered `steered`, the old reply's paragraphs stay above it as for a steer.
+    @Test func aPromptHermesSteeredKeepsTheRoundsTextAboveIt() {
+        var transcript = Transcript()
+        transcript.appendUserPrompt("q")
+        transcript.apply(event("message.start"))
+        transcript.apply(event("message.delta", ["text": "First."]))
+        let prompt = transcript.appendUserPrompt("also check B")
+        transcript.apply(event("message.delta", ["text": " Still first."]))
+        transcript.promptAnswered(itemID: prompt, status: "steered")
+        transcript.apply(event("message.delta", ["text": "\n\nSecond."]))
+        transcript.apply(event("message.complete", ["text": "First. Still first.\n\nSecond.", "status": "complete"]))
+
+        #expect(transcript.items.map(\.text) == ["q", "First. Still first.\n\nSecond.", "also check B"])
     }
 
     /// Desktop seals the streaming bubble with the authoritative interim text

@@ -133,6 +133,74 @@ final class SendStateUITests: XCTestCase {
         if inComposer { clear(composer, in: app) }
     }
 
+    /// A correction sent while a reply streams shows below the reply so far, and what that
+    /// reply streams until Hermes takes the correction stays above it, as Hermes stores it.
+    /// The uplink holds the correction (`SLOW-`) for `submitDelay` seconds, as a slow
+    /// network does, while the reply streams on. Hermes's default busy mode then redirects
+    /// the reply with it, and the answer comes below the correction.
+    @MainActor
+    func testACorrectionMidReplyKeepsTheReplySoFarAboveIt() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let composer = try openNewChat(app)
+
+        send("Write the whole numbers from 1 to 1000 as English words, each on its own line, and nothing else. "
+             + "Do not use tools.", composer: composer, in: app)
+        XCTAssertTrue(waitForMessage("twenty", exactly: false, in: app, timeout: 150), "the reply streams")
+        let slow = "SLOW-\(Int.random(in: 1000...9999))"
+        let answer = "PONG\(Int.random(in: 1000...9999))"
+        send("\(slow) Stop counting. Reply with exactly \(answer) and nothing else.", composer: composer, in: app)
+        XCTAssertTrue(waitForMessage(slow, exactly: false, in: app, timeout: 2), "the correction shows at once")
+        attach(app, "1 correction sent")
+        RunLoop.current.run(until: Date().addingTimeInterval(Self.submitDelay - 2))
+        attach(app, "2 the reply streamed on while the correction waited")
+        checkOrder(correction: slow, answer: nil, in: app, "while it waited")
+
+        XCTAssertTrue(waitForMessage(answer, exactly: true, in: app, timeout: 150), "answer \(answer) shown")
+        attach(app, "3 the answer")
+        checkOrder(correction: slow, answer: answer, in: app, "answered")
+        // The stored rows take over once the session is quiet; the order holds.
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+        attach(app, "4 settled")
+        checkOrder(correction: slow, answer: answer, in: app, "settled")
+    }
+
+    /// The counting reply's text is above the correction (holding `correction`), and the
+    /// answer, when given, below it.
+    @MainActor
+    private func checkOrder(correction: String, answer: String?, in app: XCUIApplication, _ moment: String) {
+        let texts = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier != 'composer' AND (elementType == %d OR elementType == %d)",
+            XCUIElement.ElementType.staticText.rawValue, XCUIElement.ElementType.textView.rawValue))
+            .allElementsBoundByIndex.filter { $0.frame.height > 0 }
+        func text(_ element: XCUIElement) -> String {
+            let value = element.value as? String ?? ""
+            return value.isEmpty ? element.label : value
+        }
+        guard let bubble = texts.filter({ text($0).contains(correction) }).min(by: { $0.frame.height < $1.frame.height })
+        else { return XCTFail("\(moment): no correction bubble") }
+        let counting = texts.filter { element in
+            let words = text(element).lowercased()
+            return !words.contains(correction.lowercased()) && !words.contains("english words")
+                && ["twenty", "thirty", "forty", "hundred", "seven", "nine"].contains { words.contains($0) }
+        }
+        record(["correction \(bubble.frame)"] + counting.map { "counting \($0.frame): \(text($0).suffix(40))" },
+               "order \(moment)")
+        XCTAssertFalse(counting.isEmpty, "\(moment): the reply so far is shown")
+        for element in counting {
+            XCTAssertLessThan(element.frame.minY, bubble.frame.minY,
+                              "\(moment): reply text below the correction: \(text(element).suffix(40))")
+        }
+        if let answer {
+            let reply = texts.filter { text($0) == answer }
+            XCTAssertFalse(reply.isEmpty, "\(moment): the answer is shown")
+            for element in reply {
+                XCTAssertGreaterThan(element.frame.minY, bubble.frame.maxY, "\(moment): the answer is below the correction")
+            }
+        }
+    }
+
     #if os(iOS)
     /// Pinyin on the simulator's own keyboard: letters typed stay marked (the candidate
     /// bar is up) when Send is tapped. The bubble shows what was visible, the composer is

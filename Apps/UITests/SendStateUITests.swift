@@ -233,9 +233,9 @@ final class SendStateUITests: XCTestCase {
     /// keyboard in its value. A tap goes back and forth between the current keyboard and the
     /// one before it, so a few taps are enough or none will be. The first tap ever shows a
     /// one-time tip instead (Continue). Returns the keyboards gone to. Static, for the
-    /// teardown block.
+    /// teardown block and ComposerUITests.
     @MainActor
-    private static func switchKeyboard(in app: XCUIApplication, to target: (String) -> Bool) -> [String] {
+    static func switchKeyboard(in app: XCUIApplication, to target: (String) -> Bool) -> [String] {
         let globe = app.buttons.matching(NSPredicate(format: "label IN {'Next keyboard', '下一个键盘'}")).firstMatch
         let tip = app.buttons["Continue"]
         var switches: [String] = []
@@ -433,7 +433,7 @@ final class SendStateUITests: XCTestCase {
 
     /// As record, without the test case (for the static helpers and teardown blocks).
     @MainActor
-    private static func note(_ lines: [String], _ name: String) {
+    static func note(_ lines: [String], _ name: String) {
         XCTContext.runActivity(named: name) { activity in
             let note = XCTAttachment(string: lines.joined(separator: "\n"))
             note.name = name

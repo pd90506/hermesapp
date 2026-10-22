@@ -24,6 +24,8 @@ struct ChatView: View {
     @State private var window: TranscriptWindow
     /// The scroll view's own width, scroller included (`steadyColumn`); macOS only.
     @State private var chatWidth: CGFloat?
+    /// The chat's height, for a short chat's blank space (Mac).
+    @State private var chatHeight: CGFloat?
     /// Only the blocks near the screen are drawn (`TranscriptLaziness`); what the rows
     /// remember meanwhile (`RowMemory`).
     @State private var laziness = TranscriptLaziness()
@@ -99,6 +101,13 @@ struct ChatView: View {
                 .padding()
                 .steadyColumn(maxWidth: Self.contentWidth(textSize: sizes.content), sideRoom: Self.sideRoom,
                               in: chatWidth)
+                #if os(macOS)
+                // A short chat starts at the top, under the title, as tall as the chat, with
+                // blank space below its last message (the user, 2026-10-22). At the bottom,
+                // with the space above it, the system drew its scroll edge from the window's
+                // top down to the first message, a band in dark (#54; VM 2026-10-22).
+                .frame(minHeight: chatHeight, alignment: .top)
+                #endif
             }
             #if os(macOS)
             // Not on iOS, which has no scroller to make room for: there the column took the
@@ -106,15 +115,11 @@ struct ChatView: View {
             // it, and so never measured the narrower one again; the chat and its composer
             // ran off the screen's right edge (VM, 2026-10-19).
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chatHeight = $0 }
             #endif
             #if os(macOS)
             // The messages blur away under the toolbar's title.
             .scrollEdgeEffectStyle(.soft, for: .top)
-            // The scroll view's own background in the chat's colour: above a short chat's
-            // first message it showed the window's, a lighter band from the window's top in
-            // dark (#54; again with the system's toolbar, VM 2026-10-22). Hidden, it took
-            // the blur under the title with it.
-            .backgroundStyle(surfaces.chat)
             #endif
             #if os(iOS)
             // The messages blur away under the composer's bar, down to the screen's edge, as

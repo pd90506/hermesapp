@@ -128,6 +128,19 @@ private func filename(_ source: AttachmentSource) -> String {
         #expect(sources.map(\.isImage) == [false])
     }
 
+    /// A Markdown file dragged from Finder, as the drop on the composer reads it (the
+    /// drag's pasteboard): the file, not its text. SwiftUI's own item provider for it
+    /// has only the Markdown type, no file URL or name, so it was turned away.
+    @Test func finderDragOfAMarkdownFileAttachesTheFile() {
+        let board = pasteboard()
+        board.writeObjects([URL(fileURLWithPath: "/tmp/notes.md") as NSURL])
+        board.addTypes([.string], owner: nil)
+        board.setString("notes.md", forType: .string)
+        let sources = ImageLoader.sources(from: board)
+        #expect(sources.map(filename) == ["notes.md"])
+        #expect(sources.map(\.isImage) == [false])
+    }
+
     /// A spreadsheet range carries a picture of itself beside the text.
     @Test func aSpreadsheetRangeStaysText() {
         let board = pasteboard()

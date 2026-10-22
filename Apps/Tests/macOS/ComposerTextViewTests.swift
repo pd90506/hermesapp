@@ -159,6 +159,28 @@ private func filename(_ source: AttachmentSource) -> String {
         coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
     }
 
+    /// The text area at the height the composer gives it, as a PNG attached to the test
+    /// (scripts/vm-test.sh exports it as a screenshot).
+    private func snapshot(_ scrollView: ComposerScrollView, height: CGFloat, _ name: String) {
+        scrollView.frame.size.height = min(height, 170)
+        scrollView.tile()
+        let image = NSImage(size: NSSize(width: scrollView.frame.width + 24, height: scrollView.frame.height + 24), flipped: false) { rect in
+            NSColor.windowBackgroundColor.setFill()
+            rect.fill()
+            NSColor.separatorColor.setStroke()
+            NSBezierPath(rect: rect.insetBy(dx: 11.5, dy: 11.5)).stroke()
+            return true
+        }
+        guard let rep = scrollView.bitmapImageRepForCachingDisplay(in: scrollView.bounds) else { return }
+        scrollView.cacheDisplay(in: scrollView.bounds, to: rep)
+        let canvas = NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            rep.draw(in: NSRect(x: 12, y: 12, width: scrollView.frame.width, height: scrollView.frame.height))
+            return true
+        }
+        Attachment.record(canvas, named: name, as: .png)
+    }
+
     /// The flash: an enabled, auto-hiding scroller showed for the frame in which the
     /// text was taller than the not-yet-grown view. Below the cap it must never be on,
     /// and the new height must reach SwiftUI in the same pass.
@@ -236,6 +258,60 @@ private func filename(_ source: AttachmentSource) -> String {
         textView.insertText("中文", replacementRange: NSRange(location: NSNotFound, length: 0))
         coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
         #expect(box.height == composing, "committing the candidate changed the height")
+    }
+
+    /// Pinyin typed at the end of a full line wraps onto a new line while it is still
+    /// marked. The composer must grow then, not only once the candidate is picked: the
+    /// marked letters were hidden below the field (the user's report, 2026-10-21).
+    @Test func markedTextThatWrapsGrowsTheField() throws {
+        let box = Box()
+        let (coordinator, scrollView) = makeView(box)
+        let textView = try #require(coordinator.textView)
+        let line = String(repeating: "中文", count: 40)
+        type(line, into: coordinator)
+        let before = box.height
+        let end = (textView.string as NSString).length
+        textView.setSelectedRange(NSRange(location: end, length: 0))
+        textView.setMarkedText(String(repeating: "zhongwen ", count: 6), selectedRange: NSRange(location: 54, length: 0),
+                               replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(box.height > before, "the marked text's line is not in the height")
+        snapshot(scrollView, height: box.height, "mac composer, pinyin marked at the wrap")
+        textView.unmarkText()
+    }
+
+    /// Wrapped lines start where the first one does (the user saw them a few points to
+    /// the right, 2026-10-21).
+    @Test func wrappedLinesStartAtTheLeftEdge() throws {
+        let box = Box()
+        let (coordinator, scrollView) = makeView(box)
+        let textView = try #require(coordinator.textView)
+        let layoutManager = try #require(textView.layoutManager)
+        let container = try #require(textView.textContainer)
+        let samples = [
+            // The user's prompt: it wrapped between 把 and " prompt".
+            "我突然发现。我们的训练和 inference 有点脱节。我们重新来理一下 -- 首先我们的推理是想先算 batch E把 prompt的 latent input 算出来，再 sequantial decoding F把 latent output 算出来， 最后再 batch D把 latent output decode成 tokens.",
+            "帮我看看这个 bug：输入框里长的中英文 prompt 换行以后，第二行和后面的行比第一行往右缩进了一点点，看起来没对齐。",
+            "Please look at this: a long prompt with English words and 中文 mixed together, wrapping onto a third line or more.",
+            "“引号开头”的一行，（括号）也可能在行首，还有、顿号，逗号。句号以及 English (parens) at the start of lines too.",
+        ]
+        for (width, sample) in [300, 420, 560, 650].flatMap({ width in samples.map { (CGFloat(width), $0) } }) {
+            scrollView.frame.size.width = width
+            scrollView.tile()
+            type(sample, into: coordinator)
+            layoutManager.ensureLayout(for: container)
+            var starts: [(CGFloat, String)] = []
+            layoutManager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: layoutManager.numberOfGlyphs)) {
+                rect, _, _, glyphs, _ in
+                let x = rect.minX + layoutManager.location(forGlyphAt: glyphs.location).x
+                let chars = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+                let first = (textView.string as NSString).substring(with: NSRange(location: chars.location, length: min(3, chars.length)))
+                starts.append((x, first))
+            }
+            if sample == samples[0] { snapshot(scrollView, height: box.height, "mac composer, wrapped at \(Int(width)) pt") }
+            #expect(starts.count > 1, "the sample did not wrap at \(width)")
+            #expect(!starts.contains { $0.1.first?.isWhitespace == true }, "a line starts with a space at \(width): \(starts)")
+            #expect(starts.allSatisfy { abs($0.0 - starts[0].0) < 0.5 }, "at \(width): \(starts)")
+        }
     }
 
     @Test func pastTheCapTheScrollerAppearsAndGoesAgain() {

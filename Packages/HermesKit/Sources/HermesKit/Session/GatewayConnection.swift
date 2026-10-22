@@ -725,4 +725,16 @@ public final class GatewayConnection {
         default: return String(describing: error)
         }
     }
+
+    /// The request failed because the socket was down or dropped, not because
+    /// Hermes refused it: the same request can work once the app reconnects.
+    public nonisolated static func isLinkFailure(_ error: any Error) -> Bool {
+        switch error {
+        case GatewayClientError.notConnected, GatewayClientError.connectionClosed,
+             GatewayClientError.readyTimeout, GatewayClientError.heartbeatTimeout,
+             GatewayClientError.timeout, ComposerError.notConnected:
+            return true
+        default: return false
+        }
+    }
 }

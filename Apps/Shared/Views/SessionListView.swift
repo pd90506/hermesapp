@@ -53,10 +53,6 @@ struct SessionListView: View {
     /// Sessions or Cron Jobs. Not kept across launches: the app opens on the sessions.
     /// (Kept per window, a run left on Cron Jobs opened the next launch there.)
     @State private var tab: SessionListTab = .sessions
-    #if os(macOS)
-    /// Whether the profile rail shows (`MacSidebar`), for its toggle in the toolbar.
-    @AppStorage("profileRailShown") private var isRailShown = true
-    #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -132,11 +128,8 @@ struct SessionListView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("sharedSidebarHeader")
         }
-        // The sidebar's part of the toolbar, after the window buttons: the rail's toggle,
-        // then New chat. (A flexible spacer between them, to put New chat at the column's
-        // end, squeezed the sidebar and sent New chat to the overflow menu, VM 2026-10-22.)
+        // In the sidebar's part of the toolbar, after the rail's toggle (`MacSidebar`).
         .toolbar {
-            ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
             if let newChatButton {
                 ToolbarItem(placement: .primaryAction) { newChatButton }
             }

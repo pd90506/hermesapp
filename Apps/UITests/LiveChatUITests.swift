@@ -671,6 +671,50 @@ final class LiveChatUITests: XCTestCase {
         }
     }
 
+    /// The open drawer closes on a short flick left, as the system's swipes do, from the
+    /// panel or the shade; a short slow drag puts it back open (user, 2026-10-22: it took
+    /// a long swipe, and the panel shook under the finger).
+    @MainActor
+    func testAFlickLeftClosesTheDrawer() throws {
+        continueAfterFailure = true
+        let app = try launchApp()
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        let avatar = app.buttons["profilesButton"].firstMatch
+        XCTAssertTrue(avatar.waitForExistence(timeout: 30), "the profile's avatar")
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        let window = app.windows.firstMatch
+        func open() {
+            avatar.tap()
+            XCTAssertTrue(rail.waitForExistence(timeout: 5), "the avatar opens the drawer")
+            XCTAssertTrue(eventually { abs(rail.frame.minX - 8) < 1 }, "fully open: \(rail.frame)")
+        }
+        func swipe(from: CGFloat, to: CGFloat, velocity: XCUIGestureVelocity) {
+            window.coordinate(withNormalizedOffset: CGVector(dx: from, dy: 0.55))
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: to, dy: 0.55)),
+                       withVelocity: velocity, thenHoldForDuration: 0)
+        }
+
+        // A short slow drag, well short of halfway, and let go still: back open.
+        open()
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.55))
+            .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.55)),
+                   withVelocity: 150, thenHoldForDuration: 0.3)
+        XCTAssertTrue(eventually { abs(rail.frame.minX - 8) < 1 }, "a slow short drag leaves it open: \(rail.frame)")
+        attach(app, "drawer after a slow short drag")
+
+        // A flick of a fifth of the screen on the panel closes it.
+        swipe(from: 0.6, to: 0.4, velocity: .fast)
+        XCTAssertTrue(eventually { !rail.exists }, "a short flick on the panel closes the drawer")
+
+        // And on the shade beside it.
+        open()
+        swipe(from: 0.97, to: 0.77, velocity: .fast)
+        XCTAssertTrue(eventually { !rail.exists }, "a short flick on the shade closes the drawer")
+        attach(app, "drawer flicked closed")
+    }
+
     /// Back from the background the chat stays on screen while the app reconnects, with
     /// no spinner over it: a reconnect within 5 s shows nothing, a longer one a spinner in
     /// the title bar (user, 2026-10-19). The app's socket is gone on its return, as a real

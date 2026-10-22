@@ -15,6 +15,13 @@ enum Motion {
     /// No bounce: past its place, the panel would come away from the screen's edge.
     static var drawer: Animation { slowed(.smooth(duration: 0.28)) }
 
+    /// The drawer let go of part way: the same slide, carrying on at the finger's speed,
+    /// as the system's swipes do. `velocity` is a fraction of the rest of the way per
+    /// second.
+    static func drawer(velocity: Double) -> Animation {
+        slowed(.interpolatingSpring(duration: 0.28, bounce: 0, initialVelocity: velocity))
+    }
+
     /// How long until the drawer has settled after `drawer` starts.
     static var drawerSettles: Duration { .milliseconds(Int(400 * (scale ?? 1))) }
 

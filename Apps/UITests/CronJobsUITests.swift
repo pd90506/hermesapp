@@ -54,12 +54,18 @@ final class CronJobsUITests: XCTestCase {
         XCTAssertEqual(sessionsTab.frame.midY, cronTab.frame.midY, accuracy: 2, "the tabs side by side")
         XCTAssertGreaterThan(cronTab.frame.minY, app.windows.firstMatch.frame.midY, "the tabs at the bottom")
         attach(app, "1 sessions tab")
+        let tabsBefore = sessionsTab.frame.union(cronTab.frame)
 
         press(cronTab)
         let briefRow = element(app, "cronJob.\(brief)")
         let pausedRow = element(app, "cronJob.\(paused)")
         XCTAssertTrue(briefRow.waitForExistence(timeout: 30), "the job is listed")
         XCTAssertTrue(pausedRow.waitForExistence(timeout: 5), "the paused job is listed")
+        // Picking a tab doesn't resize the bar (it grew by a hair, the picked tab's
+        // symbol filled and its title semibold).
+        let tabsAfter = sessionsTab.frame.union(cronTab.frame)
+        XCTAssertEqual(tabsAfter.height, tabsBefore.height, accuracy: 0.01, "the tabs keep their height: \(tabsBefore) → \(tabsAfter)")
+        XCTAssertEqual(tabsAfter.width, tabsBefore.width, accuracy: 0.01, "the tabs keep their width: \(tabsBefore) → \(tabsAfter)")
         XCTAssertTrue(briefRow.label.contains("Bot Chat"), "the row says where it delivers: \(briefRow.label)")
         XCTAssertTrue(pausedRow.label.contains("Paused"), "the paused job says so: \(pausedRow.label)")
         XCTAssertLessThan(briefRow.frame.minY, pausedRow.frame.minY, "the job that runs next first")

@@ -49,16 +49,27 @@ struct SessionListTabBar: View {
                     withAnimation(reduceMotion ? nil : Motion.swap) { tab = item }
                 } label: {
                     VStack(spacing: 2) {
-                        Image(systemName: item.systemImage)
-                            .symbolVariant(tab == item ? .fill : .none)
-                            .uiFont(.body)
-                            .overlay(alignment: .topTrailing) {
-                                if item == .cron && cronAlerts > 0 {
-                                    Circle().fill(.red).frame(width: 7, height: 7).offset(x: 4, y: -2)
-                                }
+                        // Room for the symbol and the title in either look, picked or not:
+                        // the filled symbol and the semibold title are a little bigger, and
+                        // the bar grew and shrank by a hair at each switch.
+                        ZStack {
+                            Image(systemName: item.systemImage).symbolVariant(.fill).hidden()
+                            Image(systemName: item.systemImage).symbolVariant(.none).hidden()
+                            Image(systemName: item.systemImage)
+                                .symbolVariant(tab == item ? .fill : .none)
+                        }
+                        .uiFont(.body)
+                        .overlay(alignment: .topTrailing) {
+                            if item == .cron && cronAlerts > 0 {
+                                Circle().fill(.red).frame(width: 7, height: 7).offset(x: 4, y: -2)
                             }
-                        Text(item.title)
-                            .uiFont(.caption2, weight: tab == item ? .semibold : nil)
+                        }
+                        ZStack {
+                            Text(item.title).uiFont(.caption2, weight: .semibold).hidden()
+                            Text(item.title).uiFont(.caption2).hidden()
+                            Text(item.title)
+                                .uiFont(.caption2, weight: tab == item ? .semibold : nil)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Self.itemPadding)

@@ -311,6 +311,7 @@ final class LiveChatUITests: XCTestCase {
         let toggle = app.buttons["collapseProfiles"]
         XCTAssertEqual(newChat.frame.midY, close.frame.midY, accuracy: 4, "New chat in the toolbar: \(newChat.frame)")
         XCTAssertEqual(toggle.frame.midY, close.frame.midY, accuracy: 4, "the toggle in the toolbar: \(toggle.frame)")
+        XCTAssertGreaterThanOrEqual(list.frame.width, 220, "the session list at its least width: \(list.frame)")
         XCTAssertLessThanOrEqual(newChat.frame.maxX, list.frame.maxX + 2,
                                  "New chat over the sidebar: \(newChat.frame) \(list.frame)")
         let title = app.descendants(matching: .any)["sidebarProfileTitle"].firstMatch

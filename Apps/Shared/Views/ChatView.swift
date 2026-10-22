@@ -107,6 +107,9 @@ struct ChatView: View {
             // ran off the screen's right edge (VM, 2026-10-19).
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { chatWidth = $0 }
             #endif
+            #if os(macOS)
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            #endif
             #if os(iOS)
             // The messages blur away under the composer's bar, down to the screen's edge, as
             // in the Claude app. The automatic style, which the bar alone gave, left them
@@ -166,6 +169,13 @@ struct ChatView: View {
         .background { surfaces.chat.ignoresSafeArea() }
         #endif
         // The title is the column's (`RootView`), as several chats are kept built.
+        #if os(macOS)
+        // No toolbar background over the chat: macOS drew it as a gray band from the
+        // window's top down to the first message, with a line under it (#54; again with
+        // the system's toolbar, VM 2026-10-22). The messages still blur away under the
+        // toolbar's title (`scrollEdgeEffectStyle`).
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        #endif
     }
 
     /// The composer, as wide as the messages' text (the content width less its padding):

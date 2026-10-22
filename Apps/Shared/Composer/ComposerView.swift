@@ -112,7 +112,11 @@ struct ComposerView: View {
         }
         .task(id: TaskKey(sessionID: session.sessionID, isConnected: isConnected)) {
             // Again after a reconnect: the runtime id (and maybe the backend) changed.
-            if isConnected { await composer.loadCommandsAndOptions() }
+            // A Stop that failed offline is stale then: the turn's state comes from
+            // the resumed session.
+            guard isConnected else { return }
+            stopError = nil
+            await composer.loadCommandsAndOptions()
         }
         .task(id: composer.draft) {
             // Like Desktop, wait 60 ms before asking the gateway (`use-live-completion-adapter.ts:43`);

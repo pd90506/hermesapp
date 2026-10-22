@@ -9,7 +9,8 @@ import XCTest
 final class CronJobsUITests: XCTestCase {
     private static let namePrefix = "UI test cron"
 
-    /// The tabs at the bottom of the list switch it between the sessions and the jobs.
+    /// The tabs at the bottom of the list (on iOS the system's tab bar) switch it between
+    /// the sessions and the jobs.
     /// A job's row shows its schedule and where it delivers; a tap shows its runs; its
     /// "…" menu has Run Now, Pause, Deliver To and Delete. Run Now runs it, and the run
     /// opens as a chat (when the VM's Hermes has a model key: without one, the run only
@@ -47,19 +48,25 @@ final class CronJobsUITests: XCTestCase {
         if !connected { attachLaunchState(of: app, "not connected") }
         XCTAssertTrue(connected, "connected, the session list shown")
 
-        let sessionsTab = app.buttons["sessionListTab.sessions"].firstMatch
-        let cronTab = app.buttons["sessionListTab.cron"].firstMatch
+        let sessionsTab = app.sessionListTab("sessions")
+        let cronTab = app.sessionListTab("cron")
         XCTAssertTrue(sessionsTab.waitForExistence(timeout: 10), "the Sessions tab")
         XCTAssertTrue(cronTab.exists, "the Cron Jobs tab")
         XCTAssertEqual(sessionsTab.frame.midY, cronTab.frame.midY, accuracy: 2, "the tabs side by side")
         XCTAssertGreaterThan(cronTab.frame.minY, app.windows.firstMatch.frame.midY, "the tabs at the bottom")
         attach(app, "1 sessions tab")
+        let tabsBefore = sessionsTab.frame.union(cronTab.frame)
 
         press(cronTab)
         let briefRow = element(app, "cronJob.\(brief)")
         let pausedRow = element(app, "cronJob.\(paused)")
         XCTAssertTrue(briefRow.waitForExistence(timeout: 30), "the job is listed")
         XCTAssertTrue(pausedRow.waitForExistence(timeout: 5), "the paused job is listed")
+        // Picking a tab doesn't resize the bar (it grew by a hair, the picked tab's
+        // symbol filled and its title semibold).
+        let tabsAfter = sessionsTab.frame.union(cronTab.frame)
+        XCTAssertEqual(tabsAfter.height, tabsBefore.height, accuracy: 0.01, "the tabs keep their height: \(tabsBefore) → \(tabsAfter)")
+        XCTAssertEqual(tabsAfter.width, tabsBefore.width, accuracy: 0.01, "the tabs keep their width: \(tabsBefore) → \(tabsAfter)")
         XCTAssertTrue(briefRow.label.contains("Bot Chat"), "the row says where it delivers: \(briefRow.label)")
         XCTAssertTrue(pausedRow.label.contains("Paused"), "the paused job says so: \(pausedRow.label)")
         XCTAssertLessThan(briefRow.frame.minY, pausedRow.frame.minY, "the job that runs next first")

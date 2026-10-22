@@ -33,7 +33,8 @@ enum SidebarItem: Hashable {
 ///   "…" button; pinned sessions list first.
 /// - Settings is at the bottom of the profile rail (on iPhone, of the profiles' drawer).
 /// - At the bottom, the error and "waiting" banners, then the tabs, Sessions and Cron Jobs
-///   (`SessionListTabBar`). Cron Jobs shows the profile's scheduled jobs in place of its
+///   (on iOS the system's tab bar; on the Mac `SessionListTabBar`). Cron Jobs shows the
+///   profile's scheduled jobs in place of its
 ///   chats (`CronJobsList`). No connection status there on iOS either (asked for by the
 ///   user, 2026-10-19): the header's subtitle says when the server isn't connected, and
 ///   the profiles' avatars carry a status dot.
@@ -74,86 +75,79 @@ struct SessionListView: View {
     }
 
     private var content: some View {
-        // On macOS the Bot Chat above the list, not in a bar over it: always in reach, and
-        // the rows scroll under nothing. As a bar the list's rows scrolled under, the system
-        // drew a line across the column at its bottom, only under the pointer (or with
-        // rows under it), beside the Bot Chat's own divider, which is always there.
-        VStack(spacing: 0) {
-            switch tab {
-            case .sessions:
-                pinnedBotChat
-                List(selection: $selection) {
-                    if let server = model.sessionsServer {
-                        Group {
-                            botSection(server)
-                            pinnedSection(server)
-                            sessionsSection(server)
-                        }
-                        .themedRows()
-                    }
-                }
-                #if os(macOS)
-                .listStyle(.sidebar)
-                #endif
-            case .cron:
-                CronJobsList(selection: $selection, showChat: showChat)
-            }
-        }
-        #if os(macOS)
-        // No edge of the system's at the bottom: the Mac drew it, a band and a line, only
-        // while the pointer was over the list. The rows scroll under the tabs' glass.
-        .scrollEdgeEffectHidden(true, for: .bottom)
-        // No title of its own: the window's is the chat's (`RootView`), which a title here
-        // took over once the two were no longer a split view's columns.
-        // On the sidebar's own panel (`MacSidebar`).
-        .scrollContentBackground(.hidden)
-        #else
-        // On the theme's page, as the chat is on its chat colour (`ChatView`).
-        .themedPage()
-        // The header shows the name; the navigation title stays for the back button.
-        .navigationTitle(profileName ?? "Sessions")
-        .toolbar(removing: .title)
-        .navigationBarTitleDisplayMode(.inline)
-        // On iPhone the header is the top of the page: the bar held only Profiles and
-        // Settings, now the header's avatar and the drawer's Settings.
-        .toolbarVisibility(isPhone ? .hidden : .automatic, for: .navigationBar)
-        #endif
-        .refreshable {
-            switch tab {
-            case .sessions: await model.refreshLists()
-            case .cron: await model.sessionsServer?.connection.refreshCronJobs()
-            }
-        }
-        // Pinned above the Bot Chat and the list: it never scrolls away.
-        #if os(macOS)
-        // Under the window's toolbar, which holds New chat over the sidebar (`MacSidebar`).
-        .safeAreaInset(edge: .top, spacing: 0) {
-            header
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("sharedSidebarHeader")
-        }
-        // The sidebar's part of the toolbar: the rail's toggle after the window buttons,
-        // New chat at the column's end.
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
-            ToolbarSpacer(.flexible, placement: .primaryAction)
-            if let newChatButton {
-                ToolbarItem(placement: .primaryAction) { newChatButton }
-            }
-        }
-        #else
-        .safeAreaBar(edge: .top) { header }
-        #endif
-        // A bar like the header's: the banners and the tabs float over the rows, each on
-        // its own glass (`SessionListTabBar`).
-        .safeAreaBar(edge: .bottom) {
-            VStack(spacing: 0) {
-                banners
-                SessionListTabBar(tab: $tab, cronAlerts: cronAlerts)
-            }
+        Group {
             #if os(macOS)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("sessionListBottomBar")
+            // On macOS the Bot Chat above the list, not in a bar over it: always in reach,
+            // and the rows scroll under nothing. As a bar the list's rows scrolled under, the
+            // system drew a line across the column at its bottom, only under the pointer (or
+            // with rows under it), beside the Bot Chat's own divider, which is always there.
+            VStack(spacing: 0) {
+                switch tab {
+                case .sessions:
+                    pinnedBotChat
+                    sessionsList
+                case .cron:
+                    cronJobsList
+                }
+            }
+            // No edge of the system's at the bottom: the Mac drew it, a band and a line, only
+            // while the pointer was over the list.
+            .scrollEdgeEffectHidden(true, for: .bottom)
+            // No title of its own: the window's is the chat's (`RootView`), which a title here
+            // took over once the two were no longer a split view's columns.
+            // On the sidebar's own panel (`MacSidebar`).
+            .scrollContentBackground(.hidden)
+            .refreshable { await refresh() }
+            // Pinned above the Bot Chat and the list, under the window's toolbar, which holds
+            // New chat over the sidebar (`MacSidebar`): it never scrolls away.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                header
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("sharedSidebarHeader")
+            }
+            // The sidebar's part of the toolbar: the rail's toggle after the window buttons,
+            // New chat at the column's end.
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
+                ToolbarSpacer(.flexible, placement: .primaryAction)
+                if let newChatButton {
+                    ToolbarItem(placement: .primaryAction) { newChatButton }
+                }
+            }
+            // The banners and the tabs float over the rows, on their own glass.
+            .safeAreaBar(edge: .bottom) {
+                VStack(spacing: 0) {
+                    banners
+                    SessionListTabBar(tab: $tab, cronAlerts: cronAlerts)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("sessionListBottomBar")
+            }
+            #else
+            // The system's tab view, Liquid Glass's tab bar: Sessions and Cron Jobs, a failed
+            // job's count on its tab's badge. Each tab is a page of its own, with the header
+            // over it.
+            TabView(selection: $tab) {
+                Tab(SessionListTab.sessions.title, systemImage: SessionListTab.sessions.systemImage,
+                    value: SessionListTab.sessions) {
+                    page { sessionsList }
+                }
+                .accessibilityIdentifier("sessionListTab.sessions")
+                Tab(SessionListTab.cron.title, systemImage: SessionListTab.cron.systemImage,
+                    value: SessionListTab.cron) {
+                    page { cronJobsList }
+                }
+                .badge(cronAlerts)
+                .accessibilityIdentifier("sessionListTab.cron")
+            }
+            .tabViewStyle(.tabBarOnly)
+            // The header shows the name; the navigation title stays for the back button.
+            .navigationTitle(profileName ?? "Sessions")
+            .toolbar(removing: .title)
+            .navigationBarTitleDisplayMode(.inline)
+            // On iPhone the header is the top of the page: the bar held only Profiles and
+            // Settings, now the header's avatar and the drawer's Settings.
+            .toolbarVisibility(isPhone ? .hidden : .automatic, for: .navigationBar)
             #endif
         }
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -205,6 +199,45 @@ struct SessionListView: View {
     }
 
     /// On macOS, the profile's one ongoing chat, above its other sessions.
+    private var sessionsList: some View {
+        List(selection: $selection) {
+            if let server = model.sessionsServer {
+                Group {
+                    botSection(server)
+                    pinnedSection(server)
+                    sessionsSection(server)
+                }
+                .themedRows()
+            }
+        }
+        #if os(macOS)
+        .listStyle(.sidebar)
+        #endif
+    }
+
+    private var cronJobsList: some View {
+        CronJobsList(selection: $selection, showChat: showChat)
+    }
+
+    private func refresh() async {
+        switch tab {
+        case .sessions: await model.refreshLists()
+        case .cron: await model.sessionsServer?.connection.refreshCronJobs()
+        }
+    }
+
+    #if os(iOS)
+    /// A tab's page: on the theme's page, as the chat is on its chat colour (`ChatView`),
+    /// with the header pinned over it and the banners over its bottom, each on its glass.
+    private func page(@ViewBuilder _ list: () -> some View) -> some View {
+        list()
+            .themedPage()
+            .refreshable { await refresh() }
+            .safeAreaBar(edge: .top) { header }
+            .safeAreaBar(edge: .bottom) { banners.padding(.bottom, 4) }
+    }
+    #endif
+
     @ViewBuilder private var pinnedBotChat: some View {
         #if os(macOS)
         if let server = model.sessionsServer, let bot = server.connection.listProfileBot {
@@ -364,12 +397,21 @@ struct SessionListView: View {
 
     /// Above the tabs, so they never push the rows (or New chat) around: on glass, as the
     /// tabs, so the rows under them don't show through the text.
+    /// How far the banners are set in from the list's edges.
+    private static var bannerInset: CGFloat {
+        #if os(macOS)
+        Hover.rowInset
+        #else
+        16
+        #endif
+    }
+
     @ViewBuilder private var banners: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         if model.actionError != nil || waitingCount > 0 {
             VStack(spacing: 0) { bannerRows }
                 .themedGlass(in: shape)
-                .padding(.horizontal, SessionListTabBar.inset)
+                .padding(.horizontal, Self.bannerInset)
                 .padding(.top, 6)
         }
     }

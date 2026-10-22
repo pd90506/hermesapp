@@ -39,10 +39,12 @@ struct MacSidebar<Rail: View, List: View>: View {
         // The rail's toggle stands for the system's sidebar button: it hides the profiles,
         // not the sessions (`CollapseButton`).
         .toolbar(removing: .sidebarToggle)
-        // In the sidebar's part of the toolbar, after the window buttons: on the chat's
-        // side as `.navigation`.
+        // Where the system puts navigation items: at the chat's leading edge, before its
+        // title. Placed over the sidebar beside New chat (`.primaryAction` or `.automatic`),
+        // it made the system squeeze the sidebar to about 140 pt and send New chat to the
+        // overflow menu (VM, 2026-10-22).
         .toolbar {
-            ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
+            ToolbarItem(placement: .navigation) { CollapseButton(isRailShown: $isRailShown) }
         }
     }
 

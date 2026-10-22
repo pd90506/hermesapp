@@ -9,7 +9,8 @@ import XCTest
 final class CronJobsUITests: XCTestCase {
     private static let namePrefix = "UI test cron"
 
-    /// The tabs at the bottom of the list switch it between the sessions and the jobs.
+    /// The tabs at the bottom of the list (on iOS the system's tab bar) switch it between
+    /// the sessions and the jobs.
     /// A job's row shows its schedule and where it delivers; a tap shows its runs; its
     /// "…" menu has Run Now, Pause, Deliver To and Delete. Run Now runs it, and the run
     /// opens as a chat (when the VM's Hermes has a model key: without one, the run only
@@ -47,8 +48,8 @@ final class CronJobsUITests: XCTestCase {
         if !connected { attachLaunchState(of: app, "not connected") }
         XCTAssertTrue(connected, "connected, the session list shown")
 
-        let sessionsTab = app.buttons["sessionListTab.sessions"].firstMatch
-        let cronTab = app.buttons["sessionListTab.cron"].firstMatch
+        let sessionsTab = app.sessionListTab("sessions")
+        let cronTab = app.sessionListTab("cron")
         XCTAssertTrue(sessionsTab.waitForExistence(timeout: 10), "the Sessions tab")
         XCTAssertTrue(cronTab.exists, "the Cron Jobs tab")
         XCTAssertEqual(sessionsTab.frame.midY, cronTab.frame.midY, accuracy: 2, "the tabs side by side")

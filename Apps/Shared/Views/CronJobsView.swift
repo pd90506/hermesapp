@@ -22,10 +22,12 @@ enum SessionListTab: String, CaseIterable {
     }
 }
 
-/// The two tabs, side by side, a symbol over each label, on a capsule of Liquid Glass
-/// floating over the list's bottom, as iOS 26's tab bar: the picked tab on a pill of the
-/// theme's accent, which slides to the other tab. The rows scroll under it. The same on
-/// the Mac, where it replaced a band with a hairline (2026-10-20).
+#if os(macOS)
+/// The two tabs on the Mac, side by side, a symbol over each label, on a capsule of Liquid
+/// Glass floating over the list's bottom, as iOS 26's tab bar: the picked tab on a pill of
+/// the theme's accent, which slides to the other tab. The rows scroll under it. It replaced
+/// a band with a hairline (2026-10-20). macOS has no tab bar of the system's (its tab view
+/// is a segmented control over a box); on iOS the tabs are the system's tab bar.
 struct SessionListTabBar: View {
     @Binding var tab: SessionListTab
     /// Jobs whose last run failed, shown on the Cron Jobs tab.
@@ -34,13 +36,7 @@ struct SessionListTabBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How far the capsule floats in from the list's edges.
-    static var inset: CGFloat {
-        #if os(macOS)
-        Hover.rowInset
-        #else
-        16
-        #endif
-    }
+    static let inset = Hover.rowInset
 
     var body: some View {
         HStack(spacing: 0) {
@@ -96,23 +92,12 @@ struct SessionListTabBar: View {
         .padding(.bottom, Self.bottomPadding)
     }
 
-    private static var itemPadding: CGFloat {
-        #if os(macOS)
-        4
-        #else
-        6
-        #endif
-    }
+    private static let itemPadding: CGFloat = 4
 
-    /// Off the window's bottom on the Mac; on iOS the home indicator's safe area is below.
-    private static var bottomPadding: CGFloat {
-        #if os(macOS)
-        Hover.rowInset
-        #else
-        4
-        #endif
-    }
+    /// Off the window's bottom.
+    private static let bottomPadding = Hover.rowInset
 }
+#endif
 
 /// The selected profile's scheduled jobs (the Cron Jobs tab): Desktop's sidebar Cron
 /// section as a list (`apps/desktop/src/app/chat/sidebar/cron-jobs-section.tsx`). A

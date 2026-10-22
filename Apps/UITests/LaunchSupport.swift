@@ -23,4 +23,21 @@ extension XCUIApplication {
         }
         #endif
     }
+
+    /// A tab of the session list's Sessions / Cron Jobs tab bar (`SessionListView`): by
+    /// its identifier, or by its title where the system's tab bar doesn't carry it.
+    @MainActor
+    func sessionListTab(_ rawValue: String) -> XCUIElement {
+        let byID = descendants(matching: .any)["sessionListTab.\(rawValue)"].firstMatch
+        if byID.waitForExistence(timeout: 2) { return byID }
+        let title = rawValue == "cron" ? "Cron Jobs" : "Sessions"
+        let label = NSPredicate(format: "label BEGINSWITH %@", title)
+        for type in [XCUIElement.ElementType.button, .radioButton, .tab] {
+            let match = tabBars.descendants(matching: type).matching(label).firstMatch
+            if match.exists { return match }
+            let any = descendants(matching: type).matching(label).firstMatch
+            if any.exists { return any }
+        }
+        return byID
+    }
 }

@@ -303,6 +303,18 @@ public struct Transcript: Sendable, Hashable {
     /// For each local row in the history part: the id of the stored row it follows
     /// (absent: it comes before every stored row).
     private var localAnchors: [String: Int] = [:]
+    /// The reply that was streaming when a prompt went into the running turn, which its
+    /// late text still joins (see `appendUserPrompt`).
+    private var lateTail: LateTail?
+
+    private struct LateTail: Sendable, Hashable {
+        var itemID: String
+        /// The prompt sent.
+        var promptID: String
+        /// Hermes steered or queued it: the model sees it with a tool result at the
+        /// earliest, so every text delta of the round is still the old reply's.
+        var keepsRound: Bool
+    }
 
     private enum PromptState: Sendable, Hashable {
         /// `prompt.submit` not answered yet.
@@ -886,6 +898,7 @@ public struct Transcript: Sendable, Hashable {
     /// Appends a row no stored page will ever hold (see the type's note).
     private mutating func appendLocal(_ item: TranscriptItem) {
         sealActiveAssistant()
+        lateTail = nil
         items.append(item)
         localIDs.insert(item.id)
         absorbLocalRows()
@@ -973,8 +986,16 @@ public struct Transcript: Sendable, Hashable {
     /// Hermes made of it (a turn of its own, a steer, a redirect or a queued turn,
     /// `session_auto_continue.py:398-450`).
     ///
-    /// The reply streaming so far is sealed: later deltas open a new bubble below the
-    /// prompt, as Desktop orders it (`appendAfterActiveReply`, `use-prompt-actions/index.ts:817-825`).
+    /// The reply streaming so far is sealed: the reply after the prompt opens a new bubble
+    /// below it, as Desktop orders it (`appendAfterActiveReply`, `use-prompt-actions/index.ts:817-825`).
+    /// Text the old model call still streams joins the sealed bubble, as Hermes stores it
+    /// (the interrupted reply keeps all it streamed, `conversation_loop.py:322-361`). A
+    /// redirect reaches Hermes a moment after it shows here, and the call streams on until
+    /// then. Hermes starts the corrected call's first text with a paragraph break
+    /// (`_stream_needs_break`, `conversation_loop.py:361`, `stream_delivery.py:305-310`):
+    /// that delta, or any other event of the turn, opens the new bubble. A steer or a queued
+    /// prompt waits for a tool result at the earliest (`interrupt_control.py:267-278`), so
+    /// once Hermes says so (`promptAnswered`) only the round's end does.
     /// - Parameters:
     ///   - images: the images sent with it (`text` is then the caption, possibly empty).
     ///   - attachments: names of the files sent with it; `attachmentPaths` their paths.
@@ -984,9 +1005,11 @@ public struct Transcript: Sendable, Hashable {
     public mutating func appendUserPrompt(_ text: String, images: [TranscriptImage] = [], attachments: [String] = [],
                                           attachmentPaths: [String] = [], displayKind: String? = nil,
                                           sentAt: Date = Date()) -> String {
+        let streaming = activeAssistantIndex.map { items[$0].id }
         sealActiveAssistant()
         counter += 1
         var item = TranscriptItem(id: "local-\(counter)", role: .user, text: text)
+        if let streaming { lateTail = LateTail(itemID: streaming, promptID: item.id, keepsRound: displayKind == "steer") }
         item.outgoingStatus = "Sending…"
         item.images = images
         item.attachments = attachments
@@ -1072,6 +1095,7 @@ public struct Transcript: Sendable, Hashable {
         if let index = items.firstIndex(where: { $0.id == itemID }) { items[index].outgoingStatus = status == "queued" ? "Queued" : nil }
         defer { refreshRunning() }
         let queueCleared = queueClearedBeforeAnswer.remove(itemID) != nil
+        if status == "steered" || status == "queued", lateTail?.promptID == itemID { lateTail?.keepsRound = true }
         switch status {
         case "steered", "redirected":
             // Into the running turn, as guidance or a correction (`interrupt_control.py:265-281`,
@@ -1146,6 +1170,7 @@ public struct Transcript: Sendable, Hashable {
 
     public mutating func apply(_ event: GatewayEvent) {
         clearSupersededIndicators(event.type)
+        if Self.endsLateTail(event.kind) { lateTail = nil }
         switch event.kind {
         case .messageStart:
             startTurn()
@@ -1153,7 +1178,7 @@ public struct Transcript: Sendable, Hashable {
 
         case .messageDelta(let delta):
             startTurn()
-            let index = activeAssistantIndex ?? append(.assistant, "", active: true)
+            let index = lateTailIndex(for: delta.text) ?? activeAssistantIndex ?? append(.assistant, "", active: true)
             items[index].text += delta.text
             if Self.isVisibleOutput(items[index]) { outputSinceWait = true }
 
@@ -1585,6 +1610,31 @@ public struct Transcript: Sendable, Hashable {
             items[last].isActive
         else { return nil }
         return last
+    }
+
+    /// Events of the turn that end the old reply's late text: all but its text deltas and
+    /// frames about something else.
+    private static func endsLateTail(_ kind: GatewayEventKind) -> Bool {
+        switch kind {
+        case .messageDelta, .statusUpdate, .btwComplete, .backgroundComplete, .requestCancel, .approvalCancelled,
+             .notificationShow, .notificationClear, .gatewayReady, .sessionTitle, .sessionInfo, .sessionsChanged,
+             .sessionReclaimed, .unknown:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// The sealed bubble a text delta of the old model call joins (see `appendUserPrompt`).
+    private mutating func lateTailIndex(for text: String) -> Int? {
+        guard let tail = lateTail else { return nil }
+        guard activeAssistantIndex == nil, tail.keepsRound || !text.hasPrefix("\n\n"),
+            let index = items.indices.last(where: { $0 >= historyCount && items[$0].id == tail.itemID })
+        else {
+            lateTail = nil
+            return nil
+        }
+        return index
     }
 
     private mutating func sealActiveAssistant() {

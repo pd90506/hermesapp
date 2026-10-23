@@ -1527,6 +1527,17 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
   streams seals the streaming bubble first (Desktop's `appendAfterActiveReply`). Later deltas open
   a new bubble below the row, and `message.complete` stops every row of the turn. A final `text`
   that the turn's segments, joined, already end with is not added again.
+  - **Late text of the old call.** A prompt or redirect reaches Hermes a moment after its row
+    shows, and the model call streams on until then. Hermes keeps everything it streamed as the
+    interrupted reply (`agent/conversation_loop.py:322-361`), so after a user prompt (not a note
+    or `/btw`) the text deltas still join the sealed bubble above the row. The corrected call's
+    first text delta starts with `"\n\n"` (`_stream_needs_break`, `conversation_loop.py:361`;
+    `agent/stream_delivery.py:305-310`): that delta, or any other turn event (reasoning, a tool,
+    an interim, `thinking.delta` at the next API call, `message.start`, `message.complete`),
+    opens the bubble below. Once the prompt is answered `steered` or `queued` (or it was a
+    `session.steer`), the model sees it with a tool result at the earliest
+    (`agent/interrupt_control.py:267-278`), so `"\n\n"` no longer ends it; only another event
+    does. Desktop seals at once and has this split (`steer-arrival-order.test.tsx`).
 - **By the way.** `prompt.btw` answers a side question from a snapshot of the conversation; the
   live turn and its history are untouched.
   - The answer arrives on the session as `btw.complete {task_id, text, question}`

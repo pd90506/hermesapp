@@ -191,8 +191,10 @@ struct SteeringTests {
         #expect(session.transcript.items.last?.isSteer == false)
     }
 
-    /// A redirect is a plain user row (not a steer) below the reply so far, and
-    /// the next deltas go below it (`use-prompt-actions/index.ts:817-852`).
+    /// A redirect is a plain user row (not a steer) below the reply so far
+    /// (`use-prompt-actions/index.ts:817-852`). Text the old call still streams joins the
+    /// reply above it; the corrected call's text, which starts with a paragraph break
+    /// (`stream_delivery.py:305-310`), goes below.
     @Test func redirectIsWhatEnterDoesWhileBusy() async throws {
         let gateway = ScriptedGateway()
         gateway.on("session.redirect") { params in .result(["status": "redirected", "text": params["text"] ?? ""]) }
@@ -202,12 +204,13 @@ struct SteeringTests {
         #expect(await eventually { session.transcript.items.last?.text == "Once upon" })
 
         #expect(try await session.redirect("actually, stop and summarise") == .redirected)
-        gateway.transport.sendEvent("message.delta", payload: ["text": "Summary."])
+        gateway.transport.sendEvent("message.delta", payload: ["text": " a time"])
+        gateway.transport.sendEvent("message.delta", payload: ["text": "\n\nSummary."])
 
         #expect(gateway.params("session.redirect") == [["session_id": "sid-1", "text": "actually, stop and summarise"]])
-        #expect(await eventually { session.transcript.items.last?.text == "Summary." })
+        #expect(await eventually { session.transcript.items.last?.text == "\n\nSummary." })
         let texts = session.transcript.items.map(\.text)
-        #expect(texts == ["write a long essay", "Once upon", "actually, stop and summarise", "Summary."])
+        #expect(texts == ["write a long essay", "Once upon a time", "actually, stop and summarise", "\n\nSummary."])
         #expect(!session.transcript.items[2].isSteer && !session.transcript.items[1].isActive)
         expectWellFormed(session.transcript)
     }

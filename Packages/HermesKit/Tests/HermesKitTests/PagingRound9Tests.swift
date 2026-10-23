@@ -91,8 +91,8 @@ private func interrupted(_ text: String, rows: [Int]) -> JSONValue {
         expectAllStored(transcript)
     }
 
-    /// A prompt queued here mid-reply splits the call's text into two segments; Stop
-    /// stores and sends the whole call's partial, which ends with the live segment.
+    /// A prompt queued here mid-reply leaves the call's text in one segment above it (the
+    /// call goes on, `promptAnswered`); Stop stores and sends the whole call's partial.
     @Test func aStopAfterAQueuedSplitShowsThePartialOnce() throws {
         var transcript = try idle()
         transcript.apply(event("message.start"))
@@ -100,7 +100,7 @@ private func interrupted(_ text: String, rows: [Int]) -> JSONValue {
         let prompt = transcript.appendUserPrompt("顺便看下日志")
         transcript.promptAnswered(itemID: prompt, status: "queued")
         transcript.apply(event("message.delta", ["text": "第二部分"]))
-        #expect(transcript.items.filter { $0.role == .assistant && $0.rowID == nil }.count == 2)
+        #expect(transcript.items.filter { $0.role == .assistant && $0.rowID == nil }.map(\.text) == ["第一部分，第二部分"])
         transcript.apply(event("message.complete", interrupted("第一部分，第二部分", rows: [301, 302])))
         let rows = plain(184...300) + [user(301, "开始"), assistant(302, "第一部分，第二部分"),
                                        user(303, "顺便看下日志")]

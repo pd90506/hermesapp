@@ -1,6 +1,6 @@
 # hermesapp
 
-Native **macOS** and **iOS** clients (SwiftUI, platform look) for a self-hosted
+**Talaria**: native **macOS** and **iOS** clients (SwiftUI, platform look) for a self-hosted
 [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
 The apps don't add anything to Hermes. They connect to the dashboard's existing TUI-gateway

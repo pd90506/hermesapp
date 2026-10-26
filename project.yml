@@ -50,7 +50,7 @@ targets:
     info:
       path: Config/Generated/HermesMac-Info.plist
       properties:
-        CFBundleDisplayName: Hermes
+        CFBundleDisplayName: Talaria
         LSApplicationCategoryType: public.app-category.productivity
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
@@ -63,7 +63,7 @@ targets:
         com.apple.security.app-sandbox: false
     settings:
       base:
-        PRODUCT_NAME: Hermes
+        PRODUCT_NAME: Talaria
         PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).mac
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
@@ -147,7 +147,7 @@ targets:
     info:
       path: Config/Generated/HermesiOS-Info.plist
       properties:
-        CFBundleDisplayName: Hermes
+        CFBundleDisplayName: Talaria
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
@@ -160,12 +160,12 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        NSLocalNetworkUsageDescription: Hermes connects to your self-hosted Hermes gateway on your local network or tailnet.
+        NSLocalNetworkUsageDescription: Talaria connects to your self-hosted Hermes gateway on your local network or tailnet.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     settings:
       base:
-        PRODUCT_NAME: Hermes
+        PRODUCT_NAME: Talaria
         PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).ios
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

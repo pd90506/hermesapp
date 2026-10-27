@@ -287,6 +287,9 @@ struct SessionListView: View {
             // Only before the first rows: background refreshes keep the list still.
             if connection.sessionListLoading && connection.history.isEmpty {
                 ProgressView("Loading sessions…")
+                    // Centred in the column, not at the row's leading edge (asked for by the user,
+                    // 2026-10-27).
+                    .frame(maxWidth: .infinity)
             }
             if let error = connection.sessionListError {
                 Text(error).foregroundStyle(.red)

@@ -123,9 +123,11 @@ Every third-party dependency, its license, pin and reason. Add a row here before
       the user, 2026-10-27).
     - The pick is a starting point: add or narrow by hand with `--only window` or
       `--test HermesMacTests/HoverTests` when you know better.
-  - Run the whole set once, with no `--only`/`--test`/`--changed` (and `--ios` when the
-    change can affect iOS), right before reporting a PR as ready to merge, and not before
-    (decided by the user, 2026-10-16 and 2026-10-21).
+  - Run the whole set (no `--only`/`--test`/`--changed`, and `--ios` when the change can
+    affect iOS) only when the user asks for it, not as a step before every merge (decided
+    by the user, 2026-10-27, replacing the rule of 2026-10-16 and 2026-10-21). When a
+    change is tightly coupled to other parts of the app, suggest a full run to the user
+    and let them decide.
   - The slow window tests (`SLOW_WINDOW_TESTS` in `scripts/vm-test-pick.py`: speed and
     layout-churn checks, about a minute each) are skipped unless a `--test` names their
     suite, `--changed` picks them, or `--slow` is given; the whole set skips them too

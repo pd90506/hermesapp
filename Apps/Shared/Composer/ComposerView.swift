@@ -69,8 +69,12 @@ struct ComposerView: View {
         .themedGlass(in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         .chatGlassID("composer")
         .overlay {
-            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+            // Just outside the glass's edge: on it, the glass's own bright rim all but
+            // covered the line (VM, 2026-10-27: 20% of black came out as 3%).
+            RoundedRectangle(cornerRadius: Self.cornerRadius + 1, style: .continuous)
                 .strokeBorder(Color.primary.opacity(Self.borderOpacity), lineWidth: 1)
+                .padding(-1)
+                .allowsHitTesting(false)
         }
         .overlay {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
@@ -467,7 +471,7 @@ struct ComposerView: View {
 
     /// The card's hairline: Desktop mixes 18% of the text colour into its input stroke
     /// (`apps/desktop/src/app/chat/composer/index.tsx`, the composer surface's `border`).
-    static let borderOpacity = 0.2
+    static let borderOpacity = 0.15
 
     #if os(iOS)
     /// The fill of `+` and the pills on the card, as the Claude app's.

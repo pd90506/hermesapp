@@ -63,8 +63,11 @@ private final class SlashGateway: MessageTransport, GatewayConnector {
 /// by the index it was drawn with (`slashSuggestions[index - 1]`). When the list
 /// empties, SwiftUI lays out the rows being removed once more, with their old
 /// indices, and the lookup trapped: `crash-slash-215700`.
+///
+/// About a minute in the VM, which hit the old one-minute limit: a slow window test,
+/// run when the slash list changes (`SLOW_WINDOW_TESTS` in `scripts/vm-test-pick.py`).
 @MainActor
-@Suite(.timeLimit(.minutes(1)))
+@Suite(.timeLimit(.minutes(3)))
 struct ComposerSlashListTests {
     /// The lookups' commands sit among the first rows, as in a real catalog.
     private static let names = ["/c00", "/save", "/c01", "/c02", "/c03", "/stop", "/deploy", "/goal"]

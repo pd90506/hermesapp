@@ -22,7 +22,7 @@ final class SessionDateGroupsUITests: XCTestCase {
         let recent = (title: "Dated recent \(run)", date: now.addingTimeInterval(-120))
         let month = (title: "Dated month \(run)", date: now.addingTimeInterval(-45 * 86_400))
         let year = (title: "Dated year \(run)", date: now.addingTimeInterval(-400 * 86_400))
-        try await importSessions([recent, month, year].enumerated().map { index, session in
+        try await Self.importSessions([recent, month, year].enumerated().map { index, session in
             (id: "uitest-dated-\(run)-\(index)", title: session.title, date: session.date)
         }, profile: profile, url: url, token: token)
 
@@ -72,7 +72,7 @@ final class SessionDateGroupsUITests: XCTestCase {
     /// Imports sessions with a prompt and a reply each, at `date`. The import is a fenced
     /// session mutation: a new anchor's revision is 0
     /// (`get_session_mutation_snapshot`, `hermes_cli/web_routers/sessions.py:586-598`).
-    private func importSessions(_ sessions: [(id: String, title: String, date: Date)], profile: String,
+    private static func importSessions(_ sessions: [(id: String, title: String, date: Date)], profile: String,
                                 url: String, token: String) async throws {
         let base = try XCTUnwrap(URL(string: url))
         let endpoint = base.appending(path: "api/sessions/import")

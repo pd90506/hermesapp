@@ -467,7 +467,7 @@ struct ComposerView: View {
 
     /// The card's hairline: Desktop mixes 18% of the text colour into its input stroke
     /// (`apps/desktop/src/app/chat/composer/index.tsx`, the composer surface's `border`).
-    static let borderOpacity = 0.15
+    static let borderOpacity = 0.2
 
     #if os(iOS)
     /// The fill of `+` and the pills on the card, as the Claude app's.
@@ -753,7 +753,9 @@ private struct CircleButton: View {
         if Self.isAccentFilled { return isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.35)) }
         // Disabled: the text colour at 30%, as Desktop's `disabled:bg-foreground/30`
         // (`control-classes.ts`), so the empty composer's Send still reads as a button.
-        return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.3))
+        // `Color.primary`, not the `.primary` style, which a disabled button resolves to
+        // the disabled text colour and so came out all but white (VM, 2026-10-27).
+        return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.primary.opacity(0.3))
     }
 
     private var labelStyle: AnyShapeStyle {

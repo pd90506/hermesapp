@@ -112,14 +112,14 @@ final class LiveChatUITests: XCTestCase {
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
         #endif
         let newChat = app.buttons["New chat"]
-        try require(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
-        try require(XCTWaiter().wait(for: [enabled], timeout: 30) == .completed, "New chat enabled")
+        XCTAssertTrue(XCTWaiter().wait(for: [enabled], timeout: 30) == .completed, "New chat enabled")
         let rows = app.descendants(matching: .any).matching(identifier: "newChatRow")
         press(newChat)
 
         let composer = app.textViews["composer"]
-        try require(composer.waitForExistence(timeout: 30), "composer shown")
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
         press(composer)
         let draft = "draft-\(Int.random(in: 1000...9999))"
         composer.typeText(draft)
@@ -145,7 +145,7 @@ final class LiveChatUITests: XCTestCase {
         #else
         let bot = app.descendants(matching: .any)["botChatRow"].firstMatch
         #endif
-        try require(bot.waitForExistence(timeout: 10), "the Bot Chat")
+        XCTAssertTrue(bot.waitForExistence(timeout: 10), "the Bot Chat")
         press(bot)
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         #if os(iOS)

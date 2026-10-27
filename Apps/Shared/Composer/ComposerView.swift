@@ -702,6 +702,7 @@ private struct CircleButton: View {
     let isBusy: Bool
     let isProminent: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
@@ -757,14 +758,16 @@ private struct CircleButton: View {
         if Self.isAccentFilled { return isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.35)) }
         // Disabled: the text colour at 30%, as Desktop's `disabled:bg-foreground/30`
         // (`control-classes.ts`), so the empty composer's Send still reads as a button.
-        // `Color.primary`, not the `.primary` style, which a disabled button resolves to
-        // the disabled text colour and so came out all but white (VM, 2026-10-27).
-        return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(Color.primary.opacity(0.3))
+        // `Color.primary`, not the `.primary` style: on the composer's glass that style
+        // turns vibrant, and a disabled button resolves it to the disabled text colour,
+        // so Send came out the same pale grey with text or without (VM, 2026-10-27).
+        return AnyShapeStyle(Color.primary.opacity(isEnabled ? 1 : 0.3))
     }
 
     private var labelStyle: AnyShapeStyle {
         if Self.isAccentFilled && isProminent { return AnyShapeStyle(.white.opacity(isEnabled ? 1 : 0.85)) }
         guard isProminent else { return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary) }
-        return AnyShapeStyle(.background)
+        // The circle's opposite, black or white, for the reason `fill` gives.
+        return AnyShapeStyle(colorScheme == .dark ? Color.black : Color.white)
     }
 }

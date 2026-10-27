@@ -177,9 +177,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     incremental build. Don't build a PR on the host any other way, and never run or open it
     there.
   - **The host build** happens only in the main checkout, after a merge: pull `main`, build
-    with Xcode's default DerivedData (no custom `-derivedDataPath`), and relaunch our Hermes
+    with Xcode's default DerivedData (no custom `-derivedDataPath`), and relaunch our Talaria
     app (never the official Hermes Desktop). It never waits on a VM run.
-  - Each host build overwrites the last: the host keeps exactly one Hermes.app (bundle id
+  - Each host build overwrites the last: the host keeps exactly one Talaria.app (bundle id
     `com.example.hermesapp.mac`), the one in that DerivedData. Remove any stray copy (and
     `lsregister -u` it) rather than leaving extra builds around (decided by the user,
     2026-10-16).

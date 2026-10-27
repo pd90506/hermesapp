@@ -8,7 +8,7 @@
 # VM, into build/vm-test in that worktree (git-ignored; its intermediates stay, so the
 # next build is incremental). The built products are streamed into the VM, which only
 # runs them (test-without-building), and are then deleted here, the Mac app first
-# unregistered from Launch Services: the Mac keeps only the main checkout's Hermes.app.
+# unregistered from Launch Services: the Mac keeps only the main checkout's Talaria.app.
 # The worktree's files (tracked and untracked, minus what .gitignore lists) go in too,
 # for the package's live tests, which the VM still builds itself (small, and swift test
 # can't run a build made elsewhere).

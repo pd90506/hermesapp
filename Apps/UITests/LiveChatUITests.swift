@@ -301,8 +301,8 @@ final class LiveChatUITests: XCTestCase {
     }
 
     /// The window's toolbar holds the sidebar's buttons over the sidebar, level with the
-    /// window buttons: the profiles' toggle after them, New chat at the sidebar's end.
-    /// The profile's name and the rail start under it.
+    /// window buttons: the profiles' toggle after them, then the profile's name, New chat at
+    /// the sidebar's end. The rail starts under it.
     @MainActor
     private func checkToolbarHoldsTheSidebarsButtons(_ app: XCUIApplication, newChat: XCUIElement,
                                                      list: XCUIElement, rail: XCUIElement) {
@@ -316,7 +316,9 @@ final class LiveChatUITests: XCTestCase {
                                  "New chat over the sidebar: \(newChat.frame) \(list.frame)")
         let title = app.descendants(matching: .any)["sidebarProfileTitle"].firstMatch
         XCTAssertTrue(title.exists, "the profile's name")
-        XCTAssertGreaterThan(title.frame.minY, close.frame.maxY, "the profile's name under the toolbar")
+        XCTAssertEqual(title.frame.midY, close.frame.midY, accuracy: 4, "the profile's name in the toolbar: \(title.frame)")
+        XCTAssertGreaterThan(title.frame.minX, toggle.frame.maxX, "the name after the toggle: \(title.frame)")
+        XCTAssertLessThan(title.frame.maxX, newChat.frame.minX, "the name before New chat: \(title.frame)")
         XCTAssertGreaterThan(rail.frame.minY, close.frame.maxY, "the profiles under the toolbar")
         XCTAssertLessThan(rail.frame.maxX, list.frame.minX + 2, "the rail beside the list: \(rail.frame) \(list.frame)")
         attach(app, "toolbar")

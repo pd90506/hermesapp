@@ -438,6 +438,55 @@ final class LiveChatUITests: XCTestCase {
     }
     #endif
 
+    #if os(macOS)
+    /// The profile's name stays between the toggle and New chat when the window opens on a
+    /// sidebar wider than its least. With a fixed width set from the list's measured width,
+    /// the toolbar kept the narrow width it was first given, and the name, grown after,
+    /// spilled out over the toggle (the user's Mac, 2026-10-27).
+    @MainActor
+    func testProfileNameClearsTheToggleInAWideSidebar() throws {
+        continueAfterFailure = true
+        for appearance in [XCUIDevice.Appearance.light, .dark] {
+            XCUIDevice.shared.appearance = appearance
+            let env = ProcessInfo.processInfo.environment
+            guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+                throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
+            }
+            let app = XCUIApplication()
+            app.launchEnvironment["HERMES_UITEST_URL"] = url
+            app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+            app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+            // Two servers, for the server's name under the profile's.
+            app.launchEnvironment["HERMES_UITEST_SERVERS"] = "2"
+            // The sidebar 301 points wide at launch, as the split view restores it.
+            app.launchArguments += [
+                "-NSSplitView Subview Frames main-AppWindow-1, SidebarNavigationSplitView",
+                "(\"0, 0, 301, 825, NO, NO\", \"301, 0, 870, 825, NO, NO\")",
+            ]
+            app.launchWithMainWindow()
+            defer { app.terminate() }
+            let newChat = app.buttons["New chat"]
+            try require(newChat.waitForExistence(timeout: 30), "connected")
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+            let window = app.windows.firstMatch
+            let toggle = window.buttons["collapseProfiles"]
+            let title = app.descendants(matching: .any)["sidebarProfileTitle"].firstMatch
+            let list = app.outlines.firstMatch
+            let mode = appearance == .dark ? "dark" : "light"
+            for state in ["opened", "profiles hidden", "profiles shown"] {
+                if state != "opened" {
+                    toggle.click()
+                    RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+                }
+                XCTAssertGreaterThan(list.frame.width, 222, "\(state): a sidebar wider than its least: \(list.frame)")
+                XCTAssertGreaterThan(title.frame.minX, toggle.frame.maxX, "\(state): the name after the toggle: \(title.frame) \(toggle.frame)")
+                XCTAssertLessThan(title.frame.maxX, newChat.frame.minX, "\(state): the name before New chat: \(title.frame) \(newChat.frame)")
+                attach(app, "wide sidebar, \(state), \(mode)")
+            }
+        }
+    }
+    #endif
+
     @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())

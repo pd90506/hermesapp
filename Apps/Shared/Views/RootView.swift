@@ -50,6 +50,12 @@ struct RootView: View {
         // cleared on a server switch, or a new side chat. Follow it, so the
         // highlighted row is always the one on screen and clicking a row always opens it.
         .onChange(of: model.activeServer?.connection.activeSession?.id) { _, _ in followActiveChat() }
+        // A New chat's row gives way to the session's own once the list has it: the
+        // selection moves with it, so the row stays highlighted (and on iPhone the chat
+        // page doesn't wait for a row that is gone).
+        .onChange(of: activeChatItem) { old, new in
+            if case .newChat = old, selection == old { selection = new }
+        }
         #if os(iOS)
         .task(id: isOnSessionList) {
             guard isOnSessionList else {
@@ -242,6 +248,11 @@ struct RootView: View {
         if selection != shown { selection = shown }
     }
 
+    /// The sidebar row of the chat on screen.
+    private var activeChatItem: SidebarItem? {
+        model.activeServer.flatMap { item(for: $0.connection.activeSession, on: $0) }
+    }
+
     private var activeChatKey: String? {
         guard let session = model.activeServer?.connection.activeSession else { return nil }
         return "\(session.id)/\(session.storedSessionID ?? "")"
@@ -300,6 +311,9 @@ struct RootView: View {
                 .first(where: { $0.profile == profile && $0.summary.id == session.storedSessionID }) {
                 return .history(server: server.id, id: entry.id)
             }
+            if server.connection.newChatRow(profile: profile) === session {
+                return .newChat(server: server.id, profile: profile)
+            }
             guard let stored = session.storedSessionID, CronRun.isRunSessionID(stored) else { return nil }
             return .cronRun(server: server.id, profile: profile, id: stored)
         case .session: return nil
@@ -322,6 +336,8 @@ struct RootView: View {
                 let run = server.connection.cron.runs.values.lazy.flatMap { $0 }.first { $0.id == id }
                     ?? CronRun(id: id, profile: profile)
                 try await server.connection.open(run.historyEntry(profile: profile))
+            case .newChat(_, let profile):
+                try await server.connection.openNewChat(profile: profile)
             }
             model.actionError = nil
         } catch is CancellationError {

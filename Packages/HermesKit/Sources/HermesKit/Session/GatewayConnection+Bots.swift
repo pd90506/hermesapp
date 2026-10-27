@@ -255,7 +255,7 @@ extension GatewayConnection {
         guard let client else { throw GatewayClientError.notConnected }
         var carried: String?
         if let unsent = unsentChats[profile] {
-            if !unsent.transcript.items.isEmpty {
+            if unsent.hasPrompted || !unsent.transcript.items.isEmpty {
                 unsentChats[profile] = nil
             } else if !unsent.isRuntimeGone {
                 return activeSession === unsent ? keepShowing(unsent) : revisit(unsent, token: token, client: client)
@@ -273,6 +273,28 @@ extension GatewayConnection {
         unsentChats[profile] = session
         refreshListsInBackground()
         return session
+    }
+
+    /// The profile's New chat as a row of the session list, above its sessions, as other
+    /// harnesses show a new chat: while nothing is sent in it, and once something is (a
+    /// failed send too), until the list has the session's own row.
+    public func newChatRow(profile: String) -> ChatSession? {
+        guard let chat = unsentChats[profile] else { return nil }
+        guard chat.hasPrompted || !chat.transcript.items.isEmpty else { return chat }
+        let listed = historyProfile == profile && history.contains { $0.summary.id == chat.storedSessionID }
+        return listed ? nil : chat
+    }
+
+    /// Goes back to the profile's New chat, its row clicked: a blank one as New chat does
+    /// (`newSideChat`), one already sent in as it was left.
+    @discardableResult
+    public func openNewChat(profile: String) async throws -> ChatSession {
+        guard let chat = unsentChats[profile], chat.hasPrompted || !chat.transcript.items.isEmpty else {
+            return try await newSideChat(profile: profile)
+        }
+        let token = beginSelection()
+        guard let client else { throw GatewayClientError.notConnected }
+        return activeSession === chat ? keepShowing(chat) : revisit(chat, token: token, client: client)
     }
 
     /// Resumes a History entry on its profile and makes it active.

@@ -365,6 +365,59 @@ struct GatewayConnectionBotTests {
         #expect(log.requests("session.create").count == 2)
     }
 
+    /// The New chat is a row of the session list: one, however often New chat is pressed
+    /// before anything is sent, and its row goes back to it, draft and all.
+    @Test func newChatIsOneRowUntilSent() async throws {
+        let log = FrameLog()
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
+        #expect(connection.newChatRow(profile: "coder") == nil)
+
+        let side = try await connection.newSideChat(profile: "coder")
+        connection.composer(for: side).draft = "half typed"
+        _ = try await connection.newSideChat(profile: "coder")
+        #expect(connection.newChatRow(profile: "coder") === side)
+        #expect(connection.newChatRow(profile: "finance") == nil)
+
+        _ = try await connection.newSideChat(profile: "finance")
+        let again = try await connection.openNewChat(profile: "coder")
+        #expect(again === side && connection.activeSession === side)
+        #expect(connection.composer(for: again).draft == "half typed")
+        #expect(log.requests("session.create").count == 2)
+    }
+
+    /// A send that failed counts as sent: New chat then starts another, and the failed
+    /// one keeps its row (it has no stored one) and is opened as it was left.
+    @Test func newChatWithAFailedSendIsNoLongerBlank() async throws {
+        let log = FrameLog()
+        let (connection, transport) = try await connect(BotServer(profiles: roster, hold: ["prompt.submit"]), log: log)
+        let side = try await connection.newSideChat(profile: "coder")
+
+        let sent = Task { try await side.send("hello") }
+        for _ in 0..<300 where log.requests("prompt.submit").isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        let request = try #require(log.requests("prompt.submit").first)
+        transport.respondError(to: request, code: 4009, message: "session busy")
+        await #expect(throws: (any Error).self) { try await sent.value }
+        #expect(side.hasPrompted)
+
+        #expect(connection.newChatRow(profile: "coder") === side)
+        let next = try await connection.newSideChat(profile: "coder")
+        #expect(next !== side && connection.newChatRow(profile: "coder") === next)
+        #expect(log.requests("session.create").count == 2)
+    }
+
+    /// Once sent, the New chat's row stays until the list has the session's own row.
+    @Test func sentNewChatRowGivesWayToItsListedRow() async throws {
+        let listings: [String: JSONValue] = ["coder": [["id": "stored-new-1", "title": "hello"]]]
+        let (connection, _) = try await connect(BotServer(profiles: roster, listings: listings), log: FrameLog())
+        connection.selectListProfile("coder")
+        let side = try await connection.newSideChat(profile: "coder")
+        try await side.send("hello")
+        #expect(try await connection.openNewChat(profile: "coder") === side)
+
+        await connection.refreshSessionList()
+        #expect(connection.newChatRow(profile: "coder") == nil)
+    }
+
     @Test func newChatWhoseRuntimeWasReclaimedIsReplacedWithItsDraft() async throws {
         let log = FrameLog()
         let (connection, _) = try await connect(BotServer(profiles: roster), log: log)

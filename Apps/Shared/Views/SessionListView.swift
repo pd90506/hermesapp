@@ -10,10 +10,12 @@ enum SidebarItem: Hashable {
     case history(server: UUID, id: String)
     /// A scheduled job's run on the Cron Jobs tab, by its stored session id.
     case cronRun(server: UUID, profile: String, id: String)
+    /// The profile's New chat, until the list has its own row (`NewChatRow`).
+    case newChat(server: UUID, profile: String)
 
     var server: UUID {
         switch self {
-        case .bot(let server, _), .history(let server, _), .cronRun(let server, _, _): server
+        case .bot(let server, _), .history(let server, _), .cronRun(let server, _, _), .newChat(let server, _): server
         }
     }
 }
@@ -285,6 +287,7 @@ struct SessionListView: View {
 
     @ViewBuilder private func sessionsSection(_ server: ServerConnection) -> some View {
         let connection = server.connection
+        let newChat = connection.listProfile.flatMap { connection.newChatRow(profile: $0) }
         Section {
             // Only before the first rows: background refreshes keep the list still.
             if connection.sessionListLoading && connection.history.isEmpty {
@@ -303,10 +306,16 @@ struct SessionListView: View {
                 Text(server.isConnected ? "No profiles available" : "Connect to browse sessions")
                     .foregroundStyle(.secondary)
             } else if connection.visibleHistory.isEmpty && !connection.sessionListLoading
-                        && connection.sessionListError == nil {
+                        && connection.sessionListError == nil && newChat == nil {
                 Text("No sessions yet")
                     .uiFont(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if let newChat, let profile = connection.listProfile {
+                let item = SidebarItem.newChat(server: server.id, profile: profile)
+                NewChatRow(chat: newChat)
+                    .sidebarRowHighlight(isSelected: selection == item)
+                    .tag(item)
             }
             ForEach(model.pins.split(connection.visibleHistory, on: server.id).others) { entry in
                 sessionRow(entry, on: server)
@@ -509,6 +518,10 @@ struct SessionListView: View {
             defer { isStartingChat = false }
             do {
                 try await server.connection.newSideChat(profile: bot.name)
+                // Its row is selected, also when New chat went back to the one on screen
+                // (no chat change for the root to follow).
+                let item = SidebarItem.newChat(server: server.id, profile: bot.name)
+                if server.connection.newChatRow(profile: bot.name) != nil, selection != item { selection = item }
                 showChat()
             } catch {
                 model.actionError = model.describe(error, on: server)

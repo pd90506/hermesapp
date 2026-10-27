@@ -57,6 +57,8 @@ struct SessionListView: View {
     #if os(macOS)
     /// Whether the profile rail shows (`MacSidebar`), for its toggle in the toolbar.
     @AppStorage("profileRailShown") private var isRailShown = true
+    /// The list's width, which the profile's name in the toolbar fits in.
+    @State private var listWidth: CGFloat = MacSidebar<EmptyView, EmptyView>.listWidths.lowerBound
     #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -93,6 +95,7 @@ struct SessionListView: View {
             // No edge of the system's at the bottom: the Mac drew it, a band and a line, only
             // while the pointer was over the list.
             .scrollEdgeEffectHidden(true, for: .bottom)
+            .onGeometryChange(for: CGFloat.self, of: \.size.width) { listWidth = $0 }
             // No title of its own: the window's is the chat's (`RootView`), which a title here
             // took over once the two were no longer a split view's columns.
             // On the sidebar's own panel (`MacSidebar`).
@@ -103,7 +106,11 @@ struct SessionListView: View {
             // under the toolbar), New chat at the column's end.
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
-                ToolbarItem(placement: .primaryAction) { header }
+                ToolbarItem(placement: .primaryAction) {
+                    // Truncated to what is left between the toggle and New chat: at its
+                    // full width it pushed New chat out of the toolbar.
+                    header.frame(width: titleWidth, alignment: .leading)
+                }
                     // Text, not a control: no glass of its own.
                     .sharedBackgroundVisibility(.hidden)
                 ToolbarSpacer(.flexible, placement: .primaryAction)
@@ -370,6 +377,14 @@ struct SessionListView: View {
     private var profileName: String? {
         model.sessionsServer?.connection.listProfileBot?.displayName
     }
+
+    #if os(macOS)
+    /// The room for the profile's name in the toolbar over the sidebar: the sidebar's
+    /// width (the rail's and the list's) less the window buttons, the toggle and New chat.
+    private var titleWidth: CGFloat {
+        max(40, listWidth + (isRailShown ? ProfileRailItem.width : 0) - 215)
+    }
+    #endif
 
     /// The profile's server, with several, and its status unless connected (the rail
     /// shows the same as a dot).

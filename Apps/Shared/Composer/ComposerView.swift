@@ -63,10 +63,19 @@ struct ComposerView: View {
         .animation(.snappy(duration: 0.25), value: isCollapsed)
         // A card floating over the chat, as the Claude app's, on the Mac and iOS alike:
         // Liquid Glass in the theme's composer colour (`themedGlass`), the messages blurred
-        // under it. No line of its own around it: the glass has its rim. The tint's edge
-        // while a drop is over it.
+        // under it. A hairline in the text colour around it, as Desktop's composer border:
+        // in light the glass's own rim all but vanishes on a white chat (the user,
+        // 2026-10-26). The tint's edge while a drop is over it.
         .themedGlass(in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         .chatGlassID("composer")
+        .overlay {
+            // Just outside the glass's edge: on it, the glass's own bright rim all but
+            // covered the line (VM, 2026-10-27: 20% of black came out as 3%).
+            RoundedRectangle(cornerRadius: Self.cornerRadius + 1, style: .continuous)
+                .strokeBorder(Color.primary.opacity(Self.borderOpacity), lineWidth: 1)
+                .padding(-1)
+                .allowsHitTesting(false)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(.tint, lineWidth: 2)
@@ -460,6 +469,10 @@ struct ComposerView: View {
         #endif
     }
 
+    /// The card's hairline: Desktop mixes 18% of the text colour into its input stroke
+    /// (`apps/desktop/src/app/chat/composer/index.tsx`, the composer surface's `border`).
+    static let borderOpacity = 0.15
+
     #if os(iOS)
     /// The fill of `+` and the pills on the card, as the Claude app's.
     static let controlFill = Color.primary.opacity(0.08)
@@ -689,6 +702,7 @@ private struct CircleButton: View {
     let isBusy: Bool
     let isProminent: Bool
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
@@ -742,12 +756,18 @@ private struct CircleButton: View {
     private var fill: AnyShapeStyle {
         guard isProminent else { return AnyShapeStyle(.quaternary) }
         if Self.isAccentFilled { return isEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.tint.opacity(0.35)) }
-        return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.quaternary)
+        // Disabled: the text colour at 30%, as Desktop's `disabled:bg-foreground/30`
+        // (`control-classes.ts`), so the empty composer's Send still reads as a button.
+        // `Color.primary`, not the `.primary` style: on the composer's glass that style
+        // turns vibrant, and a disabled button resolves it to the disabled text colour,
+        // so Send came out the same pale grey with text or without (VM, 2026-10-27).
+        return AnyShapeStyle(Color.primary.opacity(isEnabled ? 1 : 0.3))
     }
 
     private var labelStyle: AnyShapeStyle {
         if Self.isAccentFilled && isProminent { return AnyShapeStyle(.white.opacity(isEnabled ? 1 : 0.85)) }
-        if !isEnabled { return AnyShapeStyle(.secondary) }
-        return isProminent ? AnyShapeStyle(.background) : AnyShapeStyle(.primary)
+        guard isProminent else { return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary) }
+        // The circle's opposite, black or white, for the reason `fill` gives.
+        return AnyShapeStyle(colorScheme == .dark ? Color.black : Color.white)
     }
 }

@@ -65,6 +65,10 @@ public final class ChatSession: Identifiable {
     /// action resumes it from its stored key first, as Desktop does
     /// (`gateway-event/lifecycle.ts:123-165`).
     public internal(set) var isRuntimeGone = false
+    /// Something was sent in this chat from here, or tried and failed: a New chat
+    /// is then no longer blank (`GatewayConnection.unsentChat`), even if the bubble
+    /// of a send that never went out was taken back.
+    public private(set) var hasPrompted = false
     /// The last slash-command catalog loaded for this session (`loadSlashCommands`).
     public private(set) var slashCatalog: SlashCatalog?
 
@@ -593,6 +597,7 @@ public final class ChatSession: Identifiable {
         let shown = images.enumerated().map { index, image in
             TranscriptImage(name: image.filename, localID: image.id, position: index)
         }
+        hasPrompted = true
         let itemID = current.appendUserPrompt(trimmed, images: shown, attachments: files.map(\.name),
                                               attachmentPaths: files.map(\.refPath))
         sendingPrompts.insert(itemID)
@@ -915,6 +920,7 @@ public final class ChatSession: Identifiable {
             try await send(trimmed)
             return .sentAsPrompt
         }
+        hasPrompted = true
         let itemID = current.appendUserPrompt(trimmed, displayKind: "steer")
         promptAnswered(itemID: itemID, status: "steered")
         return .steered
@@ -934,6 +940,7 @@ public final class ChatSession: Identifiable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .ignored }
         let client = try await liveClient()
+        hasPrompted = true
         let itemID = current.appendUserPrompt(trimmed)
         let result: SessionCorrectionResult
         do {
@@ -1158,6 +1165,7 @@ public final class ChatSession: Identifiable {
         // Images a failed send left queued would ride with this prompt, as with `send`.
         try await clearStrandedImages(using: client)
         let running = transcript.isRunning
+        hasPrompted = true
         let itemID = current.appendUserPrompt(display)
         do {
             let answer = try await Self.submitUncancellably(client, sessionID: sessionID, text: message,

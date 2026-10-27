@@ -479,6 +479,32 @@ struct HistoryRow<Actions: View>: View {
     }
 }
 
+/// The profile's New chat, at the top of its sessions until the list has a row of its
+/// own for it (`GatewayConnection.newChatRow`), as other harnesses list a new chat: New
+/// chat again, or this row, goes back to it with what was typed in it.
+struct NewChatRow: View {
+    let chat: ChatSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .lineLimit(1)
+            Text(chat.hasPrompted ? "Sent" : "Not sent yet")
+                .uiFont(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("newChatRow")
+    }
+
+    /// Its title once the gateway names it, else "New chat".
+    private var title: String {
+        chat.title?.isEmpty == false ? chat.title! : "New chat"
+    }
+}
+
 /// A session row's actions, in its context menu and its "…" menu.
 struct SessionActions: View {
     let isPinned: Bool

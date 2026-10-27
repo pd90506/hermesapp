@@ -99,6 +99,65 @@ final class LiveChatUITests: XCTestCase {
     }
     #endif
 
+    /// New chat is a row of the session list until its first message, as other harnesses
+    /// list a new chat: New chat again makes no second row, and New chat or its row goes
+    /// back to it with what was typed in it.
+    @MainActor
+    func testNewChatIsOneRowThatKeepsItsDraft() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        #if os(iOS)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        #endif
+        let newChat = app.buttons["New chat"]
+        try require(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        try require(XCTWaiter().wait(for: [enabled], timeout: 30) == .completed, "New chat enabled")
+        let rows = app.descendants(matching: .any).matching(identifier: "newChatRow")
+        press(newChat)
+
+        let composer = app.textViews["composer"]
+        try require(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        let draft = "draft-\(Int.random(in: 1000...9999))"
+        composer.typeText(draft)
+        #if os(iOS)
+        back.tap()
+        #endif
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10), "the New chat's row")
+        attach(app, "the New chat's row")
+
+        // New chat again: the same chat, one row.
+        press(newChat)
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), "composer shown again")
+        XCTAssertEqual(composer.value as? String, draft, "New chat again keeps the draft")
+        #if os(iOS)
+        back.tap()
+        #endif
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertEqual(rows.count, 1, "one New chat row")
+
+        // Another chat, then the row: back to the draft.
+        #if os(macOS)
+        let bot = app.descendants(matching: .any)["pinnedBotChat"].firstMatch
+        #else
+        let bot = app.descendants(matching: .any)["botChatRow"].firstMatch
+        #endif
+        try require(bot.waitForExistence(timeout: 10), "the Bot Chat")
+        press(bot)
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        #if os(iOS)
+        back.tap()
+        #endif
+        press(rows.firstMatch)
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), "the New chat again")
+        XCTAssertEqual(composer.value as? String, draft, "its row keeps the draft")
+        XCTAssertEqual(rows.count, 1, "still one New chat row")
+        attach(app, "the New chat opened from its row")
+    }
+
     /// A turn that runs tools and answers with a table, drawn in the three layers the user
     /// asked for: once the turn is done its work is one closed "Completed in …" line above
     /// the answer; opened, a group line ("Ran commands"); a group opened, a line per step

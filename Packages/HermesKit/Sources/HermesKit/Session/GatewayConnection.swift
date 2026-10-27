@@ -142,8 +142,9 @@ public final class GatewayConnection {
     public var warmSessions: [ChatSession] { warmChats }
     /// Each profile's last New chat while nothing has been sent in it, by profile
     /// (`""`: the launch profile). New chat goes back to it, draft and all, instead of
-    /// starting another (`newSideChat`); its composer outlives the warm cache.
-    @ObservationIgnored var unsentChats: [String: ChatSession] = [:]
+    /// starting another (`newSideChat`); its composer outlives the warm cache. Observed:
+    /// the session list shows it as a row of its own (`newChatRow`).
+    var unsentChats: [String: ChatSession] = [:]
     /// The composer of each warm chat (`composer(for:)`).
     @ObservationIgnored private var composers: [ObjectIdentifier: ChatComposer] = [:]
     /// The open that `opening` belongs to.

@@ -300,6 +300,9 @@ struct RootView: View {
                 .first(where: { $0.profile == profile && $0.summary.id == session.storedSessionID }) {
                 return .history(server: server.id, id: entry.id)
             }
+            if server.connection.newChatRow(profile: profile) === session {
+                return .newChat(server: server.id, profile: profile)
+            }
             guard let stored = session.storedSessionID, CronRun.isRunSessionID(stored) else { return nil }
             return .cronRun(server: server.id, profile: profile, id: stored)
         case .session: return nil
@@ -322,6 +325,8 @@ struct RootView: View {
                 let run = server.connection.cron.runs.values.lazy.flatMap { $0 }.first { $0.id == id }
                     ?? CronRun(id: id, profile: profile)
                 try await server.connection.open(run.historyEntry(profile: profile))
+            case .newChat(_, let profile):
+                try await server.connection.openNewChat(profile: profile)
             }
             model.actionError = nil
         } catch is CancellationError {

@@ -84,6 +84,16 @@ final class ThemeUITests: XCTestCase {
                 RunLoop.current.run(until: Date().addingTimeInterval(1))
                 attach(app, "chat, \(theme), \(mode.lowercased()), profiles hidden")
                 click(collapse)
+                if theme == "codex" {
+                    // Send with something to send, beside the empty composer's dimmer one.
+                    let composer = app.textViews["composer"]
+                    click(composer)
+                    composer.typeText("A draft")
+                    RunLoop.current.run(until: Date().addingTimeInterval(1))
+                    attach(app, "chat, \(theme), \(mode.lowercased()), with a draft")
+                    composer.typeKey("a", modifierFlags: .command)
+                    composer.typeKey(.delete, modifierFlags: [])
+                }
 
             }
         }

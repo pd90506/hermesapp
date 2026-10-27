@@ -145,7 +145,7 @@ final class SendStateUITests: XCTestCase {
         defer { app.terminate() }
         let composer = try openNewChat(app)
 
-        send("Write the whole numbers from 1 to 300 as English words, each on its own line, and nothing else. "
+        send("Write the whole numbers from 1 to 150 as English words, each on its own line, and nothing else. "
              + "Do not use tools.", composer: composer, in: app)
         XCTAssertTrue(waitForMessage("twenty", exactly: false, in: app, timeout: 150), "the reply streams")
         let slow = "SLOW-\(Int.random(in: 1000...9999))"
@@ -170,10 +170,19 @@ final class SendStateUITests: XCTestCase {
     /// answer, when given, below it.
     @MainActor
     private func checkOrder(correction: String, answer: String?, in app: XCUIApplication, _ moment: String) {
-        // The two kinds of text separately: one query over every element timed out on iOS.
-        let texts = (app.textViews.allElementsBoundByIndex + app.staticTexts.allElementsBoundByIndex)
-            .filter { $0.identifier != "composer" && $0.frame.height > 0 }
-        func text(_ element: XCUIElement) -> String {
+        // One snapshot of the tree, read here. Asking each element for its value and frame
+        // costs a round trip each: over a long reply on iOS that took half an hour.
+        guard let root = try? app.snapshot() else { return XCTFail("\(moment): no snapshot of the app") }
+        var texts: [XCUIElementSnapshot] = []
+        func collect(_ element: XCUIElementSnapshot) {
+            if element.elementType == .textView || element.elementType == .staticText,
+               element.identifier != "composer", element.frame.height > 0 {
+                texts.append(element)
+            }
+            element.children.forEach(collect)
+        }
+        collect(root)
+        func text(_ element: XCUIElementSnapshot) -> String {
             let value = element.value as? String ?? ""
             return value.isEmpty ? element.label : value
         }

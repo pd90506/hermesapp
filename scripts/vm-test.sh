@@ -16,6 +16,7 @@
 #
 #   scripts/vm-test.sh          # all of the above
 #   scripts/vm-test.sh --ios    # also the iOS-simulator UI test, run in the VM
+#   scripts/vm-test.sh --slow   # also the slow window tests in suites no --test names
 #   scripts/vm-test.sh --keep   # leave the VM running afterwards, and keep it for this
 #                               #  worktree's next run for 3 minutes (a batch of runs)
 #
@@ -56,12 +57,13 @@ VM=${HERMES_VM_NAME:-hermesapp-test-vm}
 PROFILE=hermesapp-test
 PORT=9139
 KEY_FILE=.env.vm-hermes
-keep=0 ios=0 only="" tests=() changed=0
-usage() { echo "usage: $0 [--keep] [--ios] [--changed | [--only live,window,ui] [--test Scheme/Suite[/test]]...]" >&2; exit 2; }
+keep=0 ios=0 only="" tests=() changed=0 slow=0
+usage() { echo "usage: $0 [--keep] [--ios] [--slow] [--changed | [--only live,window,ui] [--test Scheme/Suite[/test]]...]" >&2; exit 2; }
 while (($#)); do
   case $1 in
     --keep) keep=1 ;;
     --ios) ios=1 ;;
+    --slow) slow=1 ;;
     --only) only=${2:?--only needs live, window and/or ui}; shift ;;
     --only=*) only=${1#*=} ;;
     --test) tests+=("${2:?--test needs Scheme/Suite[/test]}"); shift ;;
@@ -112,7 +114,23 @@ runs() { [[ ,$only, == *,$1,* ]]; }
 only_testing() {  # -only-testing flags for one scheme, from --test
   local t
   for t in ${tests[@]+"${tests[@]}"}; do [[ ${t%%/*} == "$1" ]] && printf ' -only-testing:%q' "$t"; done
+  [[ $1 == HermesMacTests ]] && skip_slow
   return 0
+}
+# The slow window tests (scripts/vm-test-pick.py --slow) run only when a --test names
+# their suite or them, or with --slow (decided by the user, 2026-10-27: about four
+# minutes a run, guarding code that rarely changes). --changed names them when the
+# change touches them.
+skip_slow() {
+  ((slow)) && return 0
+  local s t named
+  while IFS= read -r s; do
+    named=0
+    for t in ${tests[@]+"${tests[@]}"}; do
+      [[ $t == "HermesMacTests/${s%%/*}" || $t == "HermesMacTests/$s" || $t == "HermesMacTests/${s%()}" ]] && named=1
+    done
+    ((named)) || printf ' -skip-testing:%q' "HermesMacTests/$s"
+  done < <(python3 scripts/vm-test-pick.py --slow)
 }
 status=0
 

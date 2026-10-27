@@ -65,6 +65,16 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   - Before bumping the pin: re-probe the parser (`MTMathListBuilder.build(fromString:error:)`)
     against the normalizer's outputs. The rewrite tables assume 1.7.3's command set.
 
+- **Sparkle** (https://github.com/sparkle-project/Sparkle), MIT, pinned to **exactly 2.10.1**
+  in `project.yml`.
+  - Used by: **HermesMac only**, for in-app updates from the GitHub releases that
+    `scripts/release-mac.sh` publishes (`Apps/macOS/Updater.swift`). iOS has no equivalent.
+  - Decided by the user (2026-10), over a hand-written GitHub updater: replacing and relaunching a
+    running app safely is what Sparkle already does well.
+  - Updates are verified twice: the EdDSA signature in the appcast (the private key lives in the
+    release Mac's login keychain) and the app's code signature (the same team as the running app).
+  - Off in Debug builds and when `HERMES_UPDATE_FEED_URL` or `HERMES_UPDATE_PUBLIC_KEY` is unset.
+
 ## Protocol work
 
 - `docs/protocol.md` is the contract this repo relies on. Every claim cites a Hermes source path;

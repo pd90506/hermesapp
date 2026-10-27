@@ -31,6 +31,13 @@ struct HermesMacApp: App {
                 .markdownColors(model.markdownColors)
                 .colorTheme(model.markdownColors.preset)
         }
+        .commands {
+            if let updater = delegate.updater.updater {
+                CommandGroup(after: .appInfo) {
+                    CheckForUpdatesButton(updater: updater)
+                }
+            }
+        }
     }
 }
 
@@ -38,6 +45,7 @@ struct HermesMacApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    let updater = Updater()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ScrollLatching.install()

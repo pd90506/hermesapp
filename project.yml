@@ -32,6 +32,10 @@ packages:
   SwiftMath:
     url: https://github.com/mgriebling/SwiftMath
     exactVersion: 1.7.3
+  # In-app updates for the Mac app (MIT). Pinned exactly; see AGENTS.md "Dependencies".
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 
 targets:
   HermesMac:
@@ -47,10 +51,20 @@ targets:
       - package: HermesKit
         product: HermesProtocol
       - package: SwiftMath
+      - package: Sparkle
     info:
       path: Config/Generated/HermesMac-Info.plist
       properties:
         CFBundleDisplayName: Talaria
+        # From the build settings, so scripts/release-mac.sh can number each release.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Sparkle: the appcast and the EdDSA public key that update archives must be signed
+        # with. Both come from Config/Local.xcconfig; empty turns updates off (Updater.swift).
+        SUFeedURL: $(HERMES_UPDATE_FEED_URL)
+        SUPublicEDKey: $(HERMES_UPDATE_PUBLIC_KEY)
+        # Check daily without first asking for permission to.
+        SUEnableAutomaticChecks: true
         LSApplicationCategoryType: public.app-category.productivity
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

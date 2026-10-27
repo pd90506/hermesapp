@@ -108,8 +108,10 @@ struct SessionListView: View {
                 ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
                 ToolbarItem(placement: .primaryAction) {
                     // Truncated to what is left between the toggle and New chat: at its
-                    // full width it pushed New chat out of the toolbar.
-                    header.frame(width: titleWidth, alignment: .leading)
+                    // full width it pushed New chat out of the toolbar. A range, not a fixed
+                    // width: the toolbar kept the width it first got, before the list was
+                    // measured, and a wider name, centred in it, spilled over the toggle.
+                    header.frame(minWidth: 40, maxWidth: titleWidth, alignment: .leading)
                 }
                     // Text, not a control: no glass of its own.
                     .sharedBackgroundVisibility(.hidden)

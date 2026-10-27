@@ -149,8 +149,8 @@ final class ThemeUITests: XCTestCase {
             XCTAssertTrue(window.buttons[XCUIIdentifierMinimizeWindow].isHittable, "\(state): native minimize button")
             XCTAssertLessThan(window.frame.width, screen.width, "\(state): windowed, not full screen: \(window.frame) on \(screen)")
             XCTAssertFalse(window.title.isEmpty, "\(state): the chat's title is the window's")
-            // The toolbar's row: traffic lights | toggle … New chat over the sidebar; the
-            // profile's name under it.
+            // The toolbar's row: traffic lights | toggle, the profile's name … New chat over
+            // the sidebar.
             let lights = [XCUIIdentifierZoomWindow, XCUIIdentifierFullScreenWindow]
                 .map { window.buttons[$0] }.first { $0.exists } ?? close
             let toggle = window.buttons["collapseProfiles"].firstMatch
@@ -160,7 +160,9 @@ final class ThemeUITests: XCTestCase {
             XCTAssertGreaterThan(toggle.frame.minX, lights.frame.maxX, "\(state): toggle after the traffic lights")
             XCTAssertEqual(toggle.frame.midY, close.frame.midY, accuracy: 4, "\(state): toggle in the toolbar's row")
             XCTAssertEqual(newChat.frame.midY, close.frame.midY, accuracy: 4, "\(state): New chat in the toolbar's row")
-            XCTAssertGreaterThan(profile.frame.minY, close.frame.maxY, "\(state): profile title under the toolbar")
+            XCTAssertEqual(profile.frame.midY, close.frame.midY, accuracy: 4, "\(state): profile title in the toolbar's row")
+            XCTAssertGreaterThan(profile.frame.minX, toggle.frame.maxX, "\(state): profile title after the toggle")
+            XCTAssertLessThan(profile.frame.maxX, newChat.frame.minX, "\(state): profile title before New chat")
             print("PREVIEW \(state): window \(window.frame), screen \(screen), close \(close.frame), lights \(lights.frame), toggle \(toggle.frame), profile '\(profile.label)' \(profile.frame), newChat \(newChat.frame), title '\(window.title)', list \(list)")
         }
 

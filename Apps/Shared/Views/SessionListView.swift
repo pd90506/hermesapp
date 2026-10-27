@@ -26,8 +26,8 @@ enum SidebarItem: Hashable {
 ///
 /// - The profile's name (and server) heads the list, with New chat (`NewChatButton`, a
 ///   compose icon) at its trailing edge, in the pinned `SessionListHeader`; rows scroll
-///   under it. On the Mac New chat is in the window's toolbar over the sidebar
-///   (`MacSidebar`), and the name under it; on iPhone the page's top, with no navigation
+///   under it. On the Mac the name and New chat are in the window's toolbar over the
+///   sidebar (`MacSidebar`), after the rail's toggle; on iPhone the page's top, with no navigation
 ///   bar over it, led by the profile's avatar.
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
@@ -98,17 +98,14 @@ struct SessionListView: View {
             // On the sidebar's own panel (`MacSidebar`).
             .scrollContentBackground(.hidden)
             .refreshable { await refresh() }
-            // Pinned above the Bot Chat and the list, under the window's toolbar, which holds
-            // New chat over the sidebar (`MacSidebar`): it never scrolls away.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                header
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("sharedSidebarHeader")
-            }
             // The sidebar's part of the toolbar: the rail's toggle after the window buttons,
-            // New chat at the column's end.
+            // then the profile's name (asked for by the user, 2026-10-27: it was a header
+            // under the toolbar), New chat at the column's end.
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
+                ToolbarItem(placement: .primaryAction) { header }
+                    // Text, not a control: no glass of its own.
+                    .sharedBackgroundVisibility(.hidden)
                 ToolbarSpacer(.flexible, placement: .primaryAction)
                 if let newChatButton {
                     ToolbarItem(placement: .primaryAction) { newChatButton }
@@ -178,7 +175,8 @@ struct SessionListView: View {
         }
     }
 
-    /// The profile's name and New chat, on iPhone led by the profile's avatar.
+    /// The profile's name and New chat, on iPhone led by the profile's avatar; on the Mac
+    /// the name alone, in the toolbar.
     @ViewBuilder private var header: some View {
         #if os(iOS)
         if isPhone {
@@ -191,9 +189,6 @@ struct SessionListView: View {
         }
         #else
         ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Hover.rowContentInset)
-            .padding(.bottom, 6)
             .accessibilityIdentifier("sidebarProfileTitle")
         #endif
     }

@@ -12,9 +12,10 @@ final class CronJobsUITests: XCTestCase {
     /// The tabs at the bottom of the list (on iOS the system's tab bar) switch it between
     /// the sessions and the jobs.
     /// A job's row shows its schedule and where it delivers; a tap shows its runs; its
-    /// "…" menu has Run Now, Pause, Deliver To and Delete. Run Now runs it, and the run
-    /// opens as a chat (when the VM's Hermes has a model key: without one, the run only
-    /// records its error).
+    /// "…" menu has Run Now, Pause, Deliver To and Delete. On the Mac, Run Now runs it, and
+    /// the run opens as a chat (when the VM's Hermes has a model key: without one, the run
+    /// only records its error). A run is a whole agent turn, about four minutes in the VM,
+    /// and the server path is the same on both platforms, so iOS checks the menu only.
     @MainActor
     func testCronTabListsTheJobsAndOpensARun() throws {
         continueAfterFailure = false
@@ -84,6 +85,7 @@ final class CronJobsUITests: XCTestCase {
         XCTAssertTrue(menuItem(app, "Run Now").exists)
         XCTAssertTrue(menuItem(app, "Pause").exists)
         attach(app, "4 job menu")
+        #if os(macOS)
         press(menuItem(app, "Run Now"))
 
         // The trigger answers when the run ends; then the run is listed under the job.
@@ -99,21 +101,19 @@ final class CronJobsUITests: XCTestCase {
             let replied = reply.waitForExistence(timeout: 30)
             attach(app, "6 run opened")
             XCTAssertTrue(replied, "the run's reply")
-            #if os(iOS)
-            app.navigationBars.buttons.element(boundBy: 0).tap()
-            #endif
         } else {
             attach(app, "5 run not listed")
         }
-
-        // Pause from the menu, then back to the sessions.
         if element(app, "cronJobMenu.\(brief)").waitForExistence(timeout: 10) {
             press(element(app, "cronJobMenu.\(brief)"))
-            if menuItem(app, "Pause").waitForExistence(timeout: 5) {
-                press(menuItem(app, "Pause"))
-                XCTAssertTrue(eventually(timeout: 15) { briefRow.label.contains("Paused") }, "paused: \(briefRow.label)")
-                attach(app, "7 paused")
-            }
+        }
+        #endif
+
+        // Pause from the menu (on iOS still open), then back to the sessions.
+        if menuItem(app, "Pause").waitForExistence(timeout: 5) {
+            press(menuItem(app, "Pause"))
+            XCTAssertTrue(eventually(timeout: 15) { briefRow.label.contains("Paused") }, "paused: \(briefRow.label)")
+            attach(app, "7 paused")
         }
         press(sessionsTab)
         XCTAssertTrue(eventually { !briefRow.exists }, "the sessions again")

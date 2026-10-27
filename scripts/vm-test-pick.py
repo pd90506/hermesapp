@@ -4,8 +4,9 @@
 Reads the files changed since the branch left main (committed, staged, unstaged and
 untracked; `--base REF` for another starting point) and maps them to tests:
 
-- vm-test.sh, its helpers, project.yml, Config/ or the package manifest: everything,
-  with the iOS tests.
+- vm-test.sh, its helpers, project.yml, Config/ or the package manifest: every step
+  once (the package live tests, the window tests, a smoke UI test on each platform),
+  not every test. A change to comments only: nothing.
 - The package's live tests, or its sources: the package live tests. The app files
   that use a changed package type count as changed too.
 - A window test file (Apps/Tests/macOS): its suites. An app file the window tests
@@ -18,6 +19,10 @@ untracked; `--base REF` for another starting point) and maps them to tests:
   platforms it is compiled for (`#if os(...)` included).
 - Anything else (docs, backend/, the package's unit tests, which CI runs): nothing.
 
+The slow window tests (`SLOW_WINDOW_TESTS`, a minute or so each) run only when they are
+picked by name: their file, or an app file declaring a type they use, changed.
+vm-test.sh skips them otherwise, in the whole set too, unless it is given `--slow`.
+
 It is a starting point for iterating, not a guarantee: a change that alters what a
 UI test sees without sharing a string with it is not picked. The whole set still runs
 once before merge.
@@ -25,6 +30,7 @@ once before merge.
     scripts/vm-test-pick.py              # explains the pick, ends with the command
     scripts/vm-test-pick.py --args       # one line per vm-test.sh argument (for --changed)
     scripts/vm-test-pick.py --files Apps/Shared/Views/Hover.swift ...   # for these files
+    scripts/vm-test-pick.py --slow       # the slow window tests, one per line
 """
 import os
 import re
@@ -37,6 +43,13 @@ EVERYTHING = ("scripts/vm-test.sh", "scripts/vm-test-pick.py", "scripts/vm-test-
 PLATFORMS = ("macOS", "iOS")
 # The smoke test per platform: quick, and it launches, connects, sends and gets a reply
 # (about 40s on macOS and 30s on iOS in the VM, 2026-10-21).
+# Window tests that measure speed or churn through many layouts: a minute or so each
+# in the VM (2026-10-27), and they guard code that rarely changes.
+SLOW_WINDOW_TESTS = ("ChatSwitchTests/switchingIsQuick()",
+                     "LazyTranscriptTests/lazyChatKeepsItsHeightWhileScrolling()",
+                     "ChatScrollingTests/theContentKeepsOneHeightWhileScrolling()",
+                     "StreamingTests/aStreamingReplyLeavesTheMainThreadMostlyFree()",
+                     "ComposerSlashListTests/theListSurvivesEveryKindOfChange()")
 SMOKE = {"macOS": "MessageActionsUITests/testTheReplysMenuBranchesIntoANewChat",
          "iOS": "LiveChatUITests/testNewChatSendsAndShowsTheReply"}
 
@@ -46,12 +59,30 @@ def git(*args):
                           text=True).stdout
 
 
+def merge_base(base):
+    if base is not None:
+        return base
+    try:
+        return git("merge-base", "HEAD", "origin/main").strip()
+    except subprocess.CalledProcessError:
+        return git("merge-base", "HEAD", "main").strip()
+
+
+def comments_only(path, base):
+    """Whether the change to a script or YAML file only touches comments and blank lines."""
+    try:
+        diff = git("diff", "-U0", base, "--", path)
+    except subprocess.CalledProcessError:
+        return False
+    if not diff:  # untracked: new
+        return False
+    changed = [line[1:].strip() for line in diff.split("\n")
+               if line[:1] in "+-" and not line.startswith(("+++", "---"))]
+    return all(not line or line.startswith("#") for line in changed)
+
+
 def changed_files(base):
-    if base is None:
-        try:
-            base = git("merge-base", "HEAD", "origin/main").strip()
-        except subprocess.CalledProcessError:
-            base = git("merge-base", "HEAD", "main").strip()
+    base = merge_base(base)
     files = set(git("diff", "--name-only", base).split("\n"))
     files |= set(git("ls-files", "--others", "--exclude-standard").split("\n"))
     return sorted(f for f in files if f)
@@ -203,16 +234,22 @@ def app_platforms(path):
     return found
 
 
-def pick(files):
+def pick(files, base=None):
     why = []           # (what, because)
     live = False
     window = set()     # suites; "*" for all
     ui = {p: set() for p in PLATFORMS}
     uncovered = []
 
-    if any(f in EVERYTHING or f.startswith("Config/") for f in files):
-        hits = [f for f in files if f in EVERYTHING or f.startswith("Config/")]
-        return None, [("everything, with --ios", ", ".join(hits))], []
+    infra = [f for f in files if f in EVERYTHING or f.startswith("Config/")]
+    for f in [f for f in infra if f.endswith((".sh", ".py", ".yml")) and comments_only(f, merge_base(base))]:
+        infra.remove(f)
+        why.append(("nothing (comments only)", f))
+    if infra:
+        # The build and the run itself: every step once, not every test.
+        live = True
+        window.add("*")
+        why.append(("every step once: live, window, a smoke UI test each", ", ".join(infra)))
 
     app_files = [f for f in files if re.match(r"Apps/(Shared|macOS|iOS)/.*\.swift$", f)]
     for f in files:
@@ -277,6 +314,11 @@ def pick(files):
         # The quickest in the last run, or else the one that does least.
         return min(on_p, key=lambda t: (times.get((p, f"{t['class']}/{t['name']}"), 1e9), t["size"]))
 
+    if infra:
+        for p in PLATFORMS:
+            t = smoke(p)
+            ui[p].add(f"{t['class']}/{t['name']}")
+
     for f in files:
         if f.startswith("Apps/UITests/") and f.endswith(".swift"):
             for t in tests:
@@ -316,15 +358,14 @@ def pick(files):
 
 
 def arguments(selection):
-    if selection is None:
-        return ["--ios"]
     live, window, ui = selection
     parts, tests = [], []
     if live:
         parts.append("live")
     if window:
         parts.append("window")
-        tests += ["HermesMacTests"] if "*" in window else [f"HermesMacTests/{s}" for s in sorted(window)]
+        # Suites named alongside "*" stay named: vm-test.sh runs the slow tests of named suites only.
+        tests += (["HermesMacTests"] if "*" in window else []) + [f"HermesMacTests/{s}" for s in sorted(window - {"*"})]
     if ui["macOS"]:
         parts.append("ui")
         tests += [f"HermesMacUITests/{t}" for t in sorted(ui["macOS"])]
@@ -343,8 +384,11 @@ def main():
     base = None
     if "--base" in argv:
         base = argv[argv.index("--base") + 1]
+    if "--slow" in argv:
+        print("\n".join(SLOW_WINDOW_TESTS))
+        return
     files = argv[argv.index("--files") + 1:] if "--files" in argv else changed_files(base)
-    selection, why, uncovered = pick(files)
+    selection, why, uncovered = pick(files, base)
     args = arguments(selection)
     if "--args" in argv:
         print("\n".join(args))

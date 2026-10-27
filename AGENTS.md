@@ -111,17 +111,25 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   window tests on the host, start a test dashboard there, or open a build on its screens.
   Building on the host is fine.
   - While iterating on a change, run only the tests it needs (decided by the user, 2026-10-21;
-    a full run with `--ios` takes about 25 minutes, nearly all of it in the UI tests):
+    a full run with `--ios` takes about 45 minutes on the Mac Studio, nearly all of it in the
+    UI tests):
     - `scripts/vm-test.sh --changed` picks them from the files the branch changed
       (`scripts/vm-test-pick.py`, which prints its reasons; run it alone to see the pick).
       It maps window test files and the app files the window tests compile to their
       suites, and app files to the UI tests that share a string with them (identifiers,
-      labels), or else to one quick smoke test per platform.
+      labels), or else to one quick smoke test per platform. A change to the test scripts,
+      `project.yml`, `Config/` or the package manifest runs every step once (live, window,
+      a smoke UI test each), not every test; one to comments only runs nothing (decided by
+      the user, 2026-10-27).
     - The pick is a starting point: add or narrow by hand with `--only window` or
       `--test HermesMacTests/HoverTests` when you know better.
   - Run the whole set once, with no `--only`/`--test`/`--changed` (and `--ios` when the
     change can affect iOS), right before reporting a PR as ready to merge, and not before
     (decided by the user, 2026-10-16 and 2026-10-21).
+  - The slow window tests (`SLOW_WINDOW_TESTS` in `scripts/vm-test-pick.py`: speed and
+    layout-churn checks, about a minute each) are skipped unless a `--test` names their
+    suite, `--changed` picks them, or `--slow` is given; the whole set skips them too
+    (decided by the user, 2026-10-27).
   - Each run ends with its step times and its slowest tests; every test's time is kept in
     `build/vm-test/durations/<result>.tsv`.
   - Run `scripts/vm-test.sh` from the PR's own worktree. It builds the apps and their tests on

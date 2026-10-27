@@ -154,8 +154,12 @@ final class LiveChatUITests: XCTestCase {
         press(rows.firstMatch)
         XCTAssertTrue(composer.waitForExistence(timeout: 10), "the New chat again")
         XCTAssertEqual(composer.value as? String, draft, "its row keeps the draft")
-        XCTAssertEqual(rows.count, 1, "still one New chat row")
         attach(app, "the New chat opened from its row")
+        #if os(iOS)
+        back.tap()
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10), "back on the list")
+        #endif
+        XCTAssertEqual(rows.count, 1, "still one New chat row")
     }
 
     /// A turn that runs tools and answers with a table, drawn in the three layers the user

@@ -50,6 +50,12 @@ struct RootView: View {
         // cleared on a server switch, or a new side chat. Follow it, so the
         // highlighted row is always the one on screen and clicking a row always opens it.
         .onChange(of: model.activeServer?.connection.activeSession?.id) { _, _ in followActiveChat() }
+        // A New chat's row gives way to the session's own once the list has it: the
+        // selection moves with it, so the row stays highlighted (and on iPhone the chat
+        // page doesn't wait for a row that is gone).
+        .onChange(of: activeChatItem) { old, new in
+            if case .newChat = old, selection == old { selection = new }
+        }
         #if os(iOS)
         .task(id: isOnSessionList) {
             guard isOnSessionList else {
@@ -240,6 +246,11 @@ struct RootView: View {
     private func followActiveChat() {
         let shown = model.activeServer.flatMap { item(for: $0.connection.activeSession, on: $0) }
         if selection != shown { selection = shown }
+    }
+
+    /// The sidebar row of the chat on screen.
+    private var activeChatItem: SidebarItem? {
+        model.activeServer.flatMap { item(for: $0.connection.activeSession, on: $0) }
     }
 
     private var activeChatKey: String? {

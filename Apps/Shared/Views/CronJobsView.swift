@@ -164,6 +164,9 @@ struct CronJobsList: View {
             Text("This connection can't read scheduled jobs.").foregroundStyle(.secondary)
         } else if !isCurrent || (cron.isLoading && cron.jobs.isEmpty) {
             ProgressView("Loading jobs…")
+                // Centred in the column, not at the row's leading edge (asked for by the user,
+                // 2026-10-27).
+                .frame(maxWidth: .infinity)
         } else {
             if let error = cron.error {
                 Text(error).foregroundStyle(.red)

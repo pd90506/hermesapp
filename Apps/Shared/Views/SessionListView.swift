@@ -26,8 +26,8 @@ enum SidebarItem: Hashable {
 ///
 /// - The profile's name (and server) heads the list, with New chat (`NewChatButton`, a
 ///   compose icon) at its trailing edge, in the pinned `SessionListHeader`; rows scroll
-///   under it. On the Mac New chat is in the window's toolbar over the sidebar
-///   (`MacSidebar`), and the name under it; on iPhone the page's top, with no navigation
+///   under it. On the Mac the name and New chat are in the window's toolbar over the
+///   sidebar (`MacSidebar`), after the rail's toggle; on iPhone the page's top, with no navigation
 ///   bar over it, led by the profile's avatar.
 /// - Each session has Pin, Rename, Fork, Archive and Delete, in its context menu and its
 ///   "…" button; pinned sessions list first.
@@ -57,6 +57,8 @@ struct SessionListView: View {
     #if os(macOS)
     /// Whether the profile rail shows (`MacSidebar`), for its toggle in the toolbar.
     @AppStorage("profileRailShown") private var isRailShown = true
+    /// The list's width, which the profile's name in the toolbar fits in.
+    @State private var listWidth: CGFloat = MacSidebar<EmptyView, EmptyView>.listWidths.lowerBound
     #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -93,22 +95,24 @@ struct SessionListView: View {
             // No edge of the system's at the bottom: the Mac drew it, a band and a line, only
             // while the pointer was over the list.
             .scrollEdgeEffectHidden(true, for: .bottom)
+            .onGeometryChange(for: CGFloat.self, of: \.size.width) { listWidth = $0 }
             // No title of its own: the window's is the chat's (`RootView`), which a title here
             // took over once the two were no longer a split view's columns.
             // On the sidebar's own panel (`MacSidebar`).
             .scrollContentBackground(.hidden)
             .refreshable { await refresh() }
-            // Pinned above the Bot Chat and the list, under the window's toolbar, which holds
-            // New chat over the sidebar (`MacSidebar`): it never scrolls away.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                header
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("sharedSidebarHeader")
-            }
             // The sidebar's part of the toolbar: the rail's toggle after the window buttons,
-            // New chat at the column's end.
+            // then the profile's name (asked for by the user, 2026-10-27: it was a header
+            // under the toolbar), New chat at the column's end.
             .toolbar {
                 ToolbarItem(placement: .primaryAction) { CollapseButton(isRailShown: $isRailShown) }
+                ToolbarItem(placement: .primaryAction) {
+                    // Truncated to what is left between the toggle and New chat: at its
+                    // full width it pushed New chat out of the toolbar.
+                    header.frame(width: titleWidth, alignment: .leading)
+                }
+                    // Text, not a control: no glass of its own.
+                    .sharedBackgroundVisibility(.hidden)
                 ToolbarSpacer(.flexible, placement: .primaryAction)
                 if let newChatButton {
                     ToolbarItem(placement: .primaryAction) { newChatButton }
@@ -178,7 +182,8 @@ struct SessionListView: View {
         }
     }
 
-    /// The profile's name and New chat, on iPhone led by the profile's avatar.
+    /// The profile's name and New chat, on iPhone led by the profile's avatar; on the Mac
+    /// the name alone, in the toolbar.
     @ViewBuilder private var header: some View {
         #if os(iOS)
         if isPhone {
@@ -191,9 +196,6 @@ struct SessionListView: View {
         }
         #else
         ColumnTitle(title: profileName ?? "No profile", subtitle: subtitle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Hover.rowContentInset)
-            .padding(.bottom, 6)
             .accessibilityIdentifier("sidebarProfileTitle")
         #endif
     }
@@ -285,6 +287,9 @@ struct SessionListView: View {
             // Only before the first rows: background refreshes keep the list still.
             if connection.sessionListLoading && connection.history.isEmpty {
                 ProgressView("Loading sessions…")
+                    // Centred in the column, not at the row's leading edge (asked for by the user,
+                    // 2026-10-27).
+                    .frame(maxWidth: .infinity)
             }
             if let error = connection.sessionListError {
                 Text(error).foregroundStyle(.red)
@@ -375,6 +380,14 @@ struct SessionListView: View {
     private var profileName: String? {
         model.sessionsServer?.connection.listProfileBot?.displayName
     }
+
+    #if os(macOS)
+    /// The room for the profile's name in the toolbar over the sidebar: the sidebar's
+    /// width (the rail's and the list's) less the window buttons, the toggle and New chat.
+    private var titleWidth: CGFloat {
+        max(40, listWidth + (isRailShown ? ProfileRailItem.width : 0) - 215)
+    }
+    #endif
 
     /// The profile's server, with several, and its status unless connected (the rail
     /// shows the same as a dot).

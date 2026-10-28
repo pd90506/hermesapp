@@ -78,7 +78,9 @@ codesign --verify --deep --strict "$app"
 zip="$work/Talaria-macOS.zip"
 ditto -c -k --keepParent "$app" "$zip"
 
-# Prints: sparkle:edSignature="…" length="…"
+# Prints: sparkle:edSignature="…" length="…". The private key is read from the login keychain,
+# which asks once whether sign_update may read it (answer Always Allow): with nobody at the Mac
+# to answer, this step waits.
 signature=$("$work/dd/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" "$zip")
 [[ "$signature" == *edSignature=* ]] || die "sign_update failed: run generate_keys first (see the top of this script)"
 

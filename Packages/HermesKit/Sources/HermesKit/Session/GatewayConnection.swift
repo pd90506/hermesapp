@@ -110,7 +110,8 @@ public final class GatewayConnection {
     /// The running detach flush of each runtime session that has stranded images.
     @ObservationIgnored var strandedImageFlushes: [String: Task<Void, Never>] = [:]
     /// Sidebar dates read so far, by `SessionRowTimestamp.cacheKey` (`latestMessageDate`).
-    @ObservationIgnored var latestMessageDates: [String: Date?] = [:]
+    /// Observed: the list's date groups (`sessionDateGroups`) move as rows read theirs.
+    var latestMessageDates: [String: Date?] = [:]
     /// Bumped by every connect/disconnect; async work started under an older
     /// generation discards its result (and closes its socket) instead of
     /// overwriting newer state.

@@ -116,6 +116,34 @@ struct SessionRowTimestampTests {
     }
 
     @MainActor
+    @Test(.timeLimit(.minutes(1))) func dateGroupsFollowTheDatesRowsRead() async throws {
+        let source = TimestampSource()
+        let transport = FakeTransport()
+        transport.serve(log: FrameLog()) { _, _ in .object([:]) }
+        var configuration = GatewayClient.Configuration()
+        configuration.heartbeatInterval = nil
+        let connection = GatewayConnection(configuration: configuration)
+        try await connection.connect(using: FakeConnector([transport], messages: source))
+        func row(_ id: String) -> HistoryEntry {
+            var summary = SessionSummary(id: id)
+            summary.messageCount = 2
+            return HistoryEntry(profile: "coder", summary: summary)
+        }
+        let rows = [row("a"), row("b")]
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        // Nothing read yet: one unlabelled group.
+        #expect(connection.sessionDateGroups(rows, now: now).map(\.items) == [rows])
+        await source.set([now.timeIntervalSince1970 - 60])
+        _ = await connection.latestMessageDate(for: rows[0])
+        await source.set([now.timeIntervalSince1970 - 90 * 86400])
+        _ = await connection.latestMessageDate(for: rows[1])
+        let groups = connection.sessionDateGroups(rows, now: now)
+        #expect(groups.map(\.items) == [[rows[0]], [rows[1]]])
+        #expect(groups.last?.bucket != nil)
+        await connection.disconnect()
+    }
+
+    @MainActor
     @Test(.timeLimit(.minutes(1))) func failedReadsAreNotCached() async throws {
         let source = FailingOnceSource()
         let transport = FakeTransport()

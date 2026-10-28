@@ -363,6 +363,17 @@ extension GatewayConnection {
         }
     }
 
+    /// `entries` (in list order) in Desktop's date groups, by the dates their rows have
+    /// read so far (`SessionDateGrouping`).
+    public func sessionDateGroups(_ entries: [HistoryEntry], now: Date = .now,
+                                  calendar: Calendar = .current) -> [SessionDateGroup<HistoryEntry>] {
+        let times = entries.map { entry -> Date? in
+            guard let key = SessionRowTimestamp.cacheKey(for: entry), let date = latestMessageDates[key] else { return nil }
+            return date
+        }
+        return SessionDateGrouping.groups(entries, times: times, now: now, calendar: calendar)
+    }
+
     public func refreshSessionListIfVisible() async {
         guard navigationPage == .sessions else { return }
         await refreshSessionList()

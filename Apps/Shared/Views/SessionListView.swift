@@ -288,7 +288,10 @@ struct SessionListView: View {
     @ViewBuilder private func sessionsSection(_ server: ServerConnection) -> some View {
         let connection = server.connection
         let newChat = connection.listProfile.flatMap { connection.newChatRow(profile: $0) }
-        Section {
+        // The newest run under "Sessions", then a section per date range, as Desktop
+        // groups its list (asked for by the user, 2026-10-27). Pinned rows aren't dated.
+        DatedSessionSections(connection: connection,
+                             entries: model.pins.split(connection.visibleHistory, on: server.id).others) {
             // Only before the first rows: background refreshes keep the list still.
             if connection.sessionListLoading && connection.history.isEmpty {
                 ProgressView("Loading sessions…")
@@ -317,11 +320,8 @@ struct SessionListView: View {
                     .sidebarRowHighlight(isSelected: selection == item)
                     .tag(item)
             }
-            ForEach(model.pins.split(connection.visibleHistory, on: server.id).others) { entry in
-                sessionRow(entry, on: server)
-            }
-        } header: {
-            SidebarSectionTitle("Sessions")
+        } row: { entry in
+            sessionRow(entry, on: server)
         }
     }
 
@@ -527,5 +527,46 @@ struct SessionListView: View {
                 model.actionError = model.describe(error, on: server)
             }
         }
+    }
+}
+
+/// The sessions in Desktop's date groups (`SessionDateGrouping`): the newest run, under
+/// "Sessions" and after what leads the list (its status, New chat), then a section per
+/// range ("Yesterday", "Last week", "September"). Rows move into their range as they read
+/// their newest message's date; a row not read yet stays in the group above it.
+private struct DatedSessionSections<Lead: View, Row: View>: View {
+    let connection: GatewayConnection
+    let entries: [HistoryEntry]
+    @ViewBuilder let lead: Lead
+    let row: (HistoryEntry) -> Row
+    #if os(macOS)
+    /// The sidebar's one clock (`SessionListView`), so the ranges move on as the day does.
+    @Environment(\.sessionListClock) private var clock
+    #endif
+
+    var body: some View {
+        let groups = connection.sessionDateGroups(entries, now: now)
+        Section {
+            lead
+            ForEach(groups.first?.items ?? []) { row($0) }
+        } header: {
+            SidebarSectionTitle("Sessions")
+        }
+        ForEach(groups.dropFirst(), id: \.id) { group in
+            Section {
+                ForEach(group.items) { row($0) }
+            } header: {
+                SidebarSectionTitle(group.bucket?.title() ?? "")
+            }
+            .accessibilityIdentifier("sessionDateGroup.\(group.id)")
+        }
+    }
+
+    private var now: Date {
+        #if os(macOS)
+        clock
+        #else
+        .now
+        #endif
     }
 }

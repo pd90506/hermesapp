@@ -42,7 +42,7 @@ struct ComposerFileTests {
         let composer = try await openComposer(gateway)
 
         #expect(await composer.attachFile(pdf, filename: "report.pdf", mimeType: "application/pdf"))
-        // Uploaded at once; images wait for the send.
+        // Uploaded at once, like images (`ChatComposer.attach`).
         #expect(gateway.params("file.attach") == [[
             "session_id": "sid-1", "name": "report.pdf",
             "data_url": .string("data:application/pdf;base64," + pdf.base64EncodedString()),
@@ -50,7 +50,7 @@ struct ComposerFileTests {
         #expect(composer.files.map(\.refText) == ["@file:attachments/report.pdf"])
         #expect(composer.attach(ComposerAttachment(filename: "shot.png", data: png)))
         composer.draft = "Summarise these"
-        #expect(composer.canSubmit)
+        #expect(await eventually { composer.canSubmit })
 
         await composer.submit()
 

@@ -189,6 +189,19 @@ enum ImageLoader {
             return [.data(data, filename: "Pasted Image.\(ext)")]
         }
     }
+    /// Whether a drag pasteboard's files are the ones a drop's providers carry: as many,
+    /// each of a type some provider has. The shared drag pasteboard keeps the last drag
+    /// that used it, which need not be this one.
+    static func sources(_ sources: [AttachmentSource], match providers: [NSItemProvider]) -> Bool {
+        guard !sources.isEmpty, sources.count == providers.count else { return false }
+        let types = providers.flatMap(\.registeredContentTypes)
+        return sources.allSatisfy { source in
+            guard case .file(let url) = source else { return false }
+            let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+                ?? UTType(filenameExtension: url.pathExtension) ?? .data
+            return types.contains { type.conforms(to: $0) || $0 == .fileURL }
+        }
+    }
     #else
     /// The general pasteboard's image and file providers, or none when it should
     /// paste as text (`ClipboardPolicy.decide`). Reads the pasteboard's contents: call
@@ -214,26 +227,30 @@ enum ImageLoader {
             && !type.conforms(to: .html) && !type.conforms(to: .flatRTFD)
     }
 
-    /// Whether a dropped or pasted provider carries something to attach.
-    nonisolated static func isAttachable(_ provider: NSItemProvider) -> Bool {
+    /// Whether a dropped or pasted provider carries something to attach. `fileDrop`:
+    /// see `fileType(of:fileDrop:)`.
+    nonisolated static func isAttachable(_ provider: NSItemProvider, fileDrop: Bool = false) -> Bool {
         provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-            || provider.registeredContentTypes.contains { $0.conforms(to: .image) } || fileType(of: provider) != nil
+            || provider.registeredContentTypes.contains { $0.conforms(to: .image) }
+            || fileType(of: provider, fileDrop: fileDrop) != nil
     }
 
     /// The type of the file a provider carries without a file URL: a file's contents
     /// (`isFileContent`), or text that has a file name, such as a Markdown file dragged
-    /// from Files. Text without a name is a snippet, which stays text.
-    nonisolated static func fileType(of provider: NSItemProvider) -> UTType? {
+    /// from Files. Text without a name is a snippet, which stays text, unless it is
+    /// `fileDrop`: a file dropped on the Mac, which SwiftUI hands over without its name
+    /// (its file representation has it).
+    nonisolated static func fileType(of provider: NSItemProvider, fileDrop: Bool = false) -> UTType? {
         let types = provider.registeredContentTypes
         if let type = types.first(where: isFileContent) { return type }
-        guard provider.suggestedName?.isEmpty == false else { return nil }
+        guard fileDrop || provider.suggestedName?.isEmpty == false else { return nil }
         return types.first { $0.conforms(to: .text) }
     }
 
     /// Sources from dropped (or iOS-pasted) item providers: a file URL when the
     /// provider has one, else the image data, else a copy of the file it carries.
     @MainActor
-    static func sources(from providers: [NSItemProvider]) async -> [AttachmentSource] {
+    static func sources(from providers: [NSItemProvider], fileDrop: Bool = false) async -> [AttachmentSource] {
         var sources: [AttachmentSource] = []
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
@@ -246,7 +263,7 @@ enum ImageLoader {
                 let base = provider.suggestedName ?? "Image"
                 let ext = type.preferredFilenameExtension ?? "png"
                 sources.append(.data(data, filename: ImageAttachmentPolicy.filename(base, withExtension: ext)))
-            } else if let type = fileType(of: provider),
+            } else if let type = fileType(of: provider, fileDrop: fileDrop),
                 let copy = await loadFileCopy(provider, type: type)
             {
                 sources.append(.file(copy))

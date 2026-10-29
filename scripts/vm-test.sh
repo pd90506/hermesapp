@@ -449,7 +449,13 @@ xctest() {  # step name, scheme, result name, destination
       -resultBundlePath ~/results/$3.xcresult -collect-test-diagnostics never -quiet$(only_testing "$2")" || status=1
 }
 if runs window; then xctest "window tests (run)" HermesMacTests mac-window platform=macOS; boot_sim || status=1; fi
-if runs ui; then xctest "macOS UI tests (run)" HermesMacUITests mac-ui platform=macOS; fi
+if runs ui; then
+  # The UI tests' mouse (scripts/vm-mouse.swift), for drags XCUI cannot make.
+  vexec "swiftc -O ~/hermesapp/scripts/vm-mouse.swift -o ~/vm-mouse >/dev/null && rm -f /tmp/hermesapp-uitest-mouse
+    pkill -x vm-mouse; nohup ~/vm-mouse >/tmp/hermesapp-vm-mouse.log 2>&1 &" || status=1
+  xctest "macOS UI tests (run)" HermesMacUITests mac-ui platform=macOS
+  vexec "pkill -x vm-mouse" || true
+fi
 if ((ios)); then
   xctest "iOS UI tests (run)" HermesiOSUITests ios-ui "platform=iOS Simulator,id=$sim"
   sim_keyboard restore || status=1

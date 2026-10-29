@@ -12,13 +12,21 @@ struct AttachmentCardView: View {
     /// Set for a file card: its icon (`FileKind.systemImage`).
     var fileIcon: String?
     var isSending: Bool
+    /// An image still uploading to the session's queue (`ChatComposer.uploadingImageIDs`):
+    /// a spinning ring over its thumbnail, as Claude Code shows one.
+    var isUploading = false
+    /// Why an image's early upload failed; the send uploads it again.
+    var uploadFailure: String?
     let onRemove: () -> Void
 
-    init(attachment: ComposerAttachment, thumbnail: CGImage?, isSending: Bool, onRemove: @escaping () -> Void) {
+    init(attachment: ComposerAttachment, thumbnail: CGImage?, isSending: Bool, isUploading: Bool = false,
+         uploadFailure: String? = nil, onRemove: @escaping () -> Void) {
         self.name = attachment.filename
-        self.detail = attachment.detail
+        self.detail = uploadFailure == nil ? attachment.detail : "Upload failed. Sending tries again."
         self.thumbnail = thumbnail
         self.isSending = isSending
+        self.isUploading = isUploading
+        self.uploadFailure = uploadFailure
         self.onRemove = onRemove
     }
 
@@ -102,7 +110,7 @@ struct AttachmentCardView: View {
             }
             .opacity(isSending ? 0.6 : 1)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Image \(name), \(detail)")
+            .accessibilityLabel("Image \(name), \(isUploading ? "uploading" : detail)")
             .accessibilityAction(named: "Remove") { if !isSending { onRemove() } }
     }
 
@@ -150,7 +158,7 @@ struct AttachmentCardView: View {
         .onHover { isHovering = $0 }
         .opacity(isSending ? 0.6 : 1)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(fileIcon == nil ? "Image" : "File") \(name), \(detail)")
+        .accessibilityLabel("\(fileIcon == nil ? "Image" : "File") \(name), \(isUploading ? "uploading" : detail)")
         // Like the ✕, unavailable while the card is being sent.
         .accessibilityAction(named: "Remove") { if !isSending { onRemove() } }
     }
@@ -178,6 +186,40 @@ struct AttachmentCardView: View {
         }
         .frame(width: size, height: size)
         .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            if isUploading {
+                UploadRing(size: min(size * 0.6, 28))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black.opacity(0.35), in: .rect(cornerRadius: cornerRadius, style: .continuous))
+            } else if uploadFailure != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .symbolRenderingMode(.multicolor)
+                    .font(.system(size: size * 0.4))
+                    .help(uploadFailure ?? "")
+            }
+        }
+    }
+}
+
+/// A spinning ring over an image that is uploading. `image.attach_bytes` sends the
+/// image as one message and reports nothing until it is queued, so the ring shows
+/// that it is under way, not how far.
+private struct UploadRing: View {
+    let size: CGFloat
+    @State private var turning = false
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(.white.opacity(0.35), lineWidth: 2.5)
+            Circle()
+                .trim(from: 0, to: 0.3)
+                .stroke(.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(turning ? 360 : 0))
+                .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: turning)
+        }
+        .frame(width: size, height: size)
+        .onAppear { turning = true }
+        .accessibilityHidden(true)
     }
 }
 

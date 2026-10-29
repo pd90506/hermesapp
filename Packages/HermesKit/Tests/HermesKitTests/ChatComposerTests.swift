@@ -169,23 +169,56 @@ struct ChatComposerTests {
         #expect(composer.session.transcript.items.first(where: { $0.id == pending.id })?.outgoingStatus == nil)
     }
 
-    @Test func pendingImageShowsBeforeUploadAndFailureKeepsSameRow() async throws {
+    /// An image uploads as soon as it is attached (as in Claude Code), and Send waits
+    /// for it: the card shows it uploading meanwhile.
+    @Test func anImageUploadsWhenAttachedAndSendWaitsForIt() async throws {
+        let log = FrameLog()
+        let (composer, transport) = try await makeComposer(log: log, unanswered: { method, _ in
+            method == "image.attach_bytes"
+        })
+        let image = png("early.png")
+        composer.attach(image)
+        composer.draft = "caption"
+        try #require(await eventually { !log.requests("image.attach_bytes").isEmpty })
+        #expect(composer.uploadingImageIDs == [image.id])
+        #expect(!composer.canSubmit)
+        let request = try #require(log.requests("image.attach_bytes").first)
+        transport.respond(to: request, result: attachResult(path: "/home/u/.hermes/images/early.png", bytes: 4))
+        #expect(await eventually { composer.canSubmit })
+        #expect(composer.uploadingImageIDs.isEmpty && composer.failedImageUploads.isEmpty)
+        await composer.submit()
+        // Not uploaded again: the send only submits.
+        #expect(log.requests("image.attach_bytes").count == 1)
+        #expect(log.requests("prompt.submit").map { $0["params"] } == [["session_id": "sid-1", "text": "caption"]])
+        let bubble = try #require(composer.session.transcript.items.last)
+        #expect(bubble.images.map(\.path) == ["/home/u/.hermes/images/early.png"])
+        #expect(bubble.images.first?.localID == image.id)
+    }
+
+    /// A card whose early upload failed says so; Send is not held up by it, and the
+    /// send uploads it again. A send that fails then puts the message back once.
+    @Test func aFailedEarlyUploadIsRetriedBySendingAndAFailureThereKeepsTheMessage() async throws {
         let log = FrameLog()
         let (composer, transport) = try await makeComposer(log: log, unanswered: { method, _ in
             method == "image.attach_bytes"
         })
         let image = png("pending.png")
         composer.attach(image)
+        try await failNext("image.attach_bytes", in: log, on: transport, code: 4018, message: "image too large")
+        #expect(await eventually { composer.failedImageUploads[image.id] != nil })
+        #expect(composer.failedImageUploads[image.id]?.contains("image too large") == true)
+        #expect(composer.canSubmit)
         composer.draft = "caption"
         let sending = Task { await composer.submit() }
-        try #require(await eventually { !log.requests("image.attach_bytes").isEmpty })
+        try #require(await eventually { log.requests("image.attach_bytes").count == 2 })
         let pending = try #require(composer.session.transcript.items.first(where: { $0.role == .user }))
         #expect(pending.outgoingStatus == "Sending…")
         #expect(pending.text == "caption" && pending.images.first?.localID == image.id)
         #expect(pending.images.first?.path == nil)
-        #expect(log.requests("prompt.submit").isEmpty)
+        // The card left the composer with the send.
+        #expect(composer.attachments.isEmpty)
         composer.draft = "new text"
-        let request = try #require(log.requests("image.attach_bytes").first)
+        let request = try #require(log.requests("image.attach_bytes").last)
         transport.respondError(to: request, code: 4018, message: "image too large")
         await sending.value
         // Never submitted: the message goes back to the composer, shown once there.
@@ -230,13 +263,13 @@ struct ChatComposerTests {
         #expect(log.requests("prompt.submit").isEmpty)
     }
 
-    @Test func sendingUploadsEachImageThenSubmitsAndClearsTheCards() async throws {
+    @Test func eachImageUploadsThenTheSendSubmitsAndClearsTheCards() async throws {
         let log = FrameLog()
         let (composer, _) = try await makeComposer(log: log)
         #expect(composer.attach(png("a.png")))
         #expect(composer.attach(png("b.jpg")))
         composer.draft = "  what is this?  "
-        #expect(composer.canSubmit)
+        #expect(await eventually { composer.canSubmit })
 
         await composer.submit()
 
@@ -267,7 +300,7 @@ struct ChatComposerTests {
         let (composer, _) = try await makeComposer(log: log)
         #expect(!composer.canSubmit)
         composer.attach(png("shot.png"))
-        #expect(composer.canSubmit)
+        #expect(await eventually { composer.canSubmit })
         await composer.submit()
         #expect(log.requests("prompt.submit").first?["params"]?["text"] == "")
     }
@@ -280,15 +313,22 @@ struct ChatComposerTests {
         composer.attach(png("good.png"))
         composer.attach(png("bad.png"))
         composer.draft = "look"
-
-        let sending = Task { await composer.submit() }
+        // Its early upload fails; the send tries it again.
         try await failNext("image.attach_bytes", where: { $0["params"]?["filename"] == "bad.png" }, in: log,
                            on: transport, code: 4018, message: "image too large (26214401 bytes; cap is 25 MB)")
+        #expect(await eventually { composer.canSubmit })
+
+        let sending = Task { await composer.submit() }
+        #expect(await eventually { log.requests("image.attach_bytes").count == 3 })
+        let retry = try #require(log.requests("image.attach_bytes").last)
+        transport.respondError(to: retry, code: 4018, message: "image too large (26214401 bytes; cap is 25 MB)")
         await sending.value
 
-        #expect(log.requests("image.detach").map { $0["params"] } == [
-            ["session_id": "sid-1", "profile": "coder", "path": "/home/u/.hermes/images/upload_20261006_120000_1.png"],
-        ])
+        // good.png, queued when attached, is taken back off the queue.
+        let good = "/home/u/.hermes/images/upload_20261006_120000_1.png"
+        #expect(await eventually { !log.requests("image.detach").isEmpty })
+        #expect(log.requests("image.detach").allSatisfy { $0["params"] == [
+            "session_id": "sid-1", "profile": "coder", "path": .string(good)] })
         #expect(log.requests("prompt.submit").isEmpty)
         #expect(composer.attachments.map(\.filename) == ["good.png", "bad.png"])
         #expect(composer.draft == "look")
@@ -302,10 +342,16 @@ struct ChatComposerTests {
         composer.attach(png("a.png"))
         let second = png("b.png")
         composer.attach(second)
+        #expect(await eventually { composer.uploadingImageIDs.isEmpty })
         composer.removeAttachment(id: second.id)
+        // Uploaded when attached, so taken back off the queue: it does not ride with the prompt.
+        #expect(await eventually { log.requests("image.detach").count == 1 })
+        #expect(log.requests("image.detach").first?["params"]?["path"]
+                == "/home/u/.hermes/images/upload_20261006_120000_2.png")
         composer.draft = "hi"
         await composer.submit()
-        #expect(log.requests("image.attach_bytes").map { $0["params"]?["filename"] } == ["a.png"])
+        #expect(log.requests("image.attach_bytes").count == 2)
+        #expect(composer.session.transcript.items.last?.images.map(\.name) == ["a.png"])
     }
 
     @Test func rejectsImagesTheGatewayWouldRefuse() async throws {
@@ -327,7 +373,7 @@ struct ChatComposerTests {
 
         composer.attach(png("a.png"))
         composer.draft = "and this one"
-        #expect(composer.canSubmit)
+        #expect(await eventually { composer.canSubmit })
         await composer.submit()
 
         let methods = log.all.compactMap { $0["method"]?.stringValue }.filter { $0 == "image.attach_bytes" || $0 == "prompt.submit" }
@@ -346,6 +392,7 @@ struct ChatComposerTests {
 
         composer.attach(png("a.png"))
         composer.draft = "x"
+        #expect(await eventually { composer.failedImageUploads.count == 1 })
         await composer.submit()
 
         #expect(composer.draft == "x")
@@ -357,8 +404,9 @@ struct ChatComposerTests {
 
     private static let strandedPath = "/home/u/.hermes/images/upload_20261006_120000_1.png"
 
-    /// a.png is queued on the server, then the socket drops during b.png's
-    /// upload, so a.png's detach can't be sent: it is stranded. The second
+    /// a.png is queued on the server when attached; b.png's early upload fails, and the
+    /// socket drops during the send's second try at it, so a.png's detach can't be
+    /// sent: it is stranded. The second
     /// socket is the same backend with the runtime session still live (§7 fast
     /// reattach); `secondUnanswered` requests get no answer there.
     private func strandAnImage(secondLog: FrameLog, requestTimeout: Duration? = nil,
@@ -394,9 +442,12 @@ struct ChatComposerTests {
         composer.attach(png("a.png"))
         composer.attach(png("b.png"))
         composer.draft = "look"
+        try await failNext("image.attach_bytes", where: { $0["params"]?["filename"] == "b.png" }, in: log,
+                           on: first, code: 5000, message: "busy")
+        #expect(await eventually { composer.canSubmit })
 
         let sending = Task { await composer.submit() }
-        #expect(await eventually { log.requests("image.attach_bytes").count == 2 })
+        #expect(await eventually { log.requests("image.attach_bytes").count == 3 })
         first.serverDrops()
         await sending.value
         #expect(composer.draft == "look")
@@ -487,20 +538,22 @@ struct ChatComposerTests {
         connection.strand([StrandedImage(sessionID: "sid-1", profile: "coder", path: "/p/stuck.png")])
         composer.attach(png("a.png"))
         composer.draft = "hi"
+        #expect(await eventually { composer.canSubmit })
 
         let sending = Task { await composer.submit() }
         #expect(await eventually { composer.isSubmitting && !log.requests("image.detach").isEmpty })
         composer.cancelSubmit()
         await sending.value
 
-        // Returned while the flush still waits for its answer (it puts the path back when it ends).
-        #expect(connection.strandedImagePaths(sessionID: "sid-1").isEmpty)
+        // Returned while the flush still waits for its answer (it puts the path back when it
+        // ends). a.png, queued when attached, waits behind it to come off the queue too.
+        #expect(connection.strandedImagePaths(sessionID: "sid-1") == ["/home/u/.hermes/images/upload_20261006_120000_1.png"])
         #expect(connection.strandedImageFlushes["sid-1"] != nil)
         #expect(!composer.isSubmitting)
         #expect(composer.draft == "hi")
         #expect(composer.attachments.map(\.filename) == ["a.png"])
         #expect(composer.error == nil)
-        #expect(log.requests("image.attach_bytes").isEmpty)
+        #expect(log.requests("image.attach_bytes").count == 1)
         #expect(log.requests("prompt.submit").isEmpty)
         #expect(composer.session.transcript.items.isEmpty)
         await connection.disconnect()
@@ -547,26 +600,35 @@ struct ChatComposerTests {
         let (composer, transport) = try await makeComposer(log: log) { method, _ in method == "image.attach_bytes" }
         composer.attach(png("big.png"))
         composer.draft = "describe this"
-        let sending = Task { await composer.submit() }
-        #expect(await eventually { !log.requests("image.attach_bytes").isEmpty })
-        composer.draft = "also"
         try await failNext("image.attach_bytes", in: log, on: transport, code: 4018,
                            message: "image too large (26214401 bytes; cap is 25 MB)")
+        #expect(await eventually { composer.canSubmit })
+        let sending = Task { await composer.submit() }
+        #expect(await eventually { log.requests("image.attach_bytes").count == 2 })
+        composer.draft = "also"
+        let retry = try #require(log.requests("image.attach_bytes").last)
+        transport.respondError(to: retry, code: 4018, message: "image too large (26214401 bytes; cap is 25 MB)")
         await sending.value
         #expect(composer.draft == "describe this\nalso")
     }
 
-    @Test func removingACardWhileItIsSendingDoesNothing() async throws {
+    /// The cards leave the composer as the send starts (the prompt's bubble shows
+    /// them), and come back if it fails.
+    @Test func theCardsLeaveTheComposerWhenTheSendStartsAndComeBackIfItFails() async throws {
         let log = FrameLog()
         let (composer, transport) = try await makeComposer(log: log) { method, _ in method == "prompt.submit" }
         let card = png("a.png")
         composer.attach(card)
+        #expect(await eventually { composer.canSubmit })
         let sending = Task { await composer.submit() }
-        #expect(await eventually { composer.isSubmitting && !log.requests("image.attach_bytes").isEmpty })
+        #expect(await eventually { composer.isSubmitting && !log.requests("prompt.submit").isEmpty })
+        #expect(composer.attachments.isEmpty)
+        #expect(composer.session.transcript.items.last?.images.map(\.localID) == [card.id])
+        // Nothing to remove while it is sending.
         composer.removeAttachment(id: card.id)
-        #expect(composer.attachments.map(\.id) == [card.id])
         try await failNext("prompt.submit", in: log, on: transport, code: 4001, message: "session not found")
         await sending.value
+        #expect(composer.attachments.map(\.id) == [card.id])
     }
 
     @Test func capsTheNumberOfCards() async throws {

@@ -1,9 +1,9 @@
 import Foundation
 
-/// An image waiting in the composer. The bytes stay on the device until the
-/// prompt is sent; they are uploaded with `image.attach_bytes` right before
-/// `prompt.submit`, like Desktop does for a remote gateway
-/// (`apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts:439-443`).
+/// An image waiting in the composer. `ChatComposer.attach` uploads it to the
+/// session's image queue (`image.attach_bytes`) at once, as Claude Code does; the
+/// send uploads it again only when that failed or the runtime session changed
+/// (docs/protocol.md §10.3).
 public struct ComposerAttachment: Identifiable, Sendable, Equatable {
     public let id: UUID
     /// Sent as `filename`; its extension decides the stored type on the gateway.

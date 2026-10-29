@@ -407,8 +407,7 @@ extension GatewayConnection {
                     sessionListLimits[profile] = limit
                     let bot = bots.first { $0.name == profile }
                     history = rows.filter { row in
-                        if let source = SessionSourceSettings.normalized(row.source),
-                           SessionSourceSettings.listedElsewhere.contains(source) { return false }
+                        guard SessionSourceSettings.isListed(row.source) else { return false }
                         if let bot { return !Self.isBotChat(row, of: bot) }
                         return !Bot.isChatRow(row)
                     }.map { HistoryEntry(profile: profile, summary: $0) }

@@ -490,14 +490,10 @@ final class AppModel {
 
     private static let sourceSettingsKey = "sessionSourceSettings"
 
-    /// Every source a connected server's list has shown, hidden ones included, so a
-    /// hidden source can be shown again. Not those listed elsewhere (cron), which the
-    /// list never shows: a `cron` kept hidden from before would be a toggle that does nothing.
+    /// The sources Settings offers to hide: the only ones the list shows, whether or not
+    /// a list has shown them yet.
     var knownSources: [String] {
-        var sources = sourceSettings.hiddenSources
-        for server in servers { sources.formUnion(server.connection.historySources) }
-        sources.subtract(SessionSourceSettings.listedElsewhere)
-        return sources.sorted { SessionSourceSettings.label(for: $0) < SessionSourceSettings.label(for: $1) }
+        SessionSourceSettings.listedSources.sorted { SessionSourceSettings.label(for: $0) < SessionSourceSettings.label(for: $1) }
     }
 
     private func applySourceSettings() {

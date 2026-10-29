@@ -458,34 +458,37 @@ struct GatewayConnectionBotTests {
     @Test func listLeavesOutRowsOfHiddenSources() async throws {
         let rows: JSONValue = [
             listRow(id: "from-desktop"),
-            ["id": "from-telegram", "title": "", "preview": "", "started_at": 1_700_000_000,
-             "message_count": 2, "source": "telegram"],
+            ["id": "from-tui", "title": "", "preview": "", "started_at": 1_700_000_000,
+             "message_count": 2, "source": "tui"],
             ["id": "no-source", "title": "", "preview": "", "started_at": 1_700_000_000, "message_count": 2],
         ]
         let (connection, _) = try await connect(BotServer(profiles: roster, listings: ["coder": rows]), log: FrameLog())
         connection.selectListProfile("coder")
         await connection.refreshSessionList()
-        connection.sourceSettings.setHidden(true, "Telegram")
+        connection.sourceSettings.setHidden(true, "TUI")
 
-        #expect(connection.history.map(\.summary.id) == ["from-desktop", "from-telegram", "no-source"])
+        #expect(connection.history.map(\.summary.id) == ["from-desktop", "from-tui", "no-source"])
         #expect(connection.visibleHistory.map(\.summary.id) == ["from-desktop", "no-source"])
-        #expect(connection.historySources == ["desktop", "telegram"])
+        #expect(connection.historySources == ["desktop", "tui"])
     }
 
-    /// Cron runs are the Cron Jobs tab's, never the session list's, whatever is hidden.
-    @Test func listLeavesOutCronRuns() async throws {
+    /// Only `desktop` and `tui` rows are listed, whatever is hidden: cron runs are the Cron
+    /// Jobs tab's, and messaging platforms and the other surfaces stay out, as in Desktop.
+    @Test func listShowsOnlyDesktopAndTUIRows() async throws {
+        func row(_ id: String, _ source: String) -> JSONValue {
+            ["id": .string(id), "title": "", "preview": "", "started_at": 1_700_000_000,
+             "message_count": 2, "source": .string(source)]
+        }
         let rows: JSONValue = [
-            listRow(id: "from-desktop"),
-            ["id": "cron-run", "title": "", "preview": "", "started_at": 1_700_000_000,
-             "message_count": 2, "source": "Cron"],
+            listRow(id: "from-desktop"), row("cron-run", "Cron"), row("from-tui", "TUI"),
+            row("from-cli", "cli"), row("from-local", "local"), row("from-telegram", "telegram"),
         ]
         let (connection, _) = try await connect(BotServer(profiles: roster, listings: ["coder": rows]), log: FrameLog())
         connection.selectListProfile("coder")
         await connection.refreshSessionList()
 
-        #expect(connection.history.map(\.summary.id) == ["from-desktop"])
-        #expect(connection.visibleHistory.map(\.summary.id) == ["from-desktop"])
-        #expect(connection.historySources == ["desktop"])
+        #expect(connection.history.map(\.summary.id) == ["from-desktop", "from-tui"])
+        #expect(connection.historySources == ["desktop", "tui"])
     }
 
     @Test func titleEventRenamesTheHistoryRow() async throws {

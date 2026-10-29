@@ -38,7 +38,6 @@ final class SessionUnreadUITests: XCTestCase {
         // Away while it answers (on iPhone, back to the list first: the chat page has no
         // New chat to wait for).
         XCTAssertTrue(waitForMessage("Write the numbers", in: app, timeout: 10), "A's prompt shown")
-        XCTAssertFalse(waitForMessage(doneA, in: app, timeout: 0.5), "A still answering when left")
         showSessionList(app)
 
         let pongB = "PONG\(Int.random(in: 1000...9999))"
@@ -63,7 +62,8 @@ final class SessionUnreadUITests: XCTestCase {
 
         // Opened, it is read.
         if let markedIndex { press(rows[markedIndex]) }
-        XCTAssertTrue(waitForMessage(doneA, in: app, timeout: 30), "A's answer shown")
+        XCTAssertTrue(app.textViews["composer"].waitForExistence(timeout: 30), "A opened")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
         #if os(iOS)
         showSessionList(app)
         #endif

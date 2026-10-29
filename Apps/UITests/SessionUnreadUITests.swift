@@ -33,11 +33,13 @@ final class SessionUnreadUITests: XCTestCase {
 
         let doneA = "DONE\(Int.random(in: 1000...9999))"
         let composerA = try openNewChat(app)
-        send("Write the numbers from 1 to 150 in words, separated by commas, then finish with exactly \(doneA). Do not use tools.",
+        send("Write the numbers from 1 to 300 in words, separated by commas, then finish with exactly \(doneA). Do not use tools.",
              composer: composerA, in: app)
-        // Stored, so the chat has its row; then away while it answers.
+        // Away while it answers (on iPhone, back to the list first: the chat page has no
+        // New chat to wait for).
         XCTAssertTrue(waitForMessage("Write the numbers", in: app, timeout: 10), "A's prompt shown")
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        XCTAssertFalse(waitForMessage(doneA, in: app, timeout: 0.5), "A still answering when left")
+        showSessionList(app)
 
         let pongB = "PONG\(Int.random(in: 1000...9999))"
         let composerB = try openNewChat(app)

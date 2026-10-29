@@ -87,7 +87,7 @@ final class SessionDateGroupsUITests: XCTestCase {
             "sessions": sessions.map { session -> [String: Any] in
                 let seconds = session.date.timeIntervalSince1970
                 return [
-                    "id": session.id, "title": session.title, "source": "cli",
+                    "id": session.id, "title": session.title, "source": "desktop",
                     "started_at": seconds - 60, "ended_at": seconds, "message_count": 2,
                     "messages": [
                         ["role": "user", "content": "Hello", "timestamp": seconds - 60],

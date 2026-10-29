@@ -10,12 +10,7 @@ struct SessionSourcesSettingsView: View {
     var body: some View {
         ThemedForm {
             Section {
-                let sources = model.knownSources
-                if sources.isEmpty {
-                    Text("Connect and open a profile's sessions to see their sources.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(sources, id: \.self) { source in
+                ForEach(model.knownSources, id: \.self) { source in
                     Toggle(isOn: Binding(
                         get: { !model.sourceSettings.isHidden(source) },
                         set: { model.sourceSettings.setHidden(!$0, source) })) {
@@ -26,7 +21,7 @@ struct SessionSourcesSettingsView: View {
             } header: {
                 Text("Shown in the Session List")
             } footer: {
-                Text("Sessions this app starts are stored as Desktop, as Hermes Desktop's are. Sessions without a source are always shown. Hiding a source only filters the list; nothing is deleted.")
+                Text("Sessions this app starts are stored as Desktop, as Hermes Desktop's are. The list shows only Desktop and Terminal (TUI) sessions, as Hermes Desktop's does; cron runs are under Cron Jobs. Hiding a source only filters the list; nothing is deleted.")
             }
         }
         .navigationTitle("Session Sources")

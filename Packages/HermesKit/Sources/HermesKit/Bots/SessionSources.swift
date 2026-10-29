@@ -12,6 +12,11 @@ public struct SessionSourceSettings: Sendable, Hashable, Codable {
     /// setting (decided by the user, 2026-10-29); a `newSessionSource` key kept from
     /// older versions is ignored when decoding.
     public static let newSessionSource = "desktop"
+    /// Sources whose rows have a tab of their own and never join the session list:
+    /// cron runs are in the Cron Jobs tab, as Desktop's recents leave them to its cron
+    /// section (`SIDEBAR_EXCLUDED_SOURCES`, `use-session-list-actions.ts:66-73`).
+    /// Decided by the user, 2026-10-29.
+    public static let listedElsewhere: Set<String> = ["cron"]
     /// Sources whose rows the session list leaves out. A row without a source is
     /// always shown.
     public var hiddenSources: Set<String>

@@ -472,6 +472,22 @@ struct GatewayConnectionBotTests {
         #expect(connection.historySources == ["desktop", "telegram"])
     }
 
+    /// Cron runs are the Cron Jobs tab's, never the session list's, whatever is hidden.
+    @Test func listLeavesOutCronRuns() async throws {
+        let rows: JSONValue = [
+            listRow(id: "from-desktop"),
+            ["id": "cron-run", "title": "", "preview": "", "started_at": 1_700_000_000,
+             "message_count": 2, "source": "Cron"],
+        ]
+        let (connection, _) = try await connect(BotServer(profiles: roster, listings: ["coder": rows]), log: FrameLog())
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
+
+        #expect(connection.history.map(\.summary.id) == ["from-desktop"])
+        #expect(connection.visibleHistory.map(\.summary.id) == ["from-desktop"])
+        #expect(connection.historySources == ["desktop"])
+    }
+
     @Test func titleEventRenamesTheHistoryRow() async throws {
         let server = BotServer(profiles: roster, listings: ["coder": [listRow(id: "coder-side", title: "Refactor")]])
         let (connection, transport) = try await connect(server, log: FrameLog())

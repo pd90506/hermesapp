@@ -1090,6 +1090,9 @@ row.
       `hidden` (`methods_session.py:526-550`), so that row is what the bot row opens.
     - Hermes uses `hidden` only to decide whether such a row may be renamed
       (`hermes_state_titles.py:100-110`).
+  - `[client choice]` Cron runs (`source` `cron`) are left out too, whatever Settings hides: they
+    are the Cron Jobs tab's, as Desktop's recents leave them to its cron section
+    (`SIDEBAR_EXCLUDED_SOURCES`, `apps/desktop/src/app/session/hooks/use-session-list-actions.ts:66-73`).
   - `[client choice]` The app does not run that sweep. It never writes `hidden`.
 - **Opening a Sessions row:** `session.resume {session_id, profile, omit_messages:true,
   defer_history:true}`, then the newest REST page (§4.1).

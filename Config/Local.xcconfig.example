@@ -16,3 +16,10 @@ HERMES_BUNDLE_ID_PREFIX = com.yourname.hermesapp
 // CODE_SIGN_IDENTITY = Hermes Local Signing
 // No separate debug dylib: library validation refuses one without a team id.
 // ENABLE_DEBUG_DYLIB = NO
+
+// In-app updates for the Mac app (Sparkle), for builds made by scripts/release-mac.sh.
+// The feed is the appcast.xml that script attaches to each GitHub release. Write `/$()/` for
+// `//`, which an xcconfig would read as a comment. The key is what Sparkle's `generate_keys`
+// prints; its private half stays in this Mac's login keychain.
+// HERMES_UPDATE_FEED_URL = https:/$()/github.com/OWNER/REPO/releases/latest/download/appcast.xml
+// HERMES_UPDATE_PUBLIC_KEY = base64-public-key

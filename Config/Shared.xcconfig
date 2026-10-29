@@ -12,5 +12,9 @@ DEVELOPMENT_TEAM =
 // Here rather than in project.yml, so Local.xcconfig can switch to a local certificate.
 CODE_SIGN_STYLE = Automatic
 
+// In-app updates (Mac). Empty = off. Set both in Local.xcconfig; see scripts/release-mac.sh.
+HERMES_UPDATE_FEED_URL =
+HERMES_UPDATE_PUBLIC_KEY =
+
 // Optional per-developer overrides (missing file is fine).
 #include? "Local.xcconfig"

@@ -25,7 +25,7 @@ final class MessageActionsUITests: XCTestCase {
         // under its parent's runtime source, which was `tui` for a chat resumed without one,
         // so the list left it out. (A resume here reuses the runtime the gateway keeps for
         // 10 minutes, so this test can't make one cold; the package tests cover the resume.)
-        app.launchEnvironment["HERMES_UITEST_SOURCE_SETTINGS"] = #"{"newSessionSource":"desktop","hiddenSources":["tui"]}"#
+        app.launchEnvironment["HERMES_UITEST_SOURCE_SETTINGS"] = #"{"hiddenSources":["tui"]}"#
         app.launchWithMainWindow()
         defer { app.terminate() }
 

@@ -129,7 +129,7 @@ struct GatewayConnectionBotTests {
                 ["profile": "coder", "title": "Bot Chat", "include_hidden": true, "limit": 200])
         // The lineage tip is opened, on the bot's profile.
         #expect(log.requests("session.resume").first?["params"] == ["session_id": "coder-chat-tip", "profile": "coder",
-                                                                       "omit_messages": true, "defer_history": true])
+                                                                       "omit_messages": true, "defer_history": true, "source": "desktop"])
         #expect(log.requests("session.create").isEmpty)
         #expect(connection.activeSession === session)
         #expect(session.kind == .botChat && session.profile == "coder")
@@ -164,7 +164,8 @@ struct GatewayConnectionBotTests {
         let session = try await connection.openBotChat(profile: "finance")
 
         #expect(log.requests("session.create").map { $0["params"] } ==
-                [["profile": "finance", "title": "Bot Chat", "hidden": true, "follow_profile_config": true]])
+                [["profile": "finance", "title": "Bot Chat", "source": "desktop", "hidden": true,
+                  "follow_profile_config": true]])
         // Titled eagerly on the runtime id, so the row exists under its name right away.
         #expect(log.requests("session.title").first?["params"] == ["session_id": "rt-new-1", "title": "Bot Chat"])
         #expect(log.requests("prompt.submit").isEmpty)  // no intro is sent on the user's behalf
@@ -227,7 +228,7 @@ struct GatewayConnectionBotTests {
         let session = try await open.value
         #expect(session.storedSessionID == "fin-desktop")
         #expect(log.requests("session.resume").first?["params"] == ["session_id": "fin-desktop", "profile": "finance",
-                                                                       "omit_messages": true, "defer_history": true])
+                                                                       "omit_messages": true, "defer_history": true, "source": "desktop"])
         #expect(log.requests("session.create").count == 1)
         #expect(log.requests("prompt.submit").isEmpty)
     }
@@ -311,7 +312,7 @@ struct GatewayConnectionBotTests {
 
         let side = try await connection.newSideChat(profile: "coder")
 
-        #expect(log.requests("session.create").first?["params"] == ["profile": "coder"])
+        #expect(log.requests("session.create").first?["params"] == ["profile": "coder", "source": "desktop"])
         #expect(log.requests("session.title").isEmpty)
         #expect(side.kind == .sideChat && side.profile == "coder")
         #expect(connection.activeSession === side)
@@ -432,10 +433,9 @@ struct GatewayConnectionBotTests {
         #expect(log.requests("session.create").count == 2)
     }
 
-    @Test func newSessionsCarryTheChosenSource() async throws {
+    @Test func newSessionsCarryTheDesktopSource() async throws {
         let log = FrameLog()
         let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
-        connection.sourceSettings.newSessionSource = "desktop"
 
         try await connection.newSideChat(profile: "coder")
         try await connection.openBotChat(profile: "finance")
@@ -443,17 +443,16 @@ struct GatewayConnectionBotTests {
         #expect(log.requests("session.create").map { $0["params"]?["source"] } == ["desktop", "desktop"])
     }
 
-    /// A chat opened from the list runs under the chosen source too, as Desktop resumes with
-    /// `desktop`: a branch made from it is stored under its runtime's source, so without it a
-    /// branch was stored as `tui` and a list hiding `tui` left it out.
-    @Test func openedChatsRunUnderTheChosenSource() async throws {
+    /// A chat opened from the list runs under `desktop` too, as Desktop resumes with it: a
+    /// branch made from it is stored under its runtime's source, so without it a branch was
+    /// stored as `tui` and a list hiding `tui` left it out.
+    @Test func openedChatsRunUnderTheDesktopSource() async throws {
         let log = FrameLog()
         let (connection, _) = try await connect(BotServer(profiles: roster), log: log)
         try await connection.open(HistoryEntry(profile: "coder", summary: SessionSummary(id: "coder-side")))
-        connection.sourceSettings.newSessionSource = "desktop"
         try await connection.open(HistoryEntry(profile: "coder", summary: SessionSummary(id: "coder-other")))
 
-        #expect(log.requests("session.resume").map { $0["params"]?["source"] } == [nil, "desktop"])
+        #expect(log.requests("session.resume").map { $0["params"]?["source"] } == ["desktop", "desktop"])
     }
 
     @Test func listLeavesOutRowsOfHiddenSources() async throws {
@@ -504,7 +503,7 @@ struct GatewayConnectionBotTests {
         // Looked up by name on the new socket first, then resumed.
         #expect(secondLog.requests("session.list").contains(where: isBotChatLookup))
         #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "coder-chat", "profile": "coder",
-                                                                             "omit_messages": true, "defer_history": true])
+                                                                             "omit_messages": true, "defer_history": true, "source": "desktop"])
         #expect(connection.activeSession === session)
     }
 
@@ -522,7 +521,7 @@ struct GatewayConnectionBotTests {
 
         #expect(await eventually { connection.state == .connected && !secondLog.requests("session.resume").isEmpty })
         #expect(secondLog.requests("session.resume").first?["params"] == ["session_id": "coder-chat-v2", "profile": "coder",
-                                                                             "omit_messages": true, "defer_history": true])
+                                                                             "omit_messages": true, "defer_history": true, "source": "desktop"])
         #expect(connection.activeSession === session && session.storedSessionID == "coder-chat-v2")
     }
 

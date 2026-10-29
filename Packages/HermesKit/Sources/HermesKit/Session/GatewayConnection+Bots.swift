@@ -167,7 +167,7 @@ extension GatewayConnection {
             throw BotChatError.registryUnconfirmed(profile: profile)
         }
         let created = try await client.createSession(SessionCreateParams(
-            title: Bot.chatTitle, source: sourceSettings.newSessionSource, profile: profile, hidden: true,
+            title: Bot.chatTitle, source: SessionSourceSettings.newSessionSource, profile: profile, hidden: true,
             followProfileConfig: true))
         // Persists the row under the canonical title now, closing the window in
         // which a second open would find no "Bot Chat" (`canonical-chat.ts:493-502`).
@@ -265,7 +265,7 @@ extension GatewayConnection {
                 forget(unsent)
             }
         }
-        let created = try await client.createSession(SessionCreateParams(source: sourceSettings.newSessionSource, profile: profile))
+        let created = try await client.createSession(SessionCreateParams(source: SessionSourceSettings.newSessionSource, profile: profile))
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: nil, profile: profile, kind: .sideChat, connection: self)
         if let carried, !carried.isEmpty { composer(for: session).draft = carried }

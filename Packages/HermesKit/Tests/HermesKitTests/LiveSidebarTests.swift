@@ -247,7 +247,7 @@ struct LiveSidebarTests {
         try await session.send("still there?")
 
         #expect(gateway.params("session.resume").last == ["session_id": "s1", "profile": "coder", "omit_messages": true,
-                                                          "defer_history": true])
+                                                          "defer_history": true, "source": "desktop"])
         #expect(gateway.params("prompt.submit") == [["session_id": "rt-s1-again", "text": "still there?"]])
         #expect(!session.isRuntimeGone && session.sessionID == "rt-s1-again")
         #expect(session.transcript.items.last?.text == "still there?")

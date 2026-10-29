@@ -119,7 +119,7 @@ extension GatewayConnection {
         guard let client else { throw GatewayClientError.notConnected }
         // The copy is stored under this source, as a new chat is (Desktop sends `desktop`).
         let branched = try await client.branchStoredSession(parentID: entry.summary.id, profile: entry.profile,
-                                                            source: sourceSettings.newSessionSource)
+                                                            source: SessionSourceSettings.newSessionSource)
         // The row exists now: list it, so the copy opens with its title and selected.
         if listProfile == entry.profile { await refreshSessionList() }
         let row = history.first { $0.profile == entry.profile && $0.summary.id == branched.storedSessionID }

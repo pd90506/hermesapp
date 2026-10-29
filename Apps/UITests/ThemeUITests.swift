@@ -101,12 +101,13 @@ final class ThemeUITests: XCTestCase {
         }
     }
 
-    /// The composer in a window that isn't key keeps its colour: the Mac drew its glass as
-    /// a flat mid grey there, dull on a white chat (the user, 2026-10-29). Screenshots
-    /// focused and unfocused, in light and dark; the card's empty right part measured in
-    /// each. Opens a New chat and sends nothing.
+    /// The composer in a window that isn't key is the system's light grey, as Messages'
+    /// field: tinted with the theme's colour, its glass went a flat dark grey there, dull
+    /// on a white chat (the user, 2026-10-29: 230 of 255, the untinted glass 240,
+    /// Messages' 243). Screenshots focused and unfocused, in light and dark; the card's
+    /// empty right part measured in each. Opens a New chat and sends nothing.
     @MainActor
-    func testTheComposerKeepsItsColourWhenTheWindowIsInactive() throws {
+    func testTheComposerIsTheSystemsGlassWhenTheWindowIsInactive() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
@@ -145,8 +146,10 @@ final class ThemeUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(1.5))
             let inactive = try XCTUnwrap(Self.brightness(of: patch), "the unfocused card measured")
             attachScreen("composer, \(mode.lowercased()), unfocused")
-            XCTAssertLessThan(abs(active - inactive), 12,
-                              "the card keeps its colour unfocused, \(mode): \(active) focused, \(inactive) unfocused")
+            if mode == "Light" {
+                XCTAssertGreaterThan(inactive, 235,
+                                     "the card is the system's light grey unfocused: \(active) focused, \(inactive) unfocused")
+            }
             app.activate()
         }
         openAppearance(app)

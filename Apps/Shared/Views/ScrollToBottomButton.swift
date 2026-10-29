@@ -60,7 +60,7 @@ struct ScrollToBottomButton: View {
             // Liquid Glass in the theme's composer colour, as the composer's card (Desktop's
             // pill is the composer's fill, blurred), in the chat's glass with it: it grows
             // out of the card and melts back into it (`ChatView`).
-            .themedGlass(in: .capsule, interactive: true)
+            .floatingGlass(in: .capsule, interactive: true)
             .chatGlassID("scrollToBottom")
             .animation(Motion.reveal, value: isHovered)
             .onHover { isHovered = $0 }

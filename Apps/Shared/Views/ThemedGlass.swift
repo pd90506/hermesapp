@@ -22,10 +22,20 @@ private struct ThemedGlass: ViewModifier {
     let isInteractive: Bool
     @Environment(\.surfaces) private var surfaces
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appearsActive) private var appearsActive
 
     func body(content: Content) -> some View {
-        content.glassEffect(.regular.tint(ThemedGlass.tint(surfaces, colorScheme)).interactive(isInteractive),
-                            in: shape)
+        content
+            #if os(macOS)
+            // In a window that isn't key, the Mac draws glass as a flat mid grey (the
+            // composer on a white chat, the user 2026-10-29). There the theme's composer
+            // colour, opaque, covers it, as AppKit's own inactive controls go flat.
+            .background {
+                if !appearsActive { shape.fill(surfaces.composer) }
+            }
+            #endif
+            .glassEffect(.regular.tint(ThemedGlass.tint(surfaces, colorScheme)).interactive(isInteractive),
+                         in: shape)
     }
 
     /// The theme's composer colour, a little stronger in dark, where the glass alone is light.

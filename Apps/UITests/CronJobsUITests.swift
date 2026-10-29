@@ -117,6 +117,9 @@ final class CronJobsUITests: XCTestCase {
         }
         press(sessionsTab)
         XCTAssertTrue(eventually { !briefRow.exists }, "the sessions again")
+        // The run stays the Cron Jobs tab's: the session list leaves out `cron` rows.
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "8 sessions without the run")
     }
 
     /// A click on the Mac, a tap on iOS.

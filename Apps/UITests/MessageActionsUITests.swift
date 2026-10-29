@@ -25,7 +25,7 @@ final class MessageActionsUITests: XCTestCase {
         // under its parent's runtime source, which was `tui` for a chat resumed without one,
         // so the list left it out. (A resume here reuses the runtime the gateway keeps for
         // 10 minutes, so this test can't make one cold; the package tests cover the resume.)
-        app.launchEnvironment["HERMES_UITEST_SOURCE_SETTINGS"] = #"{"newSessionSource":"desktop","hiddenSources":["tui"]}"#
+        app.launchEnvironment["HERMES_UITEST_SOURCE_SETTINGS"] = #"{"hiddenSources":["tui"]}"#
         app.launchWithMainWindow()
         defer { app.terminate() }
 
@@ -102,6 +102,16 @@ final class MessageActionsUITests: XCTestCase {
         XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", first)).firstMatch
             .waitForExistence(timeout: 30), "the branch holds the first reply again")
         attach(app, "5 back on the branch")
+
+        // Settings ▸ Session Sources has no choice of source for new chats: they are `desktop`.
+        app.typeKey(",", modifierFlags: .command)
+        let sourcesTab = app.toolbars.buttons["Session Sources"].firstMatch
+        XCTAssertTrue(sourcesTab.waitForExistence(timeout: 10), "the Settings window")
+        sourcesTab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        XCTAssertTrue(app.checkBoxes.firstMatch.waitForExistence(timeout: 10), "the sources' toggles")
+        XCTAssertFalse(app.popUpButtons.firstMatch.exists, "no New sessions picker")
+        attach(app, "6 settings: session sources")
+        app.typeKey("w", modifierFlags: .command)
     }
 
     /// The chat's title in the window's (“Title · Profile”), once there is one that passes `test`.

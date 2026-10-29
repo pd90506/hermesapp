@@ -375,7 +375,7 @@ public final class GatewayConnection {
     public func newSession(title: String? = nil) async throws -> ChatSession {
         let token = beginSelection()
         guard let client else { throw GatewayClientError.notConnected }
-        let created = try await client.createSession(SessionCreateParams(title: title, source: sourceSettings.newSessionSource))
+        let created = try await client.createSession(SessionCreateParams(title: title, source: SessionSourceSettings.newSessionSource))
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: title, connection: self)
         if token == selectionToken { activate(session) }
@@ -425,7 +425,7 @@ public final class GatewayConnection {
             // (`use-session-actions/index.ts:2084-2088`): the runtime takes it, and a branch
             // made from it stores it (`_branch_live`, `methods_session_branch.py:110`).
             // Without it the runtime is `tui`, so a branch was listed under `tui`.
-            let snapshot = try await client.resumeSession(storedSessionID: key, source: sourceSettings.newSessionSource,
+            let snapshot = try await client.resumeSession(storedSessionID: key, source: SessionSourceSettings.newSessionSource,
                                                           profile: profile)
             if snapshot.hydrating == true, (snapshot.storedKey ?? key) == key { return ResumedChat(snapshot: snapshot, prefetch: prefetch) }
             prefetch?.cancel()

@@ -2,29 +2,13 @@
 import HermesKit
 import SwiftUI
 
-/// The session sources: which source sessions this app creates carry, and which
-/// sources the session list shows (`SessionSourceSettings`). Settings ▸ Session
-/// Sources on iOS; the macOS Settings window has `SessionSourcesSettingsPane`.
+/// The session sources: which sources the session list shows
+/// (`SessionSourceSettings`). Settings ▸ Session Sources on iOS; the macOS Settings window has `SessionSourcesSettingsPane`.
 struct SessionSourcesSettingsView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        @Bindable var model = model
-
         ThemedForm {
-            Section {
-                Picker("Source", selection: $model.sourceSettings.newSessionSource) {
-                    Text("Server default").tag(String?.none)
-                    ForEach(SessionSourceSettings.creatableSources, id: \.self) { source in
-                        Text(SessionSourceSettings.label(for: source)).tag(Optional(source))
-                    }
-                }
-            } header: {
-                Text("New Sessions")
-            } footer: {
-                Text("The source Hermes stores on sessions this app starts. By default the server picks: Desktop under Hermes Desktop's backend, Terminal (TUI) under any other, the one this app runs included.")
-            }
-
             Section {
                 let sources = model.knownSources
                 if sources.isEmpty {
@@ -42,7 +26,7 @@ struct SessionSourcesSettingsView: View {
             } header: {
                 Text("Shown in the Session List")
             } footer: {
-                Text("Sessions without a source are always shown. Hiding a source only filters the list; nothing is deleted.")
+                Text("Sessions this app starts are stored as Desktop, as Hermes Desktop's are. Sessions without a source are always shown. Hiding a source only filters the list; nothing is deleted.")
             }
         }
         .navigationTitle("Session Sources")

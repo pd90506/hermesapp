@@ -3,25 +3,27 @@ import HermesProtocol
 
 /// What the app does with a session row's `source`, the surface Hermes stored it under
 /// (`cli`, `tui`, `desktop`, `telegram`, `cron`, …): which sources the session lists
-/// hide, and which source sessions this app creates carry. Kept across launches.
+/// hide. Kept across launches.
 public struct SessionSourceSettings: Sendable, Hashable, Codable {
-    /// The `source` sent with `session.create`. `nil` leaves it to the gateway, which
-    /// stores `desktop` under Hermes Desktop's backend and `tui` otherwise, the app's own
-    /// backend included (`tui_gateway/server.py:1563-1573`).
-    public var newSessionSource: String?
+    /// The `source` this app's sessions carry, on `session.create`, `session.resume` and
+    /// Fork's `session.branch_stored`: always `desktop`, as Hermes Desktop sends
+    /// (`use-session-actions/index.ts:2084-2088`). Without one the gateway would store
+    /// `tui` under any backend but Desktop's (`tui_gateway/server.py:1563-1573`). Not a
+    /// setting (decided by the user, 2026-10-29); a `newSessionSource` key kept from
+    /// older versions is ignored when decoding.
+    public static let newSessionSource = "desktop"
+    /// Sources whose rows have a tab of their own and never join the session list:
+    /// cron runs are in the Cron Jobs tab, as Desktop's recents leave them to its cron
+    /// section (`SIDEBAR_EXCLUDED_SOURCES`, `use-session-list-actions.ts:66-73`).
+    /// Decided by the user, 2026-10-29.
+    public static let listedElsewhere: Set<String> = ["cron"]
     /// Sources whose rows the session list leaves out. A row without a source is
     /// always shown.
     public var hiddenSources: Set<String>
 
-    public init(newSessionSource: String? = nil, hiddenSources: Set<String> = []) {
-        self.newSessionSource = newSessionSource
+    public init(hiddenSources: Set<String> = []) {
         self.hiddenSources = hiddenSources
     }
-
-    /// The sources a new session may be created under. Only local surfaces: the
-    /// gateway also runs the agent as that platform (`_resolve_agent_platform`), and a
-    /// messaging platform's name would make it answer as that bot.
-    public static let creatableSources = ["desktop", "tui", "cli"]
 
     public func shows(_ summary: SessionSummary) -> Bool {
         guard let source = Self.normalized(summary.source) else { return true }

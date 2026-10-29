@@ -242,9 +242,10 @@ plus the newest page of the transcript over REST.
   `server.py:1570-1573`). A branch from the chat is stored under it (`_session_source`,
   `methods_session_branch.py:110`). Desktop resumes with `desktop`
   (`use-session-actions/index.ts:2084-2088`).
-  - `[client choice]` The app sends the source its new chats carry (`newSessionSource`, Settings),
-    on resume and on Fork's `session.branch_stored`, and none when that is unset. Before, a branch
-    was stored as `tui` and a list hiding `tui` left it out.
+  - `[client choice]` The app always sends `desktop`, as Desktop does
+    (`SessionSourceSettings.newSessionSource`, not a setting): on `session.create`, on resume and
+    on Fork's `session.branch_stored`. Before, a branch was stored as `tui` and a list hiding `tui`
+    left it out.
 
 **Newest page:**
 `GET {base}/api/sessions/{id}/messages?profile=<p>&order=latest&limit=120&offset=0&include_compacted=true&inline_images=false`
@@ -1089,6 +1090,9 @@ row.
       `hidden` (`methods_session.py:526-550`), so that row is what the bot row opens.
     - Hermes uses `hidden` only to decide whether such a row may be renamed
       (`hermes_state_titles.py:100-110`).
+  - `[client choice]` Cron runs (`source` `cron`) are left out too, whatever Settings hides: they
+    are the Cron Jobs tab's, as Desktop's recents leave them to its cron section
+    (`SIDEBAR_EXCLUDED_SOURCES`, `apps/desktop/src/app/session/hooks/use-session-list-actions.ts:66-73`).
   - `[client choice]` The app does not run that sweep. It never writes `hidden`.
 - **Opening a Sessions row:** `session.resume {session_id, profile, omit_messages:true,
   defer_history:true}`, then the newest REST page (§4.1).

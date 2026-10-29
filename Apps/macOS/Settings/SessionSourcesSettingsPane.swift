@@ -7,25 +7,7 @@ struct SessionSourcesSettingsPane: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        @Bindable var model = model
-
         Form {
-            Picker("New sessions:", selection: $model.sourceSettings.newSessionSource) {
-                Text("Server default").tag(String?.none)
-                Divider()
-                ForEach(SessionSourceSettings.creatableSources, id: \.self) { source in
-                    Text(SessionSourceSettings.label(for: source)).tag(Optional(source))
-                }
-            }
-            .fixedSize()
-            LabeledContent {
-                SettingsNote("The source Hermes stores on sessions this app starts. By default the server picks: Desktop under Hermes Desktop's backend, Terminal (TUI) under any other.")
-            } label: {
-                EmptyView()
-            }
-
-            Divider()
-
             LabeledContent("Show in session list:") {
                 VStack(alignment: .leading, spacing: 6) {
                     let sources = model.knownSources
@@ -43,7 +25,7 @@ struct SessionSourcesSettingsPane: View {
                             }
                         }
                     }
-                    SettingsNote("Sessions without a source are always shown. Hiding a source only filters the list; nothing is deleted.")
+                    SettingsNote("Sessions this app starts are stored as Desktop, as Hermes Desktop's are. Sessions without a source are always shown. Hiding a source only filters the list; nothing is deleted.")
                         .padding(.top, 2)
                 }
             }

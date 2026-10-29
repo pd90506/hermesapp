@@ -167,7 +167,7 @@ extension GatewayConnection {
             throw BotChatError.registryUnconfirmed(profile: profile)
         }
         let created = try await client.createSession(SessionCreateParams(
-            title: Bot.chatTitle, source: sourceSettings.newSessionSource, profile: profile, hidden: true,
+            title: Bot.chatTitle, source: SessionSourceSettings.newSessionSource, profile: profile, hidden: true,
             followProfileConfig: true))
         // Persists the row under the canonical title now, closing the window in
         // which a second open would find no "Bot Chat" (`canonical-chat.ts:493-502`).
@@ -265,7 +265,7 @@ extension GatewayConnection {
                 forget(unsent)
             }
         }
-        let created = try await client.createSession(SessionCreateParams(source: sourceSettings.newSessionSource, profile: profile))
+        let created = try await client.createSession(SessionCreateParams(source: SessionSourceSettings.newSessionSource, profile: profile))
         let session = ChatSession(snapshot: created.snapshot, storedSessionID: created.storedSessionID,
                                   title: nil, profile: profile, kind: .sideChat, connection: self)
         if let carried, !carried.isEmpty { composer(for: session).draft = carried }
@@ -407,6 +407,8 @@ extension GatewayConnection {
                     sessionListLimits[profile] = limit
                     let bot = bots.first { $0.name == profile }
                     history = rows.filter { row in
+                        if let source = SessionSourceSettings.normalized(row.source),
+                           SessionSourceSettings.listedElsewhere.contains(source) { return false }
                         if let bot { return !Self.isBotChat(row, of: bot) }
                         return !Bot.isChatRow(row)
                     }.map { HistoryEntry(profile: profile, summary: $0) }

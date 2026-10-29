@@ -347,6 +347,8 @@ private struct MessageRow: View {
                                                         connection: server.connection)
                                 }
                             }
+                            // Apart from the caption's bubble (the user, 2026-10-29: they touched).
+                            .padding(.bottom, 6)
                         }
                         if !item.attachments.isEmpty {
                             VStack(alignment: .trailing, spacing: 4) {

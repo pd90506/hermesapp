@@ -215,7 +215,7 @@ enum ImageLoader {
                                                 fileURLs: (pasteboard.urls ?? []).filter(\.isFileURL),
                                                 hasFileItems: fileItems)
         if case .text = ClipboardPolicy.decide(contents) { return [] }
-        return pasteboard.itemProviders.filter(isAttachable)
+        return pasteboard.itemProviders.filter { isAttachable($0) }
     }
     #endif
 

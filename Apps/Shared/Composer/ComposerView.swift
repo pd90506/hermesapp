@@ -100,7 +100,7 @@ struct ComposerView: View {
             guard !attachable.isEmpty else { return false }
             Task { await attach(await ImageLoader.sources(from: attachable, fileDrop: true)) }
             #else
-            let attachable = providers.filter(ImageLoader.isAttachable)
+            let attachable = providers.filter { ImageLoader.isAttachable($0) }
             guard !attachable.isEmpty else { return false }
             Task { await attach(await ImageLoader.sources(from: attachable)) }
             #endif

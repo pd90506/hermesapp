@@ -66,7 +66,14 @@ public enum ImageDirectives {
     public static let prefix = "@image:"
 
     /// The caption (every other line, trimmed at both ends) and the image paths, in order.
+    /// A row that carries Hermes's model-only image hints instead (`ImageHints`) reads
+    /// the same way.
     public static func split(_ text: String) -> (caption: String, paths: [String]) {
+        let hinted = ImageHints.splitLeading(text)
+        if !hinted.paths.isEmpty {
+            let rest = split(hinted.text)
+            return (rest.caption, hinted.paths + rest.paths)
+        }
         guard text.contains(prefix) else { return (text, []) }
         var caption: [Substring] = []
         var paths: [String] = []
@@ -78,6 +85,14 @@ public enum ImageDirectives {
             }
         }
         guard !paths.isEmpty else { return (text, []) }
+        // A model that reads images itself gets them as parts, which the stored row
+        // flattens to a `[screenshot]` line each after the text (`session_history.py:134-138`;
+        // seen in the VM, 2026-10-29): the images already show, so those lines go.
+        while let last = caption.last?.trimmingCharacters(in: .whitespaces),
+            last.isEmpty || InjectedContext.placeholders.contains(last)
+        {
+            caption.removeLast()
+        }
         return (caption.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), paths)
     }
 
@@ -98,6 +113,41 @@ public enum ImageDirectives {
             return inner.isEmpty || inner.contains(first) ? nil : String(inner)
         }
         return value.contains(where: \.isWhitespace) ? nil : String(value)
+    }
+}
+
+/// The text Hermes gives the model for each attached image when the model reads images
+/// with a tool (`tui_gateway/session_history.py:29-48`), in front of the typed text:
+///
+///     [The user attached an image: upload_0lufsdyf.png]
+///     [Examine it with the vision_analyze tool using image_url: /home/u/.hermes/images/upload_0lufsdyf.png]
+///
+/// Hermes stores `@image:` lines instead (:51-60), but a stored row with two images
+/// came back with these hints (the user, 2026-10-29), so the bubble showed them as
+/// text. Only the leading run is read, as the hints are always first. With no typed
+/// text Hermes adds "What do you see in this image?", which is not the user's.
+public enum ImageHints {
+    static let attached = "[The user attached an image: "
+    static let examine = "[Examine it with the vision_analyze tool using image_url: "
+    static let defaultQuestion = "What do you see in this image?"
+
+    /// The text after the hints, trimmed, and the hinted image paths, in order.
+    public static func splitLeading(_ text: String) -> (text: String, paths: [String]) {
+        guard text.hasPrefix(attached) else { return (text, []) }
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false)[...]
+        var paths: [String] = []
+        while let first = lines.first, first.hasPrefix(attached), first.hasSuffix("]"),
+              let second = lines.dropFirst().first, second.hasPrefix(examine), second.hasSuffix("]")
+        {
+            let path = second.dropFirst(examine.count).dropLast()
+            guard !path.isEmpty else { break }
+            paths.append(String(path))
+            lines = lines.dropFirst(2)
+            while lines.first?.isEmpty == true { lines = lines.dropFirst() }
+        }
+        guard !paths.isEmpty else { return (text, []) }
+        let rest = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (rest == defaultQuestion ? "" : rest, paths)
     }
 }
 

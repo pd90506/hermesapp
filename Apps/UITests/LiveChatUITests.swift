@@ -956,6 +956,7 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(sources.waitForExistence(timeout: 5))
         sources.tap()
         XCTAssertTrue(app.navigationBars["Session Sources"].waitForExistence(timeout: 5), "Session Sources opens")
+        XCTAssertFalse(app.staticTexts["New Sessions"].exists, "no choice of source for new sessions")
         attach(app, "settings: session sources")
         app.navigationBars.buttons.element(boundBy: 0).tap()
 

@@ -102,6 +102,16 @@ final class MessageActionsUITests: XCTestCase {
         XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value == %@", first)).firstMatch
             .waitForExistence(timeout: 30), "the branch holds the first reply again")
         attach(app, "5 back on the branch")
+
+        // Settings ▸ Session Sources has no choice of source for new chats: they are `desktop`.
+        app.typeKey(",", modifierFlags: .command)
+        let sourcesTab = app.toolbars.buttons["Session Sources"].firstMatch
+        XCTAssertTrue(sourcesTab.waitForExistence(timeout: 10), "the Settings window")
+        sourcesTab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        XCTAssertTrue(app.checkBoxes.firstMatch.waitForExistence(timeout: 10), "the sources' toggles")
+        XCTAssertFalse(app.popUpButtons.firstMatch.exists, "no New sessions picker")
+        attach(app, "6 settings: session sources")
+        app.typeKey("w", modifierFlags: .command)
     }
 
     /// The chat's title in the window's (“Title · Profile”), once there is one that passes `test`.

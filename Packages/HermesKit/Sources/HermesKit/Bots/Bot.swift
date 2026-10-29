@@ -153,13 +153,23 @@ extension String {
 /// Read only one newest row through the existing REST paging interface.
 public enum SessionRowTimestamp {
     public static func latest(for entry: HistoryEntry, from source: any SessionMessagesSource) async throws -> Date? {
+        try await newest(for: entry, from: source).flatMap { date(of: $0.timestamp) }
+    }
+
+    /// The newest stored message, or nil when the server can't page from the end.
+    public static func newest(for entry: HistoryEntry, from source: any SessionMessagesSource) async throws -> StoredMessage? {
         let page = try await source.messagesPage(SessionMessagesQuery(
             sessionID: entry.summary.resolvedID ?? entry.summary.id,
             profile: entry.profile, order: .latest, limit: 1))
         // Older servers can ignore paging/order. Never walk the transcript or label
         // an oldest page as newest. No creation-time fallback for missing metadata.
-        guard page.pagination?.order == "latest", page.messages.count <= 1,
-              let seconds = page.messages.last?.timestamp, seconds.isFinite, seconds > 0 else { return nil }
+        guard page.pagination?.order == "latest", page.messages.count <= 1 else { return nil }
+        return page.messages.last
+    }
+
+    /// A stored time as a date: nil when missing, nonpositive or not finite.
+    static func date(of seconds: Double?) -> Date? {
+        guard let seconds, seconds.isFinite, seconds > 0 else { return nil }
         return Date(timeIntervalSince1970: seconds)
     }
 

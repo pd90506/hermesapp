@@ -37,6 +37,17 @@ public protocol GatewayMediaSource: Sendable {
 /// Bounded pages of a stored transcript (`GET /api/sessions/{id}/messages`).
 public protocol SessionMessagesSource: Sendable {
     func messagesPage(_ query: SessionMessagesQuery) async throws -> SessionMessagesPage
+    /// The user's prompts of a stored session (`GET /api/sessions/{id}/timeline`).
+    func timelinePage(_ query: SessionTimelineQuery) async throws -> SessionTimelinePage
+}
+
+/// A source that reads no timeline.
+public struct SessionTimelineUnsupported: Error, Sendable {}
+
+extension SessionMessagesSource {
+    public func timelinePage(_ query: SessionTimelineQuery) async throws -> SessionTimelinePage {
+        throw SessionTimelineUnsupported()
+    }
 }
 
 /// How the app authenticates to the dashboard WebSocket
@@ -147,6 +158,10 @@ extension DashboardConnector: SessionMessagesSource {
     /// - `.password` uses the cookie session and logs in again after a 401.
     public func messagesPage(_ query: SessionMessagesQuery) async throws -> SessionMessagesPage {
         try await authorized { bearer in try await dashboard.sessionMessages(query, bearer: bearer) }
+    }
+
+    public func timelinePage(_ query: SessionTimelineQuery) async throws -> SessionTimelinePage {
+        try await authorized { bearer in try await dashboard.sessionTimeline(query, bearer: bearer) }
     }
 
     /// One authenticated REST call, with the retry rules above. `call` gets the

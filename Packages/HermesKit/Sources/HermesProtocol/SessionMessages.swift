@@ -113,3 +113,89 @@ public struct SessionMessagesPage: Sendable, Hashable, Codable {
         case sessionID = "session_id"
     }
 }
+
+// `GET /api/sessions/{id}/timeline`: the user's prompts of a stored session, oldest first,
+// with no message bodies (`hermes_cli/web_routers/sessions.py:801-820`,
+// `hermes_state_timeline.py:142-166`). Only rows a person typed list: background-process
+// and subagent completions the gateway injects as user rows are left out
+// (`_SYNTHETIC_PROMPT`, `hermes_state_timeline.py:13-17,36`).
+
+/// Query of `GET /api/sessions/{id}/timeline`.
+public struct SessionTimelineQuery: Sendable, Hashable {
+    /// Stored session id; the server follows it to the compression tip.
+    public var sessionID: String
+    public var profile: String?
+    /// 1 to 500 (`Query(500, ge=1, le=500)`).
+    public var limit: Int
+    /// The previous page's `next_cursor`; 0 for the first page.
+    public var afterRowID: Int
+
+    public init(sessionID: String, profile: String?, limit: Int = 500, afterRowID: Int = 0) {
+        self.sessionID = sessionID
+        self.profile = profile
+        self.limit = limit
+        self.afterRowID = afterRowID
+    }
+}
+
+/// One prompt: its row, its first 120 characters and when it was stored.
+public struct SessionTimelineEntry: Sendable, Hashable, Codable {
+    public var rowID: Int?
+    public var preview: String?
+    public var timestamp: Double?
+
+    public init(rowID: Int?, preview: String? = nil, timestamp: Double?) {
+        self.rowID = rowID
+        self.preview = preview
+        self.timestamp = timestamp
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case preview, timestamp
+        case rowID = "row_id"
+    }
+}
+
+/// `pagination` of a timeline page (`hermes_state_timeline.py:163-165`).
+public struct SessionTimelinePagination: Sendable, Hashable, Codable {
+    public var limit: Int?
+    public var returned: Int?
+    public var total: Int?
+    public var hasMore: Bool?
+    public var nextCursor: Int?
+
+    public init(limit: Int? = nil, returned: Int? = nil, total: Int? = nil, hasMore: Bool?, nextCursor: Int?) {
+        self.limit = limit
+        self.returned = returned
+        self.total = total
+        self.hasMore = hasMore
+        self.nextCursor = nextCursor
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case limit, returned, total
+        case hasMore = "has_more"
+        case nextCursor = "next_cursor"
+    }
+}
+
+/// Response of `GET /api/sessions/{id}/timeline`.
+public struct SessionTimelinePage: Sendable, Hashable, Codable {
+    public var sessionID: String?
+    public var profile: String?
+    public var entries: [SessionTimelineEntry]
+    public var pagination: SessionTimelinePagination?
+
+    public init(sessionID: String? = nil, profile: String? = nil, entries: [SessionTimelineEntry],
+                pagination: SessionTimelinePagination?) {
+        self.sessionID = sessionID
+        self.profile = profile
+        self.entries = entries
+        self.pagination = pagination
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case profile, entries, pagination
+        case sessionID = "session_id"
+    }
+}

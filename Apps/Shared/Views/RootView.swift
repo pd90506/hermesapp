@@ -12,6 +12,7 @@ struct RootView: View {
     @Environment(\.surfaces) private var surfaces
     #else
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
     /// The column shown when the split view is collapsed (iPhone): the session list,
     /// with the profiles' drawer over it (`ProfileDrawer`), or the chat. A new side chat
     /// has no row to select until the list catches up, so it is shown through this.
@@ -67,6 +68,13 @@ struct RootView: View {
             if !Task.isCancelled { isChatPageGone = true }
         }
         #endif
+        // Which chat is in view, for the session list's unread marks (`SessionReadMarks`):
+        // replies there count as seen.
+        .onChange(of: chatOnScreenKey, initial: true) { _, _ in
+            for server in model.servers {
+                server.connection.isChatOnScreen = isChatOnScreen && server.id == model.activeServerID
+            }
+        }
         // A click on another server's row moves `activeServerID` before its chat opens,
         // so only a server that stopped showing anything (disconnected, removed) clears it.
         .onChange(of: model.activeServerID) { _, id in if id == nil { followActiveChat() } }
@@ -214,6 +222,20 @@ struct RootView: View {
         #else
         false
         #endif
+    }
+
+    /// Whether the chat column is in view: not on iPhone's session list, nor (on iOS)
+    /// with the app in the background.
+    private var isChatOnScreen: Bool {
+        #if os(iOS)
+        !isOnSessionList && scenePhase == .active
+        #else
+        true
+        #endif
+    }
+
+    private var chatOnScreenKey: String {
+        "\(isChatOnScreen)/\(model.activeServerID?.uuidString ?? "")/\(model.servers.count)"
     }
 
     private var chatPageGone: Bool {

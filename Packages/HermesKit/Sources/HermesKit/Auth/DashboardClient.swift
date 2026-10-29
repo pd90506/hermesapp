@@ -174,6 +174,19 @@ public struct DashboardClient: Sendable {
         return try await send(request)
     }
 
+    /// `GET /api/sessions/{id}/timeline`: one page of the user's prompts, oldest first
+    /// (`hermes_cli/web_routers/sessions.py:801-820`). Authenticated as `sessionMessages`.
+    public func sessionTimeline(_ query: SessionTimelineQuery, bearer: String? = nil) async throws -> SessionTimelinePage {
+        var items = [
+            URLQueryItem(name: "limit", value: String(query.limit)),
+            URLQueryItem(name: "after_row_id", value: String(query.afterRowID)),
+        ]
+        if let profile = query.profile { items.insert(URLQueryItem(name: "profile", value: profile), at: 0) }
+        var request = request(path: "/api/sessions/\(query.sessionID)/timeline", method: "GET", query: items)
+        if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
+        return try await send(request)
+    }
+
     // MARK: Media
 
     /// `GET /api/media?path=` answers `{data_url}` (`hermes_cli/web_routers/files.py:329-354`).

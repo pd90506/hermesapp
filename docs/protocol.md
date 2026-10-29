@@ -1234,15 +1234,20 @@ Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/C
 - **Removing.** `image.detach {session_id, path}` returns `{detached, count}`
   (`methods_prompt.py:998-1010`).
 - **Frame size.** The dashboard accepts WebSocket frames up to 384 MiB (`hermes_cli/web_server.py:434,1247`).
-- `[client choice]` **Upload at send, like Desktop's remote mode.** Desktop does not upload images
-  eagerly (`use-prompt-actions/index.ts:439-443`).
-  - Images stay on the device until Send. Then they are uploaded one by one, and then
-    `prompt.submit` is sent.
-  - Removing a card is local; nothing is queued yet.
-  - If an upload fails, the images already queued are detached, the cards stay, the draft comes
-    back, and the composer shows the error.
-  - If `prompt.submit` fails, the queued images are detached too, and the cards and draft stay for
-    a retry.
+- `[client choice]` **Upload when attached, like Claude Code** (decided by the user, 2026-10-29).
+  Desktop's remote mode uploads at send instead (`use-prompt-actions/index.ts:439-443`).
+  - An image is uploaded (queued) as soon as its card is added; its card shows a spinning ring
+    meanwhile, and Send waits for every upload. `image.attach_bytes` answers only once the image
+    is queued, so the ring shows that it is under way, not how far.
+  - The queue is the session's, and the next turn start takes all of it, so the composer always
+    sends every card it has. Removing a card detaches its image.
+  - A card whose early upload failed says so; Send uploads it again.
+  - On Send the cards leave the composer at once (the prompt's bubble shows them). The send uploads
+    only the images not already queued in the current runtime session (a revived runtime has a new
+    queue), then sends `prompt.submit`.
+  - If the send fails, every image it queued, early or not, is detached (or stranded, below), and
+    the cards and the draft come back for a retry, which uploads them again. If an upload fails,
+    the composer also shows the error.
   - With no connection, nothing is sent: the draft stays and the composer says so.
   - **Stranded images.** When the socket drops mid-send, the `image.detach` for images already
     queued cannot be delivered. The runtime session can outlive the outage with them still

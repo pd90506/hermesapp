@@ -12,6 +12,44 @@ import FoundationNetworking
 // not text, and are read back through the dashboard.
 
 @Suite struct ImageDirectivesTests {
+    /// A native-vision turn's stored row: the image parts flatten to `[screenshot]`
+    /// lines after the directives (`session_history.py:134-138`).
+    @Test func imagePartPlaceholdersAfterTheDirectivesGo() {
+        let row = "Reply with IMG-1\n@image:/srv/a.png\n@image:/srv/b.png\n[screenshot]\n[screenshot]"
+        #expect(ImageDirectives.split(row) == ("Reply with IMG-1", ["/srv/a.png", "/srv/b.png"]))
+        // Without images a typed placeholder stays.
+        #expect(ImageDirectives.split("[screenshot]") == ("[screenshot]", []))
+    }
+
+    /// A stored row with Hermes's model-only hints instead of `@image:` lines
+    /// (`tui_gateway/session_history.py:41-45`): the images and the typed text.
+    @Test func modelHintsReadAsImages() {
+        let row = """
+            [The user attached an image: upload_0lufsdyf.png]
+            [Examine it with the vision_analyze tool using image_url: /home/u/.hermes/profiles/finance/images/upload_0lufsdyf.png]
+
+            [The user attached an image: upload_rybrfxqz.png]
+            [Examine it with the vision_analyze tool using image_url: /home/u/.hermes/profiles/finance/images/upload_rybrfxqz.png]
+
+            给我记录一下我当前的fidelity持仓
+            """
+        let (caption, paths) = ImageDirectives.split(row)
+        #expect(caption == "给我记录一下我当前的fidelity持仓")
+        #expect(paths == ["/home/u/.hermes/profiles/finance/images/upload_0lufsdyf.png",
+                          "/home/u/.hermes/profiles/finance/images/upload_rybrfxqz.png"])
+        // Image only: Hermes's stand-in question is not the user's.
+        let only = """
+            [The user attached an image: a.png]
+            [Examine it with the vision_analyze tool using image_url: /srv/a.png]
+
+            What do you see in this image?
+            """
+        #expect(ImageDirectives.split(only) == ("", ["/srv/a.png"]))
+        // Mid-text it stays text.
+        let quoted = "See this:\n[The user attached an image: a.png]\n[Examine it with the vision_analyze tool using image_url: /srv/a.png]"
+        #expect(ImageDirectives.split(quoted) == (quoted, []))
+    }
+
     @Test func storedImageLinesBecomeImagesAndTheRestTheCaption() {
         // `_build_persist_message_with_image_refs` (`tui_gateway/session_history.py:51-60`).
         let (caption, paths) = ImageDirectives.split(

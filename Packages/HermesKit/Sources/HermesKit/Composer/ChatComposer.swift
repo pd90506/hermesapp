@@ -23,6 +23,14 @@ public final class ChatComposer {
     public private(set) var uploadingFileNames: [String] = []
     /// How many files `attachFile` is uploading.
     public var uploadingFiles: Int { uploadingFileNames.count }
+    /// Image cards still uploading to the session's queue (`attach(_:)` starts it at
+    /// once, as Claude Code does); Send waits for them.
+    public private(set) var uploadingImageIDs: Set<UUID> = []
+    /// Image cards whose upload failed, with why; the send uploads them again.
+    public private(set) var failedImageUploads: [UUID: String] = [:]
+    /// Image cards already in the session's queue (`ChatSession.queueImage`).
+    @ObservationIgnored private var queuedImages: [UUID: ChatSession.QueuedImage] = [:]
+    @ObservationIgnored private var imageUploads: [UUID: Task<Void, Never>] = [:]
     /// Images are uploading or the prompt is being submitted.
     public private(set) var isSubmitting = false
     /// A composer failure (attachment, model or effort change), shown in the
@@ -411,18 +419,23 @@ public final class ChatComposer {
     /// or stops the running reply, otherwise it is queued or steered
     /// (`tui_gateway/server.py:375-377`; docs/protocol.md §10.3).
     public var canSubmit: Bool {
+        guard uploadingImageIDs.isEmpty else { return false }
+        return hasSomethingToSend
+    }
+
+    private var hasSomethingToSend: Bool {
         guard !isSubmitting, uploadingFiles == 0 else { return false }
         return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || !files.isEmpty
     }
 
-    /// Sends the draft with the attached images and files. The draft clears at once.
-    /// When the send fails with images or files, the cards stay and the draft comes
-    /// back with them, so a retry sends the same message.
+    /// Sends the draft with the attached images and files. The draft and the cards
+    /// clear at once (the prompt's bubble shows them). When the send fails with images
+    /// or files, the cards come back and the draft with them, so a retry sends the
+    /// same message. Images still uploading (`uploadingImageIDs`) are waited for:
+    /// the Send button waits for them too, so only a caller that skips it waits here.
     public func submit() async {
-        guard canSubmit else { return }
+        guard hasSomethingToSend else { return }
         let text = draft
-        let images = attachments
-        let files = files
         draft = ""
         suppressedSlashText = nil
         error = nil
@@ -431,26 +444,39 @@ public final class ChatComposer {
             isSubmitting = false
             submitTask = nil
         }
+        for upload in imageUploads.values { await upload.value }
+        let images = attachments
+        let files = files
+        let queued = queuedImages
+        attachments = []
+        self.files = []
+        queuedImages = [:]
+        failedImageUploads = [:]
         let session = session
-        let sending = Task { try await session.send(text, images: images, files: files) }
+        let sending = Task { try await session.send(text, images: images, files: files, queued: queued) }
         submitTask = sending
         do {
             try await sending.value
-            let sent = Set(images.map(\.id))
-            attachments.removeAll { sent.contains($0.id) }
-            let sentFiles = Set(files.map(\.id))
-            self.files.removeAll { sentFiles.contains($0.id) }
         } catch is CancellationError {
             // Cancelled before the prompt went out: nothing to report, all kept.
             restoreText(text)
+            restoreCards(images, files: files)
         } catch {
             let failure = error as? ComposerError
             // A `ComposerError` means nothing reached the transcript; with images
-            // or files the cards stay, so the text belongs with them. (A failed
+            // or files the cards come back, so the text belongs with them. (A failed
             // text-only `prompt.submit` is already on the transcript, via `submitFailed`.)
             if failure != nil || !images.isEmpty || !files.isEmpty { restoreText(text) }
+            restoreCards(images, files: files)
             if let failure { show(failure.message, cause: failure) }
         }
+    }
+
+    /// Puts a failed send's cards back in front of any added meanwhile. The send took
+    /// the images uploaded ahead off the queue, so the next one uploads them again.
+    private func restoreCards(_ images: [ComposerAttachment], files: [ComposerFile]) {
+        attachments.insert(contentsOf: images, at: 0)
+        self.files.insert(contentsOf: files, at: 0)
     }
 
     /// The send in flight, for `cancelSubmit()`.
@@ -491,16 +517,51 @@ public final class ChatComposer {
         }
         attachments.append(attachment)
         error = nil
+        queueAhead(attachment)
         return true
     }
 
-    /// Removes a card. Nothing is on the gateway yet, so there is nothing to
-    /// detach: uploads only happen in `submit()`. Ignored while a send is in
-    /// flight: that send already carries the card.
+    /// Uploads a card's image to the session's queue now, so Send only submits the
+    /// prompt. A card removed meanwhile is taken back off the queue once its upload
+    /// ends (cancelling the request would leave it unknown whether Hermes queued it).
+    /// A failed upload is marked on the card; the send uploads the image again.
+    private func queueAhead(_ attachment: ComposerAttachment) {
+        let id = attachment.id
+        uploadingImageIDs.insert(id)
+        failedImageUploads[id] = nil
+        let session = session
+        imageUploads[id] = Task { [weak self] in
+            let outcome: Result<ChatSession.QueuedImage, any Error>
+            do {
+                outcome = .success(try await session.queueImage(attachment))
+            } catch {
+                outcome = .failure(error)
+            }
+            let kept = self?.attachments.contains { $0.id == id } ?? false
+            self?.imageUploads[id] = nil
+            self?.uploadingImageIDs.remove(id)
+            switch outcome {
+            case .success(let queued):
+                if kept { self?.queuedImages[id] = queued } else { await session.unqueueImage(queued) }
+            case .failure(let error):
+                guard kept else { return }
+                self?.failedImageUploads[id] = (error as? ComposerError)?.message ?? GatewayConnection.describe(error)
+            }
+        }
+    }
+
+    /// Removes a card. An image already uploaded is taken back off the session's
+    /// queue (`image.detach`), so it does not ride with the next prompt. Ignored while
+    /// a send is in flight: that send already carries the card.
     public func removeAttachment(id: UUID) {
         guard !isSubmitting else { return }
         attachments.removeAll { $0.id == id }
         files.removeAll { $0.id == id }
+        failedImageUploads[id] = nil
+        if let queued = queuedImages.removeValue(forKey: id) {
+            let session = session
+            Task { await session.unqueueImage(queued) }
+        }
     }
 
     /// Attaches a file picked or dropped by the user. An image Hermes takes as it

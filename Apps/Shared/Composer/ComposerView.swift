@@ -83,15 +83,24 @@ struct ComposerView: View {
         }
         .onDrop(of: [.fileURL, .image, .data], isTargeted: $isDropTargeted) { providers in
             #if os(macOS)
-            // SwiftUI hands over a file from Finder by its contents' type alone: a Markdown
-            // file is one `net.daringfireball.markdown` provider, without its file URL or
-            // name (VM, 2026-10-22), so text files were turned away with no sign. The drag's
-            // own pasteboard still has the file URLs; read it as the text view reads a paste.
-            let sources = ImageLoader.sources(from: NSPasteboard(name: .drag))
-            guard !sources.isEmpty else { return false }
-            Task { await attach(sources) }
+            // SwiftUI hands over a dragged file by its contents' type alone: a Markdown file
+            // from Finder is one `net.daringfireball.markdown` provider, without its file URL
+            // or name (VM, 2026-10-22), so text files were turned away with no sign. The
+            // drag pasteboard has the file URLs: read it as the text view reads a paste.
+            // Only when it holds this drag's files, though: a file from a Dock stack comes on
+            // a pasteboard of the Dock's own (VM, 2026-10-29), and the drag pasteboard then
+            // has nothing, or the files of an earlier drag from Finder. Then the providers'
+            // contents are attached as files, text too: the file representation has the name.
+            let dragged = ImageLoader.sources(from: NSPasteboard(name: .drag))
+            if ImageLoader.sources(dragged, match: providers) {
+                Task { await attach(dragged) }
+                return true
+            }
+            let attachable = providers.filter { ImageLoader.isAttachable($0, fileDrop: true) }
+            guard !attachable.isEmpty else { return false }
+            Task { await attach(await ImageLoader.sources(from: attachable, fileDrop: true)) }
             #else
-            let attachable = providers.filter(ImageLoader.isAttachable)
+            let attachable = providers.filter { ImageLoader.isAttachable($0) }
             guard !attachable.isEmpty else { return false }
             Task { await attach(await ImageLoader.sources(from: attachable)) }
             #endif
@@ -226,7 +235,9 @@ struct ComposerView: View {
                     // are also in the shared store, for when the chat is shown again.
                     AttachmentCardView(attachment: attachment,
                                        thumbnail: thumbnails[attachment.id] ?? server.thumbnails.local(attachment.id),
-                                       isSending: composer.isSubmitting) {
+                                       isSending: composer.isSubmitting,
+                                       isUploading: composer.uploadingImageIDs.contains(attachment.id),
+                                       uploadFailure: composer.failedImageUploads[attachment.id]) {
                         composer.removeAttachment(id: attachment.id)
                     }
                 }
@@ -545,7 +556,7 @@ struct ComposerView: View {
                     .buttonStyle(CircleButtonStyle())
                     .disabled(!composer.canSubmit)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .help("Send (Return)")
+                    .help(composer.uploadingImageIDs.isEmpty ? "Send (Return)" : "Waiting for the images to upload")
                     .transition(.swapped)
             }
         }

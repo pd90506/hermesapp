@@ -591,7 +591,8 @@ public final class ChatSession: Identifiable {
     /// The files' `@file:` references go in front of the text, one per line, as
     /// Desktop sends them (`use-prompt-actions/submit.ts:224-234`); the bubble shows
     /// the text and the files' names. Images: see `sendWithImages`.
-    public func send(_ text: String, images: [ComposerAttachment], files: [ComposerFile]) async throws {
+    public func send(_ text: String, images: [ComposerAttachment], files: [ComposerFile],
+                     queued: [UUID: QueuedImage] = [:]) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !images.isEmpty || !files.isEmpty else { return }
         let shown = images.enumerated().map { index, image in
@@ -607,7 +608,7 @@ public final class ChatSession: Identifiable {
             rebuiltDispatchedPrompts.remove(itemID)
         }
         do {
-            try await performSend(text, images: images, files: files, itemID: itemID)
+            try await performSend(text, images: images, files: files, queued: queued, itemID: itemID)
         } catch {
             let dispatched = dispatchedPrompts.contains(itemID)
             if !dispatched, error is ComposerError || error is CancellationError || !images.isEmpty || !files.isEmpty {
@@ -634,13 +635,16 @@ public final class ChatSession: Identifiable {
     @ObservationIgnored private var rebuiltDispatchedPrompts: Set<String> = []
 
     private func performSend(_ text: String, images: [ComposerAttachment], files: [ComposerFile],
-                             itemID: String) async throws {
+                             queued: [UUID: QueuedImage], itemID: String) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let names = files.map(\.name)
         let paths = files.map(\.refPath)
         let prompt = ([files.map(\.refText).joined(separator: "\n"), trimmed].filter { !$0.isEmpty })
             .joined(separator: "\n\n")
-        if !images.isEmpty { return try await sendWithImages(trimmed, prompt: prompt, images: images, files: names, filePaths: paths, itemID: itemID) }
+        if !images.isEmpty {
+            return try await sendWithImages(trimmed, prompt: prompt, images: images, queued: queued, files: names,
+                                            filePaths: paths, itemID: itemID)
+        }
         guard !prompt.isEmpty else { return }
         try await settleIdentity()
         // A failed resume shows on the prompt's bubble, like a failed submit.
@@ -674,7 +678,9 @@ public final class ChatSession: Identifiable {
         }
     }
 
-    /// Uploads `images` (`image.attach_bytes`), then submits `text` with them.
+    /// Uploads `images` (`image.attach_bytes`), then submits `text` with them. An image
+    /// already in `queued` for this runtime session (`queueImage`, when it was attached)
+    /// is not uploaded again; one queued in a runtime that is gone since is.
     /// - Idle session: the turn start takes every queued image
     ///   (`tui_gateway/prompt_turn.py:147-149`).
     /// - Busy session: Hermes claims the queued images at once and queues them
@@ -689,28 +695,41 @@ public final class ChatSession: Identifiable {
     ///     (the caption behind the files' references).
     ///   - files: the names of the files the prompt references; `filePaths` their paths.
     private func sendWithImages(_ trimmed: String, prompt: String, images: [ComposerAttachment],
-                                files: [String], filePaths: [String], itemID: String) async throws {
-        try await settleIdentity()
-        do {
-            try await reviveIfGone()
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch GatewayClientError.notConnected {
-            throw ComposerError.notConnected
-        } catch {
-            current.keepError(GatewayConnection.describe(error))
-            throw error
-        }
-        let sid = sessionID
+                                queued alreadyQueued: [UUID: QueuedImage], files: [String], filePaths: [String],
+                                itemID: String) async throws {
+        let sid: String
         let client: GatewayClient
         do {
-            client = try currentClient()
+            try await settleIdentity()
+            do {
+                try await reviveIfGone()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch GatewayClientError.notConnected {
+                throw ComposerError.notConnected
+            } catch {
+                current.keepError(GatewayConnection.describe(error))
+                throw error
+            }
+            sid = sessionID
+            do {
+                client = try currentClient()
+            } catch {
+                throw ComposerError.notConnected
+            }
+            try await clearStrandedImages(using: client)
         } catch {
-            throw ComposerError.notConnected
+            // The images queued ahead come off the queue, as the uploads below do when a
+            // later step fails: the composer's next send uploads them again.
+            strandQueued(images.compactMap { alreadyQueued[$0.id] })
+            throw error
         }
-        try await clearStrandedImages(using: client)
         var queued: [String] = []
         for image in images {
+            if let early = alreadyQueued[image.id], early.sessionID == sid {
+                queued.append(early.path)
+                continue
+            }
             do {
                 let result = try await client.attachImage(sessionID: sid, profile: profile, data: image.data,
                                                           filename: image.filename)
@@ -797,6 +816,67 @@ public final class ChatSession: Identifiable {
             return
         }
         throw ComposerError.strandedImages
+    }
+
+    // MARK: - Images uploaded ahead
+
+    /// An image uploaded when it was attached, before its prompt (`queueImage`): its
+    /// path in the runtime session's image queue, and that session.
+    public struct QueuedImage: Sendable, Hashable {
+        public let path: String
+        public let sessionID: String
+
+        public init(path: String, sessionID: String) {
+            self.path = path
+            self.sessionID = sessionID
+        }
+    }
+
+    /// Uploads an image to the session's image queue now (`image.attach_bytes`), so a
+    /// send only submits the prompt (`send(_:images:files:queued:)`). Hermes holds a
+    /// queued image for the session's next prompt (`tui_gateway/prompt_turn.py:147-149`):
+    /// the composer sends every card it has, and `unqueueImage` takes back a removed one.
+    public func queueImage(_ image: ComposerAttachment) async throws -> QueuedImage {
+        let client: GatewayClient
+        do {
+            client = try await liveClient()
+        } catch GatewayClientError.notConnected {
+            throw ComposerError.notConnected
+        }
+        let sid = sessionID
+        let result: AttachedImageResult
+        do {
+            result = try await client.attachImage(sessionID: sid, profile: profile, data: image.data,
+                                                  filename: image.filename)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw ComposerError.attachmentFailed(filename: image.filename, reason: GatewayConnection.describe(error))
+        }
+        guard result.attached, let path = result.path else {
+            throw ComposerError.attachmentFailed(filename: image.filename,
+                                                 reason: result.message ?? "the gateway did not queue it")
+        }
+        return QueuedImage(path: path, sessionID: sid)
+    }
+
+    /// Takes a queued image back (`image.detach`); one whose detach gets no answer is
+    /// stranded, and cleared before the next send (`clearStrandedImages`).
+    public func unqueueImage(_ image: QueuedImage) async {
+        guard let client = connection?.client else {
+            connection?.strand([StrandedImage(sessionID: image.sessionID, profile: profile, path: image.path)])
+            return
+        }
+        await detach([image.path], using: client, sessionID: image.sessionID)
+    }
+
+    /// Images queued ahead (`queueImage`) that a send gave up on before it got to
+    /// them: stranded, so they are detached now when connected, else right after the
+    /// reattach, and in any case before the next send (`clearStrandedImages`).
+    private func strandQueued(_ images: [QueuedImage]) {
+        guard let connection, !images.isEmpty else { return }
+        connection.strand(images.map { StrandedImage(sessionID: $0.sessionID, profile: profile, path: $0.path) })
+        connection.flushStrandedImagesInBackground()
     }
 
     // MARK: - Files

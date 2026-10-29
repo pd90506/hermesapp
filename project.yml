@@ -136,6 +136,13 @@ targets:
       - path: Apps/UITests
     dependencies:
       - target: HermesMac
+    entitlements:
+      path: Config/Generated/HermesMacUITests.entitlements
+      properties:
+        # Not sandboxed: DockStackDropUITests puts its files in ~/Downloads (the Dock's
+        # Downloads stack) and asks the VM's mouse helper for its drags through /tmp
+        # (scripts/vm-mouse.swift).
+        com.apple.security.app-sandbox: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(HERMES_BUNDLE_ID_PREFIX).mac.uitests

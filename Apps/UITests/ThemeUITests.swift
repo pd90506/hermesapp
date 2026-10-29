@@ -1,6 +1,8 @@
 import XCTest
 
 #if os(macOS)
+import AppKit
+
 /// The app's theme (Settings ▸ Appearance ▸ Theme) against a live dashboard, as
 /// `LiveChatUITests` runs: picked in Settings, it colours the chat, in light and dark.
 /// Skipped without `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
@@ -97,6 +99,92 @@ final class ThemeUITests: XCTestCase {
 
             }
         }
+    }
+
+    /// The composer in a window that isn't key is the system's light grey, as Messages'
+    /// field: tinted with the theme's colour, its glass went a flat dark grey there, dull
+    /// on a white chat (the user, 2026-10-29: 230 of 255, the untinted glass 240,
+    /// Messages' 243). Screenshots focused and unfocused, in light and dark; the card's
+    /// empty right part measured in each. Opens a New chat and sends nothing.
+    @MainActor
+    func testTheComposerIsTheSystemsGlassWhenTheWindowIsInactive() throws {
+        continueAfterFailure = false
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+            throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HERMES_UITEST_URL"] = url
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        app.launchWithMainWindow()
+        defer { app.terminate() }
+
+        let newChat = app.buttons["New chat"]
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 60), .completed, "New chat enabled")
+        click(newChat)
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
+
+        for mode in ["Light", "Dark"] {
+            openAppearance(app)
+            pickMode(mode, in: app)
+            showChat(app)
+            app.activate()
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+            // The text view's right end: the card's fill, past the placeholder.
+            let frame = composer.frame
+            let patch = CGRect(x: frame.maxX - 60, y: frame.midY - 3, width: 40, height: 6)
+            let active = try XCTUnwrap(Self.brightness(of: patch), "the focused card measured")
+            attachScreen("composer, \(mode.lowercased()), focused")
+            finder.activate()
+            // Finder's windows closed, so none covers the chat.
+            finder.typeKey("w", modifierFlags: [.command, .option])
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let inactive = try XCTUnwrap(Self.brightness(of: patch), "the unfocused card measured")
+            attachScreen("composer, \(mode.lowercased()), unfocused")
+            if mode == "Light" {
+                XCTAssertGreaterThan(inactive, 235,
+                                     "the card is the system's light grey unfocused: \(active) focused, \(inactive) unfocused")
+            }
+            app.activate()
+        }
+        openAppearance(app)
+        pickMode("System", in: app)
+        showChat(app)
+    }
+
+    /// The mean brightness (0–255) of `rect` (screen points) on the screen.
+    @MainActor
+    private static func brightness(of rect: CGRect) -> Double? {
+        let image = XCUIScreen.main.screenshot().image
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        // The screenshot's image is in pixels, the elements' frames in points.
+        guard let screen = NSScreen.screens.first?.frame, screen.width > 0 else { return nil }
+        let scale = CGFloat(cg.width) / screen.width
+        let crop = CGRect(x: rect.minX * scale, y: rect.minY * scale,
+                          width: rect.width * scale, height: rect.height * scale).integral
+        guard let part = cg.cropping(to: crop), part.width > 0, part.height > 0 else { return nil }
+        var bytes = [UInt8](repeating: 0, count: part.width * part.height * 4)
+        let context = CGContext(data: &bytes, width: part.width, height: part.height, bitsPerComponent: 8,
+                                bytesPerRow: part.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        context?.draw(part, in: CGRect(x: 0, y: 0, width: part.width, height: part.height))
+        var total = 0
+        for i in stride(from: 0, to: bytes.count, by: 4) { total += Int(bytes[i]) + Int(bytes[i + 1]) + Int(bytes[i + 2]) }
+        return Double(total) / Double(part.width * part.height * 3)
+    }
+
+    /// The whole screen: `app.screenshot()` of an app that isn't frontmost.
+    @MainActor
+    private func attachScreen(_ name: String) {
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 
     /// A windowed (not full-screen) window with a populated chat, for visual review: the

@@ -62,11 +62,11 @@ struct ComposerView: View {
         }
         .animation(.snappy(duration: 0.25), value: isCollapsed)
         // A card floating over the chat, as the Claude app's, on the Mac and iOS alike:
-        // Liquid Glass in the theme's composer colour (`themedGlass`), the messages blurred
+        // the system's Liquid Glass (`floatingGlass`), the messages blurred
         // under it. A hairline in the text colour around it, as Desktop's composer border:
         // in light the glass's own rim all but vanishes on a white chat (the user,
         // 2026-10-26). The tint's edge while a drop is over it.
-        .themedGlass(in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
+        .floatingGlass(in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         .chatGlassID("composer")
         .overlay {
             // Just outside the glass's edge: on it, the glass's own bright rim all but

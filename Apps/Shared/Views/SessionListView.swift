@@ -434,7 +434,7 @@ struct SessionListView: View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         if model.actionError != nil || waitingCount > 0 {
             VStack(spacing: 0) { bannerRows }
-                .themedGlass(in: shape)
+                .floatingGlass(in: shape)
                 .padding(.horizontal, Self.bannerInset)
                 .padding(.top, 6)
         }

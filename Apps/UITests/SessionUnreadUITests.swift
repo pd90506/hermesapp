@@ -104,9 +104,13 @@ final class SessionUnreadUITests: XCTestCase {
     @MainActor
     private func showSessionList(_ app: XCUIApplication) {
         #if os(iOS)
-        let back = app.navigationBars.buttons.element(boundBy: 0)
-        if back.exists { back.tap() }
-        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 10), "the list")
+        // A tap right after a send can go to the keyboard first: try again.
+        for _ in 0..<3 where !app.buttons["New chat"].waitForExistence(timeout: 2) {
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            if back.exists { back.tap() }
+        }
+        if !app.buttons["New chat"].waitForExistence(timeout: 10) { attach(app, "no list") }
+        XCTAssertTrue(app.buttons["New chat"].exists, "the list")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         #endif
     }

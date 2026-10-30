@@ -68,11 +68,11 @@ struct MarkdownCodeBlock: View {
 /// rule between rows. The tints, rules and every other row's stripe take the Markdown
 /// colours (Settings ▸ Markdown). Columns start at the widest cell's rendered width (bold
 /// header, inline code, links and math included) and share the room left over in
-/// proportion to it. A grid wider than the column reaches past it into the window's
-/// spare width (`tableReach`), centered on the column, so it only wraps or scrolls
-/// once the window itself is too narrow. There, cells whose
-/// content is unusually long cap at 300 pt and wrap, and a grid wider still scrolls
-/// sideways.
+/// proportion to it. Cells whose content is unusually long cap at 300 pt and wrap when
+/// the column has no room for them. A grid that would still scroll reaches past the
+/// column into the window's spare width (`tableReach`), centered on the column, only
+/// as far as it needs to stop scrolling; once the window itself is too narrow, it
+/// scrolls sideways.
 struct MarkdownTableGrid: View {
     let table: MarkdownTable
     var messageSource: String? = nil
@@ -95,8 +95,11 @@ struct MarkdownTableGrid: View {
         let layout = MarkdownTableLayout.layout(for: table, bodySize: bodySize)
         let widths = MarkdownTableLayout.fit(layout.widths, into: available - 2,
                                              padding: Self.cellPadding * 2)
-        let natural = layout.widths.reduce(0, +) + Self.cellPadding * 2 * CGFloat(layout.widths.count) + 2
-        TableReachLayout(natural: natural.rounded(.up), reach: reach) {
+        // The width where it stops scrolling, its long cells wrapped: it reaches no further
+        // to put them on one line (the user, 2026-10-30).
+        let needed = layout.widths.map { min($0, MarkdownTableLayout.wrapWidth) }.reduce(0, +)
+            + Self.cellPadding * 2 * CGFloat(layout.widths.count) + 2
+        TableReachLayout(needed: needed.rounded(.up), reach: reach) {
             grid(layout, widths: widths)
         }
         .accessibilityIdentifier("markdownTableScroll")
@@ -169,17 +172,17 @@ struct MarkdownTableGrid: View {
     }
 }
 
-/// Lays out a table as wide as the column offers, or, when its columns on one line
-/// (`natural`) need more, wider by up to `reach` on each side, centered on the column
-/// (the user, 2026-10-30). Its footprint stays the column's width, so the text around
-/// it does not move.
+/// Lays out a table as wide as the column offers, or, when it `needs` more to stop
+/// scrolling, wider by up to `reach` on each side, centered on the column (the user,
+/// 2026-10-30). Its footprint stays the column's width, so the text around it does
+/// not move.
 struct TableReachLayout: Layout {
-    let natural: CGFloat
+    let needed: CGFloat
     let reach: CGFloat
 
     /// The table's width, and how far its leading edge moves left, in a column `width` wide.
     func extent(in width: CGFloat) -> (width: CGFloat, lead: CGFloat) {
-        let over = max(0, min(natural, width + 2 * reach) - width)
+        let over = max(0, min(needed, width + 2 * reach) - width)
         return (width + over, over / 2)
     }
 

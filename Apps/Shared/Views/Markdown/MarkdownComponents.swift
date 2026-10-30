@@ -68,8 +68,9 @@ struct MarkdownCodeBlock: View {
 /// rule between rows. The tints, rules and every other row's stripe take the Markdown
 /// colours (Settings ▸ Markdown). Columns start at the widest cell's rendered width (bold
 /// header, inline code, links and math included) and share the room left over in
-/// proportion to it. Cells whose content is unusually long cap at 300 pt and wrap when
-/// the column has no room for them. A grid that would still scroll reaches past the
+/// proportion to it. When the column has no room for them, long cells wrap, down to
+/// 10 em wide (`wrapWidth`), so a table first fits the column with more lines per
+/// cell, as a web page's table does (the user, 2026-10-30). A grid that would still scroll reaches past the
 /// column into the window's spare width (`tableReach`), centered on the column, only
 /// as far as it needs to stop scrolling; once the window itself is too narrow, it
 /// scrolls sideways.
@@ -93,11 +94,12 @@ struct MarkdownTableGrid: View {
 
     var body: some View {
         let layout = MarkdownTableLayout.layout(for: table, bodySize: bodySize)
+        let wrap = MarkdownTableLayout.wrapWidth(bodySize: bodySize)
         let widths = MarkdownTableLayout.fit(layout.widths, into: available - 2,
-                                             padding: Self.cellPadding * 2)
+                                             padding: Self.cellPadding * 2, wrapWidth: wrap)
         // The width where it stops scrolling, its long cells wrapped: it reaches no further
         // to put them on one line (the user, 2026-10-30).
-        let needed = layout.widths.map { min($0, MarkdownTableLayout.wrapWidth) }.reduce(0, +)
+        let needed = layout.widths.map { min($0, wrap) }.reduce(0, +)
             + Self.cellPadding * 2 * CGFloat(layout.widths.count) + 2
         TableReachLayout(needed: needed.rounded(.up), reach: reach) {
             grid(layout, widths: widths)
@@ -228,8 +230,11 @@ enum MarkdownTableLayout {
 
     private static var cache: [Key: Layout] = [:]
 
-    /// The widest a column grows to before its cells wrap, when the grid has no room.
-    static let wrapWidth: CGFloat = 300
+    /// The narrowest a long column wraps to before the grid reaches past the column or
+    /// scrolls: 10 em, about 10 CJK characters or 20 Latin ones a line. It was 300 pt,
+    /// and a table of three long columns, which fits the column wrapped narrower, grew
+    /// past it (the user, 2026-10-30).
+    static func wrapWidth(bodySize: CGFloat) -> CGFloat { (bodySize * 10).rounded() }
 
     static func layout(for table: MarkdownTable, bodySize: CGFloat) -> Layout {
         let key = Key(table: table, bodySize: bodySize)
@@ -254,7 +259,8 @@ enum MarkdownTableLayout {
     /// - it fits with the long columns wrapped at `wrapWidth`: those columns get the
     ///   room there is, in proportion to what they lack;
     /// - otherwise the long columns wrap at `wrapWidth` and the grid scrolls.
-    static func fit(_ natural: [CGFloat], into available: CGFloat, padding: CGFloat) -> [CGFloat] {
+    static func fit(_ natural: [CGFloat], into available: CGFloat, padding: CGFloat,
+                    wrapWidth: CGFloat) -> [CGFloat] {
         let capped = natural.map { min($0, wrapWidth) }
         let pads = padding * CGFloat(natural.count)
         let room = (available - pads).rounded(.down)

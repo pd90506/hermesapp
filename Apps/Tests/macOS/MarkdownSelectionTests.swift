@@ -178,7 +178,9 @@ import Testing
     @Test func codeAndTableScrollSeparatelyAtFullColumnWidth() throws {
         let code = String(repeating: "veryLongCodeToken", count: 25)
         let cell = String(repeating: "wide ", count: 25)
-        let hosted = fullMessage("Intro.\n\n```swift\n\(code)\n```\n\n| Short | Wide |\n|---|---|\n| x | \(cell) |", width: 260)
+        // Three long columns: too wide for the column even with their cells wrapped.
+        let hosted = fullMessage("Intro.\n\n```swift\n\(code)\n```\n\n| Short | Wide | Wider | Widest |\n|---|---|---|---|\n"
+                                 + "| x | \(cell) | \(cell) | \(cell) |", width: 260)
         defer { hosted.window.close() }
         let prose = try #require(descendants(MarkdownSelectionTextView.self, in: hosted.host)
             .first(where: { $0.string == "Intro." }))
@@ -197,7 +199,9 @@ import Testing
     @Test func tableFillsTheColumnWithBordersAndATintedHeader() throws {
         let short = fullMessage("| A | B |\n|---|---|\n| x | y |", width: 260)
         defer { short.window.close() }
-        let long = fullMessage("| A | Wide |\n|---|---|\n| x | \(String(repeating: "wide ", count: 30)) |", width: 260)
+        // Three long columns: too wide for the column even with their cells wrapped.
+        let wide = String(repeating: "wide ", count: 30)
+        let long = fullMessage("| A | Wide | Wider | Widest |\n|---|---|---|---|\n| x | \(wide) | \(wide) | \(wide) |", width: 260)
         defer { long.window.close() }
         let shortScroll = try #require(descendants(NSScrollView.self, in: short.host).first)
         let longScroll = try #require(descendants(NSScrollView.self, in: long.host).first)

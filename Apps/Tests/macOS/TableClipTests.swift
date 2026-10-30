@@ -361,9 +361,18 @@ import Testing
         #expect(abs(narrowFrame.width - column) <= 0.5, "a table that fits wrapped widened: \(narrowFrame)")
         expectTablesFit(fits, "fits wrapped")
 
-        // Four long columns don't: they reach to their wrapped width and no further.
-        let needed = 4 * (MarkdownTableLayout.wrapWidth + 2 * MarkdownTableGrid.cellPadding) + 2
-        let wide = Chat(width: width, style: .legacy, items: [Self.reply(table(columns: 4), active: false)], reach: 800)
+        // Three, as in the report, fit wrapped narrower as well.
+        let three = Chat(width: width, style: .legacy, items: [Self.reply(table(columns: 3), active: false)], reach: 800)
+        defer { three.close() }
+        let threeTable = try #require(Self.tableScrolls(in: three.host).first)
+        #expect(abs(threeTable.convert(threeTable.bounds, to: three.host).width - column) <= 0.5,
+                "three long columns widened instead of wrapping in the column")
+        expectTablesFit(three, "three fit wrapped")
+
+        // Seven long columns don't: they reach to their wrapped width and no further.
+        let wrap = MarkdownTableLayout.wrapWidth(bodySize: TextSizes.defaults.content)
+        let needed = 7 * (wrap + 2 * MarkdownTableGrid.cellPadding) + 2
+        let wide = Chat(width: width, style: .legacy, items: [Self.reply(table(columns: 7), active: false)], reach: 800)
         defer { wide.close() }
         let grown = try #require(Self.tableScrolls(in: wide.host).first)
         let grownFrame = grown.convert(grown.bounds, to: wide.host)

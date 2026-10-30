@@ -342,6 +342,37 @@ import Testing
         #expect(abs(after.convert(after.bounds, to: tight.host).minX - Self.gutter) <= 0.5, "the text after it moved")
     }
 
+    /// A table with long cells reaches only as far as it needs to stop scrolling, its
+    /// long cells wrapped at `wrapWidth`, not as far as putting them on one line takes:
+    /// one that fits wrapped keeps the column's width, a wider one grows to just that.
+    @Test func longCellsReachOnlyAsFarAsTheyNeed() throws {
+        let width: CGFloat = 1000, column = width - 2 * Self.gutter
+        let long = String(repeating: "单元格里的内容很长，需要换行显示。", count: 4)
+        func table(columns: Int) -> String {
+            "| " + (1...columns).map { "列\($0)" }.joined(separator: " | ") + " |\n|"
+                + String(repeating: "---|", count: columns) + "\n| "
+                + (1...columns).map { _ in long }.joined(separator: " | ") + " |"
+        }
+        // Two long columns fit wrapped in the column: no reach.
+        let fits = Chat(width: width, style: .legacy, items: [Self.reply(table(columns: 2), active: false)], reach: 800)
+        defer { fits.close() }
+        let narrow = try #require(Self.tableScrolls(in: fits.host).first)
+        let narrowFrame = narrow.convert(narrow.bounds, to: fits.host)
+        #expect(abs(narrowFrame.width - column) <= 0.5, "a table that fits wrapped widened: \(narrowFrame)")
+        expectTablesFit(fits, "fits wrapped")
+
+        // Four long columns don't: they reach to their wrapped width and no further.
+        let needed = 4 * (MarkdownTableLayout.wrapWidth + 2 * MarkdownTableGrid.cellPadding) + 2
+        let wide = Chat(width: width, style: .legacy, items: [Self.reply(table(columns: 4), active: false)], reach: 800)
+        defer { wide.close() }
+        let grown = try #require(Self.tableScrolls(in: wide.host).first)
+        let grownFrame = grown.convert(grown.bounds, to: wide.host)
+        #expect(abs(grownFrame.width - needed) <= 1, "width \(grownFrame.width), needed \(needed)")
+        #expect(abs(grownFrame.midX - width / 2) <= 1, "not centered: \(grownFrame)")
+        #expect(try #require(grown.documentView).frame.width <= grown.contentView.bounds.width + 0.5,
+                "the table still scrolls at its needed width")
+    }
+
     /// The long CJK paragraph and the long URL wrap inside the column.
     @Test(arguments: widths)
     func longCJKAndURLWrap(width: CGFloat) throws {

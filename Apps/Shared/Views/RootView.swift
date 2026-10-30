@@ -439,15 +439,37 @@ private struct KeptChats: View {
     @State private var built: Set<ObjectIdentifier> = []
 
     var body: some View {
+        kept
+            .onChange(of: shown?.id, initial: true) { _, id in
+                if let id { built.insert(id) }
+                let warm = Set(server.connection.warmSessions.map(\.id))
+                built.formIntersection(warm.union(id.map { [$0] } ?? []))
+            }
+    }
+
+    /// On the Mac each chat in its own hosting view, the hidden ones hidden by AppKit
+    /// (`KeptViews`). On iPad they are stacked in one place, the hidden ones transparent
+    /// (`keptChat`).
+    @ViewBuilder private var kept: some View {
+        #if os(macOS)
+        let byID = Dictionary(uniqueKeysWithValues: chats.map { ($0.id, $0) })
+        KeptViews(ids: Array(byID.keys), shown: shown?.id) { id in
+            if let session = byID[id] {
+                ChatView(session: session, isShown: session === shown)
+                    // A hidden AppKit view is still in the accessibility tree that
+                    // SwiftUI reports: UI tests found the hidden chat's composer.
+                    .accessibilityHidden(session !== shown)
+            }
+        }
+        // Under the toolbar, as a chat's scroll view is: the chat's own hosting
+        // view takes the window's insets.
+        .ignoresSafeArea()
+        #else
         ForEach(chats) { session in
             ChatView(session: session, isShown: session === shown, pushed: !keepsHidden)
                 .keptChat(isShown: session === shown)
         }
-        .onChange(of: shown?.id, initial: true) { _, id in
-            if let id { built.insert(id) }
-            let warm = Set(server.connection.warmSessions.map(\.id))
-            built.formIntersection(warm.union(id.map { [$0] } ?? []))
-        }
+        #endif
     }
 
     /// The warm chats shown since this view appeared, and the one shown now, in a

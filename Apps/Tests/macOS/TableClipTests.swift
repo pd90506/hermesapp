@@ -313,18 +313,17 @@ import Testing
     }
 
     /// In a window wider than the column, a wide table reaches past the column instead
-    /// of scrolling: to the right first, then to the left too once the right has no
-    /// more room; the text around it stays in the column.
+    /// of scrolling, centered on it; the text around it stays in the column.
     @Test func wideTableReachesIntoTheWindowsSpareWidth() throws {
         let width: CGFloat = 1000, column = width - 2 * Self.gutter
         let items = [Self.reply(Self.wide + "\n\nAfter.", active: false)]
-        // Room for all of it: no scrolling, the leading edge where the text's is.
+        // Room for all of it: no scrolling, centered on the column.
         let roomy = Chat(width: width, style: .legacy, items: items, reach: 800)
         defer { roomy.close() }
         let whole = try #require(Self.tableScrolls(in: roomy.host).first)
         let wholeFrame = whole.convert(whole.bounds, to: roomy.host)
         #expect(wholeFrame.width > column + 20, "the wide table stayed in the column (\(wholeFrame.width))")
-        #expect(abs(wholeFrame.minX - Self.gutter) <= 0.5, "the table moved left with room on the right: \(wholeFrame)")
+        #expect(abs(wholeFrame.midX - width / 2) <= 1, "the table is not centered on the column: \(wholeFrame)")
         #expect(try #require(whole.documentView).frame.width <= whole.contentView.bounds.width + 0.5,
                 "the table still scrolls with room for it")
         expectTablesFit(roomy, "reaching, roomy")

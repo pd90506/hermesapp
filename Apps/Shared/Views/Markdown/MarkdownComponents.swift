@@ -69,8 +69,8 @@ struct MarkdownCodeBlock: View {
 /// colours (Settings ▸ Markdown). Columns start at the widest cell's rendered width (bold
 /// header, inline code, links and math included) and share the room left over in
 /// proportion to it. A grid wider than the column reaches past it into the window's
-/// spare width (`tableReach`): to the right first, then to the left as well, so it
-/// only wraps or scrolls once the window itself is too narrow. There, cells whose
+/// spare width (`tableReach`), centered on the column, so it only wraps or scrolls
+/// once the window itself is too narrow. There, cells whose
 /// content is unusually long cap at 300 pt and wrap, and a grid wider still scrolls
 /// sideways.
 struct MarkdownTableGrid: View {
@@ -170,9 +170,9 @@ struct MarkdownTableGrid: View {
 }
 
 /// Lays out a table as wide as the column offers, or, when its columns on one line
-/// (`natural`) need more, wider by up to `reach` on each side: into the room on the
-/// right first, then into the room on the left. Its footprint stays the column's
-/// width, so the text around it does not move.
+/// (`natural`) need more, wider by up to `reach` on each side, centered on the column
+/// (the user, 2026-10-30). Its footprint stays the column's width, so the text around
+/// it does not move.
 struct TableReachLayout: Layout {
     let natural: CGFloat
     let reach: CGFloat
@@ -180,7 +180,7 @@ struct TableReachLayout: Layout {
     /// The table's width, and how far its leading edge moves left, in a column `width` wide.
     func extent(in width: CGFloat) -> (width: CGFloat, lead: CGFloat) {
         let over = max(0, min(natural, width + 2 * reach) - width)
-        return (width + over, max(0, over - reach))
+        return (width + over, over / 2)
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

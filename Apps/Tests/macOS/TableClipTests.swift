@@ -45,6 +45,8 @@ import Testing
 
     struct Column: View {
         let items: [TranscriptItem]
+        /// How far a table may reach past the column (`tableReach`), as `ChatView` sets it.
+        var reach: CGFloat = 0
 
         var body: some View {
             ScrollView {
@@ -57,6 +59,7 @@ import Testing
                         }
                     }
                 }
+                .environment(\.tableReach, reach)
                 .padding()
             }
         }
@@ -70,9 +73,9 @@ import Testing
         let window: NSWindow
         let style: NSScroller.Style
 
-        init(width: CGFloat, style: NSScroller.Style, items: [TranscriptItem]) {
+        init(width: CGFloat, style: NSScroller.Style, items: [TranscriptItem], reach: CGFloat = 0) {
             self.style = style
-            host = NSHostingView(rootView: Column(items: items))
+            host = NSHostingView(rootView: Column(items: items, reach: reach))
             window = NSWindow(contentRect: .testArea(CGSize(width: width, height: 1600)),
                               styleMask: [.borderless], backing: .buffered, defer: false)
             // Owned by ARC here (see MarkdownSelectionHostTests.fullMessage).
@@ -307,6 +310,36 @@ import Testing
             chat.show([Self.reply(Self.wide, active: true)])
             expectTablesFit(chat, "wide streaming at \(width)")
         }
+    }
+
+    /// In a window wider than the column, a wide table reaches past the column instead
+    /// of scrolling, centered on it; the text around it stays in the column.
+    @Test func wideTableReachesIntoTheWindowsSpareWidth() throws {
+        let width: CGFloat = 1000, column = width - 2 * Self.gutter
+        let items = [Self.reply(Self.wide + "\n\nAfter.", active: false)]
+        // Room for all of it: no scrolling, centered on the column.
+        let roomy = Chat(width: width, style: .legacy, items: items, reach: 800)
+        defer { roomy.close() }
+        let whole = try #require(Self.tableScrolls(in: roomy.host).first)
+        let wholeFrame = whole.convert(whole.bounds, to: roomy.host)
+        #expect(wholeFrame.width > column + 20, "the wide table stayed in the column (\(wholeFrame.width))")
+        #expect(abs(wholeFrame.midX - width / 2) <= 1, "the table is not centered on the column: \(wholeFrame)")
+        #expect(try #require(whole.documentView).frame.width <= whole.contentView.bounds.width + 0.5,
+                "the table still scrolls with room for it")
+        expectTablesFit(roomy, "reaching, roomy")
+
+        // Room for part of it: the full reach on both sides, and the rest scrolls.
+        let reach: CGFloat = 50
+        let tight = Chat(width: width, style: .legacy, items: items, reach: reach)
+        defer { tight.close() }
+        let part = try #require(Self.tableScrolls(in: tight.host).first)
+        let partFrame = part.convert(part.bounds, to: tight.host)
+        #expect(abs(partFrame.minX - (Self.gutter - reach)) <= 0.5, "left edge at \(partFrame.minX)")
+        #expect(abs(partFrame.width - (column + 2 * reach)) <= 0.5, "width \(partFrame.width)")
+        #expect(try #require(part.documentView).frame.width > part.contentView.bounds.width + 20, "no scrolling")
+        expectTablesFit(tight, "reaching, tight")
+        let after = try #require(descendants(MarkdownSelectionTextView.self, in: tight.host).first { $0.string.contains("After.") })
+        #expect(abs(after.convert(after.bounds, to: tight.host).minX - Self.gutter) <= 0.5, "the text after it moved")
     }
 
     /// The long CJK paragraph and the long URL wrap inside the column.

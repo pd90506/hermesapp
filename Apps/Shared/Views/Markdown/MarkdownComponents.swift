@@ -68,8 +68,10 @@ struct MarkdownCodeBlock: View {
 /// rule between rows. The tints, rules and every other row's stripe take the Markdown
 /// colours (Settings ▸ Markdown). Columns start at the widest cell's rendered width (bold
 /// header, inline code, links and math included) and share the room left over in
-/// proportion to it. Cells whose content is unusually long cap at 300 pt and wrap
-/// when the column has no room for them; a grid wider than the column scrolls
+/// proportion to it. A grid wider than the column reaches past it into the window's
+/// spare width (`tableReach`), centered on the column, so it only wraps or scrolls
+/// once the window itself is too narrow. There, cells whose
+/// content is unusually long cap at 300 pt and wrap, and a grid wider still scrolls
 /// sideways.
 struct MarkdownTableGrid: View {
     let table: MarkdownTable
@@ -78,10 +80,12 @@ struct MarkdownTableGrid: View {
     @Environment(\.textSizes) private var sizes
     @Environment(\.markdownPalette) private var palette
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.tableReach) private var reach
     /// Dynamic Type on iOS; 1 on macOS.
     @ScaledMetric(relativeTo: .body) private var typeScale: CGFloat = 1
     private var bodySize: CGFloat { sizes.content * typeScale }
-    /// The width the table may fill; 0 until the first layout reports it.
+    /// The width the table fills, its reach past the column included; 0 until the
+    /// first layout reports it.
     @State private var available: CGFloat = 0
 
     static let cellPadding: CGFloat = 10
@@ -91,6 +95,17 @@ struct MarkdownTableGrid: View {
         let layout = MarkdownTableLayout.layout(for: table, bodySize: bodySize)
         let widths = MarkdownTableLayout.fit(layout.widths, into: available - 2,
                                              padding: Self.cellPadding * 2)
+        let natural = layout.widths.reduce(0, +) + Self.cellPadding * 2 * CGFloat(layout.widths.count) + 2
+        TableReachLayout(natural: natural.rounded(.up), reach: reach) {
+            grid(layout, widths: widths)
+        }
+        .accessibilityIdentifier("markdownTableScroll")
+        #if os(macOS)
+        .contextMenu { messageMenu }
+        #endif
+    }
+
+    private func grid(_ layout: MarkdownTableLayout.Layout, widths: [CGFloat]) -> some View {
         ScrollView(.horizontal) {
             Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
                 ForEach(layout.cells.indices, id: \.self) { row in
@@ -116,10 +131,6 @@ struct MarkdownTableGrid: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { available = $0 }
-        .accessibilityIdentifier("markdownTableScroll")
-        #if os(macOS)
-        .contextMenu { messageMenu }
-        #endif
     }
 
     @ViewBuilder private var messageMenu: some View {
@@ -156,6 +167,43 @@ struct MarkdownTableGrid: View {
             .gridColumnAlignment(alignment)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
     }
+}
+
+/// Lays out a table as wide as the column offers, or, when its columns on one line
+/// (`natural`) need more, wider by up to `reach` on each side, centered on the column
+/// (the user, 2026-10-30). Its footprint stays the column's width, so the text around
+/// it does not move.
+struct TableReachLayout: Layout {
+    let natural: CGFloat
+    let reach: CGFloat
+
+    /// The table's width, and how far its leading edge moves left, in a column `width` wide.
+    func extent(in width: CGFloat) -> (width: CGFloat, lead: CGFloat) {
+        let over = max(0, min(natural, width + 2 * reach) - width)
+        return (width + over, over / 2)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let table = subviews.first else { return .zero }
+        guard let width = proposal.width, width.isFinite else {
+            return table.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        }
+        let height = table.sizeThatFits(ProposedViewSize(width: extent(in: width).width, height: nil)).height
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let table = subviews.first else { return }
+        let extent = extent(in: bounds.width)
+        table.place(at: CGPoint(x: bounds.minX - extent.lead, y: bounds.minY), anchor: .topLeading,
+                    proposal: ProposedViewSize(width: extent.width, height: bounds.height))
+    }
+}
+
+extension EnvironmentValues {
+    /// How far a table may reach past each side of the text's column, into the
+    /// window's spare width (`ChatView`). 0 outside the chat, and on iOS.
+    @Entry var tableReach: CGFloat = 0
 }
 
 /// Each cell's selection (header cells bold) and each column's width, built

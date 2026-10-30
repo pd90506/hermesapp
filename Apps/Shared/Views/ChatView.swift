@@ -47,6 +47,17 @@ struct ChatView: View {
     /// about ChatGPT's measure (48 em) at the content text size.
     static func contentWidth(textSize: CGFloat) -> CGFloat { (textSize * 54).rounded() }
 
+    /// How far a table may reach past each side of the column (`MarkdownTableGrid`): the
+    /// window's width beside the column, less the prompt rail's room and a scroller's, so
+    /// a wide table only scrolls once the window is too narrow for it (the user,
+    /// 2026-10-30). The transcript's padding stays as the margin.
+    private var tableReach: CGFloat {
+        guard let chatWidth else { return 0 }
+        let column = SteadyColumn.width(maxWidth: Self.contentWidth(textSize: sizes.content),
+                                        sideRoom: Self.sideRoom, outerWidth: chatWidth)
+        return max(0, ((chatWidth - column) / 2 - Self.sideRoom - SteadyColumn.scrollerRoom).rounded(.down))
+    }
+
     /// On the Mac, room for the prompt rail at the trailing edge, and as much on the other
     /// side so the messages stay centered.
     static var sideRoom: CGFloat {
@@ -98,6 +109,7 @@ struct ChatView: View {
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { laziness.widthChanged($0) }
                 .quietWhileScrolling(scroll)
+                .environment(\.tableReach, tableReach)
                 .padding()
                 .steadyColumn(maxWidth: Self.contentWidth(textSize: sizes.content), sideRoom: Self.sideRoom,
                               in: chatWidth)

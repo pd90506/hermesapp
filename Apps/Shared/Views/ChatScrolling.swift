@@ -214,9 +214,10 @@ private struct QuietWhileScrolling: ViewModifier {
 }
 
 extension View {
-    /// A kept chat: drawn and reachable only while shown (`KeptChats`). Hidden, it
-    /// keeps the width it was last shown at, so resizing the window lays out only the
-    /// chat on screen, and it reports no size, so it never widens the column.
+    /// A kept chat on iPad: drawn and reachable only while shown (`KeptChats`; the Mac
+    /// keeps each chat in its own hosting view, `KeptViews`). Hidden, it keeps the width
+    /// it was last shown at, so resizing the window lays out only the chat on screen,
+    /// and it reports no size, so it never widens the column.
     ///
     /// Nothing here changes the chat's environment: a change there updates every row's
     /// text view, which made a switch between kept chats cost a third of a rebuild (VM,

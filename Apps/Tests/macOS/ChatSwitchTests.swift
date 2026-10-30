@@ -7,8 +7,9 @@ import Testing
 /// Switching chats. Built afresh for the chat clicked, the chat's scroll view
 /// (`ChatView`) set and laid out every row's Markdown of a full page of stored rows
 /// before the first frame: about a second with nothing on screen moving. Now a chat
-/// shown before is kept built while hidden (`keptChat`), and one built afresh shows its
-/// newest rows first (`TranscriptWindow`) and the rows above them in the frames after.
+/// shown before is kept built while hidden (`KeptViews` on the Mac, `keptChat` on iPad),
+/// and one built afresh shows its newest rows first (`TranscriptWindow`) and the rows
+/// above them in the frames after.
 @MainActor
 @Suite(.serialized) struct ChatSwitchTests {
     @MainActor @Observable final class Chats {
@@ -30,8 +31,11 @@ import Testing
         case allAtOnce
         /// Built afresh, newest rows first: a chat's first open.
         case newestFirst
-        /// Kept built while hidden: going back to a chat.
+        /// Kept built while hidden, stacked in one place: going back to a chat (iPad).
         case kept
+        /// Kept built in their own hosting views, the hidden ones hidden by AppKit
+        /// (`KeptViews`): going back to a chat (Mac).
+        case hosted
     }
 
     /// `ChatView`'s scroll view, with its rows drawn as `MessageRow` draws them, in
@@ -52,6 +56,12 @@ import Testing
                         ChatPane(chats: chats, index: index, windowed: true)
                             .keptChat(isShown: index == chats.shown)
                     }
+                }
+                .onChange(of: chats.shown, initial: true) { _, index in built.insert(index) }
+            case .hosted:
+                KeptViews(ids: chats.transcripts.indices.filter { built.contains($0) || $0 == chats.shown },
+                          shown: chats.shown) { index in
+                    ChatPane(chats: chats, index: index, windowed: true)
                 }
                 .onChange(of: chats.shown, initial: true) { _, index in built.insert(index) }
             }
@@ -96,7 +106,7 @@ import Testing
                 chats.geometry[index] = geometry
             }
             // A pane built afresh (not kept) starts from nothing, not its last visit's height.
-            .onDisappear { chats.geometry[index] = nil }
+.onDisappear { chats.geometry[index] = nil }
             .transcriptWindow(windowed ? window : nil, isEmpty: transcript.items.isEmpty) { transcript.blocks }
         }
     }
@@ -246,11 +256,51 @@ import Testing
         }
         print(report)
         let fresh = try #require(results[.newestFirst]), kept = try #require(results[.kept])
-        for (all, other) in zip(before, fresh + kept) {
+        let hosted = try #require(results[.hosted])
+        for (all, other) in zip(before + before + before, fresh + kept + hosted) {
             #expect(abs(all.height - other.height) < 1, "the whole page is built: \(other.height) of \(all.height) pt")
         }
         let stall = median(before.map(\.longestStall))
         #expect(median(fresh.map(\.longestStall)) < stall / 3, "\(report)")
         #expect(median(kept.map(\.longestStall)) < stall / 10, "\(report)")
+        #expect(median(hosted.map(\.longestStall)) < stall / 10, "\(report)")
+    }
+
+    /// The chats kept in their own hosting views (`KeptViews`): the hidden ones are
+    /// hidden AppKit views, which no drop or click finds, and one shown again is where
+    /// it was left.
+    @Test func hiddenChatsTakeNothingAndComeBackInPlace() async throws {
+        let ui = UI(mode: .hosted)
+        defer { ui.close() }
+        for index in [0, 1, 0] { _ = await ui.switchTo(index) }
+        let shownViews = scrollViews(in: ui.host).filter { !$0.isHiddenOrHasHiddenAncestor }
+        #expect(shownViews.count == 1, "one chat shown, of \(scrollViews(in: ui.host).count) kept")
+
+        let scrollView = try #require(shownViews.first)
+        let clip = scrollView.contentView
+        clip.scroll(to: NSPoint(x: 0, y: clip.bounds.minY - 600))
+        scrollView.reflectScrolledClipView(clip)
+        for _ in 0..<10 { _ = await ui.turn() }
+        let below = try #require(ui.remainingBelow)
+        #expect(below > 500, "scrolled up from the newest row (\(below) pt below)")
+
+        _ = await ui.switchTo(1)
+        #expect(scrollView.isHiddenOrHasHiddenAncestor, "the chat left is hidden")
+        // What a drop or a click under the pointer finds is in the chat shown.
+        let center = NSPoint(x: ui.host.bounds.midX, y: ui.host.bounds.midY)
+        let hit = try #require(ui.host.hitTest(center))
+        #expect(!hit.isDescendant(of: scrollView), "the hidden chat is not under the pointer")
+
+        _ = await ui.switchTo(0)
+        #expect(!scrollView.isHiddenOrHasHiddenAncestor, "the same chat comes back, not a new one")
+        let back = try #require(ui.remainingBelow)
+        #expect(abs(back - below) < 2, "back where it was left: \(back) pt below, was \(below)")
+    }
+
+    private func scrollViews(in view: NSView) -> [NSScrollView] {
+        view.subviews.flatMap { subview -> [NSScrollView] in
+            if let scrollView = subview as? NSScrollView { return [scrollView] }
+            return scrollViews(in: subview)
+        }
     }
 }

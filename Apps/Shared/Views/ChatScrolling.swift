@@ -239,6 +239,11 @@ private struct KeptChat: ViewModifier {
             .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
             .opacity(isShown ? 1 : 0)
             .allowsHitTesting(isShown)
+            // On top of the hidden ones: drops go to the topmost target under the
+            // pointer, whatever its opacity or hit testing, and a hidden chat's composer
+            // took (or turned away) files dropped on the one shown (the user's report,
+            // 2026-10-30, a file from the Dock's Downloads stack).
+            .zIndex(isShown ? 1 : 0)
             .accessibilityHidden(!isShown)
     }
 }

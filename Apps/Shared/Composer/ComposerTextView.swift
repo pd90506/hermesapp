@@ -135,6 +135,7 @@ extension ComposerTextView: NSViewRepresentable {
         // A kept chat shown again takes the keyboard back; one hidden gives it up
         // (`KeptChats`), so typing never goes to a chat that is not on screen.
         let isShown = context.environment.chatIsShown
+        textView.acceptsDrops = isShown
         if coordinator.focusRequest != focusRequest || coordinator.isShown != isShown {
             let focus = isShown && (coordinator.focusRequest != focusRequest || !coordinator.isShown)
             coordinator.focusRequest = focusRequest
@@ -471,6 +472,19 @@ final class ComposerNSTextView: NSTextView {
     static func mayHoldImages(_ pasteboard: NSPasteboard) -> Bool {
         let types = Set(pasteboard.types?.map(\.rawValue) ?? [])
         return !types.isDisjoint(with: ClipboardPolicy.imageDataTypes) || types.contains(NSPasteboard.PasteboardType.fileURL.rawValue)
+    }
+
+    /// Whether drops land here: not in a kept chat that is hidden (`KeptChats`). It lies
+    /// where the chat on screen is, and AppKit picks a drop's view by frame and drag
+    /// types, not by SwiftUI's opacity or hit testing, so a hidden chat's composer took
+    /// files dropped on the one shown (the user's report, 2026-10-30: with several chats
+    /// open, a file from the Dock's Downloads stack never showed up).
+    var acceptsDrops = true {
+        didSet { if acceptsDrops != oldValue { updateDragTypeRegistration() } }
+    }
+
+    override func updateDragTypeRegistration() {
+        if acceptsDrops { super.updateDragTypeRegistration() } else { unregisterDraggedTypes() }
     }
 
     /// Whether the current drag carries images, decided once per drag (the

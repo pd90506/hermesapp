@@ -291,7 +291,7 @@ struct SessionListView: View {
         // The newest run under "Sessions", then a section per date range, as Desktop
         // groups its list (asked for by the user, 2026-10-27). Pinned rows aren't dated.
         DatedSessionSections(connection: connection,
-                             entries: model.pins.split(connection.visibleHistory, on: server.id).others) {
+                             entries: model.pins.split(listedSessions(server), on: server.id).others) {
             // Only before the first rows: background refreshes keep the list still.
             if connection.sessionListLoading && connection.history.isEmpty {
                 ProgressView("Loading sessions…")
@@ -327,7 +327,7 @@ struct SessionListView: View {
 
     /// Pinned sessions, above the rest, while there are any.
     @ViewBuilder private func pinnedSection(_ server: ServerConnection) -> some View {
-        let pinned = model.pins.split(server.connection.visibleHistory, on: server.id).pinned
+        let pinned = model.pins.split(listedSessions(server), on: server.id).pinned
         if !pinned.isEmpty {
             Section {
                 ForEach(pinned) { entry in
@@ -339,10 +339,16 @@ struct SessionListView: View {
         }
     }
 
+    /// The profile's sessions, the one the user wrote in last first (asked for by the user,
+    /// 2026-10-29: by last activity, two chats answering at once kept swapping places).
+    private func listedSessions(_ server: ServerConnection) -> [HistoryEntry] {
+        server.connection.sessionListOrder(server.connection.visibleHistory)
+    }
+
     private func sessionRow(_ entry: HistoryEntry, on server: ServerConnection) -> some View {
         let item = SidebarItem.history(server: server.id, id: entry.id)
-        return HistoryRow(entry: entry, timestampRevision: "\(server.id)/\(server.connection.sessionListReads)",
-                          loadTimestamp: { await server.connection.latestMessageDate(for: entry) }) {
+        let connection = server.connection
+        return HistoryRow(entry: entry, date: connection.listDate(for: entry), isUnread: connection.isUnread(entry)) {
             sessionActions(entry, on: server)
         }
         .sidebarRowHighlight(isSelected: selection == item)
@@ -533,7 +539,7 @@ struct SessionListView: View {
 /// The sessions in Desktop's date groups (`SessionDateGrouping`): the newest run, under
 /// "Sessions" and after what leads the list (its status, New chat), then a section per
 /// range ("Yesterday", "Last week", "September"). Rows move into their range as they read
-/// their newest message's date; a row not read yet stays in the group above it.
+/// their date (the user's last prompt); a row not read yet stays in the group above it.
 private struct DatedSessionSections<Lead: View, Row: View>: View {
     let connection: GatewayConnection
     let entries: [HistoryEntry]

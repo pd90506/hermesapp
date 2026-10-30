@@ -68,7 +68,12 @@ public final class ChatSession: Identifiable {
     /// Something was sent in this chat from here, or tried and failed: a New chat
     /// is then no longer blank (`GatewayConnection.unsentChat`), even if the bubble
     /// of a send that never went out was taken back.
-    public private(set) var hasPrompted = false
+    public private(set) var hasPrompted = false {
+        didSet { if hasPrompted { lastPromptAt = .now } }
+    }
+    /// When the user last sent something here (this device's clock): the session list
+    /// moves the row up at once, before the stored prompt is read back (`SessionListOrder`).
+    public private(set) var lastPromptAt: Date?
     /// The last slash-command catalog loaded for this session (`loadSlashCommands`).
     public private(set) var slashCatalog: SlashCatalog?
 

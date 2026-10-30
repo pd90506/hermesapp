@@ -346,32 +346,103 @@ extension GatewayConnection {
         cron.reset(to: profile)
     }
 
-    /// Called by visible sidebar rows after list refreshes; failures leave the date unknown.
-    /// A row whose stored message count did not change since its last read reuses that
-    /// read, so a list refresh does not re-read every visible row.
-    public func latestMessageDate(for entry: HistoryEntry) async -> Date? {
-        let key = SessionRowTimestamp.cacheKey(for: entry)
-        if let key, let cached = latestMessageDates[key] { return cached }
-        guard let source = messagesSource else { return nil }
-        do {
-            let date = try await SessionRowTimestamp.latest(for: entry, from: source)
-            if let key { latestMessageDates[key] = .some(date) }
-            return date
-        } catch {
-            // A failed read is not kept: the next refresh tries again.
-            return nil
+    /// Reads the activity (`SessionRowActivity`) of every row not read since its stored
+    /// message count last changed, top rows first, a few at a time. Failures leave the
+    /// row unknown until the next refresh.
+    func readRowActivity(_ entries: [HistoryEntry]) async {
+        guard let source = messagesSource else { return }
+        let gen = generation
+        var pending = entries.compactMap { entry -> (String, HistoryEntry)? in
+            // No count to key on: read each time.
+            let key = SessionRowTimestamp.cacheKey(for: entry) ?? "\(entry.id)/?"
+            let cached = SessionRowTimestamp.cacheKey(for: entry) != nil && rowActivity[key] != nil
+            guard !cached, !rowActivityReads.contains(key) else { return nil }
+            return (key, entry)
+        }[...]
+        guard !pending.isEmpty else { return }
+        rowActivityReads.formUnion(pending.map(\.0))
+        await withTaskGroup(of: (String, HistoryEntry, SessionRowActivity?).self) { group in
+            func next() {
+                guard let (key, entry) = pending.popFirst() else { return }
+                group.addTask { (key, entry, try? await SessionRowActivity.read(for: entry, from: source)) }
+            }
+            for _ in 0..<Self.rowActivityReadLimit { next() }
+            for await (key, entry, activity) in group {
+                rowActivityReads.remove(key)
+                if gen == generation, let activity {
+                    rowActivity[key] = activity
+                    if isOnScreen(entry) { markSeen(entry, through: activity.newestReply) }
+                }
+                next()
+            }
         }
     }
 
-    /// `entries` (in list order) in Desktop's date groups, by the dates their rows have
-    /// read so far (`SessionDateGrouping`).
+    static let rowActivityReadLimit = 4
+
+    /// The activity read for `entry` at its current message count.
+    public func activity(for entry: HistoryEntry) -> SessionRowActivity? {
+        rowActivity[SessionRowTimestamp.cacheKey(for: entry) ?? "\(entry.id)/?"]
+    }
+
+    /// The row's date in the list: the user's last prompt (one just sent from here
+    /// counts at once), else its newest message.
+    public func listDate(for entry: HistoryEntry) -> Date? {
+        let read = activity(for: entry)?.listDate
+        guard let local = openChat(for: entry)?.lastPromptAt else { return read }
+        return max(local, read ?? local)
+    }
+
+    /// `entries` (server order) in the list's order (`SessionListOrder`).
+    public func sessionListOrder(_ entries: [HistoryEntry]) -> [HistoryEntry] {
+        SessionListOrder.sorted(entries, dates: entries.map(listDate(for:)))
+    }
+
+    /// Whether `entry` has a reply the user hasn't seen here.
+    public func isUnread(_ entry: HistoryEntry) -> Bool {
+        guard !isOnScreen(entry) else { return false }
+        return readMarks.isUnread(profile: entry.profile, id: entry.summary.id,
+                                  newestReply: activity(for: entry)?.newestReply)
+    }
+
+    /// `entries` (in list order) in Desktop's date groups, by their list dates
+    /// (`SessionDateGrouping`).
     public func sessionDateGroups(_ entries: [HistoryEntry], now: Date = .now,
                                   calendar: Calendar = .current) -> [SessionDateGroup<HistoryEntry>] {
-        let times = entries.map { entry -> Date? in
-            guard let key = SessionRowTimestamp.cacheKey(for: entry), let date = latestMessageDates[key] else { return nil }
-            return date
+        SessionDateGrouping.groups(entries, times: entries.map(listDate(for:)), now: now, calendar: calendar)
+    }
+
+    /// The warm or on-screen chat showing `entry`, if any.
+    private func openChat(for entry: HistoryEntry) -> ChatSession? {
+        func shows(_ chat: ChatSession) -> Bool {
+            chat.profile == entry.profile && chat.kind == .sideChat && chat.storedSessionID == entry.summary.id
         }
-        return SessionDateGrouping.groups(entries, times: times, now: now, calendar: calendar)
+        if let activeSession, shows(activeSession) { return activeSession }
+        return warmChats.first(where: shows) ?? unsentChats.values.first(where: shows)
+    }
+
+    private func isOnScreen(_ entry: HistoryEntry) -> Bool {
+        guard isChatOnScreen, let activeSession else { return false }
+        return activeSession.profile == entry.profile && activeSession.kind == .sideChat
+            && activeSession.storedSessionID == entry.summary.id
+    }
+
+    /// `chat`, coming on screen or just leaving it, was seen up to now.
+    func markSeen(_ chat: ChatSession?) {
+        guard let chat, chat.kind == .sideChat, let profile = chat.profile, let id = chat.storedSessionID else { return }
+        updateReadMarks { $0.markSeen(profile: profile, id: id, through: .now) }
+    }
+
+    private func markSeen(_ entry: HistoryEntry, through date: Date?) {
+        guard let date else { return }
+        updateReadMarks { $0.markSeen(profile: entry.profile, id: entry.summary.id, through: date) }
+    }
+
+    private func updateReadMarks(_ change: (inout SessionReadMarks) -> Bool) {
+        var marks = readMarks
+        guard change(&marks) else { return }
+        readMarks = marks
+        readMarksChanged?(marks)
     }
 
     public func refreshSessionListIfVisible() async {
@@ -413,6 +484,8 @@ extension GatewayConnection {
                     }.map { HistoryEntry(profile: profile, summary: $0) }
                     historyProfile = profile
                     sessionListReads += 1
+                    let listed = history
+                    Task { await readRowActivity(listed) }
                     return
                 }
                 guard limit <= Int.max / 2 else { throw SessionListError.tooLarge }

@@ -41,7 +41,15 @@ public final class GatewayConnection {
     /// The last state that was not an attempt: what the apps show while one is quiet.
     @ObservationIgnored private var settledState: State = .disconnected
     public internal(set) var sessions: [SessionSummary] = []
-    public internal(set) var activeSession: ChatSession?
+    public internal(set) var activeSession: ChatSession? {
+        didSet {
+            guard activeSession !== oldValue, isChatOnScreen else { return }
+            // Leaving a chat on screen and coming to one: both seen up to now
+            // (`SessionReadMarks`).
+            markSeen(oldValue)
+            markSeen(activeSession)
+        }
+    }
     /// Server requests for sessions other than the active one (badge-worthy:
     /// the agent is blocked until someone answers).
     public internal(set) var otherSessionRequests: [ServerRequest] = []
@@ -109,9 +117,24 @@ public final class GatewayConnection {
     @ObservationIgnored var strandedImages: [StrandedImage] = []
     /// The running detach flush of each runtime session that has stranded images.
     @ObservationIgnored var strandedImageFlushes: [String: Task<Void, Never>] = [:]
-    /// Sidebar dates read so far, by `SessionRowTimestamp.cacheKey` (`latestMessageDate`).
-    /// Observed: the list's date groups (`sessionDateGroups`) move as rows read theirs.
-    var latestMessageDates: [String: Date?] = [:]
+    /// What each session row read of its activity, by `SessionRowTimestamp.cacheKey`
+    /// (`readRowActivity`). Observed: rows move, date and show unread as theirs come in.
+    var rowActivity: [String: SessionRowActivity] = [:]
+    /// Rows whose activity is being read, by cache key.
+    @ObservationIgnored var rowActivityReads: Set<String> = []
+    /// The replies seen on this device (`SessionReadMarks`); the app keeps them.
+    public var readMarks = SessionReadMarks()
+    /// Called with `readMarks` whenever they change, to save them.
+    @ObservationIgnored public var readMarksChanged: (@MainActor (SessionReadMarks) -> Void)?
+    /// Whether `activeSession` is on screen: not on iPhone's session list, nor while
+    /// another server's chat is shown. Its replies count as seen only then.
+    public var isChatOnScreen = true {
+        didSet {
+            guard isChatOnScreen != oldValue else { return }
+            // Coming back to the chat or leaving it: seen up to now.
+            markSeen(activeSession)
+        }
+    }
     /// Bumped by every connect/disconnect; async work started under an older
     /// generation discards its result (and closes its socket) instead of
     /// overwriting newer state.

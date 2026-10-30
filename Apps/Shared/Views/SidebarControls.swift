@@ -428,21 +428,24 @@ enum AvatarImages {
 /// at the trailing edge (the same as its context menu).
 struct HistoryRow<Actions: View>: View {
     let entry: HistoryEntry
-    var timestampRevision: String = ""
-    var loadTimestamp: () async -> Date? = { nil }
-    @State private var latestMessageDate: Date?
+    /// When the user last wrote in it (`GatewayConnection.listDate`), once read.
+    var date: Date?
+    /// A reply came that wasn't seen here (`GatewayConnection.isUnread`): a dot, as
+    /// Mail and Messages mark unread, and the title in bold, until the chat is opened.
+    var isUnread = false
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
+                    .fontWeight(isUnread ? .semibold : nil)
                     .lineLimit(1)
-                if let latestMessageDate {
+                if let date {
                     #if os(macOS)
-                    SessionRelativeTime(date: latestMessageDate)
+                    SessionRelativeTime(date: date)
                     #else
-                    Text(latestMessageDate, format: .relative(presentation: .named))
+                    Text(date, format: .relative(presentation: .named))
                         .uiFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -451,6 +454,13 @@ struct HistoryRow<Actions: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if isUnread {
+                Circle()
+                    .fill(.tint)
+                    .frame(width: 8, height: 8)
+                    .accessibilityLabel("Unread")
+                    .accessibilityIdentifier("sessionUnreadDot")
+            }
             Menu {
                 actions()
             } label: {
@@ -471,11 +481,6 @@ struct HistoryRow<Actions: View>: View {
         }
         .padding(.vertical, 2)
         .contextMenu { actions() }
-        .task(id: "\(entry.id)/\(timestampRevision)") {
-            let date = await loadTimestamp()
-            guard !Task.isCancelled else { return }
-            latestMessageDate = date
-        }
     }
 }
 

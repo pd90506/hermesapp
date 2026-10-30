@@ -1671,20 +1671,39 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
     “Not sent”; a rebuild returns its text to the draft, as before.
   - No automatic retry or durable offline queue is introduced. Existing composer draft/card
     recovery remains in effect, including preservation of newer typing.
-- **Sidebar relative dates** use the newest stored message, not session creation.
-  - `session.list` sends `started_at` and omits latest-message/activity metadata
-    (`tui_gateway/methods_session.py:110-122`); its ordering already uses latest activity
-    (`:148`). The app preserves that server order and its existing pinned grouping.
-  - `[client choice]` Materialized session rows request one newest stored message with
-    `GET /api/sessions/{id}/messages?order=latest&limit=1`, scoped to the row's profile
-    and compression tip (`hermes_cli/web_routers/sessions.py:726-768`). This date can
-    represent a user, assistant, tool or system message; it is not runtime activity.
-    Rows ask again on each list refresh (`sessions.changed`, completed turns); the
-    connection reuses a read while the row's profile, tip id and `message_count` are
-    unchanged (every stored message bumps it, `hermes_state_messages.py:376-387`), so a
-    refresh reads only rows with new messages. Failed reads are not kept.
-    No transcript walk or per-row whole-history fallback is made. Missing, nonpositive,
-    nonfinite, failed reads or unsupported paging show no date, never creation time.
+- **Session list order, dates and unread marks** `[client choice]` (asked for by the user,
+  2026-10-29). `session.list` sends `started_at` and omits latest-message/activity metadata
+  (`tui_gateway/methods_session.py:110-122`); its own order is by latest activity (`:148`),
+  so two chats answering at once swapped places with every reply. The app orders the rows by
+  the user's last prompt instead, and dates and groups them by it.
+  - Each listed row reads two things through the dashboard's REST, scoped to the row's
+    profile and compression tip (`SessionRowActivity`):
+    - its prompts, `GET /api/sessions/{id}/timeline` (`hermes_cli/web_routers/sessions.py:801-820`,
+      `hermes_state_timeline.py:142-166`): user rows only, oldest first, 500 a page, with
+      `next_cursor` while `has_more`. Prompts the gateway injects (background-process and
+      subagent completions, `_SYNTHETIC_PROMPT`, `:13-17`) are left out. The last entry's
+      `timestamp` is the row's date;
+    - its newest stored message, `GET /api/sessions/{id}/messages?order=latest&limit=1`
+      (`:739-798`): its date, and whether it is an answer (an assistant row with no
+      `tool_calls`; a tool row or a call is a turn still working).
+  - All rows read after each list refresh, four at a time, top first. A read is reused while
+    the row's profile, tip id and `message_count` are unchanged (every stored message bumps
+    it, `hermes_state_messages.py:376-387`), so a refresh reads only rows with new messages.
+    Failed reads are not kept.
+  - A row not read yet stays under the row above it in server order (`SessionListOrder`).
+    Without a timeline (an older Hermes, or no prompt) a row's date is its newest message.
+    A prompt sent from this device counts at once (`ChatSession.lastPromptAt`).
+  - Missing, nonpositive or nonfinite times, failed reads or unsupported paging show no date,
+    never creation time.
+  - **Unread.** A row whose newest answer is newer than what was seen of it on this device
+    shows a dot and a bold title (`SessionReadMarks`, saved per server). A chat counts as
+    seen up to now when it comes on screen and when it leaves it (on iPhone, the list over
+    it or the app in the background); answers that land while it is on screen are seen. Marks
+    start on first use, so older answers are never unread. Hermes's own watermark
+    (`sessions.last_read_at`, `hermes_state_sessions.py:1062-1074`) is not used: only the REST
+    list carries it, only the fenced `PATCH /api/sessions/{id} {unread}` writes it, and any
+    activity passes it, the user's own prompt included. So marks don't sync with Desktop or
+    between devices.
 - **Pin** is not on the JSON-RPC surface.
   - Hermes keeps it in `sessions.pinned` and Desktop writes it through the dashboard's fenced
     REST `PATCH /api/sessions/{id} {pinned}` (`apps/desktop/src/api/sessions.ts:374-428`).

@@ -257,6 +257,7 @@ final class AppModel {
         }
         let server = ServerConnection(config: ServerConfig(), secret: "")
         server.connection.sourceSettings = sourceSettings
+        applyReadMarks(to: server)
         servers.append(server)
         selectedServerID = server.id
         if sessionsServerID == nil { sessionsServerID = server.id }
@@ -276,6 +277,7 @@ final class AppModel {
             saveServers()
             savePins()
             saveProfileChats()
+            Self.saveReadMarks(nil, for: server.id.uuidString)
             try? KeychainStore.write("", account: server.config.secretAccount)
         }
         await server.connection.disconnect()
@@ -450,6 +452,7 @@ final class AppModel {
         if isOn, localServer == nil {
             let server = ServerConnection(localBackend: .hermes())
             server.connection.sourceSettings = sourceSettings
+            applyReadMarks(to: server)
             servers.insert(server, at: 0)
             selectedServerID = server.id
             await connect(server)
@@ -497,7 +500,40 @@ final class AppModel {
     }
 
     private func applySourceSettings() {
-        for server in servers { server.connection.sourceSettings = sourceSettings }
+        for server in servers {
+            server.connection.sourceSettings = sourceSettings
+            applyReadMarks(to: server)
+        }
+    }
+
+    // MARK: Read marks
+
+    private static let readMarksKey = "sessionReadMarks"
+
+    /// Gives a server's connection the replies seen of it on this device
+    /// (`SessionReadMarks`), and saves them as they change. Once per connection.
+    private func applyReadMarks(to server: ServerConnection) {
+        let connection = server.connection
+        guard connection.readMarksChanged == nil else { return }
+        let id = server.id.uuidString
+        var marks = Self.isUITest ? SessionReadMarks() : Self.savedReadMarks()[id] ?? SessionReadMarks()
+        marks.start()
+        connection.readMarks = marks
+        Self.saveReadMarks(marks, for: id)
+        connection.readMarksChanged = { Self.saveReadMarks($0, for: id) }
+    }
+
+    private static func savedReadMarks() -> [String: SessionReadMarks] {
+        guard let data = UserDefaults.standard.data(forKey: readMarksKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: SessionReadMarks].self, from: data)) ?? [:]
+    }
+
+    /// `marks` for the server `id`; nil forgets the server's.
+    private static func saveReadMarks(_ marks: SessionReadMarks?, for id: String) {
+        guard !isUITest else { return }
+        var all = savedReadMarks()
+        all[id] = marks
+        if let data = try? JSONEncoder().encode(all) { UserDefaults.standard.set(data, forKey: readMarksKey) }
     }
 
     private func saveSourceSettings() {

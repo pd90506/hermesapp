@@ -20,6 +20,8 @@ struct ComposerView: View {
     @State private var isComposing = false
     @State private var thumbnails: [UUID: CGImage] = [:]
     @Environment(ServerConnection.self) private var server
+    /// False in a kept chat that is hidden (`KeptChats`): it takes no drops.
+    @Environment(\.chatIsShown) private var isShown
     @State private var focusRequest = 0
     @State private var isImportingFile = false
     @State private var isDropTargeted = false
@@ -81,7 +83,10 @@ struct ComposerView: View {
                 .strokeBorder(.tint, lineWidth: 2)
                 .opacity(isDropTargeted ? 1 : 0)
         }
-        .onDrop(of: [.fileURL, .image, .data], isTargeted: $isDropTargeted) { providers in
+        // Only the chat on screen: a hidden kept chat lies at the same place, and its drop
+        // target, hit testing off or not, took files dropped on the one shown (the user's
+        // report, 2026-10-30, with several chats open).
+        .onDrop(of: isShown ? [.fileURL, .image, .data] : [], isTargeted: $isDropTargeted) { providers in
             #if os(macOS)
             // SwiftUI hands over a dragged file by its contents' type alone: a Markdown file
             // from Finder is one `net.daringfireball.markdown` provider, without its file URL

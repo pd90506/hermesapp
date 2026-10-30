@@ -4,7 +4,8 @@ import XCTest
 /// Files dragged out of a Dock stack (the Downloads fan) onto the composer become cards,
 /// as from Finder. The user's report (2026-10-29): such a drop sometimes didn't take. The
 /// Dock puts the drag on a pasteboard of its own, not the shared drag pasteboard the
-/// composer read (`ComposerView`'s drop).
+/// composer read (`ComposerView`'s drop). And with several chats open, a hidden one's
+/// composer took the drop (2026-10-30).
 /// Puts its files in ~/Downloads and removes them when it ends, also when it fails.
 /// Skipped without `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
 final class DockStackDropUITests: XCTestCase {
@@ -37,32 +38,70 @@ final class DockStackDropUITests: XCTestCase {
         app.launchWithMainWindow()
         defer { app.terminate() }
 
-        let newChat = app.buttons["New chat"]
-        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
-        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
-        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
-        newChat.click()
+        // Two chats opened in turn: the one shown first stays built, hidden, at the same
+        // place (`KeptChats`). A hidden chat's text view took the drops (the user's
+        // report, 2026-10-30), so each chat gets a drop while the other lies under or
+        // over it.
+        let rows = try twoSessionRows(app)
+        for row in rows { press(row); RunLoop.current.run(until: Date().addingTimeInterval(2)) }
         let composer = app.textViews["composer"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
         let send = app.buttons["Send"].firstMatch
-        XCTAssertTrue(send.waitForExistence(timeout: 10), "Send")
-
-        // Onto the text, onto the card's toolbar row, and onto the text again with
-        // another app in front: each a card in the composer.
-        let targets: [(String, XCUICoordinate)] = [
-            ("the text", composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))),
-            ("the toolbar row", send.coordinate(withNormalizedOffset: CGVector(dx: -3, dy: 0.5))),
-            ("the text, another app in front", composer.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))),
+        // Onto the text in each chat, then onto the card's toolbar row with another app
+        // in front: each a card in the composer of the chat on screen.
+        let drops: [(row: XCUIElement, place: String)] = [
+            (rows[0], "the text"), (rows[1], "the text"), (rows[1], "the toolbar row, another app in front"),
         ]
-        for (name, (place, target)) in zip(names, targets) {
+        for (name, (row, place)) in zip(names, drops) {
+            if !row.isSelected { press(row) }
+            XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+            XCTAssertTrue(send.waitForExistence(timeout: 10), "Send")
+            let target = place.hasPrefix("the text")
+                ? composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                : send.coordinate(withNormalizedOffset: CGVector(dx: -3, dy: 0.5))
             if place.contains("another app") { XCUIApplication(bundleIdentifier: "com.apple.finder").activate() }
             drag(name, to: target)
             let card = app.descendants(matching: .any).matching(NSPredicate(
                 format: "label BEGINSWITH %@ OR value BEGINSWITH %@", "File \(name),", "File \(name),")).firstMatch
-            if !card.waitForExistence(timeout: 15) { attach("no card for a drop on \(place)") }
-            XCTAssertTrue(card.exists, "a file dropped from the Dock stack on \(place) is a card")
+            if !card.waitForExistence(timeout: 15) {
+                attach("no card for a drop on \(place)")
+                // Where it went instead: the other chat, hidden under or over this one?
+                press(row == rows[0] ? rows[1] : rows[0])
+                RunLoop.current.run(until: Date().addingTimeInterval(3))
+                attach("the other chat after a drop on \(place): the card is there: \(card.exists)")
+            }
+            XCTAssertTrue(card.exists, "a file dropped from the Dock stack on \(place) is a card in the chat shown")
         }
         attach("three files dropped from the Downloads stack")
+    }
+
+    /// The session list's rows, once it has at least two sessions (written in until it
+    /// does, as `LiveChatUITests` does).
+    @MainActor
+    private func twoSessionRows(_ app: XCUIApplication) throws -> [XCUIElement] {
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let list = app.outlines.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the session list")
+        let notes = ["Sessions", "Pinned", "No sessions yet", "Loading sessions…"]
+        func sessionRows() -> [XCUIElement] {
+            list.outlineRows.allElementsBoundByIndex.filter { row in !notes.contains { row.staticTexts[$0].exists } }
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        while sessionRows().count < 2 {
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+            XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+            let before = sessionRows().count
+            press(newChat)
+            let composer = app.textViews["composer"]
+            XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+            press(composer)
+            composer.typeText("Reply with exactly OK and nothing else. Do not use tools.")
+            press(app.buttons["Send"].firstMatch)
+            let deadline = Date().addingTimeInterval(90)
+            while sessionRows().count <= before, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(1)) }
+            XCTAssertGreaterThan(sessionRows().count, before, "the chat written in is listed")
+        }
+        return Array(sessionRows().prefix(2))
     }
 
     /// Opens the Downloads stack and drags the item `name` out of it to `target`.
@@ -85,6 +124,13 @@ final class DockStackDropUITests: XCTestCase {
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: request), "the VM's mouse helper dragged (scripts/vm-test.sh)")
         if item.exists { stack.click() }
+    }
+
+    /// A coordinate click: an element's `click()` may find it not hittable (rows) or miss
+    /// (as `LiveChatUITests` found).
+    @MainActor
+    private func press(_ element: XCUIElement) {
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     }
 
     @MainActor

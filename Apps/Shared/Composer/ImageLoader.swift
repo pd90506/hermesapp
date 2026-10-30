@@ -191,15 +191,19 @@ enum ImageLoader {
     }
     /// Whether a drag pasteboard's files are the ones a drop's providers carry: as many,
     /// each of a type some provider has. The shared drag pasteboard keeps the last drag
-    /// that used it, which need not be this one.
+    /// that used it, which need not be this one. Providers that have their file URLs
+    /// need none of it: any file matched a file-URL provider, so a drop from the Dock
+    /// attached the folder of an earlier Finder drag instead (Mac, 2026-10-30).
     static func sources(_ sources: [AttachmentSource], match providers: [NSItemProvider]) -> Bool {
-        guard !sources.isEmpty, sources.count == providers.count else { return false }
+        guard !sources.isEmpty, sources.count == providers.count,
+            !providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) })
+        else { return false }
         let types = providers.flatMap(\.registeredContentTypes)
         return sources.allSatisfy { source in
             guard case .file(let url) = source else { return false }
             let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
                 ?? UTType(filenameExtension: url.pathExtension) ?? .data
-            return types.contains { type.conforms(to: $0) || $0 == .fileURL }
+            return types.contains { type.conforms(to: $0) }
         }
     }
     #else

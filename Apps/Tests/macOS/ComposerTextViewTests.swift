@@ -75,6 +75,17 @@ private func filename(_ source: AttachmentSource) -> String {
         textView.paste(nil)  // reads `pasteboard`, so it inserts this board's text
         #expect(!attached)
     }
+
+    /// A hidden kept chat's text view lies where the shown one is; AppKit gives a drop
+    /// to a view by its drag types, so the hidden one must have none.
+    @Test func aHiddenChatsTextViewTakesNoDrops() {
+        let textView = ComposerNSTextView()
+        textView.registerForDraggedTypes([.fileURL, .string])
+        textView.acceptsDrops = false
+        #expect(textView.registeredDraggedTypes.isEmpty)
+        textView.updateDragTypeRegistration()  // AppKit calls it again, e.g. on isEditable
+        #expect(textView.registeredDraggedTypes.isEmpty)
+    }
 }
 
 @MainActor
@@ -139,6 +150,19 @@ private func filename(_ source: AttachmentSource) -> String {
         let sources = ImageLoader.sources(from: board)
         #expect(sources.map(filename) == ["notes.md"])
         #expect(sources.map(\.isImage) == [false])
+    }
+
+    /// The shared drag pasteboard still holds an earlier Finder drag (a folder) while a
+    /// file comes from the Dock, whose providers have the file's URL: the providers win.
+    @Test func aStaleDragPasteboardNeverStandsInForProvidersWithFileURLs() {
+        let stale: [AttachmentSource] = [.file(URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))]
+        let provider = NSItemProvider(object: URL(fileURLWithPath: "/tmp/report.pdf") as NSURL)
+        #expect(!ImageLoader.sources(stale, match: [provider]))
+        // Without file URLs (Finder's Markdown provider), a file of the provider's type matches.
+        let markdown = NSItemProvider()
+        markdown.registerDataRepresentation(for: UTType("net.daringfireball.markdown")!) { done in done(Data(), nil); return nil }
+        #expect(ImageLoader.sources([.file(URL(fileURLWithPath: "/tmp/notes.md"))], match: [markdown]))
+        #expect(!ImageLoader.sources(stale, match: [markdown]))
     }
 
     /// A spreadsheet range carries a picture of itself beside the text.

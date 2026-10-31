@@ -63,6 +63,10 @@ public final class GatewayConnection {
     public enum NavigationPage: String, CaseIterable, Sendable { case bots, sessions }
     public var navigationPage: NavigationPage = .bots
     public internal(set) var listProfile: String?
+    /// The profile a roster read selects when none is (or the selected one is gone), if
+    /// the roster has it, before the default profile: the app's last pick, so a relaunch
+    /// shows it again. Kept across disconnects.
+    public var preferredListProfile: String?
     public internal(set) var sessionListLoading = false
     public internal(set) var sessionListError: String?
     @ObservationIgnored var sessionListToken = 0

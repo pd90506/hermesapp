@@ -306,11 +306,21 @@ struct RootView: View {
     }
 
     private func restoreProfileChat() {
+        // The first profile shown after launch (the one picked last) shows its last chat,
+        // unless a notification's chat came first. Every list read since launch is current.
+        if model.restoresLaunchProfileChat, let shown = shownProfile {
+            model.restoresLaunchProfileChat = false
+            model.saveLastProfile(shown.ref)
+            if model.pendingProfileChat == nil, selection == nil, alertedStoredID == nil, model.alertTarget == nil {
+                model.pendingProfileChat = PendingProfileChat(profile: shown.ref, listReads: 0, atLaunch: true)
+            }
+        }
         #if os(iOS)
         // On iPhone the chat is a page of its own, not always beside the list as on the
         // Mac or iPad: a profile picked in the rail shows its sessions, and its last
         // chat stays a tap away instead of being pushed over them (user, 2026-10-18).
-        if sizeClass == .compact {
+        // A relaunch is different: it comes back to the chat left on screen.
+        if sizeClass == .compact, model.pendingProfileChat?.atLaunch != true {
             model.pendingProfileChat = nil
             return
         }
@@ -332,6 +342,9 @@ struct RootView: View {
         model.pendingProfileChat = nil
         guard selection != item else { return }
         selection = item
+        #if os(iOS)
+        if sizeClass == .compact { compactColumn = .detail }
+        #endif
         Task { await open(item) }
     }
 

@@ -16,7 +16,8 @@ final class LiveChatUITests: XCTestCase {
     @MainActor
     private func launchApp(servers: Int = 1, motionScale: Double? = nil,
                            dropsSocketsInBackground: Bool = false,
-                           reconnectNoticeDelay: Double? = nil) throws -> XCUIApplication {
+                           reconnectNoticeDelay: Double? = nil,
+                           keepsState: Bool = false, freshState: Bool = false) throws -> XCUIApplication {
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
             throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
@@ -31,6 +32,10 @@ final class LiveChatUITests: XCTestCase {
         if dropsSocketsInBackground { app.launchEnvironment["HERMES_UITEST_DROP_IN_BACKGROUND"] = "1" }
         if let reconnectNoticeDelay {
             app.launchEnvironment["HERMES_UITEST_RECONNECT_NOTICE_DELAY"] = String(reconnectNoticeDelay)
+        }
+        if keepsState {
+            app.launchEnvironment["HERMES_UITEST_STATE"] = "hermesapp-uitest-state"
+            if freshState { app.launchEnvironment["HERMES_UITEST_STATE_FRESH"] = "1" }
         }
         app.launchWithMainWindow()
         return app
@@ -558,6 +563,17 @@ final class LiveChatUITests: XCTestCase {
         add(shot)
     }
 
+    /// Polls a condition that settles after an animation.
+    @MainActor
+    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+        return condition()
+    }
+
     #if os(iOS)
     /// On iPhone the Bot Chat is the session list's first group, a row in the list that
     /// scrolls with the sessions (no longer pinned above it), and the list's header leads
@@ -1020,17 +1036,6 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "profile picked: its sessions")
     }
 
-    /// Polls a condition that settles after an animation.
-    @MainActor
-    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if condition() { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        } while Date() < deadline
-        return condition()
-    }
-
     /// Two servers (the same dashboard twice): both connect, each on its own socket,
     /// and the sidebar names the server it lists. On macOS
     /// `testEachProfileReturnsToItsLastChat` starts with both servers connected.
@@ -1126,6 +1131,40 @@ final class LiveChatUITests: XCTestCase {
         // And Test 2 its Bot Chat.
         press(profiles.element(boundBy: 1))
         XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "Test 2 shows its Bot Chat again: \(window.title)")
+    }
+
+    /// A relaunch comes back to the profile picked last, and to the chat it showed: here
+    /// the second server's copy of the test profile and its Bot Chat, where a launch used
+    /// to show the first server's profile and no chat.
+    @MainActor
+    func testRelaunchReturnsToTheLastProfileAndChat() throws {
+        continueAfterFailure = false
+        var app = try launchApp(servers: 2, keepsState: true, freshState: true)
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "the profile rail")
+        let picked = rail.buttons.matching(NSPredicate(format: "isSelected == true")).firstMatch
+        XCTAssertTrue(picked.waitForExistence(timeout: 60), "a profile is selected")
+        let name = picked.label
+        var profiles = rail.buttons.matching(NSPredicate(format: "label == %@", name))
+        XCTAssertTrue(eventually(timeout: 60) { profiles.count == 2 }, "the test profile on both servers")
+        press(profiles.element(boundBy: 1))
+        var window = app.windows.firstMatch
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "Test 2 shows its Bot Chat: \(window.title)")
+        attach(app, "Before the relaunch: Test 2's Bot Chat")
+        app.terminate()
+
+        app = try launchApp(servers: 2, keepsState: true)
+        defer { app.terminate() }
+        let railAgain = app.descendants(matching: .any)["profileRail"].firstMatch
+        XCTAssertTrue(railAgain.waitForExistence(timeout: 10), "the profile rail")
+        profiles = railAgain.buttons.matching(NSPredicate(format: "label == %@", name))
+        XCTAssertTrue(eventually(timeout: 60) { profiles.count == 2 }, "the test profile on both servers")
+        XCTAssertTrue(eventually(timeout: 30) { profiles.element(boundBy: 1).isSelected },
+                      "Test 2's profile is selected again")
+        XCTAssertFalse(profiles.element(boundBy: 0).isSelected, "not Test 1's")
+        window = app.windows.firstMatch
+        XCTAssertNotNil(waitForTitle(of: window, timeout: 30) { $0 == name }, "its Bot Chat is shown again: \(window.title)")
+        attach(app, "After the relaunch: Test 2's Bot Chat")
     }
 
     /// What was typed in a New chat, not sent, is still there after another chat was

@@ -202,10 +202,7 @@ struct BotRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if let lastActive = bot.lastActive {
-                    Text(lastActive, format: .relative(presentation: .named))
-                        .uiFont(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    SessionRelativeTime(date: lastActive, font: .caption2)
                 }
             }
             Text(subtitle)
@@ -442,15 +439,8 @@ struct HistoryRow<Actions: View>: View {
                     .fontWeight(isUnread ? .semibold : nil)
                     .lineLimit(1)
                 if let date {
-                    #if os(macOS)
                     SessionRelativeTime(date: date)
-                    #else
-                    Text(date, format: .relative(presentation: .named))
-                        .uiFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
                         .accessibilityIdentifier("sessionMessageDate")
-                    #endif
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -555,15 +545,19 @@ extension GatewayConnection.State {
     }
 }
 
-#if os(macOS)
 extension EnvironmentValues {
     @Entry var sessionListClock: Date = .now
 }
 
-/// Uses the sidebar's single clock explicitly: macOS's implicit relative Text
-/// formatter otherwise keeps showing its initial value until an unrelated redraw.
-private struct SessionRelativeTime: View {
+/// A sidebar row's age ("now", "5 minutes ago"), as Hermes Desktop's rows: never seconds,
+/// so it changes once a minute, on the sidebar's single clock (`SessionListView`).
+/// SwiftUI's `Text(date, format: .relative(...))` updates itself every second with
+/// "N seconds ago" (and on macOS kept its initial value until an unrelated redraw), and
+/// `Date.RelativeFormatStyle(allowedFields:)` without seconds reads "this minute", then
+/// rounds 30 seconds up to "1 minute ago".
+struct SessionRelativeTime: View {
     let date: Date
+    var font: Font.TextStyle = .caption
     @Environment(\.sessionListClock) private var now
     private static let formatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -575,11 +569,11 @@ private struct SessionRelativeTime: View {
         // The tick can be up to a minute old when a newer message's date arrives (and the
         // server's clock may run ahead): never "in 40 seconds".
         let reference = max(now, .now)
-        Text(Self.formatter.localizedString(for: min(date, reference), relativeTo: reference))
-            .uiFont(.caption)
+        let age = reference.timeIntervalSince(date)
+        // Under a minute, the formatter's own word for no time at all ("now", "现在").
+        Text(Self.formatter.localizedString(for: age < 60 ? reference : date, relativeTo: reference))
+            .uiFont(font)
             .foregroundStyle(.secondary)
             .lineLimit(1)
-            .accessibilityIdentifier("sessionMessageDate")
     }
 }
-#endif

@@ -201,9 +201,11 @@ struct ChatView: View {
     /// under its top as they go.
     ///
     /// The agent's task list rides on top of the card (`TodoPill`), inside the bar: the
-    /// scroll-to-bottom pill, at the bottom of the chat, then sits above both.
+    /// scroll-to-bottom pill, at the bottom of the chat, then sits above both. As far
+    /// above the card as that pill: any closer, the Mac's chat glass merged the two into
+    /// one shape (the user, 2026-10-31).
     private var composerRow: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Self.pillGap) {
             TodoPill(transcript: session.transcript)
             ComposerView(composer: composer, isConnected: server.isConnected)
                 .environment(\.chatIsShown, isShown)

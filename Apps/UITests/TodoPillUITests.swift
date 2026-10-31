@@ -27,7 +27,8 @@ final class TodoPillUITests: XCTestCase {
         send("Call the todo_list tool exactly once, writing this list of five tasks: "
             + "id 1 \"Read the brief\" completed, id 2 \"Sketch the layout\" completed, "
             + "id 3 \"Build the pill and the panel\" in_progress, id 4 \"Run the tests\" pending, "
-            + "id 5 \"Take screenshots\" pending. Do nothing else, then reply with the word PLANNED immediately followed by the digits \(firstDigits), and nothing else.",
+            + "id 5 \"Take screenshots\" pending. Do nothing else, then reply with 40 lines, each just "
+            + "\"line\" and its number, then a last line with the word PLANNED immediately followed by the digits \(firstDigits), and nothing else.",
             composer: composer, in: app)
         XCTAssertTrue(waitForMessage(first, in: app, timeout: 180), "Hermes wrote the list and replied")
 
@@ -35,6 +36,24 @@ final class TodoPillUITests: XCTestCase {
         XCTAssertTrue(pill.waitForExistence(timeout: 10), "the pill shows above the composer")
         XCTAssertTrue(pill.label.contains("2 of 5"), "with the progress: \(pill.label)")
         attach(app, "1 pill in progress")
+
+        // Scrolled up, the scroll-to-bottom pill shows above the task pill, apart from it.
+        let jump = app.descendants(matching: .any).matching(identifier: "scrollToBottom").firstMatch
+        for _ in 0..<8 where !jump.exists {
+            #if os(macOS)
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.4))
+                .scroll(byDeltaX: 0, deltaY: 400)
+            #else
+            app.swipeDown()
+            #endif
+        }
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "scrolled up, the scroll-to-bottom pill")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "1b both pills")
+        XCTAssertFalse(jump.frame.intersects(pill.frame), "apart: \(jump.frame) and \(pill.frame)")
+        XCTAssertLessThan(jump.frame.maxY, pill.frame.minY, "the scroll pill above the task pill")
+        press(jump)
+        XCTAssertTrue(eventually(timeout: 5) { !jump.exists }, "back at the end")
 
         press(pill)
         let panel = app.descendants(matching: .any).matching(identifier: "todoPanel").firstMatch

@@ -1,7 +1,7 @@
 import XCTest
 
 /// The task list pill with a real Todo list from Hermes: the pill shows above the
-/// composer with the progress, opens the list in a popover, follows the agent's updates,
+/// composer with the progress, opens into the list, follows the agent's updates,
 /// and goes once the list is finished and the next prompt is sent. Screenshots at each step.
 /// Compiled into HermesMacUITests and HermesiOSUITests. Makes one chat; the script's
 /// sweep deletes it. Skipped without `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
@@ -41,7 +41,7 @@ final class TodoPillUITests: XCTestCase {
         XCTAssertTrue(waitForMessage("Build the pill and the panel", in: app, timeout: 5), "each task listed")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         attach(app, "2 list in progress")
-        press(app.buttons["Close"].firstMatch)
+        press(app.buttons["todoClose"].firstMatch)
         XCTAssertTrue(eventually(timeout: 5) { !panel.exists }, "Close puts the list away")
 
         let second = "FINISHED\(Int.random(in: 1000...9999))"
@@ -55,7 +55,7 @@ final class TodoPillUITests: XCTestCase {
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "the finished list opens")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         attach(app, "4 list finished")
-        press(app.buttons["Close"].firstMatch)
+        press(app.buttons["todoClose"].firstMatch)
         XCTAssertTrue(eventually(timeout: 5) { !panel.exists })
 
         send("Reply with OK and nothing else.", composer: composer, in: app)

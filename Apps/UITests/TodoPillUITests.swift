@@ -37,7 +37,7 @@ final class TodoPillUITests: XCTestCase {
         XCTAssertTrue(pill.label.contains("2 of 5"), "with the progress: \(pill.label)")
         attach(app, "1 pill in progress")
 
-        // Scrolled up, the scroll-to-bottom pill shows above the task pill, apart from it.
+        // Scrolled up, the scroll-to-bottom pill shows beside the task pill, in one row.
         let jump = app.descendants(matching: .any).matching(identifier: "scrollToBottom").firstMatch
         for _ in 0..<8 where !jump.exists {
             #if os(macOS)
@@ -51,7 +51,8 @@ final class TodoPillUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         attach(app, "1b both pills")
         XCTAssertFalse(jump.frame.intersects(pill.frame), "apart: \(jump.frame) and \(pill.frame)")
-        XCTAssertLessThan(jump.frame.maxY, pill.frame.minY, "the scroll pill above the task pill")
+        XCTAssertLessThan(abs(jump.frame.midY - pill.frame.midY), 2, "in one row: \(jump.frame) and \(pill.frame)")
+        XCTAssertLessThan(jump.frame.maxX, pill.frame.minX, "the scroll pill first")
         press(jump)
         XCTAssertTrue(eventually(timeout: 5) { !jump.exists }, "back at the end")
 

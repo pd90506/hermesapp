@@ -30,6 +30,8 @@ struct ChatView: View {
     /// remember meanwhile (`RowMemory`).
     @State private var laziness = TranscriptLaziness()
     @State private var rowMemory = RowMemory()
+    /// The task list's card is open (`TodoPill`).
+    @State private var isTodoOpen = false
     @Environment(\.textSizes) private var sizes
     @Environment(\.surfaces) private var surfaces
     /// The composer's card and the scroll-to-bottom pill, as one glass (`ChatGlass`).
@@ -171,11 +173,14 @@ struct ChatView: View {
             // where the composer's bar begins, so the button sits just above the card, clear
             // of the bar's blur and inside its own hit area.
             .overlay(alignment: .bottom) {
-                ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
-                    #if os(macOS)
-                    // 16 pt above the card (`pillGap`), as Desktop's, with the bar's 10 pt padding.
-                    .padding(.bottom, Self.pillGap - 10)
-                    #endif
+                // Beside the task list's pill instead, while that shows (`composerRow`).
+                if session.transcript.todoPlan == nil || isTodoOpen {
+                    ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
+                        #if os(macOS)
+                        // 16 pt above the card (`pillGap`), as Desktop's, with the bar's 10 pt padding.
+                        .padding(.bottom, Self.pillGap - 10)
+                        #endif
+                }
             }
         }
         #if os(macOS)
@@ -200,13 +205,14 @@ struct ChatView: View {
     /// from the bar's top to the card's middle, so the card's glass shows them blurred
     /// under its top as they go.
     ///
-    /// The agent's task list rides on top of the card (`TodoPill`), inside the bar: the
-    /// scroll-to-bottom pill, at the bottom of the chat, then sits above both. As far
-    /// above the card as that pill: any closer, the Mac's chat glass merged the two into
-    /// one shape (the user, 2026-10-31).
+    /// The agent's task list rides on top of the card (`TodoPill`), inside the bar. While
+    /// it shows, the scroll-to-bottom pill joins it there, side by side, rather than float
+    /// over it (the user, 2026-10-31).
     private var composerRow: some View {
-        VStack(spacing: Self.pillGap) {
-            TodoPill(transcript: session.transcript)
+        VStack(spacing: 8) {
+            TodoPill(transcript: session.transcript, scroll: scroll, isOpen: $isTodoOpen) {
+                ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
+            }
             ComposerView(composer: composer, isConnected: server.isConnected)
                 .environment(\.chatIsShown, isShown)
                 .disabled(!isShown)

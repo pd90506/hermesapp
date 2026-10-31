@@ -8,64 +8,61 @@ import SwiftUI
 ///
 /// A view of its own: it reads the transcript, which changes with every streamed word,
 /// and only it redraws for that, not the composer under it.
-struct TodoPill: View {
+struct TodoPill<Jump: View>: View {
     let transcript: Transcript
-    @State private var isOpen = false
+    let scroll: ChatScroll
+    @Binding var isOpen: Bool
+    /// The chat's scroll-to-bottom pill, beside this one while the chat is scrolled up
+    /// (`ChatScroll.isAwayFromEnd`): one row of pills, never one over the other.
+    @ViewBuilder let jump: () -> Jump
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    static let accessibilityIdentifier = "todoPill"
-    static let panelIdentifier = "todoPanel"
 
     var body: some View {
         let plan = transcript.todoPlan
-        ZStack(alignment: .bottom) {
-            if let plan {
-                if isOpen {
-                    TodoPanel(plan: plan) { isOpen = false }
-                        .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
-                } else {
-                    Label(plan: plan, isOpen: $isOpen)
-                        .transition(reduceMotion ? .opacity : .asymmetric(
-                            insertion: .scale(scale: 1.1).combined(with: .opacity).combined(with: .offset(y: 5)),
-                            removal: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 5))))
+        let showsJump = scroll.isAwayFromEnd
+        // A glass container of its own, with no room to merge: in the chat's (`ChatView`),
+        // whose glass merges shapes 16 pt apart so the scroll pill grows out of the
+        // composer, these pills and the composer under them ran together into one shape
+        // (the user, 2026-10-31).
+        GlassEffectContainer(spacing: 0) {
+            ZStack(alignment: .bottom) {
+                if let plan {
+                    if isOpen {
+                        TodoPanel(plan: plan) { isOpen = false }
+                            .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
+                    } else {
+                        pills(plan, showsJump: showsJump)
+                            .transition(reduceMotion ? .opacity : .asymmetric(
+                                insertion: .scale(scale: 1.1).combined(with: .opacity).combined(with: .offset(y: 5)),
+                                removal: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 5))))
+                    }
                 }
             }
         }
         .animation(Motion.jumpButton, value: plan == nil)
+        .animation(Motion.jumpButton, value: showsJump)
         .animation(Motion.swap, value: isOpen)
         .onChange(of: plan == nil) { _, gone in if gone { isOpen = false } }
     }
 
-    private struct Label: View {
-        let plan: TodoPlan
-        @Binding var isOpen: Bool
-        @State private var isHovered = false
-
-        var body: some View {
-            Button { isOpen.toggle() } label: {
-                HStack(spacing: 6) {
-                    ProgressGlyph(done: plan.completed, total: plan.total, isFinished: plan.isFinished)
-                    Text(TodoPill.title(plan))
-                        .monospacedDigit()
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isHovered || isOpen ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .padding(.leading, 9)
-                .padding(.trailing, 12)
-                .frame(height: 28)
-                .contentShape(.capsule)
+    /// The row: the scroll-to-bottom pill (when it shows), then this one.
+    private func pills(_ plan: TodoPlan, showsJump: Bool) -> some View {
+        HStack(spacing: 8) {
+            if showsJump {
+                jump()
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
             }
-            .buttonStyle(.plain)
-            .floatingGlass(in: .capsule, interactive: true)
-            .animation(Motion.reveal, value: isHovered)
-            .onHover { isHovered = $0 }
-            .accessibilityLabel(TodoPill.accessibilityLabel(plan))
-            .accessibilityHint("Shows the task list")
-            .accessibilityIdentifier(TodoPill.accessibilityIdentifier)
-            .help(TodoPill.accessibilityLabel(plan))
+            TodoPillLabel(plan: plan, isOpen: $isOpen)
         }
     }
+}
 
+enum TodoPillID {
+    static let pill = "todoPill"
+    static let panel = "todoPanel"
+}
+
+enum TodoPillText {
     /// "3/5 tasks", as Claude Code's pill.
     static func title(_ plan: TodoPlan) -> String {
         "\(plan.completed)/\(plan.total) \(plan.total == 1 ? "task" : "tasks")"
@@ -74,6 +71,36 @@ struct TodoPill: View {
     static func accessibilityLabel(_ plan: TodoPlan) -> String {
         if plan.isFinished { return "All tasks complete, \(plan.completed) of \(plan.total)" }
         return "Tasks, \(plan.completed) of \(plan.total) complete"
+    }
+}
+
+private struct TodoPillLabel: View {
+    let plan: TodoPlan
+    @Binding var isOpen: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        Button { isOpen.toggle() } label: {
+            HStack(spacing: 6) {
+                ProgressGlyph(done: plan.completed, total: plan.total, isFinished: plan.isFinished)
+                Text(TodoPillText.title(plan))
+                    .monospacedDigit()
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(isHovered || isOpen ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .padding(.leading, 9)
+            .padding(.trailing, 12)
+            .frame(height: 32)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .floatingGlass(in: .capsule, interactive: true)
+        .animation(Motion.reveal, value: isHovered)
+        .onHover { isHovered = $0 }
+        .accessibilityLabel(TodoPillText.accessibilityLabel(plan))
+        .accessibilityHint("Shows the task list")
+        .accessibilityIdentifier(TodoPillID.pill)
+        .help(TodoPillText.accessibilityLabel(plan))
     }
 }
 
@@ -114,7 +141,7 @@ struct TodoPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(plan.isFinished ? "\(TodoPill.title(plan)) complete" : TodoPill.title(plan))
+                Text(plan.isFinished ? "\(TodoPillText.title(plan)) complete" : TodoPillText.title(plan))
                     .font(.body.weight(.medium))
                     .monospacedDigit()
                 Spacer(minLength: 12)
@@ -152,7 +179,7 @@ struct TodoPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .floatingGlass(in: .rect(cornerRadius: 22))
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(TodoPill.panelIdentifier)
+        .accessibilityIdentifier(TodoPillID.panel)
     }
 }
 

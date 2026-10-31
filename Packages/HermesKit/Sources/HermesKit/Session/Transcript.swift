@@ -1290,6 +1290,9 @@ public struct Transcript: Sendable, Hashable {
             finishTurn(complete)
 
         case .statusUpdate(let update):
+            // The memory recall indicator is not shown, as in Desktop, which drops
+            // every `lifecycle` status but fallback switches (`gateway-event/status.ts`).
+            if Self.isMemoryRecallIndicator(update) { break }
             status = update.text.isEmpty ? nil : update.text
 
         case .btwComplete(let answer):
@@ -1383,8 +1386,8 @@ public struct Transcript: Sendable, Hashable {
     /// `ResponseLoadingIndicator` stands in for an empty running reply,
     /// `components/assistant-ui/thread/status.tsx:243-268`). `nil` otherwise.
     ///
-    /// The hint, most specific first: the turn's `status.update` (compaction, memory
-    /// recall), an explained provider wait, the tool whose call is being drafted, then
+    /// The hint, most specific first: the turn's `status.update` (compaction, a model
+    /// fallback), an explained provider wait, the tool whose call is being drafted, then
     /// the slow agent-build notice.
     ///
     /// Only output since the latest send, or since the turn now running started,
@@ -1399,6 +1402,22 @@ public struct Transcript: Sendable, Hashable {
     static func isVisibleOutput(_ item: TranscriptItem) -> Bool {
         item.role == .tool
             || (item.role == .assistant && !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    /// The line a memory provider's recall sends at the start of a turn, one segment per
+    /// provider joined by two spaces: "👁 Hindsight — recalled 58 memories"
+    /// (`MemoryManager.describe_recall`, `agent/memory_manager.py:409-420`, emitted as a
+    /// `lifecycle` status by `agent/turn_context.py:931-936`).
+    static func isMemoryRecallIndicator(_ update: StatusUpdate) -> Bool {
+        guard update.kind == "lifecycle" else { return false }
+        let text = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return recallIndicator.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    // Built per call: `NSRegularExpression` is not `Sendable` on every platform.
+    private static var recallIndicator: NSRegularExpression {
+        let segment = "\\S+ .+? — recalled (?:\\d+ memories|1 memory|relevant memory)"
+        return try! NSRegularExpression(pattern: "^\(segment)(?:  \(segment))*$")
     }
 
     private var waitingHint: String? {

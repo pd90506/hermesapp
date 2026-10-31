@@ -563,6 +563,17 @@ final class LiveChatUITests: XCTestCase {
         add(shot)
     }
 
+    /// Polls a condition that settles after an animation.
+    @MainActor
+    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+        return condition()
+    }
+
     #if os(iOS)
     /// On iPhone the Bot Chat is the session list's first group, a row in the list that
     /// scrolls with the sessions (no longer pinned above it), and the list's header leads
@@ -1360,17 +1371,6 @@ final class LiveChatUITests: XCTestCase {
                                  "the chat written in is listed: \(list.outlineRows.count) rows")
         }
         return (list, sessionRows())
-    }
-
-    /// Polls a condition that settles after an animation.
-    @MainActor
-    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if condition() { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        } while Date() < deadline
-        return condition()
     }
 
     /// The window's title (the chat's) once it passes `test`, or nil.

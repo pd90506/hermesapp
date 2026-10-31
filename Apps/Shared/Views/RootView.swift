@@ -7,6 +7,9 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: SidebarItem?
     @State private var columns = NavigationSplitViewVisibility.all
+    /// A clicked notification opened a chat its profile's list hadn't read yet: its row
+    /// is selected once the list has it (`openAlerted`).
+    @State private var alertedStoredID: String?
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     @Environment(\.surfaces) private var surfaces
@@ -56,6 +59,11 @@ struct RootView: View {
         // page doesn't wait for a row that is gone).
         .onChange(of: activeChatItem) { old, new in
             if case .newChat = old, selection == old { selection = new }
+            if let alerted = alertedStoredID, let new,
+                model.activeServer?.connection.activeSession?.storedSessionID == alerted {
+                alertedStoredID = nil
+                if selection == nil, !isOnSessionList { selection = new }
+            }
         }
         #if os(iOS)
         .task(id: isOnSessionList) {
@@ -155,6 +163,7 @@ struct RootView: View {
                 get: { selection },
                 set: { item in
                     selection = item
+                    alertedStoredID = nil
                     if let item {
                         model.pendingProfileChat = nil
                         Task { await open(item) }
@@ -378,11 +387,18 @@ struct RootView: View {
         }
     }
 
-    /// Opens the chat a notification was about: its row when the list has one, else the
-    /// session by its stored id (a chat of another profile, or not listed).
+    /// Opens the chat a notification was about, with its profile picked in the rail: its
+    /// row when the list has one, else the session by its stored id, its row selected once
+    /// the profile's list is read (a chat of another profile, or not listed yet).
     private func openAlerted(_ target: AlertTarget) {
         guard let server = model.server(target.server) else { return }
         let connection = server.connection
+        alertedStoredID = nil
+        if let profile = target.profile, connection.bots.contains(where: { $0.name == profile }) {
+            model.selectProfile(profile, on: server)
+            // The notification's chat, not the one the profile showed last.
+            model.pendingProfileChat = nil
+        }
         let item: SidebarItem?
         if target.isBotChat, let profile = target.profile {
             item = .bot(server: server.id, profile: profile)
@@ -399,6 +415,8 @@ struct RootView: View {
             return
         }
         model.activeServerID = server.id
+        selection = nil
+        alertedStoredID = target.storedSessionID
         #if os(iOS)
         compactColumn = .detail
         #endif

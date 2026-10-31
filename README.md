@@ -277,3 +277,8 @@ HTTPS and pin a version, every app Swift file belongs to a target). The real che
 ## Rules for contributors and agents
 
 See [`AGENTS.md`](AGENTS.md).
+
+## License
+
+[MIT](LICENSE). Third-party material is listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

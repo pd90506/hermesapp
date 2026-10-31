@@ -19,11 +19,15 @@ public struct SessionRowActivity: Sendable, Hashable {
     /// tool calls. Nil while a turn is still working (a tool row, or a call) or the user
     /// wrote last.
     public var newestReply: Date?
+    /// The text of that reply, for a notification (`GatewayConnection.noteReply`).
+    public var replyText: String?
 
-    public init(lastPrompt: Date? = nil, newestMessage: Date? = nil, newestReply: Date? = nil) {
+    public init(lastPrompt: Date? = nil, newestMessage: Date? = nil, newestReply: Date? = nil,
+                replyText: String? = nil) {
         self.lastPrompt = lastPrompt
         self.newestMessage = newestMessage
         self.newestReply = newestReply
+        self.replyText = replyText
     }
 
     /// What the row is ordered, grouped and dated by: its last prompt, else (no prompt,
@@ -40,7 +44,10 @@ public struct SessionRowActivity: Sendable, Hashable {
         let newest = try await SessionRowTimestamp.newest(for: entry, from: source)
         var activity = SessionRowActivity(lastPrompt: try? await prompt)
         activity.newestMessage = SessionRowTimestamp.date(of: newest?.timestamp)
-        if let newest, isReply(newest) { activity.newestReply = activity.newestMessage }
+        if let newest, isReply(newest) {
+            activity.newestReply = activity.newestMessage
+            activity.replyText = (newest.displayContent ?? newest.content)?.stringValue
+        }
         return activity
     }
 

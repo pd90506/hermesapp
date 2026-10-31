@@ -183,6 +183,13 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         NSLocalNetworkUsageDescription: Talaria connects to your self-hosted Hermes gateway on your local network or tailnet.
+        # Background app refresh: iOS wakes the app now and then to check for replies and
+        # notify them (`HermesiOSApp`, `AppModel.checkForReplies`). No push without a paid
+        # developer account (user, 2026-10-31), so this is the only way in the background.
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).refresh
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     settings:

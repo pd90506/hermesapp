@@ -938,6 +938,7 @@ final class LiveChatUITests: XCTestCase {
         XCTAssertTrue(connections.waitForExistence(timeout: 5), "Settings lists Connections")
         XCTAssertTrue(app.buttons["settings.sessionSources"].exists, "Settings lists Session Sources")
         XCTAssertTrue(app.buttons["settings.appearance"].exists, "Settings lists Appearance")
+        XCTAssertTrue(app.buttons["settings.notifications"].exists, "Settings lists Notifications")
         XCTAssertTrue(app.navigationBars["Settings"].exists, "titled Settings")
         attach(app, "settings")
 

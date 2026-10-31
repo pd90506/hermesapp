@@ -19,6 +19,9 @@ struct MacSettingsView: View {
             Tab("Appearance", systemImage: "paintpalette") {
                 AppearanceSettingsPane()
             }
+            Tab("Notifications", systemImage: "bell.badge") {
+                NotificationsSettingsPane()
+            }
             // The Markdown tab (`MarkdownSettingsPane`, a colour per element) is hidden for
             // now (user, 2026-10): the theme in Appearance sets the Markdown colours.
         }

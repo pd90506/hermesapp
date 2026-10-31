@@ -50,7 +50,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         ScrollLatching.install()
         AppearanceTheme.apply(model.appearance.theme)
+        model.notifier.appIsActive = NSApp.isActive
+        model.notifier.install()
         Task { await model.watchLocalBackend() }
+    }
+
+    // System notifications show only while the app is away (`AlertGate`): Desktop's
+    // test is its window's focus (`isBackgrounded`, `native-notifications.ts:111-124`).
+    func applicationDidBecomeActive(_ notification: Notification) {
+        model.notifier.appIsActive = true
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        model.notifier.appIsActive = false
     }
 
     func applicationWillTerminate(_ notification: Notification) {

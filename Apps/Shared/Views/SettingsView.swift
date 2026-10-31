@@ -3,8 +3,8 @@ import HermesKit
 import SwiftUI
 
 /// The settings sheet on iOS, laid out like the system's Settings: a page with
-/// Connections, Session Sources and Appearance, each opening its own page. The macOS
-/// Settings window has the same three as tabs (`MacSettingsView`).
+/// Connections, Session Sources, Appearance and Notifications, each opening its own page.
+/// The macOS Settings window has the same as tabs (`MacSettingsView`).
 ///
 /// Opened by the app because it must connect (`SettingsPresentation.isRequired`), it
 /// starts on the server to fix, one Back from the rest.
@@ -33,6 +33,10 @@ struct SettingsView: View {
                         Label("Appearance", systemImage: "paintpalette")
                     }
                     .accessibilityIdentifier("settings.appearance")
+                    NavigationLink(value: SettingsPage.notifications) {
+                        Label("Notifications", systemImage: "bell.badge")
+                    }
+                    .accessibilityIdentifier("settings.notifications")
                 }
             }
             .navigationTitle("Settings")
@@ -42,6 +46,7 @@ struct SettingsView: View {
                 case .server(let id): ServerSettingsView(serverID: id, path: $path)
                 case .sessionSources: SessionSourcesSettingsView()
                 case .appearance: AppearanceSettingsView()
+                case .notifications: NotificationsSettingsView()
                 }
             }
             .toolbar {
@@ -80,5 +85,6 @@ enum SettingsPage: Hashable {
     case server(UUID)
     case sessionSources
     case appearance
+    case notifications
 }
 #endif

@@ -37,7 +37,7 @@ final class TodoPillUITests: XCTestCase {
         XCTAssertTrue(pill.label.contains("2 of 5"), "with the progress: \(pill.label)")
         attach(app, "1 pill in progress")
 
-        // Scrolled up, the scroll-to-bottom pill shows beside the task pill, in one row.
+        // Scrolled up, the scroll-to-bottom arrow shows beside the task pill, in one row.
         let jump = app.descendants(matching: .any).matching(identifier: "scrollToBottom").firstMatch
         for _ in 0..<8 where !jump.exists {
             #if os(macOS)

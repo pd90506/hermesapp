@@ -206,12 +206,13 @@ struct ChatView: View {
     /// under its top as they go.
     ///
     /// The agent's task list rides on top of the card (`TodoPill`), inside the bar. While
-    /// it shows, the scroll-to-bottom pill joins it there, side by side, rather than float
-    /// over it (the user, 2026-10-31).
+    /// it shows, the scroll-to-bottom pill joins it there as a round arrow, side by side,
+    /// rather than float over it, as Claude Code's (the user, 2026-10-31).
     private var composerRow: some View {
         VStack(spacing: 8) {
             TodoPill(transcript: session.transcript, scroll: scroll, isOpen: $isTodoOpen) {
-                ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
+                ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks,
+                                     compact: true)
             }
             ComposerView(composer: composer, isConnected: server.isConnected)
                 .environment(\.chatIsShown, isShown)

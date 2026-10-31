@@ -174,4 +174,21 @@ import Testing
         #expect(transcript.pendingRequests.isEmpty)
         expectWellFormed(transcript)
     }
+
+    // `tui_gateway/server.py:871-882` sends the recall line as kind `lifecycle`.
+    @Test func memoryRecallIndicatorIsNotShown() {
+        var transcript = Transcript()
+        transcript.appendUserPrompt("hi")
+        transcript.apply(event("message.start"))
+        transcript.apply(event("status.update", ["kind": "lifecycle", "text": "👁 Hindsight — recalled 58 memories"]))
+        #expect(transcript.status == nil)
+        transcript.apply(event("status.update", ["kind": "lifecycle",
+                                                 "text": "🧠 Honcho — recalled 1 memory  👁️ Hindsight — recalled relevant memory"]))
+        #expect(transcript.status == nil)
+
+        transcript.apply(event("status.update", ["kind": "lifecycle", "text": "Switched to fallback model x"]))
+        #expect(transcript.status == "Switched to fallback model x")
+        transcript.apply(event("status.update", ["kind": "status", "text": "👁 Hindsight — recalled 2 memories"]))
+        #expect(transcript.status == "👁 Hindsight — recalled 2 memories")
+    }
 }

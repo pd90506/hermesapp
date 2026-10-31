@@ -8,7 +8,6 @@ struct RequestCardView: View {
     let session: ChatSession
     let request: ServerRequest
     @State private var text = ""
-    @State private var clarifyAnswers: [String: String] = [:]
     @State private var error: String?
 
     var body: some View {
@@ -20,7 +19,18 @@ struct RequestCardView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12), in: .rect(cornerRadius: 12))
+        .background(background, in: .rect(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.separator.opacity(isClarify ? 1 : 0)) }
+    }
+
+    /// A question is no warning: it sits on a plain surface that takes the theme's colour
+    /// (a translucent fill), the other requests on orange.
+    private var isClarify: Bool {
+        if case .clarify = request.kind { true } else { false }
+    }
+
+    private var background: AnyShapeStyle {
+        isClarify ? AnyShapeStyle(.quinary) : AnyShapeStyle(.orange.opacity(0.12))
     }
 
     @ViewBuilder
@@ -47,33 +57,10 @@ struct RequestCardView: View {
             }
 
         case .clarify(let clarify):
-            Label("Hermes has a question", systemImage: "questionmark.bubble").uiFont(.headline)
-            ForEach(clarify.questions) { question in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(question.question)
-                    if let choices = question.choices, !choices.isEmpty {
-                        Picker(question.question, selection: binding(for: question.qid)) {
-                            Text("Choose…").tag("")
-                            ForEach(choices, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                    } else {
-                        TextField("Answer", text: binding(for: question.qid))
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-            }
-            HStack {
-                Button("Send Answers") {
-                    // `uniquingKeysWith`: a duplicate qid from the server must not trap.
-                    let answers = Dictionary(clarify.questions.map { question -> (String, String?) in
-                        let value = clarifyAnswers[question.qid] ?? ""
-                        return (question.qid, value.isEmpty ? nil : value)
-                    }, uniquingKeysWith: { first, _ in first })
-                    run { try await session.answer(request, clarify: answers) }
-                }
-                .buttonStyle(.borderedProminent)
-                Button("Skip") { run { try await session.answer(request, clarify: nil) } }
+            ClarifyCardView(request: clarify) { answers in
+                run { try await session.answer(request, clarify: answers) }
+            } skip: {
+                run { try await session.answer(request, clarify: nil) }
             }
 
         case .sudo(let sudo):
@@ -101,10 +88,6 @@ struct RequestCardView: View {
                 .disabled(text.isEmpty)
             Button("Skip") { run { try await session.answer(request, value: "") } }
         }
-    }
-
-    private func binding(for qid: String) -> Binding<String> {
-        Binding(get: { clarifyAnswers[qid] ?? "" }, set: { clarifyAnswers[qid] = $0 })
     }
 
     private func title(for choice: ApprovalChoice) -> String {

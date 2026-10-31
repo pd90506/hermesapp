@@ -121,7 +121,7 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   window tests on the host, start a test dashboard there, or open a build on its screens.
   Building on the host is fine.
   - While iterating on a change, run only the tests it needs (decided by the user, 2026-10-21;
-    a full run with `--ios` takes about 45 minutes on the Mac Studio, nearly all of it in the
+    a full run with `--ios` takes about 45 minutes on the Mac, nearly all of it in the
     UI tests):
     - `scripts/vm-test.sh --changed` picks them from the files the branch changed
       (`scripts/vm-test-pick.py`, which prints its reasons; run it alone to see the pick).
@@ -187,9 +187,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   team ids, or personal paths and emails; this covers PR descriptions, comments and release notes.
 - **The Mac's main checkout and app builds** (decided by the user, 2026-10-16; PR test builds
   moved to the VM on 2026-10-17, and back to the host, as builds only, on 2026-10-18):
-  - The main checkout on the Mac (`~/repo/fun/hermesapp`) stays on local `main`, kept up to
-    date with `origin/main`. Don't leave it on a feature branch, don't switch it to a PR branch
-    to test it, and don't start new work on a merged branch.
+  - The main checkout on the Mac stays on local `main`, kept up to date with `origin/main`.
+    Don't leave it on a feature branch, don't switch it to a PR branch to test it, and don't
+    start new work on a merged branch.
   - Write code on a new branch from the latest `origin/main`, in a separate `git worktree`
     beside the main checkout, not in the main checkout itself.
   - **PR test builds** happen on the host, through `scripts/vm-test.sh` run from the PR's

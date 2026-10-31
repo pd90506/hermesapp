@@ -14,6 +14,9 @@ struct ScrollToBottomButton: View {
     let transcript: Transcript
     let scroll: ChatScroll
     let visibleBlocks: VisibleBlocks
+    /// Just the arrow, in a circle: beside the task list's pill (`TodoPill`), as Claude
+    /// Code's (the user, 2026-10-31).
+    var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let accessibilityIdentifier = "scrollToBottom"
@@ -23,7 +26,7 @@ struct ScrollToBottomButton: View {
         let isShown = scroll.isAwayFromEnd
         ZStack {
             if isShown {
-                Pill(count: transcript.messagesBelow(visibleBlockIDs: visibleBlocks.ids)) {
+                Pill(count: transcript.messagesBelow(visibleBlockIDs: visibleBlocks.ids), compact: compact) {
                     scroll.scrollToEnd(reduceMotion: reduceMotion)
                 }
                 .transition(reduceMotion ? .opacity : .asymmetric(
@@ -36,6 +39,7 @@ struct ScrollToBottomButton: View {
 
     private struct Pill: View {
         let count: Int
+        let compact: Bool
         let action: () -> Void
         @State private var isHovered = false
 
@@ -43,17 +47,19 @@ struct ScrollToBottomButton: View {
             Button(action: action) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: compact ? 13 : 12, weight: .semibold))
                     // The count changes at once. Rolled in (`numericText`), each change
                     // blurred its digits on the CPU, and in a scroll it changes every few
                     // lines: a tenth of the main thread (Instruments, 2026-10-21).
-                    Text(MessagesBelow.title(count: count))
-                        .monospacedDigit()
+                    if !compact {
+                        Text(MessagesBelow.title(count: count))
+                            .monospacedDigit()
+                    }
                 }
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .padding(.horizontal, 12)
-                .frame(height: 32)
+                .padding(.horizontal, compact ? 0 : 12)
+                .frame(width: compact ? 32 : nil, height: 32)
                 .contentShape(.capsule)
             }
             .buttonStyle(.plain)

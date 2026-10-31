@@ -2,7 +2,8 @@ import Foundation
 import Synchronization
 
 /// What a transcript derives from its rows, kept until the rows change: its blocks
-/// (`TranscriptGrouping.blocks`) and its prompts (`PromptMark.marks`).
+/// (`TranscriptGrouping.blocks`), its prompts (`PromptMark.marks`) and its task list
+/// (`TodoPlan.current`).
 ///
 /// The chat reads both each time a block scrolls on or off screen (the prompt rail, the
 /// scroll-to-bottom button). Grouped afresh each time, a long chat spent a few percent of
@@ -23,8 +24,15 @@ final class TranscriptDerived: Sendable {
         var marks: [PromptMark]
     }
 
+    private struct Plan {
+        var items: [TranscriptItem]
+        var isRunning: Bool
+        var plan: TodoPlan?
+    }
+
     private let blocks = Mutex<Blocks?>(nil)
     private let marks = Mutex<Marks?>(nil)
+    private let plan = Mutex<Plan?>(nil)
 
     func blocks(_ items: [TranscriptItem], isRunning: Bool) -> [TranscriptBlock] {
         if let cached = blocks.withLock({ $0 }), cached.isRunning == isRunning, cached.items == items {
@@ -39,6 +47,15 @@ final class TranscriptDerived: Sendable {
         if let cached = marks.withLock({ $0 }), cached.items == items { return cached.marks }
         let derived = PromptMark.marks(in: items)
         marks.withLock { $0 = Marks(items: items, marks: derived) }
+        return derived
+    }
+
+    func todoPlan(_ items: [TranscriptItem], isRunning: Bool) -> TodoPlan? {
+        if let cached = plan.withLock({ $0 }), cached.isRunning == isRunning, cached.items == items {
+            return cached.plan
+        }
+        let derived = TodoPlan.current(in: items, isRunning: isRunning)
+        plan.withLock { $0 = Plan(items: items, isRunning: isRunning, plan: derived) }
         return derived
     }
 }

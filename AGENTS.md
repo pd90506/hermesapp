@@ -179,10 +179,12 @@ Every third-party dependency, its license, pin and reason. Add a row here before
 
 ## Workflow
 
-- `main` is shared between the NUC and the Mac through the private GitHub remote. Keep commits
+- `main` is shared between the NUC and the Mac through the public GitHub remote. Keep commits
   small and the package green.
-- CI (`.github/workflows/package-tests.yml`) runs only on Linux. macOS runners cost 10x on a
-  private repo, so app builds are checked by hand on the Mac.
+- CI (`.github/workflows/package-tests.yml`) runs only on Linux, so app builds are checked by
+  hand on the Mac.
+- The repo is public (MIT, see `LICENSE`). Never commit secrets, real hostnames or addresses,
+  team ids, or personal paths and emails; this covers PR descriptions, comments and release notes.
 - **The Mac's main checkout and app builds** (decided by the user, 2026-10-16; PR test builds
   moved to the VM on 2026-10-17, and back to the host, as builds only, on 2026-10-18):
   - The main checkout on the Mac (`~/repo/fun/hermesapp`) stays on local `main`, kept up to

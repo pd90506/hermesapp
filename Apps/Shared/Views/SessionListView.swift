@@ -67,15 +67,11 @@ struct SessionListView: View {
     #endif
 
     var body: some View {
-        #if os(macOS)
-        // One clock for the whole sidebar. It only ages labels; row read tasks keep
-        // their existing revisions/cache and issue no extra network refreshes.
+        // One clock for the whole sidebar, once a minute. It only ages labels; row read
+        // tasks keep their existing revisions/cache and issue no extra network refreshes.
         TimelineView(.periodic(from: .now, by: 60)) { context in
             content.environment(\.sessionListClock, context.date)
         }
-        #else
-        content
-        #endif
     }
 
     private var content: some View {
@@ -545,10 +541,8 @@ private struct DatedSessionSections<Lead: View, Row: View>: View {
     let entries: [HistoryEntry]
     @ViewBuilder let lead: Lead
     let row: (HistoryEntry) -> Row
-    #if os(macOS)
     /// The sidebar's one clock (`SessionListView`), so the ranges move on as the day does.
     @Environment(\.sessionListClock) private var clock
-    #endif
 
     var body: some View {
         let groups = connection.sessionDateGroups(entries, now: now)
@@ -568,11 +562,5 @@ private struct DatedSessionSections<Lead: View, Row: View>: View {
         }
     }
 
-    private var now: Date {
-        #if os(macOS)
-        clock
-        #else
-        .now
-        #endif
-    }
+    private var now: Date { clock }
 }

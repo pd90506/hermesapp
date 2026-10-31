@@ -172,7 +172,7 @@ private struct TodoRow: View {
                 .background(alignment: .top) {
                     if !isLast {
                         Rectangle()
-                            .fill(.secondary.opacity(0.3))
+                            .fill(.secondary.opacity(0.45))
                             .frame(width: 1.5)
                             .padding(.top, TodoPanel.glyphSize + 4)
                             .padding(.bottom, 4)

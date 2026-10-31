@@ -7,6 +7,12 @@ The apps don't add anything to Hermes. They connect to the dashboard's existing 
 JSON-RPC WebSocket (`/api/ws`), the same interface the official Electron desktop app uses for a
 remote gateway. See [`docs/protocol.md`](docs/protocol.md).
 
+## Download
+
+Signed Mac builds are on the [Releases](https://github.com/pd90506/hermesapp/releases) page and
+update themselves in the app (Sparkle). There is no App Store or TestFlight build of the iOS app;
+build it yourself (see [Signing](#signing)).
+
 ## Current features
 
 - **Native macOS and iOS chat.** The Mac has a collapsible profile rail, session list and chat;
@@ -36,8 +42,8 @@ remote gateway. See [`docs/protocol.md`](docs/protocol.md).
   Markdown colours have their own settings. The Mac uses pointer hover feedback and the iPhone
   uses a floating composer and profile drawer.
 
-The shared Swift package builds and tests on Linux; the SwiftUI apps are built and tested on the
-Mac under the workflow below. The Linux CI does **not** verify Apple UI builds. Voice input and
+The shared Swift package also builds and tests on Linux; the SwiftUI apps need a Mac with Xcode.
+The Linux CI does **not** verify Apple UI builds. Voice input and
 native token-refresh wiring are not in the apps yet. See [Known limitations](#known-limitations)
 and [`docs/protocol.md`](docs/protocol.md) for details.
 
@@ -57,19 +63,18 @@ Apps/Tests/macOS/          AppKit window and component tests, run inside the tes
 Apps/UITests/              macOS and iOS UI tests, run inside the test VM.
 project.yml                XcodeGen source of truth; never commit the generated .xcodeproj.
 Config/                    Shared settings and ignored local signing configuration.
-backend/                   Reserved for NUC-side helpers (e.g. a push relay).
+backend/                   Reserved for server-side helpers (e.g. a push relay).
 docs/protocol.md           Source-cited protocol notes for native clients.
 scripts/check-project-spec.py  Static check of project.yml on Linux.
 scripts/vm-test.sh         Mac-hosted build, VM-only automated test runner.
 .github/workflows/         Linux-only Swift package CI.
 ```
 
-## Workflows
+## Building
 
-### On the NUC (Linux, no Xcode)
+### The package (Linux or Mac)
 
-You can build and test only the package. UI code can be edited here, but it is compiled and run
-on the Mac.
+The package builds and tests anywhere Swift 6.2 or later runs, without Xcode:
 
 ```sh
 swift build --package-path Packages/HermesKit
@@ -77,17 +82,9 @@ swift test  --package-path Packages/HermesKit
 python3 scripts/check-project-spec.py        # after editing project.yml or adding app files
 ```
 
-Toolchain: Swift 6.x via swiftly (`source ~/.local/share/swiftly/env.sh`). The manifest pins
-`swift-tools-version: 6.2`, the version in Xcode 26, so it resolves on both hosts.
+The manifest pins `swift-tools-version: 6.2`, the version in Xcode 26.
 
-### On the Mac (Xcode)
-
-Keep the primary checkout (`~/repo/fun/hermesapp`) clean, on local `main`, and synchronized with
-`origin/main`. For a feature, create a separate worktree from the latest `origin/main`; do not
-build or test a PR from the primary checkout. Read [`AGENTS.md`](AGENTS.md) before work.
-
-For a **merged** `main` build only, run the following in the primary checkout (not a feature
-worktree). PR builds must go through `scripts/vm-test.sh` below:
+### The apps (Mac, Xcode 26)
 
 ```sh
 brew install xcodegen                              # once
@@ -96,15 +93,16 @@ python3 scripts/check-project-spec.py
 xcodebuild -project Hermes.xcodeproj -scheme HermesMac -configuration Debug build
 ```
 
-This uses Xcode's default DerivedData. For iOS, build `HermesiOS` in Xcode or with `xcodebuild` after signing is configured;
-installing on a paired phone requires it to be unlocked. `Apps/Shared/AppIcon.icon` is adapted
-from Hermes Desktop's Icon Composer asset (MIT; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
+For iOS, build `HermesiOS` in Xcode or with `xcodebuild` after signing is configured (see
+[Signing](#signing)); installing on a paired phone requires it to be unlocked.
+`Apps/Shared/AppIcon.icon` is adapted from Hermes Desktop's Icon Composer asset (MIT; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 
 ### Automated tests: Mac-hosted Tart VM only
 
 **Never run automated tests, a test dashboard or `scripts/live-test.sh` on the Mac host.** The
-host compiles test products; the single `hermesapp-test-vm` runs all package live, macOS window
-and macOS UI tests. Run this from the feature's own worktree:
+host compiles test products; a single [Tart](https://tart.run) VM, `hermesapp-test-vm`, runs all
+package live, macOS window and macOS UI tests. Run this from the feature's own worktree:
 
 ```sh
 scripts/vm-test.sh                          # full live + window + macOS UI suite
@@ -120,14 +118,11 @@ uses only its own `hermesapp-test` Hermes profile. The ignored `.env.vm-hermes` 
 model key to the VM; never commit it or put it in logs. Without it, tests requiring model
 responses skip or fail. **Before reporting a PR ready to merge, run the full suite without
 `--only` or `--test`** (and add `--ios` if iOS changed). Show VM screenshots for visible UI
-changes. Panda explicitly approves each merge; afterwards sync the primary checkout, build
-`main` with default DerivedData and relaunch only this app, not the official Hermes Desktop.
-See [`AGENTS.md`](AGENTS.md) for the complete host/VM rules.
+changes. See [`AGENTS.md`](AGENTS.md) for the complete host/VM rules and the git workflow.
 
 ### Why XcodeGen
 
-A hand-maintained `.xcodeproj` can't be edited sensibly on Linux and causes merge conflicts
-between the NUC and the Mac.
+A hand-maintained `.xcodeproj` can't be edited sensibly on Linux and causes merge conflicts.
 
 - **XcodeGen** keeps the whole project in one short YAML file (`project.yml`):
   - The generated project and Info.plists are ignored by git.
@@ -139,7 +134,7 @@ between the NUC and the Mac.
 - **Xcode 16+ synchronized folders** reduce `project.pbxproj` churn, but the pbxproj is still a
   committed, hand-merged artefact.
 
-The NUC does not use XcodeGen to validate Apple builds. `scripts/check-project-spec.py` checks
+Linux can't run XcodeGen or Xcode, so `scripts/check-project-spec.py` checks
 the spec statically (YAML parses, paths exist, local package products exist, remote packages use
 HTTPS and pin a version, every app Swift file belongs to a target). The real check is
 `xcodegen generate` and an Xcode build on the Mac.

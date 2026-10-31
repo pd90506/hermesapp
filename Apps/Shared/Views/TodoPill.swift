@@ -20,22 +20,16 @@ struct TodoPill<Jump: View>: View {
     var body: some View {
         let plan = transcript.todoPlan
         let showsJump = scroll.isAwayFromEnd
-        // A glass container of its own, with no room to merge: in the chat's (`ChatView`),
-        // whose glass merges shapes 16 pt apart so the scroll pill grows out of the
-        // composer, these pills and the composer under them ran together into one shape
-        // (the user, 2026-10-31).
-        GlassEffectContainer(spacing: 0) {
-            ZStack(alignment: .bottom) {
-                if let plan {
-                    if isOpen {
-                        TodoPanel(plan: plan) { isOpen = false }
-                            .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
-                    } else {
-                        pills(plan, showsJump: showsJump)
-                            .transition(reduceMotion ? .opacity : .asymmetric(
-                                insertion: .scale(scale: 1.1).combined(with: .opacity).combined(with: .offset(y: 5)),
-                                removal: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 5))))
-                    }
+        ZStack(alignment: .bottom) {
+            if let plan {
+                if isOpen {
+                    ownGlass { TodoPanel(plan: plan) { isOpen = false } }
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
+                } else {
+                    ownGlass { pills(plan, showsJump: showsJump) }
+                        .transition(reduceMotion ? .opacity : .asymmetric(
+                            insertion: .scale(scale: 1.1).combined(with: .opacity).combined(with: .offset(y: 5)),
+                            removal: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 5))))
                 }
             }
         }
@@ -43,6 +37,15 @@ struct TodoPill<Jump: View>: View {
         .animation(Motion.jumpButton, value: showsJump)
         .animation(Motion.swap, value: isOpen)
         .onChange(of: plan == nil) { _, gone in if gone { isOpen = false } }
+    }
+
+    /// A glass container of its own, with no room to merge: in the chat's (`ChatView`),
+    /// whose glass merges shapes 16 pt apart so the scroll pill grows out of the composer,
+    /// these pills and the composer under them ran together into one shape (the user,
+    /// 2026-10-31). One for the pills and one for the card, not one around both: on the
+    /// Mac the pill then kept the card's frame for accessibility once the card closed.
+    private func ownGlass(@ViewBuilder _ content: () -> some View) -> some View {
+        GlassEffectContainer(spacing: 0, content: content)
     }
 
     /// The row: the scroll-to-bottom pill (when it shows), then this one.

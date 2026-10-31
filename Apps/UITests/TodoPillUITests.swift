@@ -72,11 +72,7 @@ final class TodoPillUITests: XCTestCase {
         XCTAssertTrue(eventually(timeout: 10) { pill.exists && pill.label.contains("All tasks complete") },
                       "a finished list stays after its turn: \(pill.label)")
         attach(app, "3 pill finished")
-        // Settled first: while the reply's last rows land, the chat can leave its end for a
-        // moment and the arrow joining the row moves the pill aside under the click.
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         press(pill)
-        if !panel.waitForExistence(timeout: 3) { press(pill) }
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "the finished list opens")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         attach(app, "4 list finished")

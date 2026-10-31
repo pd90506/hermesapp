@@ -4,7 +4,7 @@ import HermesProtocol
 import Observation
 
 /// A profile on one server (profile names are only unique per server).
-struct ProfileRef: Hashable {
+struct ProfileRef: Hashable, Codable {
     var server: UUID
     var profile: String
 }
@@ -14,6 +14,8 @@ struct ProfileRef: Hashable {
 struct PendingProfileChat: Equatable {
     var profile: ProfileRef
     var listReads: Int
+    /// The profile picked last before a relaunch: its chat is shown on iPhone too.
+    var atLaunch = false
 }
 
 /// The sign-in methods as the settings show them. Map 1:1 onto `GatewayCredential`.
@@ -139,6 +141,9 @@ final class AppModel {
     /// A profile picked in the rail whose last chat isn't shown yet: shown once it is
     /// known (`RootView.restoreProfileChat`), or dropped when a row is clicked first.
     var pendingProfileChat: PendingProfileChat?
+    /// The first profile shown after launch (the one picked last, `lastProfileKey`) shows
+    /// the chat it showed last, once (`RootView.restoreProfileChat`).
+    var restoresLaunchProfileChat = false
     /// Which session sources the lists hide and which source new sessions carry, kept
     /// across launches and handed to every server's connection.
     var sourceSettings = SessionSourceSettings() {
@@ -176,7 +181,9 @@ final class AppModel {
             // `serverCount` servers, all the same dashboard under different names.
             let servers = (0..<launch.serverCount).map { index in
                 ServerConnection(
-                    config: ServerConfig(name: launch.serverCount > 1 ? "Test \(index + 1)" : "",
+                    // Kept state names servers by id: the same ids on every launch then.
+                    config: ServerConfig(id: launch.stateSuite == nil ? UUID() : UITestLaunch.serverID(index),
+                                         name: launch.serverCount > 1 ? "Test \(index + 1)" : "",
                                          serverURL: launch.serverURL, authMode: .sessionToken),
                     secret: launch.token)
             }
@@ -189,6 +196,10 @@ final class AppModel {
             self.settingsPresentation = SettingsPresentation(hasServer: true)
             if let sources = launch.sourceSettings { self.sourceSettings = sources }
             applySourceSettings()
+            if let suite = launch.stateSuite, launch.startsStateFresh {
+                UserDefaults.standard.removePersistentDomain(forName: suite)
+            }
+            if let state = launch.state { loadProfileState(from: state, servers: servers) }
             notifier.model = self
             return
         }
@@ -215,10 +226,7 @@ final class AppModel {
         if let data = defaults.data(forKey: Self.pinsKey), let saved = try? JSONDecoder().decode(SessionPins.self, from: data) {
             self.pins = saved
         }
-        if let data = defaults.data(forKey: Self.profileChatsKey),
-            let saved = try? JSONDecoder().decode(ProfileChats.self, from: data) {
-            self.profileChats = saved
-        }
+        loadProfileState(from: defaults, servers: servers)
         if let data = defaults.data(forKey: Self.sourceSettingsKey),
             let saved = try? JSONDecoder().decode(SessionSourceSettings.self, from: data) {
             self.sourceSettings = saved
@@ -317,7 +325,16 @@ final class AppModel {
             pendingProfileChat = PendingProfileChat(profile: picked, listReads: server.connection.sessionListReads)
         }
         sessionsServerID = server.id
+        server.connection.preferredListProfile = profile
         server.connection.selectListProfile(profile)
+        saveLastProfile(picked)
+    }
+
+    private static let lastProfileKey = "lastProfile"
+
+    func saveLastProfile(_ profile: ProfileRef) {
+        guard let defaults = Self.profileStateDefaults, let data = try? JSONEncoder().encode(profile) else { return }
+        defaults.set(data, forKey: Self.lastProfileKey)
     }
 
     /// The profile the rail shows as selected, as (server, profile name).
@@ -345,8 +362,33 @@ final class AppModel {
     private static let profileChatsKey = "profileChats"
 
     private func saveProfileChats() {
-        guard !Self.isUITest, let data = try? JSONEncoder().encode(profileChats) else { return }
-        UserDefaults.standard.set(data, forKey: Self.profileChatsKey)
+        guard let defaults = Self.profileStateDefaults, let data = try? JSONEncoder().encode(profileChats) else { return }
+        defaults.set(data, forKey: Self.profileChatsKey)
+    }
+
+    /// The chat each profile showed last, and the profile picked last: the relaunch selects
+    /// that profile again and shows its last chat (`RootView.restoreProfileChat`).
+    private func loadProfileState(from defaults: UserDefaults, servers: [ServerConnection]) {
+        if let data = defaults.data(forKey: Self.profileChatsKey),
+            let saved = try? JSONDecoder().decode(ProfileChats.self, from: data) {
+            profileChats = saved
+        }
+        if let data = defaults.data(forKey: Self.lastProfileKey),
+            let last = try? JSONDecoder().decode(ProfileRef.self, from: data),
+            let server = servers.first(where: { $0.id == last.server && $0.hasURL }) {
+            sessionsServerID = server.id
+            server.connection.preferredListProfile = last.profile
+        }
+        restoresLaunchProfileChat = true
+    }
+
+    /// Where the profile state is kept: the user's defaults, or in UI tests that keep
+    /// state across launches their own (`UITestLaunch.state`), else nowhere.
+    private static var profileStateDefaults: UserDefaults? {
+        #if DEBUG
+        if let launch = UITestLaunch.current { return launch.state }
+        #endif
+        return .standard
     }
 
     private func syncPages() {
@@ -716,6 +758,18 @@ struct UITestLaunch {
     var reconnectNoticeDelay: Double?
     /// Settings ▸ Session Sources, as JSON (`SessionSourceSettings`), if not the defaults.
     var sourceSettings: SessionSourceSettings?
+    /// With `HERMES_UITEST_STATE` (a defaults suite name), the profile picked last and each
+    /// profile's last chat are kept there across launches, as the user's are; with
+    /// `HERMES_UITEST_STATE_FRESH=1` the suite starts empty. Off by default.
+    var stateSuite: String?
+    var startsStateFresh = false
+
+    var state: UserDefaults? { stateSuite.flatMap { UserDefaults(suiteName: $0) } }
+
+    /// A server's id when state is kept: the same on every launch.
+    static func serverID(_ index: Int) -> UUID {
+        UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index + 1))!
+    }
 
     static let current: UITestLaunch? = {
         let env = ProcessInfo.processInfo.environment
@@ -728,7 +782,9 @@ struct UITestLaunch {
                             reconnectNoticeDelay: env["HERMES_UITEST_RECONNECT_NOTICE_DELAY"].flatMap(Double.init),
                             sourceSettings: env["HERMES_UITEST_SOURCE_SETTINGS"].flatMap {
                                 try? JSONDecoder().decode(SessionSourceSettings.self, from: Data($0.utf8))
-                            })
+                            },
+                            stateSuite: env["HERMES_UITEST_STATE"],
+                            startsStateFresh: env["HERMES_UITEST_STATE_FRESH"] == "1")
     }()
 }
 

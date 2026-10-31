@@ -118,6 +118,25 @@ struct GatewayConnectionBotTests {
         #expect(connection.bots.map(\.name) == ["default", "coder", "finance"])
     }
 
+    @Test func rosterSelectsTheDefaultProfile() async throws {
+        let (connection, _) = try await connect(BotServer(profiles: roster), log: FrameLog())
+        #expect(connection.listProfile == "default")
+    }
+
+    /// A relaunch shows the profile picked last, unless the roster no longer has it.
+    @Test(arguments: [("finance", "finance"), ("retired", "default")])
+    func rosterSelectsThePreferredProfileWhileItIsListed(preferred: String, selected: String) async throws {
+        let transport = FakeTransport()
+        transport.serve(epoch: "E1", log: FrameLog(), BotServer(profiles: roster).handle)
+        var configuration = GatewayClient.Configuration()
+        configuration.heartbeatInterval = nil
+        let connection = GatewayConnection(configuration: configuration, backoff: { _ in .milliseconds(1) })
+        connection.preferredListProfile = preferred
+        try await connection.connect(using: FakeConnector([transport]))
+        try await connection.refreshBots()
+        #expect(connection.listProfile == selected)
+    }
+
     @Test func botRowOpensTheChatFoundByTitleOnItsProfile() async throws {
         let log = FrameLog()
         let server = BotServer(profiles: roster, botChats: ["coder": botChatRow(id: "coder-chat", tip: "coder-chat-tip")])

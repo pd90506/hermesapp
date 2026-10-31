@@ -47,7 +47,8 @@ extension GatewayConnection {
         bots = Bot.roster(profiles)
         loadAvatars()
         if !bots.contains(where: { $0.name == listProfile }) {
-            selectListProfile(bots.first(where: \.isDefault)?.name ?? bots.first?.name)
+            let preferred = bots.first { $0.name == preferredListProfile }
+            selectListProfile((preferred ?? bots.first(where: \.isDefault) ?? bots.first)?.name)
         }
     }
 

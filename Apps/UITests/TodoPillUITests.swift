@@ -22,11 +22,12 @@ final class TodoPillUITests: XCTestCase {
         defer { app.terminate() }
         let composer = try openNewChat(app)
 
-        let first = "PLANNED\(Int.random(in: 1000...9999))"
+        // The marker never appears whole in the prompt, so only the reply matches it.
+        let firstDigits = Int.random(in: 1000...9999), first = "PLANNED\(firstDigits)"
         send("Call the todo_list tool exactly once, writing this list of five tasks: "
             + "id 1 \"Read the brief\" completed, id 2 \"Sketch the layout\" completed, "
             + "id 3 \"Build the pill and the panel\" in_progress, id 4 \"Run the tests\" pending, "
-            + "id 5 \"Take screenshots\" pending. Do nothing else, then reply with \(first) and nothing else.",
+            + "id 5 \"Take screenshots\" pending. Do nothing else, then reply with the word PLANNED immediately followed by the digits \(firstDigits), and nothing else.",
             composer: composer, in: app)
         XCTAssertTrue(waitForMessage(first, in: app, timeout: 180), "Hermes wrote the list and replied")
 
@@ -44,9 +45,9 @@ final class TodoPillUITests: XCTestCase {
         press(app.buttons["todoClose"].firstMatch)
         XCTAssertTrue(eventually(timeout: 5) { !panel.exists }, "Close puts the list away")
 
-        let second = "FINISHED\(Int.random(in: 1000...9999))"
+        let secondDigits = Int.random(in: 1000...9999), second = "FINISHED\(secondDigits)"
         send("Call the todo_list tool exactly once with merge true, marking ids 3, 4 and 5 completed. "
-            + "Do nothing else, then reply with \(second) and nothing else.", composer: composer, in: app)
+            + "Do nothing else, then reply with the word FINISHED immediately followed by the digits \(secondDigits), and nothing else.", composer: composer, in: app)
         XCTAssertTrue(waitForMessage(second, in: app, timeout: 180), "Hermes finished the list and replied")
         XCTAssertTrue(eventually(timeout: 10) { pill.exists && pill.label.contains("All tasks complete") },
                       "a finished list stays after its turn: \(pill.label)")

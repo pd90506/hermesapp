@@ -199,29 +199,37 @@ struct ChatView: View {
     /// away under it (`scrollEdgeEffectStyle`); on the Mac they fade into the chat's colour
     /// from the bar's top to the card's middle, so the card's glass shows them blurred
     /// under its top as they go.
+    ///
+    /// The agent's task list rides on top of the card (`TodoPill`), inside the bar: the
+    /// scroll-to-bottom pill, at the bottom of the chat, then sits above both. As far
+    /// above the card as that pill: any closer, the Mac's chat glass merged the two into
+    /// one shape (the user, 2026-10-31).
     private var composerRow: some View {
-        ComposerView(composer: composer, isConnected: server.isConnected)
-            .environment(\.chatIsShown, isShown)
-            .disabled(!isShown)
-            .frame(maxWidth: Self.contentWidth(textSize: sizes.content) - 32)
-            .frame(maxWidth: .infinity)
-            #if os(macOS)
-            .padding(.horizontal, 16)
-            .padding(.horizontal, PromptRail.room)
-            .padding(.vertical, 10)
-            .background {
-                LinearGradient(stops: [.init(color: surfaces.chat.opacity(0), location: 0),
-                                       .init(color: surfaces.chat, location: 0.55)],
-                               startPoint: .top, endPoint: .bottom)
-                    .allowsHitTesting(false)
-            }
-            #else
-            .padding(.horizontal, 12)
-            // Room above the card inside the bar: the blur (`scrollEdgeEffectStyle`) starts
-            // there, so a line above the card is already soft as it reaches it.
-            .padding(.top, Self.pillGap)
-            .padding(.bottom, 6)
-            #endif
+        VStack(spacing: Self.pillGap) {
+            TodoPill(transcript: session.transcript)
+            ComposerView(composer: composer, isConnected: server.isConnected)
+                .environment(\.chatIsShown, isShown)
+                .disabled(!isShown)
+        }
+        .frame(maxWidth: Self.contentWidth(textSize: sizes.content) - 32)
+        .frame(maxWidth: .infinity)
+        #if os(macOS)
+        .padding(.horizontal, 16)
+        .padding(.horizontal, PromptRail.room)
+        .padding(.vertical, 10)
+        .background {
+            LinearGradient(stops: [.init(color: surfaces.chat.opacity(0), location: 0),
+                                   .init(color: surfaces.chat, location: 0.55)],
+                           startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+        }
+        #else
+        .padding(.horizontal, 12)
+        // Room above the card inside the bar: the blur (`scrollEdgeEffectStyle`) starts
+        // there, so a line above the card is already soft as it reaches it.
+        .padding(.top, Self.pillGap)
+        .padding(.bottom, 6)
+        #endif
     }
 
     #if os(iOS)

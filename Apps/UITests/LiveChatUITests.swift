@@ -1025,17 +1025,6 @@ final class LiveChatUITests: XCTestCase {
         attach(app, "profile picked: its sessions")
     }
 
-    /// Polls a condition that settles after an animation.
-    @MainActor
-    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if condition() { return true }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        } while Date() < deadline
-        return condition()
-    }
-
     /// Two servers (the same dashboard twice): both connect, each on its own socket,
     /// and the sidebar names the server it lists. On macOS
     /// `testEachProfileReturnsToItsLastChat` starts with both servers connected.
@@ -1371,6 +1360,17 @@ final class LiveChatUITests: XCTestCase {
                                  "the chat written in is listed: \(list.outlineRows.count) rows")
         }
         return (list, sessionRows())
+    }
+
+    /// Polls a condition that settles after an animation.
+    @MainActor
+    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+        return condition()
     }
 
     /// The window's title (the chat's) once it passes `test`, or nil.

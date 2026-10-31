@@ -156,6 +156,17 @@ final class AppModel {
     var markdownColors = MarkdownColors() {
         didSet { saveMarkdownColors() }
     }
+    /// Which system notifications to show (Settings ▸ Notifications), kept across launches.
+    var alertPreferences = AlertPreferences() {
+        didSet {
+            notifier.gate.preferences = alertPreferences
+            saveAlertPreferences()
+        }
+    }
+    /// Shows the connections' alerts as system notifications (`SystemNotifier`).
+    @ObservationIgnored let notifier = SystemNotifier()
+    /// The chat a clicked notification asked for; `RootView` opens it and clears this.
+    var alertTarget: AlertTarget?
 
     init() {
         AppSignposts.install()
@@ -178,6 +189,7 @@ final class AppModel {
             self.settingsPresentation = SettingsPresentation(hasServer: true)
             if let sources = launch.sourceSettings { self.sourceSettings = sources }
             applySourceSettings()
+            notifier.model = self
             return
         }
         #endif
@@ -220,6 +232,12 @@ final class AppModel {
             let saved = try? JSONDecoder().decode(MarkdownColors.self, from: data) {
             self.markdownColors = saved
         }
+        if let data = defaults.data(forKey: Self.alertPreferencesKey),
+            let saved = try? JSONDecoder().decode(AlertPreferences.self, from: data) {
+            self.alertPreferences = saved
+        }
+        notifier.gate.preferences = alertPreferences
+        notifier.model = self
         if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
             saveServers()
             if (try? KeychainStore.write(server.secret, account: migrated.secretAccount)) != nil {
@@ -278,6 +296,7 @@ final class AppModel {
             savePins()
             saveProfileChats()
             Self.saveReadMarks(nil, for: server.id.uuidString)
+            Self.saveReadMarks(nil, for: server.id.uuidString, key: Self.replyAlertMarksKey)
             try? KeychainStore.write("", account: server.config.secretAccount)
         }
         await server.connection.disconnect()
@@ -521,19 +540,29 @@ final class AppModel {
         connection.readMarks = marks
         Self.saveReadMarks(marks, for: id)
         connection.readMarksChanged = { Self.saveReadMarks($0, for: id) }
+        var alerted = Self.isUITest ? SessionReadMarks() : Self.savedReadMarks(Self.replyAlertMarksKey)[id] ?? SessionReadMarks()
+        alerted.start()
+        connection.replyAlertMarks = alerted
+        Self.saveReadMarks(alerted, for: id, key: Self.replyAlertMarksKey)
+        connection.replyAlertMarksChanged = { Self.saveReadMarks($0, for: id, key: Self.replyAlertMarksKey) }
+        let serverID = server.id
+        connection.alertSink = { [weak self] alert in self?.notifier.show(alert, from: serverID) ?? false }
     }
 
-    private static func savedReadMarks() -> [String: SessionReadMarks] {
-        guard let data = UserDefaults.standard.data(forKey: readMarksKey) else { return [:] }
+    /// The replies alerted (or let go) per server (`GatewayConnection.replyAlertMarks`).
+    private static let replyAlertMarksKey = "sessionReplyAlertMarks"
+
+    private static func savedReadMarks(_ key: String = readMarksKey) -> [String: SessionReadMarks] {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return [:] }
         return (try? JSONDecoder().decode([String: SessionReadMarks].self, from: data)) ?? [:]
     }
 
     /// `marks` for the server `id`; nil forgets the server's.
-    private static func saveReadMarks(_ marks: SessionReadMarks?, for id: String) {
+    private static func saveReadMarks(_ marks: SessionReadMarks?, for id: String, key: String = readMarksKey) {
         guard !isUITest else { return }
-        var all = savedReadMarks()
+        var all = savedReadMarks(key)
         all[id] = marks
-        if let data = try? JSONEncoder().encode(all) { UserDefaults.standard.set(data, forKey: readMarksKey) }
+        if let data = try? JSONEncoder().encode(all) { UserDefaults.standard.set(data, forKey: key) }
     }
 
     private func saveSourceSettings() {
@@ -552,6 +581,13 @@ final class AppModel {
     func setPinned(_ pinned: Bool, _ entry: HistoryEntry, on server: ServerConnection) {
         pins.setPinned(pinned, entry, on: server.id)
         savePins()
+    }
+
+    private static let alertPreferencesKey = "notificationPreferences"
+
+    private func saveAlertPreferences() {
+        guard !Self.isUITest, let data = try? JSONEncoder().encode(alertPreferences) else { return }
+        UserDefaults.standard.set(data, forKey: Self.alertPreferencesKey)
     }
 
     private static let appearanceKey = "appearance"

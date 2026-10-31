@@ -90,6 +90,12 @@ struct RootView: View {
         // iPhone (`restoreProfileChat`).
         .onChange(of: model.pendingProfileChat) { _, _ in restoreProfileChat() }
         .onChange(of: shownProfile) { _, _ in restoreProfileChat() }
+        // A clicked notification: its chat.
+        .onChange(of: model.alertTarget) { _, target in
+            guard let target else { return }
+            model.alertTarget = nil
+            openAlerted(target)
+        }
         // Instruments: where a chat switch starts (docs/performance-tracing.md).
         .onChange(of: selection) { _, _ in AppSignposts.event("Chat selected") }
         .task {
@@ -369,6 +375,43 @@ struct RootView: View {
             model.actionError = model.describe(error, on: server)
             // Clear the selection so clicking the same row again retries.
             if selection == item { selection = nil }
+        }
+    }
+
+    /// Opens the chat a notification was about: its row when the list has one, else the
+    /// session by its stored id (a chat of another profile, or not listed).
+    private func openAlerted(_ target: AlertTarget) {
+        guard let server = model.server(target.server) else { return }
+        let connection = server.connection
+        let item: SidebarItem?
+        if target.isBotChat, let profile = target.profile {
+            item = .bot(server: server.id, profile: profile)
+        } else if let entry = connection.history.first(where: {
+            $0.profile == target.profile && $0.summary.id == target.storedSessionID
+        }) {
+            item = .history(server: server.id, id: entry.id)
+        } else {
+            item = nil
+        }
+        if let item {
+            selection = item
+            Task { await open(item) }
+            return
+        }
+        model.activeServerID = server.id
+        #if os(iOS)
+        compactColumn = .detail
+        #endif
+        Task {
+            do {
+                if let profile = target.profile {
+                    try await connection.open(HistoryEntry(profile: profile, summary: SessionSummary(id: target.storedSessionID)))
+                } else {
+                    try await connection.open(SessionSummary(id: target.storedSessionID))
+                }
+            } catch {
+                model.actionError = model.describe(error, on: server)
+            }
         }
     }
 

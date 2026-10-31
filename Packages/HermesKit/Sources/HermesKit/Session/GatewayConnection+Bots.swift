@@ -372,6 +372,8 @@ extension GatewayConnection {
                 if gen == generation, let activity {
                     rowActivity[key] = activity
                     if isOnScreen(entry) { markSeen(entry, through: activity.newestReply) }
+                    noteReply(profile: entry.profile, storedID: entry.summary.id, isBotChat: false,
+                              label: (entry.summary.title ?? entry.summary.preview)?.trimmed.nonEmpty, activity: activity)
                 }
                 next()
             }
@@ -485,7 +487,7 @@ extension GatewayConnection {
                     historyProfile = profile
                     sessionListReads += 1
                     let listed = history
-                    Task { await readRowActivity(listed) }
+                    rowActivityTask = Task { await readRowActivity(listed) }
                     return
                 }
                 guard limit <= Int.max / 2 else { throw SessionListError.tooLarge }

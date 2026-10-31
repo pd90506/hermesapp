@@ -126,6 +126,18 @@ public final class GatewayConnection {
     public var readMarks = SessionReadMarks()
     /// Called with `readMarks` whenever they change, to save them.
     @ObservationIgnored public var readMarksChanged: (@MainActor (SessionReadMarks) -> Void)?
+    /// Where system notifications go (`GatewayConnection+Alerts`): the app shows the
+    /// alert or not (`AlertGate`) and says whether it did.
+    @ObservationIgnored public var alertSink: (@MainActor (GatewayAlert) -> Bool)?
+    /// The replies alerted, or let go, on this device, per session: a reply newer than
+    /// its mark is new (`noteReply`). Kept by the app, like `readMarks`.
+    public var replyAlertMarks = SessionReadMarks()
+    /// Called with `replyAlertMarks` whenever they change, to save them.
+    @ObservationIgnored public var replyAlertMarksChanged: (@MainActor (SessionReadMarks) -> Void)?
+    /// No live alert before this (`alertQuietWindow`): the connect's re-deliveries.
+    @ObservationIgnored var alertsQuietUntil = Date.distantPast
+    /// The last list's row reads (`readRowActivity`), for `checkForReplies` to wait on.
+    @ObservationIgnored var rowActivityTask: Task<Void, Never>?
     /// Whether `activeSession` is on screen: not on iPhone's session list, nor while
     /// another server's chat is shown. Its replies count as seen only then.
     public var isChatOnScreen = true {
@@ -377,6 +389,7 @@ public final class GatewayConnection {
             throw CancellationError()
         }
         client = newClient
+        alertsQuietUntil = Date.now.addingTimeInterval(Self.alertQuietWindow)
         inboundTask?.cancel()
         inboundTask = Task { [weak self] in
             for await item in stream {
@@ -576,6 +589,7 @@ public final class GatewayConnection {
         case .event(let event):
             // Sidebar rows, notices, reclaimed runtimes (`GatewayConnection+Live`).
             handleConnectionEvent(event)
+            raiseAlert(for: event)
             // The active chat, and the warm ones behind it while this socket still
             // serves them: going back to one then shows what happened meanwhile.
             for session in eventTargets(event.sessionID ?? "") {
@@ -588,6 +602,7 @@ public final class GatewayConnection {
             }
 
         case .serverRequest(let request):
+            raiseAlert(for: request)
             if let session = activeSession, request.sessionID == session.sessionID {
                 session.receive(request)
             } else if !otherSessionRequests.contains(where: { $0.id == request.id }) {

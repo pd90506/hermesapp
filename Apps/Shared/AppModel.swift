@@ -505,21 +505,20 @@ final class AppModel {
             let (redirect, port) = try await LoopbackRedirect.start()
             defer { redirect.stop() }
             let signIn = NativeSignIn(endpoint: endpoint, port: port)
-            let callback = try await withThrowingTaskGroup(of: URL?.self) { group in
-                group.addTask { try await redirect.callback() }
-                group.addTask { @MainActor in
-                    try await open(signIn.authorizeURL)
-                    // Closed by the user before the dashboard called back: give it a moment.
-                    try await Task.sleep(for: .seconds(2))
-                    return nil
-                }
-                defer { group.cancelAll() }
-                while let next = try await group.next() {
-                    if let url = next { return url }
-                    throw CancellationError()
-                }
-                throw CancellationError()
+            // The page, until it closes (iOS's sheet) or the wait is over; then the listener
+            // stops, after a moment for a callback on its way.
+            let page = Task { @MainActor in
+                defer { Task { try? await Task.sleep(for: .seconds(2)); redirect.stop() } }
+                try await open(signIn.authorizeURL)
             }
+            defer { page.cancel() }
+            let callback = try await withTaskCancellationHandler {
+                try await redirect.callback()
+            } onCancel: {
+                redirect.stop()
+            }
+            // The browser came back: close the sign-in sheet.
+            page.cancel()
             let tokens = try await signIn.tokens(from: callback)
             server.config.authMode = .browser
             server.secret = tokens.secret

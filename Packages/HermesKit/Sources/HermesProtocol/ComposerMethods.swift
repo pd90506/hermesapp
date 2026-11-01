@@ -18,6 +18,10 @@ extension GatewayMethod {
     public static let commandDispatch = "command.dispatch"
     // Steering a running turn (`contracts/sessions.py:617-635`, `contracts/prompt_voice.py:221-235`).
     public static let sessionSteer = "session.steer"
+    // A chat's subagents (`tui_gateway/methods_subagents.py`, `methods_session.py:2210`).
+    public static let subagentList = "subagent.list"
+    public static let subagentSteer = "subagent.steer"
+    public static let subagentInterrupt = "subagent.interrupt"
     public static let sessionRedirect = "session.redirect"
     public static let promptBtw = "prompt.btw"
     // Slash commands Desktop runs as plain RPCs (`desktop-slash-commands.ts:259-313`).

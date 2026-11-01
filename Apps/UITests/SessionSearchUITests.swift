@@ -24,7 +24,7 @@ final class SessionSearchUITests: XCTestCase {
         try await Self.importSession(id: "uitest-search-\(run)", title: title,
                                      prompt: "Which name did we pick for the release?",
                                      reply: "We picked \(word) for the release name.",
-                                     date: Date().addingTimeInterval(-3 * 86_400),
+                                     date: Date().addingTimeInterval(-3 * 365 * 86_400),
                                      profile: profile, url: url, token: token)
 
         let app = XCUIApplication()
@@ -34,8 +34,8 @@ final class SessionSearchUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
         app.launchWithMainWindow()
         defer { app.terminate() }
-        // Not "the chat is listed": three days old, it is far down a long list, past what a
-        // lazy list draws. Search finds what the list doesn't show.
+        // Three years old: at the bottom of the list, so it never pushes another test's rows
+        // off screen, and past what a lazy list draws. Search finds what the list doesn't show.
         #if os(iOS)
         // iPhone may start on the chat; the sidebar is one Back away.
         let back = app.navigationBars.buttons.element(boundBy: 0)

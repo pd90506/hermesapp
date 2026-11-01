@@ -707,11 +707,10 @@ final class LiveChatUITests: XCTestCase {
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
         let newChat = app.buttons["New chat"]
         XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
-        // The only tab bar is the list's own, Sessions, Cron Jobs and Search (the system's): no
+        // The only tab bar is the list's own, Sessions and Cron Jobs (the system's): no
         // tabs for the app's sections.
         let tabs = app.tabBars.firstMatch.buttons.allElementsBoundByIndex.map(\.label)
-        XCTAssertEqual(tabs, app.tabBars.firstMatch.exists ? ["Sessions", "Cron Jobs", "Search"] : [],
-                       "only the list's tabs: \(tabs)")
+        XCTAssertEqual(tabs, app.tabBars.firstMatch.exists ? ["Sessions", "Cron Jobs"] : [], "only the list's tabs: \(tabs)")
         XCTAssertFalse(app.descendants(matching: .any)["pinnedBotChat"].exists, "no Bot Chat pinned above the list")
         let list = app.collectionViews.firstMatch
         let botChat = list.descendants(matching: .any)["botChatRow"].firstMatch

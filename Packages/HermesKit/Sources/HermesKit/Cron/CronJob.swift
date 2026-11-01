@@ -25,12 +25,19 @@ public struct CronJob: Sendable, Hashable, Identifiable, Decodable {
     public var lastError: String?
     public var lastDeliveryError: String?
     public var pausedReason: String?
+    /// The schedule as the editor takes it back: the cron expression, else the display
+    /// form (`"every 2h"`), which the scheduler parses too (`apps/desktop/src/app/cron/index.tsx::jobScheduleExpr`).
+    public var scheduleExpression: String?
+    /// The job's own model and provider, when it pins one; `nil` follows the default.
+    public var model: String?
+    public var provider: String?
 
     public init(id: String, name: String? = nil, prompt: String? = nil, script: String? = nil,
                 noAgent: Bool = false, deliver: String? = nil, enabled: Bool = true, state: String? = nil,
                 scheduleDisplay: String? = nil, nextRunAt: Date? = nil, lastRunAt: Date? = nil,
                 lastStatus: String? = nil, lastError: String? = nil, lastDeliveryError: String? = nil,
-                pausedReason: String? = nil) {
+                pausedReason: String? = nil, scheduleExpression: String? = nil, model: String? = nil,
+                provider: String? = nil) {
         self.id = id
         self.name = name
         self.prompt = prompt
@@ -46,6 +53,9 @@ public struct CronJob: Sendable, Hashable, Identifiable, Decodable {
         self.lastError = lastError
         self.lastDeliveryError = lastDeliveryError
         self.pausedReason = pausedReason
+        self.scheduleExpression = scheduleExpression ?? scheduleDisplay
+        self.model = model
+        self.provider = provider
     }
 
     public init(from decoder: any Decoder) throws {
@@ -79,7 +89,14 @@ public struct CronJob: Sendable, Hashable, Identifiable, Decodable {
         lastError = text("last_error")
         lastDeliveryError = text("last_delivery_error")
         pausedReason = text("paused_reason")
+        scheduleExpression = json["schedule"]?["expr"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? scheduleDisplay
+        model = text("model")
+        provider = text("provider")
     }
+
+    /// A script that runs without an agent: no prompt needed, and no model to pick
+    /// (`jobIsScriptOnly`, `apps/desktop/src/app/cron/cron-job-model.ts:8-10`).
+    public var isScriptOnly: Bool { noAgent && script != nil }
 
     /// Desktop's `jobTitle`: the name, else the start of the prompt, else of the
     /// script, else the id (`apps/desktop/src/app/cron/job-state.ts:38-46`).

@@ -203,14 +203,18 @@ private let storedJob = #"""
 
 /// Scripted jobs per profile, recording every call.
 final class FakeCronSource: CronSource, @unchecked Sendable {
-    private let state: Mutex<(jobs: [String: [CronJob]], calls: [String], updates: [[String: JSONValue]])>
+    private let state: Mutex<(jobs: [String: [CronJob]], calls: [String], updates: [[String: JSONValue]],
+                              created: [JSONValue])>
+    let blueprints: [CronBlueprint]
 
-    init(_ jobs: [String: [CronJob]]) {
-        state = Mutex((jobs, [], []))
+    init(_ jobs: [String: [CronJob]], blueprints: [CronBlueprint] = []) {
+        state = Mutex((jobs, [], [], []))
+        self.blueprints = blueprints
     }
 
     var calls: [String] { state.withLock { $0.calls } }
     var updates: [[String: JSONValue]] { state.withLock { $0.updates } }
+    var created: [JSONValue] { state.withLock { $0.created } }
 
     private func record(_ call: String) { state.withLock { $0.calls.append(call) } }
 
@@ -263,6 +267,28 @@ final class FakeCronSource: CronSource, @unchecked Sendable {
         record("delete \(jobID)")
         _ = try change(jobID, profile) { _ in }
         state.withLock { $0.jobs[profile]?.removeAll { $0.id == jobID } }
+    }
+
+    func createCronJob(profile: String, body: JSONValue) async throws -> CronJob {
+        record("create \(profile)")
+        let job = CronJob(id: "new\(created.count)", name: body["name"]?.stringValue, prompt: body["prompt"]?.stringValue)
+        state.withLock {
+            $0.created.append(body)
+            $0.jobs[profile, default: []].append(job)
+        }
+        return job
+    }
+
+    func cronBlueprints(profile: String) async throws -> [CronBlueprint] {
+        record("blueprints \(profile)")
+        return blueprints
+    }
+
+    func instantiateCronBlueprint(_ key: String, values: [String: String], profile: String) async throws -> CronJob {
+        record("instantiate \(key) \(values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ","))")
+        let job = CronJob(id: "bp-\(key)", name: key)
+        state.withLock { $0.jobs[profile, default: []].append(job) }
+        return job
     }
 }
 

@@ -5,17 +5,12 @@ import SwiftUI
 /// The tabs at the bottom of the session list: the profile's sessions, or its scheduled
 /// jobs (asked for by the user, 2026-10-19).
 enum SessionListTab: String, CaseIterable {
-    /// `search` is iOS's Search tab; the Mac searches from the sidebar's field.
-    case sessions, cron, search
-
-    /// The tabs of the Mac's tab bar.
-    static let barTabs: [SessionListTab] = [.sessions, .cron]
+    case sessions, cron
 
     var title: String {
         switch self {
         case .sessions: "Sessions"
         case .cron: "Cron Jobs"
-        case .search: "Search"
         }
     }
 
@@ -23,7 +18,6 @@ enum SessionListTab: String, CaseIterable {
         switch self {
         case .sessions: "bubble.left.and.bubble.right"
         case .cron: "clock"
-        case .search: "magnifyingglass"
         }
     }
 }
@@ -50,7 +44,7 @@ struct SessionListTabBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(SessionListTab.barTabs, id: \.self) { item in
+            ForEach(SessionListTab.allCases, id: \.self) { item in
                 Button {
                     withAnimation(reduceMotion ? nil : Motion.swap) { tab = item }
                 } label: {
@@ -111,8 +105,9 @@ struct SessionListTabBar: View {
 /// The selected profile's scheduled jobs (the Cron Jobs tab): Desktop's sidebar Cron
 /// section as a list (`apps/desktop/src/app/chat/sidebar/cron-jobs-section.tsx`). A
 /// job's row shows its schedule, where it delivers and when it runs next; a tap shows
-/// its recent runs under it, and a run opens as a chat. Run now, Pause or Resume,
-/// Deliver to and Delete are in its context menu and its "…" button.
+/// its recent runs under it, and a run opens as a chat. Run now, Edit, Pause or Resume,
+/// Deliver to and Delete are in its context menu and its "…" button; New Cron Job makes
+/// a new job (`CronJobEditor`) from the row above the jobs.
 struct CronJobsList: View {
     @Environment(AppModel.self) private var model
     @Binding var selection: SidebarItem?
@@ -120,6 +115,7 @@ struct CronJobsList: View {
     /// The job whose runs show under it: one at a time, as in Desktop.
     @State private var expanded: String?
     @State private var deleting: CronJob?
+    @State private var editing: CronEditorTarget?
     /// The time the rows count from ("in 2 hours"), moved on with each re-read.
     @State private var now = Date()
 
@@ -132,6 +128,11 @@ struct CronJobsList: View {
                     SidebarSectionTitle("Cron Jobs")
                 }
                 .themedRows()
+            }
+        }
+        .sheet(item: $editing) { target in
+            if let server = model.sessionsServer {
+                CronJobEditor(target: target, server: server)
             }
         }
         #if os(macOS)
@@ -174,6 +175,18 @@ struct CronJobsList: View {
                 // 2026-10-27).
                 .frame(maxWidth: .infinity)
         } else {
+            // A row, not a button in the section's header: the Mac's sidebar list took no
+            // clicks there.
+            Button { editing = .new } label: {
+                Label("New Cron Job", systemImage: "plus.circle.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
+            .disabled(!canCreate(server))
+            .padding(.vertical, 2)
+            .accessibilityIdentifier("newCronJob")
             if let error = cron.error {
                 Text(error).foregroundStyle(.red)
                 Button("Retry") { Task { await connection.refreshCronJobs() } }
@@ -183,7 +196,7 @@ struct CronJobsList: View {
             if cron.jobs.isEmpty && cron.error == nil {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("No cron jobs")
-                    Text("Ask Hermes in a chat to schedule one, such as “every morning at 9, summarize the news”.")
+                    Text("Make one with New Cron Job, or ask Hermes in a chat, such as “every morning at 9, summarize the news”.")
                         .uiFont(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -253,6 +266,8 @@ struct CronJobsList: View {
             perform(on: server) { try await connection.triggerCronJob(job) }
         }
         .disabled(!canChange || connection.cron.triggering.contains(job.id))
+        Button("Edit…", systemImage: "pencil") { editing = .edit(job) }
+            .disabled(!canChange)
         if job.isPaused {
             Button("Resume", systemImage: "play") { perform(on: server) { try await connection.resumeCronJob(job) } }
                 .disabled(!canChange)
@@ -277,6 +292,12 @@ struct CronJobsList: View {
         Divider()
         Button("Delete…", systemImage: "trash", role: .destructive) { deleting = job }
             .disabled(!canChange)
+    }
+
+    /// Jobs are made in the list profile once its jobs are read.
+    private func canCreate(_ server: ServerConnection) -> Bool {
+        let cron = server.connection.cron
+        return server.isConnected && cron.isAvailable && cron.profile != nil && cron.profile == server.connection.listProfile
     }
 
     private func toggle(_ job: CronJob, on server: ServerConnection) {

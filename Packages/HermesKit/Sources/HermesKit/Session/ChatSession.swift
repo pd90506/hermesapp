@@ -45,17 +45,8 @@ public final class ChatSession: Identifiable {
     /// Durable DB key (stable across reconnects and backend restarts).
     public private(set) var storedSessionID: String?
     public private(set) var title: String?
-    public private(set) var info: SessionLiveInfo? {
-        didSet { if let read = SessionUsage(info?.usage) { takeUsage(read) } }
-    }
-    /// The session's token use, as last reported (`SessionUsage`).
-    public internal(set) var usage: SessionUsage?
-    /// What fills its context, as last read (`refreshUsage`).
-    public internal(set) var contextBreakdown: ContextBreakdown?
+    public private(set) var info: SessionLiveInfo?
     public internal(set) var transcript: Transcript
-    /// The children this chat's turns delegated work to (`SubagentRoster`), apart from the
-    /// transcript: their events update only what shows them.
-    public internal(set) var subagents = SubagentRoster()
     /// Whether streamed text is shown a batch at a time (`StreamedTextQueue`), as its
     /// connection says (`GatewayConnection.coalescesStreamedText`); off, each delta shows
     /// as it comes.
@@ -436,31 +427,6 @@ public final class ChatSession: Identifiable {
 
     func apply(_ event: GatewayEvent) {
         if let seq = event.seq, event.sessionID == sessionID { lastSeq = max(lastSeq ?? 0, seq) }
-        if event.type.hasPrefix("subagent.") {
-            var next = subagents
-            next.apply(event)
-            if next != subagents { subagents = next }
-            return
-        }
-        // A new turn: the last one's finished children go (Desktop's
-        // `pruneFinishedSessionSubagents` at `message.start`).
-        if case .messageStart = event.kind, subagents.runs.contains(where: { !$0.isLive }) {
-            subagents.pruneFinished()
-        }
-        switch event.kind {
-        case .messageComplete(let complete):
-            if let read = SessionUsage(complete.usage) {
-                takeUsage(read)
-                // Measured by this turn: newer than a breakdown read before it.
-                if read.contextMax != nil { contextBreakdown = nil }
-            }
-        case .unknown where event.type == "session.usage":
-            // `{usage: {...}}` (`tui_gateway/server.py:2046`).
-            if let read = SessionUsage(event.payload?["usage"]) { takeUsage(read) }
-            return
-        default:
-            break
-        }
         switch event.kind {
         case .messageDelta, .reasoningDelta:
             if coalescesStreamedText {
@@ -519,12 +485,6 @@ public final class ChatSession: Identifiable {
     }
 
     func setTitle(_ newTitle: String) { title = newTitle }
-
-    /// Takes a usage report, keeping the context occupancy a report without one lacks.
-    func takeUsage(_ read: SessionUsage) {
-        let next = usage.map { $0.merged(with: read) } ?? read
-        if next != usage { usage = next }
-    }
 
     // MARK: - Re-reading the newest rows
 
@@ -1022,47 +982,9 @@ public final class ChatSession: Identifiable {
         // even when its answer arrives after the Stop's.
         let sentBeforeStop = transcript.unansweredPrompts
         let result = try await client.interrupt(sessionID: sessionID)
-        // Stop stops the turn's children too (Desktop's `clearSessionSubagents`).
-        if !subagents.runs.isEmpty { subagents.clear() }
         // Hermes cleared its queue with the Stop (`session_lifecycle.py:708-712`). Only a
         // hosted-task check answers `not_interrupted`, before touching it.
         if result.status != "not_interrupted" { current.serverClearedQueue(sentBeforeStop: sentBeforeStop) }
-    }
-
-    // MARK: - Subagents
-
-    /// Reconciles the subagents with the gateway's roster (`subagent.list`,
-    /// `tui_gateway/methods_subagents.py:53-63`), as Desktop does when a chat shows and
-    /// every 5 s after. A failure (an older gateway, a reclaimed runtime) changes nothing.
-    public func refreshSubagents() async {
-        guard !isRuntimeGone, let client = connection?.client else { return }
-        let id = sessionID
-        guard let answer = try? await client.call(GatewayMethod.subagentList, params: ["session_id": .string(id)]),
-              let rows = answer["subagents"]?.arrayValue, id == sessionID else { return }
-        var next = subagents
-        next.reconcile(rows)
-        if next != subagents { subagents = next }
-    }
-
-    /// Queues guidance for a running subagent, which it reads with its next tool result
-    /// (`subagent.steer`, `methods_session.py:2210-2225`). False: the gateway refused it
-    /// (the child ended, or isn't this chat's).
-    public func steerSubagent(_ subagentID: String, text: String) async throws -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        let answer = try await currentClient().call(GatewayMethod.subagentSteer, params: [
-            "session_id": .string(sessionID), "subagent_id": .string(subagentID), "text": .string(trimmed),
-        ])
-        return answer["status"]?.stringValue == "queued"
-    }
-
-    /// Stops a subagent (`subagent.interrupt`, `methods_subagents.py:66-88`). False: no
-    /// such child was running. Its `subagent.complete` then marks it interrupted.
-    public func stopSubagent(_ subagentID: String) async throws -> Bool {
-        let answer = try await currentClient().call(GatewayMethod.subagentInterrupt, params: [
-            "session_id": .string(sessionID), "subagent_id": .string(subagentID),
-        ])
-        return answer["found"]?.boolValue == true
     }
 
     // MARK: - Steering a running turn

@@ -94,8 +94,10 @@ public final class GatewayConnection {
     public private(set) var opening: PendingChat?
     /// The list profile's scheduled jobs (`GatewayConnection+Cron`, in `CronBoard.swift`).
     public let cron = CronBoard()
-    /// The session list's search (`SessionSearch.swift`).
-    public let search = SessionSearch()
+    /// A profile's skills, toolsets, MCP servers and plugins, for the Capabilities page.
+    public let capabilities = CapabilitiesBoard()
+    /// A profile's provider accounts, keys and endpoints, for the Providers page.
+    public let providers = ProvidersBoard()
     /// Out-of-band notices pushed by the gateway (`notification.show`), oldest
     /// first. Timed ones (`ttl_ms`) remove themselves; see `dismissNotification`.
     public internal(set) var notifications: [GatewayNotification] = []
@@ -448,7 +450,7 @@ public final class GatewayConnection {
     /// REST reads of stored transcripts, with this connection's credential.
     var messagesSource: (any SessionMessagesSource)? { connector?.messagesSource }
     var cronSource: (any CronSource)? { connector?.cronSource }
-    var searchSource: (any SessionSearchSource)? { connector?.searchSource }
+    var dashboardAPI: (any DashboardAPI)? { connector?.dashboardAPI }
 
     /// `session.resume` with a bounded ack, and the newest transcript page read
     /// alongside it, as Desktop opens chats (`use-session-actions/index.ts:2169-2194`).

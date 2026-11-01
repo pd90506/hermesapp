@@ -22,6 +22,8 @@ public final class CronBoard {
     public internal(set) var targets: [CronDeliveryTarget] = []
     /// Jobs being run now from the app: the trigger answers when the run ends.
     public internal(set) var triggering: Set<String> = []
+    /// The ready-made jobs `profile` can start from, once read.
+    public internal(set) var blueprints: [CronBlueprint] = []
     @ObservationIgnored var token = 0
 
     public init() {}
@@ -35,6 +37,7 @@ public final class CronBoard {
         runs = [:]
         runErrors = [:]
         targets = []
+        blueprints = []
     }
 
     func replace(_ job: CronJob) {
@@ -130,6 +133,44 @@ extension GatewayConnection {
         guard cron.profile == profile else { return }
         cron.jobs.removeAll { $0.id == job.id }
         cron.runs[job.id] = nil
+    }
+
+    /// Creates a job in the list profile, then re-reads the list (Desktop's
+    /// `mutateAndRefreshCronJobs`, `apps/desktop/src/app/cron/cron-actions.ts`).
+    @discardableResult
+    public func createCronJob(_ draft: CronJobDraft) async throws -> CronJob {
+        guard let profile = cron.profile, let source = cronSource else { throw GatewayClientError.notConnected }
+        let job = try await source.createCronJob(profile: profile, body: draft.createBody)
+        await refreshCronJobs()
+        return job
+    }
+
+    /// Saves the editor's changes to a job.
+    public func saveCronJob(_ job: CronJob, _ draft: CronJobDraft) async throws {
+        try await changeCronJob(job) { try await $0.updateCronJob(job.id, profile: $1, updates: draft.updates) }
+    }
+
+    /// Reads the list profile's blueprints, once per profile. A server without them has none.
+    public func loadCronBlueprints() async {
+        guard let profile = cron.profile, cron.blueprints.isEmpty, let source = cronSource else { return }
+        guard let blueprints = try? await source.cronBlueprints(profile: profile), cron.profile == profile else { return }
+        cron.blueprints = blueprints
+    }
+
+    /// Fills in a blueprint and creates its job in the list profile.
+    @discardableResult
+    public func createCronJob(from blueprint: CronBlueprint, values: [String: String]) async throws -> CronJob {
+        guard let profile = cron.profile, let source = cronSource else { throw GatewayClientError.notConnected }
+        let job = try await source.instantiateCronBlueprint(blueprint.key, values: values, profile: profile)
+        await refreshCronJobs()
+        return job
+    }
+
+    /// The models a job can pin: the list profile's `model.options`, as the chat's model
+    /// picker offers them (`CronEditorDialog`'s `requestModelOptions`, `index.tsx:1258-1266`).
+    public func cronModelCatalog() async throws -> ModelCatalog {
+        guard let client else { throw GatewayClientError.notConnected }
+        return ModelCatalog(try await client.modelOptions(sessionID: nil, profile: cron.profile ?? listProfile))
     }
 
     private func changeCronJob(_ job: CronJob,

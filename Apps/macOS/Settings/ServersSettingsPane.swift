@@ -275,16 +275,8 @@ private struct ServerDetail: View {
                     .textContentType(.username)
                     .autocorrectionDisabled()
             }
-            if server.config.authMode == .browser {
-                LabeledContent {
-                    BrowserSignInButton(server: server)
-                } label: {
-                    Text("\(server.config.authMode.secretLabel):")
-                }
-            } else {
-                SecureField("\(server.config.authMode.secretLabel):", text: $server.secret)
-                    .textContentType(.password)
-            }
+            SecureField("\(server.config.authMode.secretLabel):", text: $server.secret)
+                .textContentType(.password)
             if let help = server.config.authMode.help {
                 LabeledContent {
                     SettingsNote(LocalizedStringKey(help))

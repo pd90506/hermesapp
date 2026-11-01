@@ -56,11 +56,14 @@ struct SessionListView: View {
     /// Sessions or Cron Jobs. Not kept across launches: the app opens on the sessions.
     /// (Kept per window, a run left on Cron Jobs opened the next launch there.)
     @State private var tab: SessionListTab = .sessions
+    /// What is typed in the search field: on the Mac the sidebar's, on iOS the Search tab's.
+    @State private var searchText = ""
     #if os(macOS)
     /// Whether the profile rail shows (`MacSidebar`), for its toggle in the toolbar.
     @AppStorage("profileRailShown") private var isRailShown = true
     /// The list's width, which the profile's name in the toolbar fits in.
     @State private var listWidth: CGFloat = MacSidebar<EmptyView, EmptyView>.listWidths.lowerBound
+    @FocusState private var isSearchFocused: Bool
     #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -83,12 +86,31 @@ struct SessionListView: View {
             // with rows under it), beside the Bot Chat's own divider, which is always there.
             VStack(spacing: 0) {
                 switch tab {
-                case .sessions:
-                    pinnedBotChat
-                    sessionsList
+                case .sessions, .search:
+                    // The results take the list's place while the field has text, as
+                    // Mail's and Messages' do.
+                    if searchText.isEmpty {
+                        pinnedBotChat
+                        sessionsList
+                    } else {
+                        searchResultsList
+                    }
                 case .cron:
                     cronJobsList
                 }
+            }
+            // The system's search field, at the top of the sidebar; ⌘F goes to it.
+            .searchable(text: $searchText, placement: .sidebar, prompt: "Search chats")
+            .searchFocused($isSearchFocused)
+            .onChange(of: searchText) { _, text in
+                if !text.isEmpty && tab == .cron { tab = .sessions }
+            }
+            .background {
+                Button("Search Chats") { isSearchFocused = true }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
             }
             // No edge of the system's at the bottom: the Mac drew it, a band and a line, only
             // while the pointer was over the list.
@@ -143,8 +165,14 @@ struct SessionListView: View {
                 }
                 .badge(cronAlerts)
                 .accessibilityIdentifier("sessionListTab.cron")
+                // The system's search tab, apart from the others; its field is in the tab bar.
+                Tab(value: SessionListTab.search, role: .search) {
+                    page { searchResultsList }
+                }
+                .accessibilityIdentifier("sessionListTab.search")
             }
             .tabViewStyle(.tabBarOnly)
+            .searchable(text: $searchText, prompt: "Search chats")
             // The header shows the name; the navigation title stays for the back button.
             .navigationTitle(profileName ?? "Sessions")
             .toolbar(removing: .title)
@@ -221,10 +249,15 @@ struct SessionListView: View {
         CronJobsList(selection: $selection, showChat: showChat)
     }
 
+    private var searchResultsList: some View {
+        SessionSearchResultsList(selection: $selection, text: searchText, showChat: showChat)
+    }
+
     private func refresh() async {
         switch tab {
         case .sessions: await model.refreshLists()
         case .cron: await model.sessionsServer?.connection.refreshCronJobs()
+        case .search: await model.sessionsServer?.connection.searchSessions(searchText)
         }
     }
 

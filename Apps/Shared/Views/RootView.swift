@@ -380,7 +380,9 @@ struct RootView: View {
                 // Resolved by name on every click; HermesKit never creates a second Bot Chat.
                 try await server.connection.openBotChat(profile: profile)
             case .history(_, let id):
-                guard let entry = server.connection.history.first(where: { $0.id == id }) else { return }
+                // A search hit the list doesn't hold (an older or archived chat) opens too.
+                guard let entry = server.connection.history.first(where: { $0.id == id })
+                        ?? server.connection.search.result(id: id)?.entry else { return }
                 try await server.connection.open(entry)
             case .cronRun(_, let profile, let id):
                 let run = server.connection.cron.runs.values.lazy.flatMap { $0 }.first { $0.id == id }

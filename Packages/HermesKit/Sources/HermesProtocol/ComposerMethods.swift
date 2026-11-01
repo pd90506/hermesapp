@@ -20,6 +20,9 @@ extension GatewayMethod {
     public static let sessionSteer = "session.steer"
     // A chat's subagents (`tui_gateway/methods_subagents.py`, `methods_session.py:2210`).
     public static let subagentList = "subagent.list"
+    // A live session's token use and what fills its context (`methods_session.py:1447-1490`).
+    public static let sessionUsage = "session.usage"
+    public static let sessionContextBreakdown = "session.context_breakdown"
     public static let subagentSteer = "subagent.steer"
     public static let subagentInterrupt = "subagent.interrupt"
     public static let sessionRedirect = "session.redirect"

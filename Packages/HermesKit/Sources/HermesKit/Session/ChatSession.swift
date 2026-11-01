@@ -45,7 +45,13 @@ public final class ChatSession: Identifiable {
     /// Durable DB key (stable across reconnects and backend restarts).
     public private(set) var storedSessionID: String?
     public private(set) var title: String?
-    public private(set) var info: SessionLiveInfo?
+    public private(set) var info: SessionLiveInfo? {
+        didSet { if let read = SessionUsage(info?.usage) { takeUsage(read) } }
+    }
+    /// The session's token use, as last reported (`SessionUsage`).
+    public internal(set) var usage: SessionUsage?
+    /// What fills its context, as last read (`refreshUsage`).
+    public internal(set) var contextBreakdown: ContextBreakdown?
     public internal(set) var transcript: Transcript
     /// The children this chat's turns delegated work to (`SubagentRoster`), apart from the
     /// transcript: their events update only what shows them.
@@ -442,6 +448,20 @@ public final class ChatSession: Identifiable {
             subagents.pruneFinished()
         }
         switch event.kind {
+        case .messageComplete(let complete):
+            if let read = SessionUsage(complete.usage) {
+                takeUsage(read)
+                // Measured by this turn: newer than a breakdown read before it.
+                if read.contextMax != nil { contextBreakdown = nil }
+            }
+        case .unknown where event.type == "session.usage":
+            // `{usage: {...}}` (`tui_gateway/server.py:2046`).
+            if let read = SessionUsage(event.payload?["usage"]) { takeUsage(read) }
+            return
+        default:
+            break
+        }
+        switch event.kind {
         case .messageDelta, .reasoningDelta:
             if coalescesStreamedText {
                 streamedText.append(event)
@@ -499,6 +519,12 @@ public final class ChatSession: Identifiable {
     }
 
     func setTitle(_ newTitle: String) { title = newTitle }
+
+    /// Takes a usage report, keeping the context occupancy a report without one lacks.
+    func takeUsage(_ read: SessionUsage) {
+        let next = usage.map { $0.merged(with: read) } ?? read
+        if next != usage { usage = next }
+    }
 
     // MARK: - Re-reading the newest rows
 

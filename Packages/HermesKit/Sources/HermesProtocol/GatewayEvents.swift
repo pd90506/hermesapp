@@ -60,6 +60,8 @@ public struct GatewayEvent: Sendable, Hashable, Codable {
         case EventType.btwComplete: return payload(SideAgentComplete.self).map(GatewayEventKind.btwComplete) ?? .unknown
         case EventType.backgroundComplete:
             return payload(SideAgentComplete.self).map(GatewayEventKind.backgroundComplete) ?? .unknown
+        case EventType.reviewSummary:
+            return payload(ReviewSummary.self).map(GatewayEventKind.reviewSummary) ?? .unknown
         case EventType.sessionsChanged: return .sessionsChanged
         case EventType.sessionReclaimed:
             return payload(SessionReclaimed.self).map(GatewayEventKind.sessionReclaimed) ?? .unknown
@@ -99,6 +101,9 @@ public enum EventType {
     public static let btwComplete = "btw.complete"
     /// Answer to `prompt.background` (`contracts/events.py:451`).
     public static let backgroundComplete = "background.complete"
+    /// The self-improvement review of the last turn saved something
+    /// (`contracts/events.py:364-370`, emitted by `session_registry.py:131`).
+    public static let reviewSummary = "review.summary"
     /// Broadcast (empty `session_id`) when any served state.db moved: renames,
     /// archives, deletes, new rows, turns. At most every 2 s
     /// (`change_watcher.py:285-331`, `contracts/events.py:730`).
@@ -130,6 +135,7 @@ public enum GatewayEventKind: Sendable, Hashable {
     case approvalCancelled(ApprovalCancelled)
     case btwComplete(SideAgentComplete)
     case backgroundComplete(SideAgentComplete)
+    case reviewSummary(ReviewSummary)
     case sessionsChanged
     case sessionReclaimed(SessionReclaimed)
     case notificationShow(GatewayNotice)
@@ -383,6 +389,16 @@ public struct SideAgentComplete: Sendable, Hashable, Codable {
         case text, question
         case taskID = "task_id"
     }
+}
+
+/// `review.summary` (`ReviewSummaryPayload`, `contracts/events.py:364-367`): one line
+/// such as "💾 Self-improvement review: Memory updated", built by
+/// `_publish_review_summary` (`agent/background_review.py:1211-1216`). Sent only when the
+/// review changed something, and not at all with `display.memory_notifications: off`.
+public struct ReviewSummary: Sendable, Hashable, Codable {
+    public var text: String
+
+    public init(text: String) { self.text = text }
 }
 
 /// `session.reclaimed` (`SessionReclaimedPayload`, `contracts/events.py:391-399`).

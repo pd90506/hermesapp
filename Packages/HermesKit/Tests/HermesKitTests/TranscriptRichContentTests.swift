@@ -264,6 +264,35 @@ import Testing
         #expect(transcript.items.last?.isActive == false)
     }
 
+    /// `review.summary` (`contracts/events.py:364-370`), text from `display.review.summary_callback`
+    /// (`locales/en.yaml`): a system line at the end, split at the colon, without the 💾.
+    @Test func reviewSummaryAddsALineOnce() throws {
+        var transcript = Transcript()
+        transcript.appendUserPrompt("remember I like tea")
+        transcript.apply(event("message.start"))
+        transcript.apply(event("message.delta", ["text": "Noted."]))
+        transcript.apply(event("message.complete", ["text": "Noted.", "status": "complete"]))
+        let summary = GatewayEvent(type: "review.summary", sessionID: "sid-1",
+                                   payload: ["text": "💾 Self-improvement review: Memory updated · Skill 'tea' patched"],
+                                   seq: 12)
+        transcript.apply(summary)
+        transcript.apply(summary)  // replayed after a reconnect
+        #expect(transcript.items.filter { $0.reviewNote != nil }.count == 1)
+        let row = try #require(transcript.items.last)
+        #expect(row.role == .system && row.text == "Self-improvement review: Memory updated · Skill 'tea' patched")
+        #expect(row.reviewNote == ReviewNote(label: "Self-improvement review",
+                                             detail: "Memory updated · Skill 'tea' patched"))
+    }
+
+    @Test func reviewNoteReadsLikeDesktop() {
+        #expect(ReviewNote("Memory updated") == ReviewNote(label: "Memory updated", detail: ""))
+        #expect(ReviewNote("Review\nUser profile updated") == ReviewNote(label: "Review", detail: "User profile updated"))
+        #expect(ReviewNote(":x") == nil)
+        #expect(ReviewNote.text(of: ReviewSummary(text: " 💾 ")) == nil)
+        // A plain system row is not a review line.
+        #expect(TranscriptItem(id: "s", role: .system, text: "Self-improvement review: x").reviewNote == nil)
+    }
+
     @Test func btwAnswerFromAnotherClientIsShown() throws {
         var transcript = Transcript()
         transcript.apply(event("btw.complete", ["task_id": "btw_9", "text": "error: no snapshot", "question": "why?"]))

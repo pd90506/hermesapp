@@ -65,11 +65,11 @@ import Testing
         #expect(line < 24, "the notice is \(line) pt tall")
     }
 
-    /// The review's line is one line at chat width, and its detail wraps rather than
+    /// The review's line is one line in a wide chat, and its detail wraps rather than
     /// running off a narrow one.
     @Test func aReviewNoteIsOneLineThatWraps() {
         let note = ReviewNote(label: "Self-improvement review", detail: "Memory updated · Skill 'tea' patched")
-        let line = height(ReviewNoteRow(note: note))
+        let line = height(ReviewNoteRow(note: note), width: 600)
         #expect(line > 10 && line < 24, "the note is \(line) pt tall")
         let narrow = height(ReviewNoteRow(note: note), width: 260)
         #expect(narrow > line, "the detail wraps at 260 pt: \(narrow) vs \(line)")

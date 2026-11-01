@@ -481,7 +481,7 @@ final class AppModel {
         if let session = server.nativeSession { return .native(session) }
         let tokens = NativeTokens(secret: server.secret) ?? NativeTokens(accessToken: "", refreshToken: "")
         let account = server.config.secretAccount
-        let session = NativeTokenSession(tokens: tokens) { [weak server] fresh in
+        let session = NativeTokenSession(tokens: tokens, onRotate: { [weak server] fresh in
             await MainActor.run {
                 if !Self.isUITest { try? KeychainStore.write(fresh.secret, account: account) }
                 guard let server else { return }
@@ -490,7 +490,7 @@ final class AppModel {
                 server.secret = fresh.secret
                 server.nativeSession = session
             }
-        }
+        })
         server.nativeSession = session
         return .native(session)
     }

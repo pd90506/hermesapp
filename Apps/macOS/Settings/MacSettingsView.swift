@@ -13,6 +13,15 @@ struct MacSettingsView: View {
             Tab("Servers", systemImage: "server.rack") {
                 ServersSettingsPane()
             }
+            Tab("Providers", systemImage: "key") {
+                ProvidersView()
+                    .frame(width: Self.paneWidth, height: 600)
+            }
+            Tab("Capabilities", systemImage: "puzzlepiece.extension") {
+                CapabilitiesView()
+                    .padding(20)
+                    .frame(width: Self.paneWidth)
+            }
             Tab("Session Sources", systemImage: "tray.2") {
                 SessionSourcesSettingsPane()
             }

@@ -3,7 +3,8 @@ import HermesKit
 import SwiftUI
 
 /// The settings sheet on iOS, laid out like the system's Settings: a page with
-/// Connections, Session Sources, Appearance and Notifications, each opening its own page.
+/// Connections, Providers, Capabilities, Session Sources, Appearance and Notifications,
+/// each opening its own page.
 /// The macOS Settings window has the same as tabs (`MacSettingsView`).
 ///
 /// Opened by the app because it must connect (`SettingsPresentation.isRequired`), it
@@ -25,6 +26,20 @@ struct SettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("settings.connections")
+                }
+                Section {
+                    NavigationLink(value: SettingsPage.providers) {
+                        Label("Providers", systemImage: "key")
+                    }
+                    .accessibilityIdentifier("settings.providers")
+                    NavigationLink(value: SettingsPage.capabilities) {
+                        Label("Capabilities", systemImage: "puzzlepiece.extension")
+                    }
+                    .accessibilityIdentifier("settings.capabilities")
+                } footer: {
+                    Text("For the profile the session list shows; each page can switch profiles.")
+                }
+                Section {
                     NavigationLink(value: SettingsPage.sessionSources) {
                         Label("Session Sources", systemImage: "tray.2")
                     }
@@ -44,6 +59,8 @@ struct SettingsView: View {
                 switch page {
                 case .connections: ConnectionsSettingsView(path: $path)
                 case .server(let id): ServerSettingsView(serverID: id, path: $path)
+                case .providers: ProvidersView()
+                case .capabilities: CapabilitiesView()
                 case .sessionSources: SessionSourcesSettingsView()
                 case .appearance: AppearanceSettingsView()
                 case .notifications: NotificationsSettingsView()
@@ -83,6 +100,8 @@ struct SettingsView: View {
 enum SettingsPage: Hashable {
     case connections
     case server(UUID)
+    case providers
+    case capabilities
     case sessionSources
     case appearance
     case notifications

@@ -203,14 +203,14 @@ final class FakeConnector: GatewayConnector, @unchecked Sendable {
     private let transports: Mutex<[FakeTransport]>
     let messagesSource: (any SessionMessagesSource)?
     let cronSource: (any CronSource)?
-    let searchSource: (any SessionSearchSource)?
+    let dashboardAPI: (any DashboardAPI)?
 
     init(_ transports: [FakeTransport], messages: (any SessionMessagesSource)? = nil,
-         cron: (any CronSource)? = nil, search: (any SessionSearchSource)? = nil) {
+         cron: (any CronSource)? = nil, dashboard: (any DashboardAPI)? = nil) {
         self.transports = Mutex(transports)
         self.messagesSource = messages
         self.cronSource = cron
-        self.searchSource = search
+        self.dashboardAPI = dashboard
     }
 
     func makeTransport() async throws -> any MessageTransport {

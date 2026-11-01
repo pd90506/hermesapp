@@ -18,9 +18,15 @@ public protocol CronSource: Sendable {
     func triggerCronJob(_ jobID: String, profile: String) async throws -> CronJob
     func updateCronJob(_ jobID: String, profile: String, updates: [String: JSONValue]) async throws -> CronJob
     func deleteCronJob(_ jobID: String, profile: String) async throws
+    /// Creates a job from `CronJobDraft.createBody`.
+    func createCronJob(profile: String, body: JSONValue) async throws -> CronJob
+    func cronBlueprints(profile: String) async throws -> [CronBlueprint]
+    /// Fills a blueprint's blanks and creates its job.
+    func instantiateCronBlueprint(_ key: String, values: [String: String], profile: String) async throws -> CronJob
 }
 
-/// A refusal from the cron routes, with the dashboard's own reason (`HTTPException.detail`).
+/// A refusal from the dashboard's REST routes (cron, capabilities, providers), with the
+/// dashboard's own reason (`HTTPException.detail`).
 public struct CronRequestError: Error, Sendable, Equatable {
     public var status: Int
     public var detail: String
@@ -76,6 +82,27 @@ extension DashboardClient {
                                               profile: profile, bearer: bearer)
     }
 
+    /// `POST /api/cron/jobs?profile=` with a `CronJobCreate` body (`cron.py:716-718`).
+    public func createCronJob(profile: String, body: JSONValue, bearer: String? = nil) async throws -> CronJob {
+        try await cronCall(path: "/api/cron/jobs", method: "POST", profile: profile, json: body, bearer: bearer)
+    }
+
+    /// `GET /api/cron/blueprints?profile=`: `{blueprints: [...]}` (`cron.py:891-900`).
+    public func cronBlueprints(profile: String, bearer: String? = nil) async throws -> [CronBlueprint] {
+        let answer: BlueprintsAnswer = try await cronCall(path: "/api/cron/blueprints", method: "GET",
+                                                          profile: profile, bearer: bearer)
+        return answer.blueprints
+    }
+
+    /// `POST /api/cron/blueprints/instantiate?profile=` with `{blueprint, values}`; a blank
+    /// filled in wrong is a 422 with the reason (`cron.py:910-936`).
+    public func instantiateCronBlueprint(_ key: String, values: [String: String], profile: String,
+                                         bearer: String? = nil) async throws -> CronJob {
+        try await cronCall(path: "/api/cron/blueprints/instantiate", method: "POST", profile: profile,
+                           json: ["blueprint": .string(key), "values": .object(values.mapValues(JSONValue.string))],
+                           bearer: bearer)
+    }
+
     private func cronCall<T: Decodable>(path: String, method: String, profile: String, json: JSONValue? = nil,
                                         extra: [URLQueryItem] = [], timeout: TimeInterval? = nil,
                                         bearer: String?) async throws -> T {
@@ -97,6 +124,7 @@ extension DashboardClient {
 
     private struct RunsAnswer: Decodable { var runs: [CronRun] }
     private struct TargetsAnswer: Decodable { var targets: [CronDeliveryTarget] }
+    private struct BlueprintsAnswer: Decodable { var blueprints: [CronBlueprint] }
 }
 
 extension DashboardConnector: CronSource {
@@ -130,5 +158,19 @@ extension DashboardConnector: CronSource {
 
     public func deleteCronJob(_ jobID: String, profile: String) async throws {
         try await authorized { try await dashboard.deleteCronJob(jobID, profile: profile, bearer: $0) }
+    }
+
+    public func createCronJob(profile: String, body: JSONValue) async throws -> CronJob {
+        try await authorized { try await dashboard.createCronJob(profile: profile, body: body, bearer: $0) }
+    }
+
+    public func cronBlueprints(profile: String) async throws -> [CronBlueprint] {
+        try await authorized { try await dashboard.cronBlueprints(profile: profile, bearer: $0) }
+    }
+
+    public func instantiateCronBlueprint(_ key: String, values: [String: String], profile: String) async throws -> CronJob {
+        try await authorized {
+            try await dashboard.instantiateCronBlueprint(key, values: values, profile: profile, bearer: $0)
+        }
     }
 }

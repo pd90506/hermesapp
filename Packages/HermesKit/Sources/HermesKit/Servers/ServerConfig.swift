@@ -3,9 +3,6 @@ import Foundation
 /// How the app signs in to a dashboard. Maps 1:1 onto `GatewayCredential`.
 public enum AuthMode: String, CaseIterable, Identifiable, Codable, Sendable {
     case password
-    /// A browser sign-in (`NativeSignIn`): a token pair that renews itself. The secret is
-    /// the pair (`NativeTokens.secret`).
-    case browser
     case accessToken
     case sessionToken
 
@@ -14,10 +11,6 @@ public enum AuthMode: String, CaseIterable, Identifiable, Codable, Sendable {
     public func credential(provider: String, username: String, secret: String) -> GatewayCredential {
         switch self {
         case .password: .password(provider: provider, username: username, password: secret)
-        // A session of its own: the app keeps one per server instead, which saves each
-        // renewed pair (`NativeTokenSession.onRotate`).
-        case .browser: .native(NativeTokenSession(tokens: NativeTokens(secret: secret)
-                                    ?? NativeTokens(accessToken: "", refreshToken: "")))
         case .accessToken: .bearer(accessToken: secret)
         case .sessionToken: .sessionToken(secret)
         }

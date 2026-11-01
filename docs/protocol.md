@@ -109,15 +109,9 @@ one of two forms:
     - A rejected refresh token throws `DashboardError.refreshRejected`. `GatewayConnection` then
       stops reconnecting and the user has to sign in again.
   - `.bearer(accessToken:)` (access token only) is never refreshed.
-  - **App mode "Access token (ticket)"** takes an access token only, as `.bearer`.
-  - **App mode "Sign in with browser"** (`AuthMode.browser`) runs this flow: `NativeSignIn` builds
-    the authorize URL with `redirect_uri=http://127.0.0.1:<port>/callback` and no `provider` (the
-    server picks its only one or shows a chooser, `routes.py:277-285`), checks the redirect's
-    `state` and trades the code. The app's `LoopbackRedirect` (Network.framework) listens on the
-    port. The Mac opens the default browser; iOS uses the system's web-authentication sheet, which
-    keeps the app and its listener in the foreground. The pair is the server's Keychain secret
-    (`NativeTokens.secret`), and one `NativeTokenSession` per server saves every renewed pair
-    before it is used.
+  - **App mode "Access token (ticket)"** takes an access token only, as `.bearer`. The package
+    has the PKCE helpers (`PKCE`, `DashboardClient.nativeAuthorizeURL/exchangeNativeCode`) and
+    `NativeTokenSession`. The loopback-listener UI and token-pair storage are not built yet.
 - `basic` access tokens last 12 h and refresh tokens 30 days. If no `dashboard.basic_auth`
   secret is configured, all tokens become invalid when the gateway restarts
   (`plugins/dashboard_auth/basic/__init__.py:32-33,191-202`).
@@ -1823,3 +1817,53 @@ Other events:
   only through `sessions.changed` and polling, so the sidebar keeps its 15 s poll.
 - The app ignores `projects.changed`, `cron.changed`, `platforms.changed`, `pairing.changed` and
   `bot_relay.outbox.pending` (`change_watcher.py:285-296`); they are out of scope.
+
+## 12. Profile settings over REST
+
+Cron jobs, capabilities and providers are a profile's config, read and written through the
+dashboard's REST routes with the connection's credential (`DashboardAPI`, `CronSource`). Every
+route names its profile as `?profile=` (`apps/desktop/src/api/client.ts::capabilityScoped`). A
+refusal's `{"detail": …}` is shown as is (`CronRequestError`).
+
+**Cron jobs** (`hermes_cli/web_routers/cron.py`):
+- `POST /api/cron/jobs` creates one from `CronJobCreate` (`web_models.py:316-336`): `prompt`,
+  `schedule` (a cron expression, `every 2h`, `30m`, an ISO time), `name`, `deliver` (comma list),
+  and `model`/`provider` only when the job pins one (Desktop's `handleEditorSave`,
+  `apps/desktop/src/app/cron/index.tsx:605-628`).
+- `PUT /api/cron/jobs/{id}` takes `{updates: {...}}`. The editor sends `cronEditorUpdates`'s
+  fields (`cron-job-model.ts:137-158`): an agent job always sends `model` and `provider`, `null`
+  to clear a pin; a script-only job (`no_agent` with a script) keeps its empty prompt and model.
+- A stored job's schedule is `{kind, expr, display}`; an interval has no `expr`, so the editor
+  takes back `schedule_display`, which the scheduler parses too.
+- `GET /api/cron/blueprints` lists ready-made jobs as forms (`text`, `time` as `HH:MM`, `enum`,
+  `weekdays`); `POST /api/cron/blueprints/instantiate` with `{blueprint, values}` creates the job,
+  a 422 naming a blank filled in wrong (`cron.py:891-936`). The `deliver` blank's `origin`
+  default becomes `local` (`blueprints.tsx:22-31`).
+
+**Capabilities** (Desktop's Capabilities page, installed items only):
+- Skills: `GET /api/skills` rows `{name, description, category, enabled, provenance}`; `PUT
+  /api/skills/toggle` `{name, enabled}` (`skills.py:343-394`).
+- Toolsets: `GET /api/tools/toolsets` rows `{name, label, description, enabled, configured,
+  tools}`; `PUT /api/tools/toolsets/{name}` `{enabled}` (`tools.py:223-335`).
+- MCP servers: `GET /api/mcp/servers` `{servers: [...]}`; `PUT /api/mcp/servers/{name}/enabled`
+  `{enabled}`. A plugin's server (`source: "plugin"`) is refused with 409, so it shows locked
+  (`mcp.py:94-108,372-395`).
+- Plugins go over the socket, as Desktop's do: `plugins.manage` `{action: "list", profile}` and
+  `{action: "toggle", key, enable, profile}` (`tui_gateway/methods_tools.py:1662-1754,1865-1872`).
+  Toggles are by the canonical `key`; a row without one is read-only. The list shows what
+  Desktop's Plugins page shows (`isDesktopRelevantPlugin`, `store/agent-plugins.ts:111-132`).
+
+**Providers** (Desktop's Settings ▸ Providers):
+- API keys: `GET /api/env` maps each variable to `{is_set, redacted_value, category, provider,
+  provider_label, provider_profiles, provider_primary, …}` (`config_env.py:259-325`). The page
+  groups the `provider` category by label as `buildProviderKeyGroups` does
+  (`providers-settings.tsx:74-144`). `PUT /api/env` `{key, value, provider_setup}` saves one,
+  `DELETE /api/env` `{key}` removes it and its copies (`config_env.py:328-339,1067-1082`).
+- Accounts: `GET /api/providers/oauth` (`oauth.py:671-690`). Every in-app flow is a device code:
+  `POST …/{id}/start` answers `{session_id, user_code, verification_url}`, then `GET
+  …/{id}/poll/{session_id}?wait=25` long-polls until `status` leaves `pending`; `DELETE
+  …/sessions/{session_id}` cancels and `DELETE …/{id}` signs out (`oauth.py:727-930`). `external`
+  providers sign in with their own CLI on the server.
+- Custom endpoints: `GET /api/providers/custom-endpoints` `{endpoints, current}`; `POST` with
+  `CustomEndpointUpdate` (`web_models.py:46-58`) adds one; `POST …/{id}/activate` makes it the
+  default; `DELETE …/{id}` removes it (`config_env.py:728-850`).

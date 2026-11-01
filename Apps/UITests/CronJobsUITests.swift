@@ -122,6 +122,88 @@ final class CronJobsUITests: XCTestCase {
         attach(app, "8 sessions without the run")
     }
 
+    /// New Cron Job, then Edit… from its menu: the job is made and
+    /// changed in the profile through the app's form (name, prompt, a weekly schedule).
+    @MainActor
+    func testCreatesAndEditsAJob() throws {
+        continueAfterFailure = false
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+            throw XCTSkip("No live server (run scripts/vm-test.sh)")
+        }
+        let profile = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        let api = Dashboard(url: url, token: token, profile: profile)
+        try api.removeJobs(named: Self.namePrefix)
+        defer { try? api.removeJobs(named: Self.namePrefix) }
+
+        let app = XCUIApplication()
+        app.launchEnvironment["HERMES_UITEST_URL"] = url
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        app.launchEnvironment["HERMES_UITEST_PROFILE"] = profile
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        app.launchWithMainWindow()
+        defer { app.terminate() }
+        #if os(iOS)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        #endif
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected")
+        press(app.sessionListTab("cron"))
+        let add = element(app, "newCronJob")
+        XCTAssertTrue(add.waitForExistence(timeout: 15), "New Cron Job")
+        XCTAssertTrue(eventually(timeout: 20) { add.isEnabled }, "New Cron Job once the jobs are read")
+        press(add)
+
+        let name = element(app, "cronEditorName")
+        let opened = name.waitForExistence(timeout: 10)
+        if !opened { attach(app, "0 form not open") }
+        XCTAssertTrue(opened, "the New Cron Job form")
+        attach(app, "1 new job form")
+        type("\(Self.namePrefix): editor", into: name)
+        type("Reply with exactly: editor ok", into: element(app, "cronEditorPrompt"))
+        pick("Every week", in: element(app, "cronEditorFrequency"), app: app)
+        attach(app, "2 weekly filled in")
+        press(element(app, "cronEditorSave"))
+
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'cronJob.' AND label CONTAINS %@", "editor")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "the new job is listed")
+        XCTAssertTrue(row.label.contains("0 9 * * 1") || row.label.lowercased().contains("mon"),
+                      "weekly on Mondays at 9: \(row.label)")
+        attach(app, "3 job created")
+
+        let id = String(row.identifier.dropFirst("cronJob.".count))
+        press(element(app, "cronJobMenu.\(id)"))
+        XCTAssertTrue(menuItem(app, "Edit…").waitForExistence(timeout: 5), "Edit… in the job's menu")
+        press(menuItem(app, "Edit…"))
+        let editName = element(app, "cronEditorName")
+        XCTAssertTrue(editName.waitForExistence(timeout: 10), "the Edit Cron Job form")
+        XCTAssertEqual(editName.value as? String, "\(Self.namePrefix): editor", "the form starts from the job")
+        pick("Weekdays", in: element(app, "cronEditorFrequency"), app: app)
+        attach(app, "4 edit form")
+        press(element(app, "cronEditorSave"))
+        XCTAssertTrue(eventually(timeout: 15) { row.label.contains("1-5") }, "saved as weekdays: \(row.label)")
+        attach(app, "5 job edited")
+    }
+
+    /// Types at the end of a text field.
+    private func type(_ text: String, into field: XCUIElement) {
+        press(field)
+        field.typeText(text)
+    }
+
+    /// Picks a picker's option: a pop-up menu on the Mac, a menu of buttons on iOS.
+    private func pick(_ title: String, in picker: XCUIElement, app: XCUIApplication) {
+        press(picker)
+        #if os(macOS)
+        let option = app.menuItems[title].firstMatch
+        #else
+        let option = app.buttons[title].firstMatch
+        #endif
+        XCTAssertTrue(option.waitForExistence(timeout: 5), "the option \(title)")
+        press(option)
+    }
+
     /// A click on the Mac, a tap on iOS.
     private func press(_ element: XCUIElement) {
         #if os(macOS)

@@ -1301,6 +1301,9 @@ public struct Transcript: Sendable, Hashable {
         case .backgroundComplete(let answer):
             completeSideAgent(answer, kind: .background)
 
+        case .reviewSummary(let summary):
+            appendReviewNote(summary, seq: event.seq)
+
         case .error(let payload):
             lastError = payload.message
             // Before any turn starts, an `error` is the end of what was sent: Hermes
@@ -1442,6 +1445,18 @@ public struct Transcript: Sendable, Hashable {
                                              kind: kind)
             appendLocal(item)
         }
+    }
+
+    /// A line for what the self-improvement review saved (`ReviewNote`), at the end of the
+    /// chat as in Desktop (`gateway-event/status.ts:175-208`). An event replayed after a
+    /// reconnect (same `seq`) is not added twice.
+    private mutating func appendReviewNote(_ summary: ReviewSummary, seq: Int?) {
+        guard let text = ReviewNote.text(of: summary) else { return }
+        let id = "review-" + (seq.map(String.init) ?? UUID().uuidString)
+        guard !items.contains(where: { $0.id == id }) else { return }
+        var item = TranscriptItem(id: id, role: .system, text: text)
+        item.displayKind = TranscriptItem.reviewDisplayKind
+        appendLocal(item)
     }
 
     /// Desktop's `providerWaitText` (`apps/desktop/src/store/provider-wait.ts:43-53`):
@@ -1635,7 +1650,8 @@ public struct Transcript: Sendable, Hashable {
     /// frames about something else.
     private static func endsLateTail(_ kind: GatewayEventKind) -> Bool {
         switch kind {
-        case .messageDelta, .statusUpdate, .btwComplete, .backgroundComplete, .requestCancel, .approvalCancelled,
+        case .messageDelta, .statusUpdate, .btwComplete, .backgroundComplete, .reviewSummary, .requestCancel,
+             .approvalCancelled,
              .notificationShow, .notificationClear, .gatewayReady, .sessionTitle, .sessionInfo, .sessionsChanged,
              .sessionReclaimed, .unknown:
             return false

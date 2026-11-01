@@ -543,6 +543,44 @@ struct BackgroundNoticeRow: View {
     }
 }
 
+/// What the self-improvement review saved after a turn (`ReviewNote`), as Desktop draws it
+/// (`system-message.tsx:89-112`, `.tool-memory-legendary-*` in `styles.css:259-264,1241-1260`):
+/// a glowing brain, the label in a gold-to-purple gradient, the detail in purple.
+struct ReviewNoteRow: View {
+    let note: ReviewNote
+
+    static let accessibilityIdentifier = "reviewNote"
+
+    private static let purple = Color.purple.mix(with: Color(red: 0.77, green: 0.71, blue: 0.99), by: 0.18)
+    private static let gradient = LinearGradient(
+        colors: [Color.yellow.mix(with: Color(red: 0.96, green: 0.82, blue: 0.54), by: 0.28),
+                 Color.orange.mix(with: .purple, by: 0.45), purple],
+        startPoint: .leading, endPoint: .trailing)
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "brain")
+                .imageScale(.small)
+                .foregroundStyle(Color.yellow.mix(with: .purple, by: 0.45))
+                .shadow(color: .purple.opacity(0.38), radius: 2.5)
+                .frame(width: 14)
+            Text(note.label)
+                .fontWeight(.semibold)
+                .foregroundStyle(Self.gradient)
+                .fixedSize()
+            if !note.detail.isEmpty {
+                Text(note.detail)
+                    .foregroundStyle(Self.purple.mix(with: .gray, by: 0.42))
+            }
+            Spacer(minLength: 0)
+        }
+        .uiFont(.callout)
+        .textSelection(.enabled)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(Self.accessibilityIdentifier)
+    }
+}
+
 /// A turn's work before its answer (`TurnWork`), in the three layers the user asked
 /// for: one line, "Completed in 45s" (live: "Working… 12s"), with a thin rule under it
 /// and the answer below; opened, under the rule, the turn's commentary and groups of

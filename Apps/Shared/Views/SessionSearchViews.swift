@@ -151,3 +151,35 @@ struct SessionSearchRow: View {
         }
     }
 }
+
+#if os(iOS)
+/// The Search tab's field: the system's search field's look, focused when the tab opens.
+struct SessionSearchField: View {
+    @Binding var text: String
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search chats", text: $text)
+                .focused($isFocused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .accessibilityIdentifier("sessionSearchField")
+            if !text.isEmpty {
+                Button("Clear", systemImage: "xmark.circle.fill") { text = "" }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .floatingGlass(in: .capsule)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+        .onAppear { isFocused = true }
+    }
+}
+#endif

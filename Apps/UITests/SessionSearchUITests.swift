@@ -44,10 +44,18 @@ final class SessionSearchUITests: XCTestCase {
         let searchTab = app.sessionListTab("search")
         XCTAssertTrue(searchTab.waitForExistence(timeout: 10), "the Search tab")
         searchTab.tap()
+        let tab = XCTAttachment(screenshot: app.screenshot())
+        tab.name = "search tab"
+        tab.lifetime = .keepAlways
+        add(tab)
         #else
-        XCTAssertTrue(app.staticTexts["Sessions"].firstMatch.waitForExistence(timeout: 30), "the sessions listed")
+        XCTAssertTrue(app.sessionListTab("sessions").waitForExistence(timeout: 30), "the session list")
         #endif
+        #if os(iOS)
+        let field = app.textFields["sessionSearchField"]
+        #else
         let field = app.searchFields.firstMatch
+        #endif
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the search field")
         #if os(macOS)
         field.click()
@@ -55,14 +63,21 @@ final class SessionSearchUITests: XCTestCase {
         field.tap()
         #endif
         field.typeText(word)
+        let typed = XCTAttachment(screenshot: app.screenshot())
+        typed.name = "search typed"
+        typed.lifetime = .keepAlways
+        add(typed)
 
+        // On iOS the row is one element whose label joins its lines; on the Mac its lines are
+        // texts of their own, whose text is their value.
         let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'sessionSearchRow' AND label CONTAINS %@", word)).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 20), "a result with the matched text: "
-                      + app.descendants(matching: .any).matching(identifier: "sessionSearchRow")
-                          .allElementsBoundByIndex.map(\.label).joined(separator: " | "))
-        XCTAssertTrue(row.label.contains(title), "the chat's title on the result: \(row.label)")
-        XCTAssertFalse(row.label.contains(">>>"), "no FTS markers: \(row.label)")
+            .matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", title, title)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 30), "a result with the chat's title")
+        let snippet = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", word, word)).firstMatch
+        XCTAssertTrue(snippet.exists, "the matched text on the result")
+        let shown = "\(snippet.label) \(snippet.value as? String ?? "")"
+        XCTAssertFalse(shown.contains(">>>"), "no FTS markers: \(shown)")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "session search results"
         shot.lifetime = .keepAlways
@@ -73,8 +88,11 @@ final class SessionSearchUITests: XCTestCase {
         #else
         row.tap()
         #endif
-        let reply = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", word)).firstMatch
-        XCTAssertTrue(reply.waitForExistence(timeout: 30), "the hit opens its chat")
+        // The prompt, which only the chat shows (the result shows the reply).
+        let prompt = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Which name did we pick", "Which name did we pick"))
+            .firstMatch
+        XCTAssertTrue(prompt.waitForExistence(timeout: 30), "the hit opens its chat")
         let opened = XCTAttachment(screenshot: app.screenshot())
         opened.name = "session search opened"
         opened.lifetime = .keepAlways

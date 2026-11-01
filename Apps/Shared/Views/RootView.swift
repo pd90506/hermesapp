@@ -361,6 +361,11 @@ struct RootView: View {
                 .first(where: { $0.profile == profile && $0.summary.id == session.storedSessionID }) {
                 return .history(server: server.id, id: entry.id)
             }
+            // A search hit the list doesn't hold keeps its result row selected.
+            if let result = server.connection.search.results
+                .first(where: { $0.entry.profile == profile && $0.entry.summary.id == session.storedSessionID }) {
+                return .history(server: server.id, id: result.entry.id)
+            }
             if server.connection.newChatRow(profile: profile) === session {
                 return .newChat(server: server.id, profile: profile)
             }

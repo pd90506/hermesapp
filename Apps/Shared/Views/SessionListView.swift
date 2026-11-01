@@ -166,14 +166,14 @@ struct SessionListView: View {
                 }
                 .badge(cronAlerts)
                 .accessibilityIdentifier("sessionListTab.cron")
-                // The system's search tab, apart from the others; its field is in the tab bar.
+                // The system's search tab. Its field is the page's own, under the header: the
+                // tab bar's field needs a navigation bar, which iPhone's list page hides.
                 Tab(value: SessionListTab.search, role: .search) {
-                    page { searchResultsList }
+                    page { searchResultsList.safeAreaBar(edge: .top) { SessionSearchField(text: $searchText) } }
                 }
                 .accessibilityIdentifier("sessionListTab.search")
             }
             .tabViewStyle(.tabBarOnly)
-            .searchable(text: $searchText, prompt: "Search chats")
             // The header shows the name; the navigation title stays for the back button.
             .navigationTitle(profileName ?? "Sessions")
             .toolbar(removing: .title)

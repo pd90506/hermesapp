@@ -134,8 +134,12 @@ private struct ServerSettingsSection: View {
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
             }
-            SecureField(server.config.authMode.secretLabel, text: $server.secret)
-                .textContentType(.password)
+            if server.config.authMode == .browser {
+                BrowserSignInButton(server: server)
+            } else {
+                SecureField(server.config.authMode.secretLabel, text: $server.secret)
+                    .textContentType(.password)
+            }
             if let help = server.config.authMode.help {
                 Text(help).uiFont(.footnote).foregroundStyle(.secondary)
             }

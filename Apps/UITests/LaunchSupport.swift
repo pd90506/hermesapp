@@ -30,7 +30,7 @@ extension XCUIApplication {
     func sessionListTab(_ rawValue: String) -> XCUIElement {
         let byID = descendants(matching: .any)["sessionListTab.\(rawValue)"].firstMatch
         if byID.waitForExistence(timeout: 2) { return byID }
-        let title = rawValue == "cron" ? "Cron Jobs" : "Sessions"
+        let title = ["cron": "Cron Jobs", "search": "Search"][rawValue] ?? "Sessions"
         let label = NSPredicate(format: "label BEGINSWITH %@", title)
         for type in [XCUIElement.ElementType.button, .radioButton, .tab] {
             let match = tabBars.descendants(matching: type).matching(label).firstMatch

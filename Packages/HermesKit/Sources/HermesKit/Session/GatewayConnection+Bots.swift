@@ -345,6 +345,7 @@ extension GatewayConnection {
         sessionListLoading = false
         sessionListError = nil
         cron.reset(to: profile)
+        search.reset()
     }
 
     /// Reads the activity (`SessionRowActivity`) of every row not read since its stored

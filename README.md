@@ -38,6 +38,12 @@ build it yourself (see [Signing](#signing)).
   is available during a running turn; text follows Hermes's busy-input mode, while messages with
   images queue as the next turn. On macOS Return sends and Shift-Return inserts a newline; on iOS
   Return inserts a newline and Send (or Command-Return) submits.
+- **Search, subagents, context.** The session list searches the profile's chats by what was
+  said in them, their titles or ids (`/api/sessions/search`): from the sidebar's field (⌘F) on
+  the Mac, from the Search tab on iOS. While a turn's subagents run, a pill above the composer
+  lists them, with each one's goal, newest activity and time, and Steer and Stop. A ring in the
+  composer shows how full the context is; it opens what fills it and the session's tokens,
+  model calls, cache hits and speed.
 - **Themes.** Light/dark/system appearance, colour themes and adjustable UI/content/code sizes;
   Markdown colours have their own settings. The Mac uses pointer hover feedback and the iPhone
   uses a floating composer and profile drawer.
@@ -160,8 +166,11 @@ HTTPS and pin a version, every app Swift file belongs to a target). The real che
   name), and pick a sign-in method:
   - **Username & password**: for dashboards using the `basic` provider. The app logs in via
     `/auth/password-login` and mints a single-use WebSocket ticket for each connection.
-  - **Access token (ticket)**: a dashboard access token, e.g. from the native PKCE flow, which is
-    not yet built into the UI. The app exchanges it for a single-use ticket on every connect.
+  - **Sign in with browser**: the dashboard's own sign-in page opens in the browser (on iOS the
+    system's sign-in sheet), as Hermes Desktop signs in to a remote gateway (RFC 8252: a loopback
+    redirect and PKCE). The token pair it gives renews itself, so it doesn't run out after 12 h.
+  - **Access token (ticket)**: a dashboard access token. The app exchanges it for a single-use
+    ticket on every connect. It can't be renewed.
   - **Token in URL (`?token=`)**: sends the token directly in the WebSocket URL.
     - It works with an access token on a gated dashboard, or with the session token of an
       un-gated dashboard.
@@ -207,10 +216,9 @@ HTTPS and pin a version, every app Swift file belongs to a target). The real che
 ## Known limitations
 
 - **Voice input** is not available yet (`docs/protocol.md` §10.4).
-- The package refreshes native token pairs through `/auth/native/refresh`
-  (`GatewayCredential.native`), but the apps don't use it yet. The "Access token (ticket)" mode
-  takes an access token only, which can't be refreshed. `basic` access tokens last 12 h, so
-  re-enter the token after that.
+- The "Access token (ticket)" mode takes an access token only, which can't be refreshed.
+  `basic` access tokens last 12 h, so re-enter the token after that, or use "Sign in with
+  browser", whose pair renews itself.
 - **Clarify multi-select.** The UI still presents `multi_select` as a single-choice Picker,
   although the package models it (`ClarifySelection`).
 - **Slash-command UI.** The composer calls `ChatComposer.submitSlash()` for drafts starting with

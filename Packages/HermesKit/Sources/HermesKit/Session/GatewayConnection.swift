@@ -98,6 +98,8 @@ public final class GatewayConnection {
     public let capabilities = CapabilitiesBoard()
     /// A profile's provider accounts, keys and endpoints, for the Providers page.
     public let providers = ProvidersBoard()
+    /// The session list's search (`SessionSearch.swift`).
+    public let search = SessionSearch()
     /// Out-of-band notices pushed by the gateway (`notification.show`), oldest
     /// first. Timed ones (`ttl_ms`) remove themselves; see `dismissNotification`.
     public internal(set) var notifications: [GatewayNotification] = []
@@ -451,6 +453,7 @@ public final class GatewayConnection {
     var messagesSource: (any SessionMessagesSource)? { connector?.messagesSource }
     var cronSource: (any CronSource)? { connector?.cronSource }
     var dashboardAPI: (any DashboardAPI)? { connector?.dashboardAPI }
+    var searchSource: (any SessionSearchSource)? { connector?.searchSource }
 
     /// `session.resume` with a bounded ack, and the newest transcript page read
     /// alongside it, as Desktop opens chats (`use-session-actions/index.ts:2169-2194`).

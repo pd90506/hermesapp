@@ -65,6 +65,16 @@ import Testing
         #expect(line < 24, "the notice is \(line) pt tall")
     }
 
+    /// The review's line is one line at chat width, and its detail wraps rather than
+    /// running off a narrow one.
+    @Test func aReviewNoteIsOneLineThatWraps() {
+        let note = ReviewNote(label: "Self-improvement review", detail: "Memory updated · Skill 'tea' patched")
+        let line = height(ReviewNoteRow(note: note))
+        #expect(line > 10 && line < 24, "the note is \(line) pt tall")
+        let narrow = height(ReviewNoteRow(note: note), width: 260)
+        #expect(narrow > line, "the detail wraps at 260 pt: \(narrow) vs \(line)")
+    }
+
     @Test func aShortDiffHasNoScrollBox() {
         let host = NSHostingView(rootView: ToolMessageContent(item: Self.edit(lines: 3)).frame(width: 400))
         host.frame.size = host.fittingSize

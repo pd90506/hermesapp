@@ -99,8 +99,9 @@ struct SessionListView: View {
                     cronJobsList
                 }
             }
-            // The system's search field, at the top of the sidebar; ⌘F goes to it.
-            .searchable(text: $searchText, placement: .sidebar, prompt: "Search chats")
+            // The system's search field, in the window's toolbar, as Mail's: at the top of the
+            // sidebar it took the list's room under the profile rail too. ⌘F goes to it.
+            .searchable(text: $searchText, placement: .toolbar, prompt: "Search chats")
             .searchFocused($isSearchFocused)
             .onChange(of: searchText) { _, text in
                 if !text.isEmpty && tab == .cron { tab = .sessions }

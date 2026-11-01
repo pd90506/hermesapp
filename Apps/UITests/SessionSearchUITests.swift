@@ -34,16 +34,18 @@ final class SessionSearchUITests: XCTestCase {
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
         app.launchWithMainWindow()
         defer { app.terminate() }
+        // Not "the chat is listed": three days old, it is far down a long list, past what a
+        // lazy list draws. Search finds what the list doesn't show.
         #if os(iOS)
         // iPhone may start on the chat; the sidebar is one Back away.
         let back = app.navigationBars.buttons.element(boundBy: 0)
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
-        XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 30), "the imported chat listed")
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected, Sessions page shown")
         let searchTab = app.sessionListTab("search")
         XCTAssertTrue(searchTab.waitForExistence(timeout: 10), "the Search tab")
         searchTab.tap()
         #else
-        XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 30), "the imported chat listed")
+        XCTAssertTrue(app.staticTexts["Sessions"].firstMatch.waitForExistence(timeout: 30), "the sessions listed")
         #endif
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the search field")
@@ -54,11 +56,13 @@ final class SessionSearchUITests: XCTestCase {
         #endif
         field.typeText(word)
 
-        let row = app.descendants(matching: .any)["sessionSearchRow"].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 20), "a result")
-        XCTAssertTrue(app.staticTexts[title].exists || row.label.contains(title), "the chat's title on the result")
-        XCTAssertTrue(row.label.contains(word), "the matched text, without the FTS markers: \(row.label)")
-        XCTAssertFalse(row.label.contains(">>>"), "no FTS markers")
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'sessionSearchRow' AND label CONTAINS %@", word)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "a result with the matched text: "
+                      + app.descendants(matching: .any).matching(identifier: "sessionSearchRow")
+                          .allElementsBoundByIndex.map(\.label).joined(separator: " | "))
+        XCTAssertTrue(row.label.contains(title), "the chat's title on the result: \(row.label)")
+        XCTAssertFalse(row.label.contains(">>>"), "no FTS markers: \(row.label)")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "session search results"
         shot.lifetime = .keepAlways

@@ -10,6 +10,9 @@ struct RootView: View {
     /// A clicked notification opened a chat its profile's list hadn't read yet: its row
     /// is selected once the list has it (`openAlerted`).
     @State private var alertedStoredID: String?
+    /// On the Mac, the toolbar shows the session search's field, not its button
+    /// (`SessionListView`).
+    @State private var isSearchShown = false
     #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     @Environment(\.surfaces) private var surfaces
@@ -173,7 +176,8 @@ struct RootView: View {
                 #if os(iOS)
                 compactColumn = .detail
                 #endif
-            })
+            },
+            isSearchShown: $isSearchShown)
     }
 
     /// The chat on screen, over the other warm chats of its server, which stay built
@@ -209,6 +213,18 @@ struct RootView: View {
         .toolbar {
             if model.activeServer?.connection.isTryingNoticeably == true, !chatTitle.isEmpty {
                 ToolbarItem(placement: .principal) { ReconnectingTitle(title: chatTitle) }
+            }
+        }
+        #else
+        // The session search's button, where its field shows while searching: the field
+        // drew the eye from the chat (the user, 2026-11-01). ⌘F is the list's.
+        .toolbar {
+            if !isSearchShown {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Search Chats", systemImage: "magnifyingglass") { isSearchShown = true }
+                        .help("Search Chats (⌘F)")
+                        .accessibilityIdentifier("searchChatsButton")
+                }
             }
         }
         #endif

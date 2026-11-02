@@ -46,6 +46,9 @@ struct SessionListView: View {
     @Binding var selection: SidebarItem?
     /// Shows the chat a side chat was started for (on iPhone, pushes it).
     var showChat: () -> Void = {}
+    /// On the Mac, whether the toolbar shows the search field rather than its button
+    /// (`RootView`). iOS searches in its Search tab.
+    @Binding var isSearchShown: Bool
     /// One side chat at a time: repeated clicks while one is being created do nothing.
     @State private var isStartingChat = false
     /// The row being renamed, and the title typed so far.
@@ -64,6 +67,7 @@ struct SessionListView: View {
     /// The list's width, which the profile's name in the toolbar fits in.
     @State private var listWidth: CGFloat = MacSidebar<EmptyView, EmptyView>.listWidths.lowerBound
     @FocusState private var isSearchFocused: Bool
+    @State private var isSearchPresented = false
     #endif
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -100,14 +104,36 @@ struct SessionListView: View {
                 }
             }
             // The system's search field, in the window's toolbar, as Mail's: at the top of the
-            // sidebar it took the list's room under the profile rail too. ⌘F goes to it.
-            .searchable(text: $searchText, placement: .toolbar, prompt: "Search chats")
-            .searchFocused($isSearchFocused)
+            // sidebar it took the list's room under the profile rail too. Only while searching:
+            // otherwise the chat's toolbar shows a magnifier button in its place (`RootView`),
+            // as the user chose (2026-11-01): the whole field drew the eye from the chat. The
+            // Mac has no minimized search field (`searchToolbarBehavior(.minimize)` is iOS's),
+            // and the field stays when `isPresented` is false. On a view of its own, so the
+            // list's identity stays when the field comes and goes. ⌘F opens it.
+            .background {
+                if isSearchShown {
+                    Color.clear
+                        .searchable(text: $searchText, isPresented: $isSearchPresented, placement: .toolbar,
+                                    prompt: "Search chats")
+                        .searchFocused($isSearchFocused)
+                        .onAppear { isSearchPresented = true; isSearchFocused = true }
+                }
+            }
+            // Back to the button once the field is empty and left.
+            .onChange(of: isSearchFocused) { _, focused in
+                if !focused && searchText.isEmpty { isSearchShown = false }
+            }
+            .onChange(of: isSearchPresented) { _, presented in
+                if !presented && searchText.isEmpty { isSearchShown = false }
+            }
             .onChange(of: searchText) { _, text in
                 if !text.isEmpty && tab == .cron { tab = .sessions }
+                if text.isEmpty && !isSearchFocused { isSearchShown = false }
             }
             .background {
-                Button("Search Chats") { isSearchFocused = true }
+                Button("Search Chats") {
+                    if isSearchShown { isSearchFocused = true } else { isSearchShown = true }
+                }
                     .keyboardShortcut("f", modifiers: .command)
                     .opacity(0)
                     .frame(width: 0, height: 0)

@@ -50,6 +50,15 @@ final class SessionSearchUITests: XCTestCase {
         add(tab)
         #else
         XCTAssertTrue(app.sessionListTab("sessions").waitForExistence(timeout: 30), "the session list")
+        // Not searching, the toolbar shows a magnifier button, not the field; it opens it.
+        let button = app.buttons["searchChatsButton"]
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "the search button")
+        XCTAssertFalse(app.searchFields.firstMatch.exists, "no search field until asked for")
+        let minimized = XCTAttachment(screenshot: app.screenshot())
+        minimized.name = "search button"
+        minimized.lifetime = .keepAlways
+        add(minimized)
+        button.click()
         #endif
         #if os(iOS)
         let field = app.textFields["sessionSearchField"]
@@ -97,6 +106,19 @@ final class SessionSearchUITests: XCTestCase {
         opened.name = "session search opened"
         opened.lifetime = .keepAlways
         add(opened)
+
+        #if os(macOS)
+        // ⌘F goes back to the field; Escape clears it, a second one leaves it: the button is
+        // back.
+        app.typeKey("f", modifierFlags: .command)
+        app.typeKey(.escape, modifierFlags: [])
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.buttons["searchChatsButton"].waitForExistence(timeout: 5), "the button is back")
+        let closed = XCTAttachment(screenshot: app.screenshot())
+        closed.name = "search closed"
+        closed.lifetime = .keepAlways
+        add(closed)
+        #endif
     }
 
     /// Imports a session with one prompt and one reply, at `date` (as

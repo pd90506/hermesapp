@@ -23,6 +23,7 @@ extension AuthMode {
     var label: String {
         switch self {
         case .password: "Username & password"
+        case .browser: "Sign in with browser"
         case .accessToken: "Access token (ticket)"
         case .sessionToken: "Token in URL (?token=)"
         }
@@ -31,6 +32,7 @@ extension AuthMode {
     var secretLabel: String {
         switch self {
         case .password: "Password"
+        case .browser: "Sign-in"
         case .accessToken: "Access token"
         case .sessionToken: "Token"
         }
@@ -40,6 +42,8 @@ extension AuthMode {
     var help: String? {
         switch self {
         case .password: nil
+        case .browser:
+            "Sign in on the dashboard's own page, in the browser. The sign-in then renews itself, so it lasts until the server revokes it (30 days unused for basic)."
         case .accessToken: "A dashboard access token. The app exchanges it for a single-use ticket on every connect."
         case .sessionToken:
             "Sent directly in the WebSocket URL. Works with an access token, or with the session token of a loopback-only dashboard (reachable from another device only through a tunnel). Prefer the other modes."
@@ -55,7 +59,13 @@ final class ServerConnection: Identifiable {
     let id: UUID
     var config: ServerConfig
     /// The password or token, kept in the Keychain under `config.secretAccount`.
-    var secret: String
+    var secret: String {
+        // A new sign-in: the next connect starts from its pair.
+        didSet { if secret != oldValue { nativeSession = nil } }
+    }
+    /// The browser sign-in's token pair, shared by every connect of this server, which
+    /// saves each renewed pair (`AppModel.credential(for:)`).
+    var nativeSession: NativeTokenSession?
     var lastError: String?
     var probeResult: String?
     fileprivate(set) var isConnecting = false
@@ -411,7 +421,9 @@ final class AppModel {
             // Never saved, or the Keychain refused to hand it over (an unsigned debug build
             // gets a new identity on every build): say so, rather than send an empty
             // password and report it as rejected.
-            server.lastError = "No \(server.config.authMode.secretLabel.lowercased()) for \(server.name). Enter it in Settings."
+            server.lastError = server.config.authMode == .browser
+                ? "\(server.name) isn't signed in. Use Sign In in Settings."
+                : "No \(server.config.authMode.secretLabel.lowercased()) for \(server.name). Enter it in Settings."
             return
         }
         do {
@@ -440,10 +452,10 @@ final class AppModel {
             }
             #if DEBUG
             let connector = DashboardConnector(
-                endpoint: endpoint, credential: server.config.credential(secret: server.secret),
+                endpoint: endpoint, credential: credential(for: server),
                 makeSocket: { UITestSubmitNetwork.wrap(URLSessionWebSocketTransport(request: $0)) })
             #else
-            let connector = DashboardConnector(endpoint: endpoint, credential: server.config.credential(secret: server.secret))
+            let connector = DashboardConnector(endpoint: endpoint, credential: credential(for: server))
             #endif
             try await server.connection.connect(using: connector)
             server.connectedEndpoint = endpoint
@@ -457,6 +469,73 @@ final class AppModel {
             // Superseded by a newer connect/disconnect.
         } catch {
             server.lastError = GatewayConnection.describe(error)
+        }
+    }
+
+    /// How `server` signs in. A browser sign-in's pair is one `NativeTokenSession` per
+    /// server, so reconnects share its renewals; each renewed pair is saved before it is
+    /// used (`NativeTokenSession.onRotate`), as a relaunch must never replay a spent
+    /// refresh token.
+    private func credential(for server: ServerConnection) -> GatewayCredential {
+        guard server.config.authMode == .browser else { return server.config.credential(secret: server.secret) }
+        if let session = server.nativeSession { return .native(session) }
+        let tokens = NativeTokens(secret: server.secret) ?? NativeTokens(accessToken: "", refreshToken: "")
+        let account = server.config.secretAccount
+        let session = NativeTokenSession(tokens: tokens, onRotate: { [weak server] fresh in
+            await MainActor.run {
+                if !Self.isUITest { try? KeychainStore.write(fresh.secret, account: account) }
+                guard let server else { return }
+                // Not through `secret`'s observer: this session stays the server's.
+                let session = server.nativeSession
+                server.secret = fresh.secret
+                server.nativeSession = session
+            }
+        })
+        server.nativeSession = session
+        return .native(session)
+    }
+
+    /// Signs `server` in in the browser (`NativeSignIn`): listens on the loopback, has
+    /// `open` show the dashboard's sign-in page, trades the code it comes back with for a
+    /// token pair, keeps the pair as the server's secret and connects.
+    func signInWithBrowser(_ server: ServerConnection, open: @escaping @Sendable @MainActor (URL) async throws -> Void) async {
+        server.lastError = nil
+        do {
+            let endpoint = try GatewayEndpoint(server.config.serverURL)
+            let (redirect, port) = try await LoopbackRedirect.start()
+            defer { redirect.stop() }
+            let signIn = NativeSignIn(endpoint: endpoint, port: port)
+            // The page, until it closes (iOS's sheet) or the wait is over; then the listener
+            // stops, after a moment for a callback on its way.
+            let page = Task { @MainActor in
+                defer { Task { try? await Task.sleep(for: .seconds(2)); redirect.stop() } }
+                try await open(signIn.authorizeURL)
+            }
+            defer { page.cancel() }
+            let callback = try await withTaskCancellationHandler {
+                try await redirect.callback()
+            } onCancel: {
+                redirect.stop()
+            }
+            // The browser came back: close the sign-in sheet.
+            page.cancel()
+            let tokens = try await signIn.tokens(from: callback)
+            server.config.authMode = .browser
+            server.secret = tokens.secret
+            await connectFromSettings(server)
+        } catch is CancellationError {
+            // Closed without signing in.
+        } catch {
+            server.lastError = Self.describeSignIn(error)
+        }
+    }
+
+    private static func describeSignIn(_ error: any Error) -> String {
+        switch error {
+        case NativeSignInError.stateMismatch: "The sign-in came back for another request. Try again."
+        case NativeSignInError.noCode: "The dashboard sent no sign-in code. Try again."
+        case NativeSignInError.refused(let reason): "The sign-in was refused: \(reason)"
+        default: GatewayConnection.describe(error)
         }
     }
 

@@ -5,12 +5,17 @@ import SwiftUI
 /// The tabs at the bottom of the session list: the profile's sessions, or its scheduled
 /// jobs (asked for by the user, 2026-10-19).
 enum SessionListTab: String, CaseIterable {
-    case sessions, cron
+    /// `search` is iOS's Search tab; the Mac searches from the sidebar's field.
+    case sessions, cron, search
+
+    /// The tabs of the Mac's tab bar.
+    static let barTabs: [SessionListTab] = [.sessions, .cron]
 
     var title: String {
         switch self {
         case .sessions: "Sessions"
         case .cron: "Cron Jobs"
+        case .search: "Search"
         }
     }
 
@@ -18,6 +23,7 @@ enum SessionListTab: String, CaseIterable {
         switch self {
         case .sessions: "bubble.left.and.bubble.right"
         case .cron: "clock"
+        case .search: "magnifyingglass"
         }
     }
 }
@@ -44,7 +50,7 @@ struct SessionListTabBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(SessionListTab.allCases, id: \.self) { item in
+            ForEach(SessionListTab.barTabs, id: \.self) { item in
                 Button {
                     withAnimation(reduceMotion ? nil : Motion.swap) { tab = item }
                 } label: {

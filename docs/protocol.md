@@ -109,9 +109,15 @@ one of two forms:
     - A rejected refresh token throws `DashboardError.refreshRejected`. `GatewayConnection` then
       stops reconnecting and the user has to sign in again.
   - `.bearer(accessToken:)` (access token only) is never refreshed.
-  - **App mode "Access token (ticket)"** takes an access token only, as `.bearer`. The package
-    has the PKCE helpers (`PKCE`, `DashboardClient.nativeAuthorizeURL/exchangeNativeCode`) and
-    `NativeTokenSession`. The loopback-listener UI and token-pair storage are not built yet.
+  - **App mode "Access token (ticket)"** takes an access token only, as `.bearer`.
+  - **App mode "Sign in with browser"** (`AuthMode.browser`) runs this flow: `NativeSignIn` builds
+    the authorize URL with `redirect_uri=http://127.0.0.1:<port>/callback` and no `provider` (the
+    server picks its only one or shows a chooser, `routes.py:277-285`), checks the redirect's
+    `state` and trades the code. The app's `LoopbackRedirect` (Network.framework) listens on the
+    port. The Mac opens the default browser; iOS uses the system's web-authentication sheet, which
+    keeps the app and its listener in the foreground. The pair is the server's Keychain secret
+    (`NativeTokens.secret`), and one `NativeTokenSession` per server saves every renewed pair
+    before it is used.
 - `basic` access tokens last 12 h and refresh tokens 30 days. If no `dashboard.basic_auth`
   secret is configured, all tokens become invalid when the gateway restarts
   (`plugins/dashboard_auth/basic/__init__.py:32-33,191-202`).

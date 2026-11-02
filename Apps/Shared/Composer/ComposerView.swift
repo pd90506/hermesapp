@@ -318,6 +318,7 @@ struct ComposerView: View {
         HStack(spacing: 2) {
             addMenu
             Spacer(minLength: 8)
+            ContextGaugeButton(composer: composer)
             modelMenu
             effortMenu
             micButton
@@ -336,6 +337,7 @@ struct ComposerView: View {
             modelMenu
             effortMenu
             Spacer(minLength: 0)
+            ContextGaugeButton(composer: composer)
             sendButton
         }
         .padding(.horizontal, Self.inset.toolbar)

@@ -61,6 +61,60 @@ final class NotificationSettingsUITests: XCTestCase {
                       "back on, other replies as they were")
     }
 
+    #if os(iOS)
+    /// Tapping a notification's banner from the Home Screen brings the app back to the front.
+    /// The tap's handler used to finish off the main thread, where UIKit aborts, so the app
+    /// crashed on every tapped notification (iOS 27).
+    @MainActor
+    func testTappingABannerFromOutsideOpensTheApp() throws {
+        continueAfterFailure = false
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
+            throw XCTSkip("No live server (run scripts/vm-test.sh)")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HERMES_UITEST_URL"] = url
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        app.launchEnvironment["HERMES_UITEST_SERVERS"] = "1"
+        app.launchWithMainWindow()
+        defer { app.terminate() }
+
+        openNotifications(app)
+        sendTestNotification(app)
+        let button = app.buttons["notifications.test"].firstMatch
+        button.tap()
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10) || app.state == .runningBackgroundSuspended,
+                      "the app went to the background")
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let notification = springboard.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Notifications are working")).firstMatch
+        if !notification.waitForExistence(timeout: 3) {
+            // The banner went away: the notification waits in Notification Center.
+            let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.005))
+            top.press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.6)))
+        }
+        XCTAssertTrue(notification.waitForExistence(timeout: 10), "the test notification")
+        attachScreen("banner outside the app")
+        notification.tap()
+        // In Notification Center the first tap may only spread the app's stack: then tap its
+        // newest notification, the row under Show Less.
+        let showLess = springboard.buttons.matching(NSPredicate(format: "label ==[c] %@", "show less")).firstMatch
+        if !app.wait(for: .runningForeground, timeout: 3), showLess.exists {
+            attachScreen("the stack spread")
+            springboard.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: springboard.frame.midX, dy: showLess.frame.maxY + 45)).tap()
+        }
+
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "the tap opened the app")
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        XCTAssertEqual(app.state, .runningForeground, "still running after the tap")
+        XCTAssertTrue(app.navigationBars["Notifications"].exists, "back where it was")
+    }
+    #endif
+
     /// On iOS the page's list builds rows as they scroll in: scroll until `row` is there.
     @MainActor
     private func reveal(_ row: XCUIElement, in app: XCUIApplication) {

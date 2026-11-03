@@ -21,7 +21,7 @@ struct AlertTarget: Equatable {
 /// buttons, as Hermes Desktop's native notifications do
 /// (`apps/desktop/src/store/native-notifications.ts`, `electron/notification-ipc.ts`).
 @MainActor
-final class SystemNotifier: NSObject, UNUserNotificationCenterDelegate {
+final class SystemNotifier: NSObject, @MainActor UNUserNotificationCenterDelegate {
     let gate = AlertGate()
     /// Whether the app is in front: on the Mac, the active app; on iOS, the active scene.
     var appIsActive = true
@@ -102,37 +102,34 @@ final class SystemNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: UNUserNotificationCenterDelegate
 
+    // Main-actor methods (an isolated conformance), not `nonisolated` ones: the system hands
+    // the async forms a completion handler that Swift calls where the method returns, and
+    // UIKit aborts when `didReceive`'s is called off the main thread (it updates the app's
+    // snapshot), which crashed iOS on every tapped notification.
+
     /// In front, the gate already decided (a prompt for a chat not on screen): show it.
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification)
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification)
         async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            didReceive response: UNNotificationResponse) async {
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
-        let server = (info["server"] as? String).flatMap(UUID.init(uuidString:))
-        let profile = info["profile"] as? String
-        let stored = info["stored"] as? String
-        let isBotChat = info["isBotChat"] as? Bool ?? false
-        let request = info["request"] as? String
-        let action = response.actionIdentifier
-        await MainActor.run {
-            guard let model, let server else { return }
-            switch action {
-            case Self.approveAction, Self.rejectAction:
-                guard let request else { return }
-                let choice: ApprovalChoice = action == Self.approveAction ? .once : .deny
-                Task { await model.answerApproval(request, choice: choice, on: server) }
-            case UNNotificationDefaultActionIdentifier:
-                #if os(macOS)
-                NSApp.activate()
-                #endif
-                guard let stored else { return }
-                model.alertTarget = AlertTarget(server: server, profile: profile, storedSessionID: stored, isBotChat: isBotChat)
-            default:
-                break
-            }
+        guard let model, let server = (info["server"] as? String).flatMap(UUID.init(uuidString:)) else { return }
+        switch response.actionIdentifier {
+        case Self.approveAction, Self.rejectAction:
+            guard let request = info["request"] as? String else { return }
+            let choice: ApprovalChoice = response.actionIdentifier == Self.approveAction ? .once : .deny
+            Task { await model.answerApproval(request, choice: choice, on: server) }
+        case UNNotificationDefaultActionIdentifier:
+            #if os(macOS)
+            NSApp.activate()
+            #endif
+            guard let stored = info["stored"] as? String else { return }
+            model.alertTarget = AlertTarget(server: server, profile: info["profile"] as? String,
+                                            storedSessionID: stored, isBotChat: info["isBotChat"] as? Bool ?? false)
+        default:
+            break
         }
     }
 }

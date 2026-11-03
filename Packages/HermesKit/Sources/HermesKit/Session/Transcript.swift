@@ -490,7 +490,8 @@ public struct Transcript: Sendable, Hashable {
     /// page already holds what the turn stored: its prompt, stored at submit, and each
     /// finished tool round. Those rows become the running turn's start, as Desktop
     /// anchors it (`reconcilePersistedLiveTurn`, `use-session-actions/persisted-live-turn.ts`):
-    /// the echoed prompt goes, and the reply keeps only the text no stored row shows.
+    /// the echoed prompt goes, the reply keeps only the text no stored row shows, and a
+    /// stored call with no result yet shows as running.
     /// Without this the stored part read as a finished turn, with the prompt again below it.
     ///
     /// The turn's prompt row is the newest user row with the echoed text after the last
@@ -529,9 +530,33 @@ public struct Transcript: Sendable, Hashable {
             .filter { $0.role == "assistant" && $0.displayKind != "hidden" }
             .map(StoredMessageProjection.displayText)
             .joined(separator: "\n\n")
-        if let reply = items.indices.last(where: { $0 >= historyCount && items[$0].id == echo.reply }) {
-            items[reply].text = Self.unrepresented(items[reply].text, storedAs: stored)
+        let reply = items.indices.last { $0 >= historyCount && items[$0].id == echo.reply }
+        if let reply { items[reply].text = Self.unrepresented(items[reply].text, storedAs: stored) }
+        // A call is stored before it runs (`turn_tool_round.py:127-130`), its result once it
+        // ended: a call with no result row yet is running now. It shows as running, ahead
+        // of the reply, and its `tool.complete` finishes it (`runningToolIndex`).
+        let answered = Set(rows[(start + 1)...].compactMap { $0.role == "tool" ? $0.toolCallID : nil })
+        var running: [TranscriptItem] = []
+        for row in rows[(start + 1)...] where row.role == "assistant" {
+            for call in row.toolCalls?.arrayValue ?? [] {
+                guard let id = call["id"]?.stringValue, !id.isEmpty, !answered.contains(id),
+                    let name = call["function"]?["name"]?.stringValue, !name.isEmpty,
+                    !items.contains(where: { $0.id == Self.toolItemID(id) }) else { continue }
+                let args = StoredMessageProjection.arguments(call["function"]?["arguments"])
+                var item = TranscriptItem(id: Self.toolItemID(id), role: .tool, text: "", isActive: true)
+                item.toolCallID = id
+                item.toolName = name
+                item.detail = StoredMessageProjection.preview(args)
+                var tool = ToolActivity(toolID: id, name: name)
+                tool.phase = .running
+                tool.context = item.detail
+                if !args.isEmpty { tool.args = .object(args) }
+                item.tool = tool
+                running.append(item)
+            }
         }
+        items.insert(contentsOf: running, at: reply ?? items.endIndex)
+        turnItemIDs.formUnion(running.map(\.id))
         outputSinceWait = items[historyCount...].contains(where: Self.isVisibleOutput)
     }
 

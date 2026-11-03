@@ -286,9 +286,15 @@ final class LiveChatUITests: XCTestCase {
         app = try launchApp(keepsState: true)
         defer { app.terminate() }
         summary = app.buttons.matching(identifier: "turnWorkSummary").firstMatch
-        XCTAssertTrue(eventually(timeout: 60) { shown(app) > 0 && summary.exists }, "the chat is shown again")
+        let again = eventually(timeout: 60) { shown(app) > 0 && summary.exists }
         RunLoop.current.run(until: Date().addingTimeInterval(3))
         attach(app, "after the relaunch")
+        XCTAssertTrue(again, "the chat is shown again (prompt shown \(shown(app)), work line \(summary.exists))")
+        // The call running at the relaunch (`sleep`) shows as running, not only its stored start.
+        #if os(macOS)
+        let sleeping = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'sleep' OR value CONTAINS 'sleep'"))
+        XCTAssertGreaterThan(sleeping.count, 1, "the sleep step shows beside the prompt")
+        #endif
         XCTAssertEqual(shown(app), before, "the prompt shows once, as before the relaunch")
         XCTAssertTrue(working.evaluate(with: summary), "the turn is still working, got \(summary.label)")
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier == 'turnWorkSummary' AND label BEGINSWITH 'Completed'")).count,

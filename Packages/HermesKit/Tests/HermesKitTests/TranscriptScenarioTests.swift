@@ -120,6 +120,31 @@ struct TranscriptScenarioTests {
         withExtendedLifetime(connection) {}
     }
 
+    /// A call stored before it runs, with no result yet, is running now: it shows as a
+    /// running step after a relaunch, and its `tool.complete` finishes that same step.
+    @Test func aCallStillRunningAtOpenShowsAsRunning() async throws {
+        let rows = plain(1...289) + [user(290, "查一下"), assistant(291, "我先跑一下", call: "call-A")]
+        let (session, transport, server, connection) = try await open(
+            rows, inflight: ["assistant": "我先跑一下", "streaming": true, "user": "查一下"])
+        #expect(occurrences(session.transcript, "查一下") == 1)
+        #expect(occurrences(session.transcript, "我先跑一下") == 1)
+        let running = tools(session.transcript)
+        #expect(running.count == 1 && running.first?.isActive == true && running.first?.tool?.phase == .running)
+        #expect(running.first?.detail == "ls")
+
+        send(transport, session, "tool.complete", 1, ["tool_id": "call-A", "name": "terminal"])
+        #expect(await eventually { tools(session.transcript).first?.tool?.phase == .complete })
+        #expect(tools(session.transcript).count == 1)
+        server.store.append([tool(292, call: "call-A"), assistant(293, "好了")])
+        send(transport, session, "message.delta", 2, ["text": "好了"])
+        send(transport, session, "message.complete", 3, complete("好了", rows: [290, 291, 292, 293]))
+        #expect(await eventually { settled(session) && session.transcript.items.last?.rowID == 293 })
+        #expect(tools(session.transcript).count == 1)
+        for text in ["查一下", "我先跑一下", "好了"] { #expect(occurrences(session.transcript, text) == 1, "\(text)") }
+        expectAllStored(session.transcript)
+        withExtendedLifetime(connection) {}
+    }
+
     /// A prompt the user sent before, already answered, is not the running turn's: a final
     /// reply ends the search. The running turn's own row is not on the page yet, so its
     /// echo stays until the turn's re-read.

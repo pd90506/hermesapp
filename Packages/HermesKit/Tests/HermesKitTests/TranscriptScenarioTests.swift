@@ -92,22 +92,48 @@ struct TranscriptScenarioTests {
 
     // MARK: Turns running at open
 
-    /// With `inflight.user`: the stored part shows twice while the turn streams (the
-    /// accepted cost), never less; once the turn's re-read lands, once.
-    @Test func aTurnRunningAtOpenShowsTwiceWhileStreamingThenOnce() async throws {
+    /// With `inflight.user`: the rows the turn stored so far are the running turn's start,
+    /// shown once, as Desktop anchors them (`persisted-live-turn.ts`): no second copy of
+    /// the prompt, no "finished" turn above it. Once the turn's re-read lands, the same.
+    @Test func aTurnRunningAtOpenShowsItsStoredRowsOnce() async throws {
         let (session, transport, server, connection) = try await open(
             runningRows, inflight: ["assistant": "我先看一下文件", "streaming": true, "user": "查一下"])
-        #expect(occurrences(session.transcript, "查一下") == 2)
-        #expect(occurrences(session.transcript, "我先看一下文件") == 2)
+        #expect(occurrences(session.transcript, "查一下") == 1)
+        #expect(occurrences(session.transcript, "我先看一下文件") == 1)
+        #expect(session.transcript.isRunning)
+        // The stored round is the live turn's work, not a finished turn's.
+        guard case .work(let work)? = session.transcript.blocks.last(where: { if case .work = $0 { true } else { false } })
+        else { Issue.record("no work block"); return }
+        #expect(work.isLive)
+        #expect(work.items.contains { $0.toolCallID == "call-A" })
         expectWellFormed(session.transcript)
 
         send(transport, session, "message.delta", 1, ["text": "结果显示4"])
         #expect(await eventually { occurrences(session.transcript, "结果显示4") == 1 })
+        #expect(occurrences(session.transcript, "查一下") == 1)
         server.store.append([assistant(293, "结果显示4")])
         send(transport, session, "message.complete", 2, complete("结果显示4", rows: [290, 291, 292, 293]))
-        #expect(await eventually { settled(session) && occurrences(session.transcript, "查一下") == 1 })
+        #expect(await eventually { settled(session) && session.transcript.items.last?.rowID == 293 })
         for text in ["查一下", "我先看一下文件", "结果显示4"] { #expect(occurrences(session.transcript, text) == 1, "\(text)") }
         #expect(tools(session.transcript).count == 1)
+        expectAllStored(session.transcript)
+        withExtendedLifetime(connection) {}
+    }
+
+    /// A prompt the user sent before, already answered, is not the running turn's: a final
+    /// reply ends the search. The running turn's own row is not on the page yet, so its
+    /// echo stays until the turn's re-read.
+    @Test func aRepeatedEarlierPromptIsNotTheRunningTurns() async throws {
+        let rows = plain(1...287) + [user(288, "查一下"), assistant(289, "查好了")]
+        let (session, transport, server, connection) = try await open(
+            rows, inflight: ["assistant": "", "streaming": true, "user": "查一下"])
+        #expect(occurrences(session.transcript, "查一下") == 2)
+        #expect(session.transcript.items.last { $0.role == .user }?.rowID == nil)
+        server.store.append([user(290, "查一下"), assistant(291, "又查好了")])
+        send(transport, session, "message.delta", 1, ["text": "又查好了"])
+        send(transport, session, "message.complete", 2, complete("又查好了", rows: [290, 291]))
+        #expect(await eventually { settled(session) && session.transcript.items.last?.rowID == 291 })
+        #expect(occurrences(session.transcript, "查一下") == 2)
         expectAllStored(session.transcript)
         withExtendedLifetime(connection) {}
     }

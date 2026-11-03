@@ -348,12 +348,23 @@ plus the newest page of the transcript over REST.
   - prompts sent here;
   - finished turns, until their re-read lands.
 - **No matching.** Live and stored content are never matched: no text, call-id or anchor
-  comparison. The one exception is a row id Hermes gives for a prompt sent here: the
-  `user_row_id` of a `prompt.submit` answered `streaming` names that prompt's own stored row
-  (see "Proven by its row id" below). While a turn runs, some content can show twice:
-  - the stored part of a turn that was already running at open (Hermes stores each tool round
-    before its tools run, `agent/turn_tool_round.py:127-130`);
-  - its echoed `inflight.user`;
+  comparison. Two exceptions:
+  - a row id Hermes gives for a prompt sent here: the `user_row_id` of a `prompt.submit`
+    answered `streaming` names that prompt's own stored row (see "Proven by its row id" below);
+  - **the turn running at open** (`Transcript.adoptStoredOpenTurn`, as Desktop's
+    `reconcilePersistedLiveTurn`, `use-session-actions/persisted-live-turn.ts`). Its prompt is
+    stored at submit and each tool round before its tools run
+    (`agent/turn_tool_round.py:127-130`), so the newest page already holds them. The prompt row
+    is the newest user row with the `inflight.user` text after the last final reply (an
+    assistant row with text and no tool calls), with no other prompt stored after it;
+    `inflight` names no row (`session_auto_continue.py:528-556`). Those rows become the running
+    turn's start: the echoed prompt goes, and the live reply keeps only the text no stored
+    row of the turn shows (whitespace aside). Without that row on the page (a turn longer
+    than a page) the echo stays until the turn's re-read. Before this, the stored part read
+    as a finished turn, with the prompt again below it (user, 2026-11-03).
+
+  While a turn runs, some content can still show twice:
+  - a turn running at open that the page could not anchor (above);
   - a prompt the history already holds, sent without a `user_row_id` (queued, steered, redirected,
     or row-less `streaming`; see below).
 - **When a turn finishes** (`message.complete`, from any source), the app reads the newest rows

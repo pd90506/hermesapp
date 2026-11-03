@@ -64,9 +64,8 @@ struct PagedHistoryTests {
 
     /// The page read alongside the resume is kept only while the session is still
     /// hydrating; a session that was live already is read again after the ack.
-    /// The running turn's prompt is stored and echoed (`inflight.user`): it shows twice
-    /// until the turn's completion re-read, then once. (Through round 5 the echo was
-    /// matched to the stored row while the turn ran; stored and live are no longer matched.)
+    /// The running turn's prompt is stored and echoed (`inflight.user`): its stored row
+    /// stands for the echo, as Desktop anchors it (`persisted-live-turn.ts`), so it shows once.
     @Test func aConcurrentReadIsTrustedOnlyWhileTheSessionHydrates() async throws {
         // The last stored row is the prompt of the turn still running.
         let store = FakeMessageStore(count: 299)
@@ -82,7 +81,7 @@ struct PagedHistoryTests {
         let live = try await connection.open(SessionSummary(id: "stored-1"))
         await loaded(live)
         #expect(store.queries.count == 3)
-        #expect(live.transcript.items.suffix(4).map(\.text) == ["assistant 298", "user 299", "user 299", "Work"])
+        #expect(live.transcript.items.suffix(3).map(\.text) == ["assistant 298", "user 299", "Work"])
         #expect(live.transcript.isRunning)
 
         // The running turn keeps streaming into its one reply.

@@ -172,8 +172,9 @@ struct ChatSessionRebuildTests {
     }
 
     /// Hermes took the submit and runs its turn, but the answer is still on the way when
-    /// the chat is rebuilt: the snapshot echoes the prompt (`inflight.user`). The bubble
-    /// is not carried as well: it would show the prompt again, after the turn's reply.
+    /// the chat is rebuilt: the snapshot echoes the prompt (`inflight.user`), which its
+    /// stored row stands for. The bubble is not carried as well: it would show the prompt
+    /// again, after the turn's reply.
     @Test func aDispatchedSendTheRebuiltSnapshotRunsIsNotCarriedTwice() async throws {
         let (session, connection, transport, server, log) = try await open()
         server.holdSubmits.withLock { $0 = true }
@@ -183,9 +184,9 @@ struct ChatSessionRebuildTests {
         server.store.append([storedRow(id: 301, role: "user", text: "在路上")])
 
         try await rebuild(session, server: server, running: ["user": "在路上", "assistant": "好", "streaming": true])
-        let pending = session.transcript.items.filter { $0.text == "在路上" && $0.rowID == nil }
-        #expect(pending.count == 1, "only the snapshot's echo, no carried bubble")
-        #expect(pending.first?.outgoingStatus == nil)
+        // The stored row stands for the snapshot's echo, and no bubble is carried.
+        let shown = session.transcript.items.filter { $0.text == "在路上" }
+        #expect(shown.map(\.rowID) == [301], "only the stored row, no echo or carried bubble")
         #expect(session.transcript.items.last?.role == .assistant)
 
         transport.respond(to: request, result: ["status": "streaming", "user_row_id": 301])

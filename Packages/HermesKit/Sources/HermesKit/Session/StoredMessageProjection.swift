@@ -218,7 +218,7 @@ enum StoredMessageProjection {
         }
     }
 
-    private static func arguments(_ value: JSONValue?) -> [String: JSONValue] {
+    static func arguments(_ value: JSONValue?) -> [String: JSONValue] {
         switch value {
         case .object(let object)?: return object
         case .string(let json)?:
@@ -231,7 +231,7 @@ enum StoredMessageProjection {
     }
 
     /// A short argument preview, at most 80 characters like the gateway's.
-    private static func preview(_ args: [String: JSONValue]) -> String? {
+    static func preview(_ args: [String: JSONValue]) -> String? {
         let preferred = ["command", "path", "file_path", "url", "query", "pattern", "name", "code"]
         let value = preferred.lazy.compactMap { args[$0]?.stringValue }.first
             ?? args.keys.sorted().lazy.compactMap { args[$0]?.stringValue }.first

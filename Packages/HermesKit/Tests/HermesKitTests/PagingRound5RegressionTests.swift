@@ -236,9 +236,8 @@ struct PagingRound5ConnectionTests {
     }
 
     /// A re-read that fails changes nothing on screen: the turn running at open keeps
-    /// its live copy beside the stored part (shown twice, nothing hidden), until the
-    /// next successful re-read settles it. (Through round 5 the stored part was matched
-    /// while the turn ran, so this test expected one copy.)
+    /// what it showed (its stored rows, which stand for its echo, and its live reply),
+    /// until the next successful re-read settles it.
     @Test func aFailedCompletionRereadLeavesTheScreenAlone() async throws {
         let (session, transport, server, connection) = try await openWhileRunning(Self.runningRows, inflight: "我先看一下文件")
         server.store.setMode(.offline)
@@ -247,7 +246,8 @@ struct PagingRound5ConnectionTests {
                             payload: complete("结果显示4", rows: [290, 291, 292, 293]))
         #expect(await eventually { settled(session) && session.rereadTask == nil && server.store.queries.count == 3 })
         var transcript = session.transcript
-        #expect(occurrences(transcript, "我先看一下文件") == 2)
+        #expect(occurrences(transcript, "我先看一下文件") == 1)
+        #expect(occurrences(transcript, "查一下") == 1)
         #expect(occurrences(transcript, "结果显示4") == 1)
         #expect(session.historyLoad == .idle)
         expectWellFormed(transcript)
@@ -259,7 +259,7 @@ struct PagingRound5ConnectionTests {
         transport.sendEvent("message.delta", sessionID: session.sessionID, seq: 4, payload: ["text": "在的"])
         transport.sendEvent("message.complete", sessionID: session.sessionID, seq: 5,
                             payload: complete("在的", rows: [294, 295]))
-        #expect(await eventually { occurrences(session.transcript, "我先看一下文件") == 1 })
+        #expect(await eventually { session.transcript.items.last?.rowID == 295 })
         await settle(session)
         transcript = session.transcript
         for text in ["查一下", "我先看一下文件", "结果显示4", "在吗", "在的"] {

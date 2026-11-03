@@ -240,6 +240,74 @@ final class LiveChatUITests: XCTestCase {
         #endif
     }
 
+    /// A relaunch while a turn runs comes back to that turn, still working: its prompt
+    /// shows once (the stored row stands for the snapshot's echo of it), and the steps it
+    /// stored so far sit under its "Working" line, not under a "Completed" one above a
+    /// second copy of the prompt. Once the turn ends, the prompt still shows once.
+    @MainActor
+    func testARelaunchMidTurnShowsTheRunningTurnOnce() throws {
+        continueAfterFailure = false
+        var app = try launchApp(keepsState: true, freshState: true)
+        #if os(iOS)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        #endif
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        let tag = "MIDTURN\(Int.random(in: 1000...9999))"
+        composer.typeText("\(tag) Use the terminal tool to run `echo started`, then use it again to run `sleep 75`. "
+            + "After both finish, reply with only the word finished.")
+        press(app.buttons["Send"].firstMatch)
+
+        func shown(_ app: XCUIApplication) -> Int {
+            app.descendants(matching: .any).matching(NSPredicate(
+                format: "identifier != 'composer' AND (label CONTAINS %@ OR value CONTAINS %@)", tag, tag)).count
+        }
+        var summary = app.buttons.matching(identifier: "turnWorkSummary").firstMatch
+        let working = NSPredicate(format: "label BEGINSWITH 'Working'")
+        let steps = app.buttons.matching(identifier: "workGroupRow")
+        guard eventually(timeout: 180, { summary.exists && working.evaluate(with: summary) && steps.count > 0 }) else {
+            attach(app, "no step yet")
+            throw XCTSkip("The model ran no step (no model key in the VM?)")
+        }
+        // The `sleep` call is stored before it runs (`turn_tool_round.py:127-130`).
+        RunLoop.current.run(until: Date().addingTimeInterval(8))
+        let before = shown(app)
+        attach(app, "before the relaunch")
+        XCTAssertGreaterThan(before, 0, "the prompt shows")
+        app.terminate()
+
+        app = try launchApp(keepsState: true)
+        defer { app.terminate() }
+        #if os(macOS)
+        // The relaunched app's chat reaches the accessibility tree once it is frontmost.
+        app.activate()
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)).hover()
+        #endif
+        summary = app.buttons.matching(identifier: "turnWorkSummary").firstMatch
+        let again = eventually(timeout: 60) { shown(app) > 0 && summary.exists }
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        attach(app, "after the relaunch")
+        XCTAssertTrue(again, "the chat is shown again (prompt shown \(shown(app)), work line \(summary.exists))")
+        XCTAssertEqual(shown(app), before, "the prompt shows once, as before the relaunch")
+        XCTAssertTrue(working.evaluate(with: summary), "the turn is still working, got \(summary.label)")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier == 'turnWorkSummary' AND label BEGINSWITH 'Completed'")).count,
+                       0, "no finished turn above it")
+
+        let completed = NSPredicate(format: "label BEGINSWITH 'Completed'")
+        XCTAssertTrue(eventually(timeout: 180) { summary.exists && completed.evaluate(with: summary) },
+                      "the turn ends, got \(summary.label)")
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        attach(app, "after the turn ended")
+        XCTAssertEqual(shown(app), before, "the prompt still shows once")
+    }
+
     #if os(macOS)
     /// The window's layout, all in one launch (each launch waits for the app to connect):
     /// with no chat open, then with a new chat, then the pinned Bot Chat opened. Each

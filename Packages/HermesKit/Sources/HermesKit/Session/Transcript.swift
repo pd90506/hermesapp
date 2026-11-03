@@ -306,6 +306,17 @@ public struct Transcript: Sendable, Hashable {
     /// The reply that was streaming when a prompt went into the running turn, which its
     /// late text still joins (see `appendUserPrompt`).
     private var lateTail: LateTail?
+    /// The running turn a snapshot showed (`inflight`): the bubble echoing its prompt
+    /// and its reply so far, until the newest page shows what the turn stored
+    /// (`adoptStoredOpenTurn`).
+    private var inflightEcho: InflightEcho?
+
+    private struct InflightEcho: Sendable, Hashable {
+        /// The prompt's bubble.
+        var prompt: String
+        /// The reply's.
+        var reply: String
+    }
 
     private struct LateTail: Sendable, Hashable {
         var itemID: String
@@ -399,8 +410,8 @@ public struct Transcript: Sendable, Hashable {
             if let user = inflight.user.map(StoredMessageProjection.userDisplayText), !user.isEmpty,
                 items.last?.role != .user || items.last?.text != user
             {
-                // The prompt is stored at submit (`methods_prompt.py:817-820`): until the
-                // turn's re-read it shows twice.
+                // The prompt is stored at submit (`methods_prompt.py:817-820`): once the
+                // newest page shows its row, that row stands for it (`adoptStoredOpenTurn`).
                 echo = items[appendUser(user)].id
             }
             let assistant = inflight.assistant ?? ""
@@ -417,7 +428,8 @@ public struct Transcript: Sendable, Hashable {
                 serverBusy = snapshot.running == true
             } else {
                 let streaming = inflight.streaming ?? (snapshot.running == true)
-                append(.assistant, assistant, active: streaming)
+                let reply = items[append(.assistant, assistant, active: streaming)].id
+                if let echo { inflightEcho = InflightEcho(prompt: echo, reply: reply) }
             }
         } else if snapshot.running == true {
             startTurn()
@@ -466,10 +478,86 @@ public struct Transcript: Sendable, Hashable {
             needsReread = true
         }
         rereadWhenLoaded = false
+        adoptStoredOpenTurn(rows)
         // A late initial page can already contain an acknowledged pending row.
         // Reconcile by its server id before exposing both copies to the view.
         dropPromptsShownByRows()
         absorbLocalRows()
+    }
+
+    /// A chat opened while a turn runs shows that turn from the snapshot: its prompt
+    /// (`inflight.user`) and its reply so far (`inflight.assistant`, text only). The newest
+    /// page already holds what the turn stored: its prompt, stored at submit, and each
+    /// finished tool round. Those rows become the running turn's start, as Desktop
+    /// anchors it (`reconcilePersistedLiveTurn`, `use-session-actions/persisted-live-turn.ts`):
+    /// the echoed prompt goes, the reply keeps only the text no stored row shows, and a
+    /// stored call with no result yet shows as running.
+    /// Without this the stored part read as a finished turn, with the prompt again below it.
+    ///
+    /// The turn's prompt row is the newest user row with the echoed text after the last
+    /// final reply (an assistant row with text and no tool calls); a steer is not one.
+    /// The snapshot names no row (`_inflight_snapshot`, `session_auto_continue.py:528-556`),
+    /// so the text is the only link, as in Desktop. A page without that row (a turn longer
+    /// than the page) leaves the echo to the turn's re-read, as before.
+    private mutating func adoptStoredOpenTurn(_ rows: [StoredMessage]) {
+        guard let echo = inflightEcho else { return }
+        inflightEcho = nil
+        guard turnItemIDs.contains(echo.prompt),
+            let prompt = items[historyCount...].first(where: { $0.id == echo.prompt }) else { return }
+        let wanted = Self.normalizedText(prompt.text)
+        var start: Int?
+        for index in rows.indices.reversed() {
+            let row = rows[index]
+            if row.role == "assistant", (row.toolCalls?.arrayValue ?? []).isEmpty,
+                !Self.normalizedText(StoredMessageProjection.displayText(row)).isEmpty { break }
+            guard row.role == "user", row.displayKind != "steer", let id = row.id,
+                items[..<historyCount].contains(where: { $0.rowID == id && $0.role == .user
+                    && Self.normalizedText($0.text) == wanted }) else { continue }
+            start = index
+            break
+        }
+        // Another prompt stored after it (a queued one, `_persist_queued_user_row`) would
+        // split the turn: Desktop takes no anchor then either.
+        guard let start, let promptRow = rows[start].id,
+            !rows[(start + 1)...].contains(where: { $0.role == "user" && $0.displayKind != "steer" }) else { return }
+        turnItemIDs.remove(echo.prompt)
+        removeLiveItems { $0.id == echo.prompt }
+        turnPromptRow = promptRow
+        openTurnRowFloor = max(openTurnRowFloor, heldRowIDs.max() ?? 0)
+        // The snapshot's text is every round's text so far; the stored rounds' commentary
+        // shows from their rows (Desktop's `unrepresentedText`).
+        let stored = rows[(start + 1)...]
+            .filter { $0.role == "assistant" && $0.displayKind != "hidden" }
+            .map(StoredMessageProjection.displayText)
+            .joined(separator: "\n\n")
+        let reply = items.indices.last { $0 >= historyCount && items[$0].id == echo.reply }
+        if let reply { items[reply].text = Self.unrepresented(items[reply].text, storedAs: stored) }
+        // A call is stored before it runs (`turn_tool_round.py:127-130`), its result once it
+        // ended: a call with no result row yet is running now. It shows as running, ahead
+        // of the reply, and its `tool.complete` finishes it (`runningToolIndex`).
+        let answered = Set(rows[(start + 1)...].compactMap { $0.role == "tool" ? $0.toolCallID : nil })
+        var running: [TranscriptItem] = []
+        for row in rows[(start + 1)...] where row.role == "assistant" {
+            for call in row.toolCalls?.arrayValue ?? [] {
+                guard let id = call["id"]?.stringValue, !id.isEmpty, !answered.contains(id),
+                    let name = call["function"]?["name"]?.stringValue, !name.isEmpty,
+                    !items.contains(where: { $0.id == Self.toolItemID(id) }) else { continue }
+                let args = StoredMessageProjection.arguments(call["function"]?["arguments"])
+                var item = TranscriptItem(id: Self.toolItemID(id), role: .tool, text: "", isActive: true)
+                item.toolCallID = id
+                item.toolName = name
+                item.detail = StoredMessageProjection.preview(args)
+                var tool = ToolActivity(toolID: id, name: name)
+                tool.phase = .running
+                tool.context = item.detail
+                if !args.isEmpty { tool.args = .object(args) }
+                item.tool = tool
+                running.append(item)
+            }
+        }
+        items.insert(contentsOf: running, at: reply ?? items.endIndex)
+        turnItemIDs.formUnion(running.map(\.id))
+        outputSinceWait = items[historyCount...].contains(where: Self.isVisibleOutput)
     }
 
     /// The stored rows `old` showed, until this transcript's newest page is installed
@@ -1402,6 +1490,26 @@ public struct Transcript: Sendable, Hashable {
     }
 
     /// Output the waiting row gives way to: assistant text that is not blank, or a tool row.
+    /// `text` without the prefix `stored` holds, whitespace aside (rounds are joined by
+    /// paragraph breaks in the stream, by nothing in the rows). Unchanged when `stored`
+    /// is not a prefix of it; empty when `text` is a prefix of `stored` (it streamed no
+    /// further than the stored rows).
+    static func unrepresented(_ text: String, storedAs stored: String) -> String {
+        var wanted = stored.filter { !$0.isWhitespace }[...]
+        guard !wanted.isEmpty else { return text }
+        var index = text.startIndex
+        while index < text.endIndex, let next = wanted.first {
+            let character = text[index]
+            if !character.isWhitespace {
+                guard character == next else { return text }
+                wanted = wanted.dropFirst()
+            }
+            index = text.index(after: index)
+        }
+        guard wanted.isEmpty else { return "" }
+        return String(text[index...].drop { $0.isWhitespace })
+    }
+
     static func isVisibleOutput(_ item: TranscriptItem) -> Bool {
         item.role == .tool
             || (item.role == .assistant && !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

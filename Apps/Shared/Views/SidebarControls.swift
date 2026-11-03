@@ -430,6 +430,8 @@ struct HistoryRow<Actions: View>: View {
     /// A reply came that wasn't seen here (`GatewayConnection.isUnread`): a dot, as
     /// Mail and Messages mark unread, and the title in bold, until the chat is opened.
     var isUnread = false
+    /// What the chat is doing, when it is open here (`GatewayConnection.status(of:)`).
+    var status: ChatStatus = .idle
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
@@ -438,13 +440,22 @@ struct HistoryRow<Actions: View>: View {
                 Text(entry.summary.title?.isEmpty == false ? entry.summary.title! : "Untitled chat")
                     .fontWeight(isUnread ? .semibold : nil)
                     .lineLimit(1)
-                if let date {
+                if status == .waitingForYou {
+                    // As the Bot Chat's row says it (`BotRow`): the one state that needs the user.
+                    Text("Waiting for your answer")
+                        .uiFont(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("sessionWaitingText")
+                } else if let date {
                     SessionRelativeTime(date: date)
                         .accessibilityIdentifier("sessionMessageDate")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if isUnread {
+            if status != .idle {
+                ChatStatusDot(status: status)
+            } else if isUnread {
                 Circle()
                     .fill(.tint)
                     .frame(width: 8, height: 8)
@@ -471,6 +482,40 @@ struct HistoryRow<Actions: View>: View {
         }
         .padding(.vertical, 2)
         .contextMenu { actions() }
+    }
+}
+
+/// A session row's dot for what its chat is doing, Desktop's colours and fills
+/// (`apps/desktop/src/app/chat/session-status-dot.tsx:26-62`): orange when it waits for the
+/// user, the accent while its turn runs, and an outline while its subagents or background
+/// processes run after the turn ("open, not producing"). None moves: filled means working,
+/// hollow means still open but quiet.
+struct ChatStatusDot: View {
+    let status: ChatStatus
+
+    var body: some View {
+        Group {
+            switch status {
+            case .waitingForYou: Circle().fill(.orange)
+            case .working: Circle().fill(.tint)
+            case .background: Circle().strokeBorder(.secondary, lineWidth: 1.5)
+            case .idle: EmptyView()
+            }
+        }
+        .frame(width: 8, height: 8)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("sessionStatusDot")
+    }
+
+    /// Desktop's labels (`sidebar.row`, `apps/desktop/src/i18n/en.ts:3228-3232`).
+    private var label: String {
+        switch status {
+        case .waitingForYou: "Waiting for your answer"
+        case .working: "Session running"
+        case .background: "Background task running"
+        case .idle: ""
+        }
     }
 }
 

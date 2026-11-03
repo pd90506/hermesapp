@@ -85,13 +85,68 @@ extension GatewayConnection {
         }
     }
 
-    /// What the bot's row should show, including what this app sees live.
+    /// What the bot's avatar should show, including what this app sees live: the loudest
+    /// of all its chats, as Desktop's rail rolls up a profile's sessions
+    /// (`profile-switcher.tsx:122-147`), with work left in the background counted as working
+    /// (`sessionStatusBucket`, `session-dot-state.ts:84-85`).
     public func activity(for bot: Bot, now: Date = Date()) -> BotActivity {
-        let active = activeSession.flatMap { $0.profile == bot.name ? $0 : nil }
-        let waiting = active.map { !$0.transcript.pendingRequests.isEmpty } == true
+        let statuses = liveChats.filter { $0.profile == bot.name }.map(status(of:))
+        let waiting = statuses.contains(.waitingForYou)
             || otherSessionRequests.contains { sessionProfiles[$0.sessionID ?? ""] == bot.name }
-        return bot.activity(now: now, liveTurnRunning: active?.transcript.isRunning == true,
+        return bot.activity(now: now, liveTurnRunning: statuses.contains { $0 == .working || $0 == .background },
                             waitingForAnswer: waiting)
+    }
+
+    /// What the bot's Bot Chat row should show: its Bot Chat's own state, not the
+    /// profile's. A question in one of its side chats shows on that chat's row.
+    public func botChatActivity(for bot: Bot, now: Date = Date()) -> BotActivity {
+        let status = liveChats.first { $0.kind == .botChat && $0.profile == bot.name }.map(status(of:)) ?? .idle
+        return bot.activity(now: now, liveTurnRunning: status == .working || status == .background,
+                            waitingForAnswer: status == .waitingForYou)
+    }
+
+    /// What `chat`'s row shows (`ChatStatus`), with the requests parked for it while hidden.
+    public func status(of chat: ChatSession) -> ChatStatus {
+        chat.status(waiting: otherSessionRequests.contains { $0.sessionID == chat.sessionID })
+    }
+
+    /// What `entry`'s row shows: idle unless the chat is open here (on screen or warm).
+    public func status(of entry: HistoryEntry) -> ChatStatus {
+        openChat(for: entry).map(status(of:)) ?? .idle
+    }
+
+    /// The chats with a question waiting, each once, for the session list's "waiting for
+    /// you" to count and open: those whose requests came while they were hidden, in the
+    /// order they asked, then hidden chats that were asked while they showed, the one
+    /// left longest ago first. The active chat only while it isn't on screen
+    /// (`isChatOnScreen`: another server's chat shows, or on iPhone the list does). A
+    /// request for a runtime this connection holds no chat for has no stored id.
+    public var waitingChats: [WaitingChat] {
+        let includingActive = !isChatOnScreen
+        var seen: Set<String> = []
+        var waiting: [WaitingChat] = []
+        func add(_ sid: String, chat: ChatSession?) {
+            guard seen.insert(sid).inserted else { return }
+            waiting.append(WaitingChat(sessionID: sid, storedSessionID: chat?.storedSessionID,
+                                       profile: chat?.profile ?? sessionProfiles[sid], isBotChat: chat?.kind == .botChat))
+        }
+        if includingActive, let activeSession, !activeSession.transcript.pendingRequests.isEmpty {
+            add(activeSession.sessionID, chat: activeSession)
+        }
+        for request in otherSessionRequests {
+            guard let sid = request.sessionID, activeSession?.sessionID != sid || includingActive else { continue }
+            add(sid, chat: liveChats.first { $0.sessionID == sid })
+        }
+        for chat in warmChats.reversed() where chat !== activeSession && !chat.transcript.pendingRequests.isEmpty {
+            add(chat.sessionID, chat: chat)
+        }
+        return waiting
+    }
+
+    /// The on-screen chat, then the warm ones: every chat this socket follows.
+    private var liveChats: [ChatSession] {
+        let warm = warmChats.filter { $0 !== activeSession }
+        return activeSession.map { [$0] + warm } ?? warm
     }
 
     // MARK: Bot Chat

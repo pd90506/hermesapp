@@ -33,6 +33,9 @@ extension GatewayMethod {
     public static let sessionSave = "session.save"
     public static let sessionStatus = "session.status"
     public static let processStop = "process.stop"
+    // One chat's background processes (`tui_gateway/methods_tools.py:281-296`).
+    public static let processList = "process.list"
+    public static let processKill = "process.kill"
     // Side-chat management (`contracts/sessions.py:294-303,337-352`).
     public static let sessionArchive = "session.archive"
     public static let sessionDelete = "session.delete"

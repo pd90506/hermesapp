@@ -56,6 +56,10 @@ public final class ChatSession: Identifiable {
     /// The children this chat's turns delegated work to (`SubagentRoster`), apart from the
     /// transcript: their events update only what shows them.
     public internal(set) var subagents = SubagentRoster()
+    /// The processes its agent left running in the background (`BackgroundProcessList`).
+    public internal(set) var backgroundProcesses = BackgroundProcessList()
+    /// Finished processes waiting to leave the list, by id.
+    @ObservationIgnored private var processDismissals: [String: Task<Void, Never>] = [:]
     /// Whether streamed text is shown a batch at a time (`StreamedTextQueue`), as its
     /// connection says (`GatewayConnection.coalescesStreamedText`); off, each delta shows
     /// as it comes.
@@ -458,6 +462,12 @@ public final class ChatSession: Identifiable {
             // `{usage: {...}}` (`tui_gateway/server.py:2046`).
             if let read = SessionUsage(event.payload?["usage"]) { takeUsage(read) }
             return
+        case .statusUpdate(let status) where status.kind == "process":
+            // The gateway's poller announces a process finishing (`gateway-event/status.ts:116-119`).
+            Task { await refreshBackgroundProcesses() }
+        case .toolComplete(let tool) where tool.name == "terminal" || tool.name == "process":
+            // Only these start or reap background processes (`gateway-event/tools.ts:191-197`).
+            Task { await refreshBackgroundProcesses() }
         default:
             break
         }
@@ -1042,6 +1052,53 @@ public final class ChatSession: Identifiable {
         var next = subagents
         next.reconcile(rows)
         if next != subagents { subagents = next }
+    }
+
+    /// What the chat's sidebar row shows (`ChatStatus`), from what this socket sees of it.
+    /// `waiting`: a request of this chat parked on the connection while it was hidden
+    /// (`GatewayConnection.otherSessionRequests`).
+    func status(waiting: Bool = false) -> ChatStatus {
+        ChatStatus.resolve(waiting: waiting || !transcript.pendingRequests.isEmpty, running: transcript.isRunning,
+                           background: !subagents.live.isEmpty || !backgroundProcesses.running.isEmpty)
+    }
+
+    // MARK: - Background processes
+
+    /// Reconciles the background processes with the gateway's registry (`process.list`),
+    /// as Desktop does when a chat shows, after a `terminal` or `process` tool, when the
+    /// gateway announces one finished, and every 5 s while one runs. A process that
+    /// finished since the last read raises a notification. A failure changes nothing.
+    public func refreshBackgroundProcesses() async {
+        guard !isRuntimeGone, let client = connection?.client else { return }
+        let id = sessionID
+        guard let answer = try? await client.call(GatewayMethod.processList, params: ["session_id": .string(id)]),
+              let rows = answer["processes"]?.arrayValue, id == sessionID else { return }
+        var next = backgroundProcesses
+        let finished = next.reconcile(rows)
+        if next != backgroundProcesses { backgroundProcesses = next }
+        for process in backgroundProcesses.processes where !process.isRunning && processDismissals[process.id] == nil {
+            processDismissals[process.id] = Task { [weak self] in
+                try? await Task.sleep(for: BackgroundProcessList.linger(process))
+                guard !Task.isCancelled else { return }
+                self?.dismissBackgroundProcess(process.id)
+            }
+        }
+        for process in finished { connection?.raiseAlert(forFinished: process, sid: id) }
+    }
+
+    /// Drops a finished process's row now.
+    public func dismissBackgroundProcess(_ id: String) {
+        processDismissals.removeValue(forKey: id)?.cancel()
+        backgroundProcesses.dismiss(id)
+    }
+
+    /// Kills one background process (`process.kill`, `tui_gateway/methods_tools.py:285-296`),
+    /// then drops its row. On a failure the row stays, so it can be tried again.
+    public func stopBackgroundProcess(_ id: String) async throws {
+        _ = try await currentClient().call(GatewayMethod.processKill, params: [
+            "session_id": .string(sessionID), "process_id": .string(id),
+        ])
+        dismissBackgroundProcess(id)
     }
 
     /// Queues guidance for a running subagent, which it reads with its next tool result

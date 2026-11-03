@@ -3,7 +3,8 @@ import XCTest
 /// The clarify card with a real question from Hermes: two questions in one call, the
 /// choices laid out as rows to tap (not folded into a menu), picking a single-select
 /// choice moves on to the next question, a multi-select one toggles, and Send Answers
-/// gets the answers to Hermes. Screenshots at each step.
+/// gets the answers to Hermes. Before answering, the chat is left and opened again from
+/// the session list's "waiting for you" banner. Screenshots at each step.
 /// Compiled into HermesMacUITests and HermesiOSUITests. Makes one chat; the script's
 /// sweep deletes it. Skipped without `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
 final class ClarifyCardUITests: XCTestCase {
@@ -36,6 +37,7 @@ final class ClarifyCardUITests: XCTestCase {
         attach(app, "1 first question")
         XCTAssertTrue(choice("Green", in: app).exists, "every choice is a row, no menu to open")
         XCTAssertTrue(choice("Blue", in: app).exists)
+        try leaveAndComeBackThroughTheWaitingBanner(app)
 
         press(choice("Green", in: app))
         XCTAssertTrue(choice("Medium", in: app).waitForExistence(timeout: 5), "on to the second question")
@@ -61,6 +63,33 @@ final class ClarifyCardUITests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// The waiting chat's row says so, not the Bot Chat's; with the chat left, the
+    /// list's "waiting for you" banner opens it again, its question still there.
+    @MainActor
+    private func leaveAndComeBackThroughTheWaitingBanner(_ app: XCUIApplication) throws {
+        #if os(macOS)
+        let waitingText = app.descendants(matching: .any).matching(identifier: "sessionWaitingText").firstMatch
+        XCTAssertTrue(waitingText.waitForExistence(timeout: 10), "the chat's own row says it waits")
+        let botChat = app.descendants(matching: .any).matching(identifier: "pinnedBotChat").firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 10), "the Bot Chat is pinned above the list")
+        XCTAssertFalse(botChat.label.contains("Waiting for your answer"), "the Bot Chat isn't the one waiting: \(botChat.label)")
+        press(botChat)
+        #else
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "a way back to the list")
+        back.tap()
+        #endif
+        let banner = app.descendants(matching: .any).matching(identifier: "waitingChatsBanner").firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 15), "the list says a chat waits")
+        #if os(iOS)
+        let waitingText = app.descendants(matching: .any).matching(identifier: "sessionWaitingText").firstMatch
+        XCTAssertTrue(waitingText.exists, "the chat's own row says it waits")
+        #endif
+        attach(app, "1b waiting banner")
+        press(banner)
+        XCTAssertTrue(choice("Green", in: app).waitForExistence(timeout: 15), "the banner opens the waiting chat")
+    }
 
     @MainActor
     private func choice(_ label: String, in app: XCUIApplication) -> XCUIElement {

@@ -579,8 +579,17 @@ struct ReviewNoteRow: View {
             .textSelection(.enabled)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(Self.accessibilityIdentifier)
-            FoldButton(isExpanded: $isExpanded) {
-                content(lineLimit: isExpanded ? nil : 1)
+            // The chevron at the trailing edge on the first line, so it stays put as the
+            // detail opens (asked for by the user, 2026-11-03).
+            FoldButton(isExpanded: $isExpanded, chevron: .none) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    content(lineLimit: isExpanded ? nil : 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .uiFont(.caption2, weight: .semibold)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .foregroundStyle(.tertiary)
+                }
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(Self.accessibilityIdentifier)

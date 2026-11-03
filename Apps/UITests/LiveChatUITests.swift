@@ -285,6 +285,11 @@ final class LiveChatUITests: XCTestCase {
 
         app = try launchApp(keepsState: true)
         defer { app.terminate() }
+        #if os(macOS)
+        // The relaunched app's chat reaches the accessibility tree once it is frontmost.
+        app.activate()
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)).hover()
+        #endif
         summary = app.buttons.matching(identifier: "turnWorkSummary").firstMatch
         let again = eventually(timeout: 60) { shown(app) > 0 && summary.exists }
         RunLoop.current.run(until: Date().addingTimeInterval(3))

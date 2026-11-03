@@ -2,6 +2,7 @@ import AppKit
 import HermesKit
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 
 /// An opened tool call stays a bounded size: a long diff scrolls inside a box of
 /// `ToolTextBox.diffMaxLines` lines, as Desktop's 12rem diff box does, and output
@@ -65,14 +66,41 @@ import Testing
         #expect(line < 24, "the notice is \(line) pt tall")
     }
 
-    /// The review's line is one line in a wide chat, and its detail wraps rather than
-    /// running off a narrow one.
-    @Test func aReviewNoteIsOneLineThatWraps() {
+    /// The review's line is one line in a wide chat; in a narrow one its detail folds to one
+    /// line rather than wrap, and opens to its whole text.
+    @Test func aReviewNoteIsOneLineThatFoldsAndOpens() {
         let note = ReviewNote(label: "Self-improvement review", detail: "Memory updated · Skill 'tea' patched")
-        let line = height(ReviewNoteRow(note: note), width: 600)
+        let line = height(ReviewNoteRow(note: note, id: "r"), width: 600)
         #expect(line > 10 && line < 24, "the note is \(line) pt tall")
-        let narrow = height(ReviewNoteRow(note: note), width: 260)
-        #expect(narrow > line, "the detail wraps at 260 pt: \(narrow) vs \(line)")
+        let folded = height(ReviewNoteRow(note: note, id: "r"), width: 260)
+        #expect(abs(folded - line) < 2, "folded to one line at 260 pt: \(folded) vs \(line)")
+
+        // Opened (as the chat remembers it), the whole detail shows.
+        let memory = RowMemory()
+        memory.save("review:r", true)
+        let opened = height(ReviewNoteRow(note: note, id: "r").environment(\.rowMemory, memory), width: 260)
+        #expect(opened > folded + 8, "opened, it wraps: \(opened) vs \(folded)")
+
+        let long = ReviewNote(label: "Self-improvement review",
+                              detail: "Memory updated · User profile updated · Skill 'tea-brewing' patched · Skill 'calendar-sync' created")
+        snapshot(ReviewNoteRow(note: long, id: "s"), width: 520, "review note folded")
+        let open = RowMemory()
+        open.save("review:s", true)
+        snapshot(ReviewNoteRow(note: long, id: "s").environment(\.rowMemory, open), width: 520, "review note opened")
+    }
+
+    /// `view` at `width`, as a PNG attached to the test (scripts/vm-test.sh exports it as a
+    /// screenshot).
+    private func snapshot(_ view: some View, width: CGFloat, _ name: String) {
+        let host = NSHostingView(rootView: view.padding(12).frame(width: width)
+            .background(Color(nsColor: .textBackgroundColor)))
+        host.frame.size = host.fittingSize
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        let image = NSImage(size: host.bounds.size)
+        image.addRepresentation(rep)
+        Attachment.record(image, named: name, as: .png)
     }
 
     @Test func aShortDiffHasNoScrollBox() {

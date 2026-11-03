@@ -546,8 +546,13 @@ struct BackgroundNoticeRow: View {
 /// What the self-improvement review saved after a turn (`ReviewNote`), as Desktop draws it
 /// (`system-message.tsx:89-112`, `.tool-memory-legendary-*` in `styles.css:259-264,1241-1260`):
 /// a glowing brain, the label in a gold-to-purple gradient, the detail in purple.
+///
+/// `[client choice]` A detail too long for one line (several memories and skills) folds to
+/// one line with a chevron, and opens in place on a click (asked for by the user,
+/// 2026-11-03); Desktop wraps it.
 struct ReviewNoteRow: View {
     let note: ReviewNote
+    @Remembered private var isExpanded: Bool
 
     static let accessibilityIdentifier = "reviewNote"
 
@@ -557,7 +562,33 @@ struct ReviewNoteRow: View {
                  Color.orange.mix(with: .purple, by: 0.45), purple],
         startPoint: .leading, endPoint: .trailing)
 
+    /// - Parameter id: the note's row, under which the chat remembers it open.
+    init(note: ReviewNote, id: String) {
+        self.note = note
+        _isExpanded = Remembered(wrappedValue: false, "review:\(id)")
+    }
+
     var body: some View {
+        // The whole line when it fits; else the fold.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                content(lineLimit: 1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 0)
+            }
+            .textSelection(.enabled)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            FoldButton(isExpanded: $isExpanded) {
+                content(lineLimit: isExpanded ? nil : 1)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+        }
+        .uiFont(.callout)
+    }
+
+    private func content(lineLimit: Int?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "brain")
                 .imageScale(.small)
@@ -571,13 +602,11 @@ struct ReviewNoteRow: View {
             if !note.detail.isEmpty {
                 Text(note.detail)
                     .foregroundStyle(Self.purple.mix(with: .gray, by: 0.42))
+                    .lineLimit(lineLimit)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.leading)
             }
-            Spacer(minLength: 0)
         }
-        .uiFont(.callout)
-        .textSelection(.enabled)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(Self.accessibilityIdentifier)
     }
 }
 

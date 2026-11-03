@@ -363,7 +363,7 @@ private struct MessageRow: View {
             BackgroundNoticeRow(notice: notice, id: item.id)
                 .contextMenu { copyMenu }
         } else if let note = item.reviewNote {
-            ReviewNoteRow(note: note)
+            ReviewNoteRow(note: note, id: item.id)
                 .contextMenu { copyMenu }
         } else {
             row

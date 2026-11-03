@@ -625,4 +625,91 @@ struct GatewayConnectionBotTests {
         try await active.send("go")
         #expect(connection.activity(for: finance) == .working)
     }
+
+    /// A question in a side chat shows on that chat's row and the profile's avatar, not
+    /// on the profile's Bot Chat row; once the side chat is left, the session list can
+    /// still open it from "waiting for you".
+    @Test func aSideChatsQuestionShowsOnItsOwnRow() async throws {
+        let server = BotServer(profiles: roster, botChats: ["coder": botChatRow(id: "coder-chat")])
+        let (connection, transport) = try await connect(server, log: FrameLog())
+        let coder = try #require(connection.bots.first { $0.name == "coder" })
+        try await connection.openBotChat(profile: "coder")
+        let side = try await connection.newSideChat(profile: "coder")
+        #expect(await eventually { side.storedSessionID != nil })
+
+        transport.serverSends(["jsonrpc": "2.0", "id": "srq-1", "method": "clarify",
+                               "params": ["session_id": .string(side.sessionID), "request_id": "c1",
+                                          "question": "Which one?"]])
+        #expect(await eventually { connection.status(of: side) == .waitingForYou })
+        #expect(connection.activity(for: coder) == .waitingForYou)
+        #expect(connection.botChatActivity(for: coder) != .waitingForYou)
+        // On screen: not "waiting for you" in the list.
+        #expect(connection.waitingChats.isEmpty)
+        connection.isChatOnScreen = false
+        #expect(connection.waitingChats.map(\.sessionID) == [side.sessionID])
+        connection.isChatOnScreen = true
+
+        try await connection.openBotChat(profile: "coder")
+        let waiting = try #require(connection.waitingChats.first)
+        #expect(waiting.storedSessionID == side.storedSessionID)
+        #expect(waiting.profile == "coder")
+        #expect(!waiting.isBotChat)
+        #expect(connection.botChatActivity(for: coder) != .waitingForYou)
+    }
+
+    /// The Bot Chat's own question does show on its row.
+    @Test func theBotChatsQuestionShowsOnItsRow() async throws {
+        let server = BotServer(profiles: roster, botChats: ["coder": botChatRow(id: "coder-chat"),
+                                                            "finance": botChatRow(id: "fin-chat")])
+        let (connection, transport) = try await connect(server, log: FrameLog())
+        let coder = try #require(connection.bots.first { $0.name == "coder" })
+        try await connection.openBotChat(profile: "coder")
+        try await connection.openBotChat(profile: "finance")
+
+        transport.serverSends(["jsonrpc": "2.0", "id": "srq-1", "method": "approval",
+                               "params": ["session_id": "rt-coder-chat", "request_id": "a1", "command": "ls"]])
+        #expect(await eventually { connection.botChatActivity(for: coder) == .waitingForYou })
+        let waiting = try #require(connection.waitingChats.first)
+        #expect(waiting.isBotChat && waiting.profile == "coder")
+    }
+
+    /// A running background process marks its chat (Desktop's hollow dot), and its
+    /// finishing raises a notification and leaves the list after a while.
+    @Test func backgroundProcessesMarkTheChatAndNotifyWhenDone() async throws {
+        let log = FrameLog()
+        let server = BotServer(profiles: roster, botChats: ["coder": botChatRow(id: "coder-chat")],
+                               hold: ["process.list"])
+        let (connection, transport) = try await connect(server, log: log)
+        var alerts: [GatewayAlert] = []
+        connection.alertSink = { alerts.append($0); return true }
+        let chat = try await connection.openBotChat(profile: "coder")
+        let coder = try #require(connection.bots.first { $0.name == "coder" })
+
+        // `tools/process_registry.py:2393-2420`, with `output_tail` (`server.py:2068`).
+        let refresh = Task { await chat.refreshBackgroundProcesses() }
+        #expect(await eventually { log.requests("process.list").count == 1 })
+        transport.respond(to: try #require(log.requests("process.list").first), result: ["processes": [
+            ["session_id": "proc_1", "command": "npm run dev\n--port 5173", "status": "running",
+             "uptime_seconds": 3, "output_preview": "ready"],
+        ]])
+        await refresh.value
+        #expect(chat.backgroundProcesses.running.map(\.title) == ["npm run dev"])
+        #expect(connection.status(of: chat) == .background)
+        #expect(connection.botChatActivity(for: coder) == .working)
+
+        let again = Task { await chat.refreshBackgroundProcesses() }
+        #expect(await eventually { log.requests("process.list").count == 2 })
+        transport.respond(to: log.requests("process.list")[1], result: ["processes": [
+            ["session_id": "proc_1", "command": "npm run dev", "status": "exited", "exit_code": 1,
+             "output_tail": "a\nb\nc\nd"],
+        ]])
+        await again.value
+        #expect(connection.status(of: chat) == .idle)
+        let alert = try #require(alerts.last)
+        #expect(alert.kind == .backgroundDone)
+        #expect(alert.title == "Background task failed")
+        #expect(alert.body == "npm run dev (exit 1)\nb\nc\nd")
+        chat.dismissBackgroundProcess("proc_1")
+        #expect(chat.backgroundProcesses.processes.isEmpty)
+    }
 }

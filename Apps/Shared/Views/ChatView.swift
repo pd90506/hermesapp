@@ -34,6 +34,7 @@ struct ChatView: View {
     @State private var isTodoOpen = false
     /// The subagents' card is open (`SubagentsPill`).
     @State private var isSubagentsOpen = false
+    @State private var isProcessesOpen = false
     @Environment(\.textSizes) private var sizes
     @Environment(\.surfaces) private var surfaces
     /// The composer's card and the scroll-to-bottom pill, as one glass (`ChatGlass`).
@@ -212,9 +213,10 @@ struct ChatView: View {
     /// rather than float over it, as Claude Code's (the user, 2026-10-31).
     private var composerRow: some View {
         VStack(spacing: 8) {
-            // The subagents over the task list, in one slot: with neither, the slot adds no
-            // room over the card.
+            // Background processes, then the subagents over the task list, in one slot: with
+            // none, the slot adds no room over the card.
             VStack(spacing: 0) {
+                BackgroundProcessesPill(session: session, isShown: isShown, isOpen: $isProcessesOpen)
                 SubagentsPill(session: session, isShown: isShown, isOpen: $isSubagentsOpen)
                 TodoPill(transcript: session.transcript, scroll: scroll, isOpen: $isTodoOpen) {
                     ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks,

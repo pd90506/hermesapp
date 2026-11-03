@@ -62,6 +62,14 @@ extension GatewayConnection {
         }
     }
 
+    /// A background process of chat `sid` finished (`BackgroundProcessList.reconcile`), as
+    /// Desktop notifies one (`composer-status.ts:333-362`).
+    func raiseAlert(forFinished process: BackgroundProcess, sid: String) {
+        guard alertSink != nil else { return }
+        let title = process.state == .failed ? GatewayAlert.Title.backgroundFailed : GatewayAlert.Title.backgroundDone
+        send(chatAlert(.backgroundDone, title: title, sid: sid, body: process.alertBody))
+    }
+
     func raiseAlert(for request: ServerRequest) {
         guard alertSink != nil, !request.replayed, Date.now >= alertsQuietUntil else { return }
         let sid = request.sessionID ?? ""

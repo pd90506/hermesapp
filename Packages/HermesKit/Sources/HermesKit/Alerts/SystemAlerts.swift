@@ -104,6 +104,7 @@ public struct GatewayAlert: Sendable, Hashable {
         static let turnDone = "Hermes finished"
         static let turnError = "Turn failed"
         static let backgroundDone = "Background task finished"
+        static let backgroundFailed = "Background task failed"
         static let credits = "Credits"
         static let otherReply = "New reply"
     }

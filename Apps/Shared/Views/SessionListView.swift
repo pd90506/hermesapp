@@ -304,7 +304,7 @@ struct SessionListView: View {
         #if os(macOS)
         if let server = model.sessionsServer, let bot = server.connection.listProfileBot {
             let item = SidebarItem.bot(server: server.id, profile: bot.name)
-            PinnedBotChat(bot: bot, activity: server.connection.activity(for: bot), isSelected: selection == item) {
+            PinnedBotChat(bot: bot, activity: server.connection.botChatActivity(for: bot), isSelected: selection == item) {
                 selection = item
                 showChat()
             }
@@ -326,7 +326,7 @@ struct SessionListView: View {
                     selection = item
                     showChat()
                 } label: {
-                    BotRow(bot: bot, activity: server.connection.activity(for: bot))
+                    BotRow(bot: bot, activity: server.connection.botChatActivity(for: bot))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(.rect)
                 }
@@ -404,7 +404,8 @@ struct SessionListView: View {
     private func sessionRow(_ entry: HistoryEntry, on server: ServerConnection) -> some View {
         let item = SidebarItem.history(server: server.id, id: entry.id)
         let connection = server.connection
-        return HistoryRow(entry: entry, date: connection.listDate(for: entry), isUnread: connection.isUnread(entry)) {
+        return HistoryRow(entry: entry, date: connection.listDate(for: entry), isUnread: connection.isUnread(entry),
+                          status: connection.status(of: entry)) {
             sessionActions(entry, on: server)
         }
         .sidebarRowHighlight(isSelected: selection == item)
@@ -518,12 +519,32 @@ struct SessionListView: View {
             .padding(.vertical, 6)
         }
         if waitingCount > 0 {
-            Label("\(waitingCount) chat(s) waiting for you", systemImage: "hand.raised.fill")
-                .uiFont(.callout)
-                .foregroundStyle(.orange)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.vertical, 6)
+            // Opens the chat that asked first; answered, the next one's turn comes.
+            Button(action: openWaitingChat) {
+                Label("\(waitingCount) chat(s) waiting for you", systemImage: "hand.raised.fill")
+                    .uiFont(.callout)
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .help("Open the chat waiting for you")
+            .accessibilityHint("Opens the chat waiting for you")
+            .accessibilityIdentifier("waitingChatsBanner")
+        }
+    }
+
+    /// Opens the first chat `waitingCount` counts, as a clicked notification opens its chat.
+    /// A chat this app holds no stored id for: its profile, whose avatar shows the badge.
+    private func openWaitingChat() {
+        guard let (server, chat) = waitingChats.first else { return }
+        if let stored = chat.storedSessionID {
+            model.alertTarget = AlertTarget(server: server.id, profile: chat.profile, storedSessionID: stored,
+                                            isBotChat: chat.isBotChat)
+        } else if let profile = chat.profile {
+            model.selectProfile(profile, on: server)
         }
     }
 
@@ -535,15 +556,18 @@ struct SessionListView: View {
     }
 
     /// Chats with a question for the user that isn't on screen: every server's
-    /// background chats, plus another server's open chat.
-    private var waitingCount: Int {
-        model.servers.reduce(0) { count, server in
-            let connection = server.connection
-            let hiddenActive = server.id != model.activeServerID
-                && connection.activeSession?.transcript.pendingRequests.isEmpty == false
-            return count + connection.otherSessionRequests.count + (hiddenActive ? 1 : 0)
+    /// background chats, plus an open chat not on screen (another server's, or on iPhone
+    /// while the list shows). The active server's first, each server's in the order they
+    /// asked (`GatewayConnection.waitingChats`).
+    private var waitingChats: [(ServerConnection, WaitingChat)] {
+        let servers = model.servers.filter { $0.id == model.activeServerID }
+            + model.servers.filter { $0.id != model.activeServerID }
+        return servers.flatMap { server in
+            server.connection.waitingChats.map { (server, $0) }
         }
     }
+
+    private var waitingCount: Int { waitingChats.count }
 
     private var newChatButton: NewChatButton? {
         guard let server = model.sessionsServer else { return nil }

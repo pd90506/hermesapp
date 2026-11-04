@@ -158,6 +158,35 @@ struct SessionActivityTests {
         await connection.disconnect()
     }
 
+    /// The session list re-reads every 15 s. A row whose count moved keeps its date, place
+    /// and unread dot until its new read lands: losing them moved every row below it.
+    @MainActor
+    @Test(.timeLimit(.minutes(1))) func aNewMessageLeavesTheRowAsItWasUntilItsReadLands() async throws {
+        let source = ActivitySource()
+        let now = 2_000_000_000.0
+        await source.set("a", prompts: [now - 300], newest: message("assistant", at: now - 5))
+        await source.set("b", prompts: [now - 200], newest: message("assistant", at: now - 10))
+        let connection = try await connected(source)
+        var marks = SessionReadMarks()
+        marks.start(now: date(1_000))
+        connection.readMarks = marks
+        let rows = [row("b"), row("a")]
+        await connection.readRowActivity(rows)
+        #expect(connection.isUnread(rows[1]))
+
+        // The next listing: a's count moved, which also puts it first in server order.
+        let listed = [row("a", count: 3), row("b")]
+        #expect(connection.listDate(for: listed[0]) == date(now - 300))
+        #expect(connection.isUnread(listed[0]))
+        #expect(connection.sessionListOrder(listed).map(\.summary.id) == ["b", "a"])
+
+        await source.set("a", prompts: [now - 100], newest: message("assistant", at: now - 1))
+        await connection.readRowActivity(listed)
+        #expect(connection.listDate(for: listed[0]) == date(now - 100))
+        #expect(connection.sessionListOrder(listed).map(\.summary.id) == ["a", "b"])
+        await connection.disconnect()
+    }
+
     /// The case asked for: two chats answering in turn don't swap places; the one the
     /// user wrote in last stays on top, and the dates and groups follow the prompts.
     @MainActor

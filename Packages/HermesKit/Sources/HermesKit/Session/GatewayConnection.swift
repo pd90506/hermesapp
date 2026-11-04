@@ -127,9 +127,10 @@ public final class GatewayConnection {
     @ObservationIgnored var strandedImages: [StrandedImage] = []
     /// The running detach flush of each runtime session that has stranded images.
     @ObservationIgnored var strandedImageFlushes: [String: Task<Void, Never>] = [:]
-    /// What each session row read of its activity, by `SessionRowTimestamp.cacheKey`
-    /// (`readRowActivity`). Observed: rows move, date and show unread as theirs come in.
-    var rowActivity: [String: SessionRowActivity] = [:]
+    /// What each session row read last of its activity, by `HistoryEntry.id`, with the
+    /// `SessionRowTimestamp.cacheKey` it was read at (`readRowActivity`). Observed: rows
+    /// move, date and show unread as theirs come in.
+    var rowActivity: [String: (key: String, activity: SessionRowActivity)] = [:]
     /// Rows whose activity is being read, by cache key.
     @ObservationIgnored var rowActivityReads: Set<String> = []
     /// The replies seen on this device (`SessionReadMarks`); the app keeps them.

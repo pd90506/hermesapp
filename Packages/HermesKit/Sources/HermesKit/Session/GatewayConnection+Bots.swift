@@ -404,8 +404,10 @@ extension GatewayConnection {
     }
 
     /// Reads the activity (`SessionRowActivity`) of every row not read since its stored
-    /// message count last changed, top rows first, a few at a time. Failures leave the
-    /// row unknown until the next refresh.
+    /// message count last changed, top rows first, a few at a time. A row keeps what it
+    /// read last until the new read lands, so a message arriving doesn't blank its date
+    /// (and with it its height and place) or its unread dot in between; a failed read
+    /// keeps it too, until the next refresh tries again.
     func readRowActivity(_ entries: [HistoryEntry]) async {
         guard let source = messagesSource else { return }
         if let profile = entries.first?.profile { await pullReadMarks(profile: profile) }
@@ -414,7 +416,7 @@ extension GatewayConnection {
         var pending = entries.compactMap { entry -> (String, HistoryEntry)? in
             // No count to key on: read each time.
             let key = SessionRowTimestamp.cacheKey(for: entry) ?? "\(entry.id)/?"
-            let cached = SessionRowTimestamp.cacheKey(for: entry) != nil && rowActivity[key] != nil
+            let cached = SessionRowTimestamp.cacheKey(for: entry) != nil && rowActivity[entry.id]?.key == key
             guard !cached, !rowActivityReads.contains(key) else { return nil }
             return (key, entry)
         }[...]
@@ -429,7 +431,7 @@ extension GatewayConnection {
             for await (key, entry, activity) in group {
                 rowActivityReads.remove(key)
                 if gen == generation, let activity {
-                    rowActivity[key] = activity
+                    rowActivity[entry.id] = (key, activity)
                     if isOnScreen(entry) { markSeen(entry, through: activity.newestReply) }
                     noteReply(profile: entry.profile, storedID: entry.summary.id, isBotChat: false,
                               label: (entry.summary.title ?? entry.summary.preview)?.trimmed.nonEmpty, activity: activity)
@@ -441,9 +443,10 @@ extension GatewayConnection {
 
     static let rowActivityReadLimit = 4
 
-    /// The activity read for `entry` at its current message count.
+    /// The newest activity read for `entry`, which a new message leaves in place until
+    /// the row's next read lands.
     public func activity(for entry: HistoryEntry) -> SessionRowActivity? {
-        rowActivity[SessionRowTimestamp.cacheKey(for: entry) ?? "\(entry.id)/?"]
+        rowActivity[entry.id]?.activity
     }
 
     /// The row's date in the list: the user's last prompt (one just sent from here

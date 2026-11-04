@@ -408,6 +408,8 @@ extension GatewayConnection {
     /// row unknown until the next refresh.
     func readRowActivity(_ entries: [HistoryEntry]) async {
         guard let source = messagesSource else { return }
+        if let profile = entries.first?.profile { await pullReadMarks(profile: profile) }
+        defer { pushReadMarks(entries) }
         let gen = generation
         var pending = entries.compactMap { entry -> (String, HistoryEntry)? in
             // No count to key on: read each time.
@@ -480,7 +482,7 @@ extension GatewayConnection {
         return warmChats.first(where: shows) ?? unsentChats.values.first(where: shows)
     }
 
-    private func isOnScreen(_ entry: HistoryEntry) -> Bool {
+    func isOnScreen(_ entry: HistoryEntry) -> Bool {
         guard isChatOnScreen, let activeSession else { return false }
         return activeSession.profile == entry.profile && activeSession.kind == .sideChat
             && activeSession.storedSessionID == entry.summary.id
@@ -490,6 +492,7 @@ extension GatewayConnection {
     func markSeen(_ chat: ChatSession?) {
         guard let chat, chat.kind == .sideChat, let profile = chat.profile, let id = chat.storedSessionID else { return }
         updateReadMarks { $0.markSeen(profile: profile, id: id, through: .now) }
+        pushReadMarks(history.filter { $0.profile == profile && $0.summary.id == id })
     }
 
     private func markSeen(_ entry: HistoryEntry, through date: Date?) {
@@ -497,7 +500,7 @@ extension GatewayConnection {
         updateReadMarks { $0.markSeen(profile: entry.profile, id: entry.summary.id, through: date) }
     }
 
-    private func updateReadMarks(_ change: (inout SessionReadMarks) -> Bool) {
+    func updateReadMarks(_ change: (inout SessionReadMarks) -> Bool) {
         var marks = readMarks
         guard change(&marks) else { return }
         readMarks = marks

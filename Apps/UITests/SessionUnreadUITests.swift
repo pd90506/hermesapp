@@ -72,7 +72,79 @@ final class SessionUnreadUITests: XCTestCase {
         record(rowTexts(app), "rows after opening A")
     }
 
+    /// A reply read on another device: the server's read watermark moves, and the row's
+    /// mark goes without the chat being opened here. The reply and the other device's
+    /// write come over REST, as Desktop writes them, so no model is needed.
+    @MainActor
+    func testAChatReadOnAnotherDeviceLosesItsMark() async throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let env = ProcessInfo.processInfo.environment
+        let url = try XCTUnwrap(env["HERMES_UITEST_URL"]), token = try XCTUnwrap(env["HERMES_UITEST_TOKEN"])
+        let profile = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 30), "connected, Sessions shown")
+
+        let id = "uitest_read_\(Int.random(in: 100_000...999_999))"
+        let title = "Read elsewhere \(id.suffix(6))"
+        try await Self.importChat(id: id, title: title, profile: profile, url: url, token: token)
+        let marked = eventually(timeout: 30) {
+            sessionRows(app).contains { $0.staticTexts[title].exists && $0.descendants(matching: .any)["sessionUnreadDot"].exists }
+        }
+        attach(app, "1 unread here")
+        record(rowTexts(app), "rows with the imported chat")
+        XCTAssertTrue(marked, "the new reply shows unread")
+
+        try await Self.markRead(id: id, profile: profile, url: url, token: token)
+        let cleared = eventually(timeout: 30) {
+            sessionRows(app).contains { $0.staticTexts[title].exists && !$0.descendants(matching: .any)["sessionUnreadDot"].exists }
+        }
+        attach(app, "2 read on another device")
+        record(rowTexts(app), "rows after the other device read it")
+        XCTAssertTrue(cleared, "the mark goes without opening the chat")
+    }
+
     // MARK: Helpers
+
+    private static func api(_ path: String, method: String, body: [String: Any]? = nil, url: String, token: String) async throws -> [String: Any] {
+        let base = try XCTUnwrap(URL(string: url))
+        var parts = try XCTUnwrap(URLComponents(url: base, resolvingAgainstBaseURL: false))
+        let split = path.split(separator: "?", maxSplits: 1).map(String.init)
+        parts.path = (parts.path.hasSuffix("/") ? String(parts.path.dropLast()) : parts.path) + split[0]
+        parts.query = split.count > 1 ? split[1] : nil
+        var request = URLRequest(url: try XCTUnwrap(parts.url))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, String(decoding: data, as: UTF8.self))
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
+    /// A chat with a reply from now (`POST /api/sessions/import`, as `SessionDateGroupsUITests`).
+    private static func importChat(id: String, title: String, profile: String, url: String, token: String) async throws {
+        let now = Date().timeIntervalSince1970
+        _ = try await api("/api/sessions/import", method: "POST", body: [
+            "request_id": UUID().uuidString, "expected_revision": 0, "profile": profile,
+            "sessions": [[
+                "id": id, "title": title, "source": "desktop", "started_at": now - 60, "ended_at": now,
+                "message_count": 2, "messages": [
+                    ["role": "user", "content": "Hello", "timestamp": now - 60],
+                    ["role": "assistant", "content": "Hi", "timestamp": now],
+                ],
+            ]],
+        ], url: url, token: token)
+    }
+
+    /// What the other device writes (`DashboardClient.markSessionRead`).
+    private static func markRead(id: String, profile: String, url: String, token: String) async throws {
+        let snapshot = try await api("/api/sessions/\(id)/mutation-snapshot?profile=\(profile)", method: "GET", url: url, token: token)
+        var body: [String: Any] = ["unread": false, "request_id": UUID().uuidString, "profile": profile,
+                                   "expected_revision": try XCTUnwrap(snapshot["runtime_revision"] as? Int)]
+        if let generation = snapshot["runtime_generation"] as? Int { body["expected_generation"] = generation }
+        _ = try await api("/api/sessions/\(id)", method: "PATCH", body: body, url: url, token: token)
+    }
 
     @MainActor
     private func openNewChat(_ app: XCUIApplication) throws -> XCUIElement {

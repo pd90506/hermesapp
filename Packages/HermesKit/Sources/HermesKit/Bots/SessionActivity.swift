@@ -93,15 +93,11 @@ public enum SessionListOrder {
     }
 }
 
-/// Which replies the user has seen, per session, on this device: a row whose newest reply
-/// is newer than what was seen of it shows as unread, like a chat in Claude's apps, until
-/// it is opened.
+/// Which replies the user has seen, per session: a row whose newest reply is newer than
+/// what was seen of it shows as unread, like a chat in Claude's apps, until it is opened.
 ///
-/// `[client choice]` Kept by the app, like `SessionPins`. Hermes has a read watermark of its
-/// own (`sessions.last_read_at`, `hermes_state_sessions.py:1062-1074`), but only the REST
-/// list carries it and only the fenced `PATCH /api/sessions/{id} {unread}` writes it; and
-/// since any activity, the user's own prompt included, passes the watermark, every turn
-/// would need a write. Not synced with Desktop or between devices.
+/// `[client choice]` Kept by the app, like `SessionPins`, and shared with the user's other
+/// devices through Hermes's read watermark (`GatewayConnection.pullReadMarks`).
 public struct SessionReadMarks: Sendable, Hashable, Codable {
     /// Seen through, in Unix seconds, by `key`.
     private var seen: [String: Double] = [:]
@@ -119,6 +115,11 @@ public struct SessionReadMarks: Sendable, Hashable, Codable {
     /// Starts keeping marks, once.
     public mutating func start(now: Date = .now) {
         if since == nil { since = now.timeIntervalSince1970 }
+    }
+
+    /// What was seen of this session itself, not counting `start`.
+    public func seenThrough(profile: String, id: String) -> Date? {
+        seen[Self.key(profile: profile, id: id)].map { Date(timeIntervalSince1970: $0) }
     }
 
     public func isUnread(profile: String, id: String, newestReply: Date?) -> Bool {

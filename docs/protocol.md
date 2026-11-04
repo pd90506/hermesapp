@@ -1713,15 +1713,24 @@ while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_i
     A prompt sent from this device counts at once (`ChatSession.lastPromptAt`).
   - Missing, nonpositive or nonfinite times, failed reads or unsupported paging show no date,
     never creation time.
-  - **Unread.** A row whose newest answer is newer than what was seen of it on this device
-    shows a dot and a bold title (`SessionReadMarks`, saved per server). A chat counts as
-    seen up to now when it comes on screen and when it leaves it (on iPhone, the list over
-    it or the app in the background); answers that land while it is on screen are seen. Marks
-    start on first use, so older answers are never unread. Hermes's own watermark
-    (`sessions.last_read_at`, `hermes_state_sessions.py:1062-1074`) is not used: only the REST
-    list carries it, only the fenced `PATCH /api/sessions/{id} {unread}` writes it, and any
-    activity passes it, the user's own prompt included. So marks don't sync with Desktop or
-    between devices.
+  - **Unread.** A row whose newest answer is newer than what was seen of it shows a dot and
+    a bold title (`SessionReadMarks`, saved per server). A chat counts as seen up to now when
+    it comes on screen and when it leaves it (on iPhone, the list over it or the app in the
+    background); answers that land while it is on screen are seen. Marks start on first use,
+    so older answers are never unread.
+  - **Unread across devices.** Marks are shared through Hermes's watermark
+    (`sessions.last_read_at`, `hermes_state_sessions.py:1062-1074`), which `sessions.changed`
+    announces (`tui_gateway/change_watcher.py:197`). `session.list` doesn't carry it, so
+    before each list's row reads the app reads `GET /api/sessions?order=recent&limit=100` of the
+    listed sources, and a watermark counts as seen. When a listed row's newest answer was seen here but is
+    past the watermark, the app writes `PATCH /api/sessions/{id} {unread: false}`, fenced as
+    Desktop fences it (`mutation-snapshot`, `apps/desktop/src/api/sessions.ts:380-428`).
+    - The server's own `unread` flag is not used: any activity passes the watermark, the
+      user's own prompt included, and a row never marked is read there.
+    - Desktop writes the watermark only for a row whose flag is set, so a chat opened only
+      in Desktop may still show here. Its "Mark as unread" (watermark 0) doesn't show here,
+      and after a write here Desktop's flag follows the watermark too.
+    - Rows past the first 100 by activity are neither read nor written.
 - **Pin** is not on the JSON-RPC surface.
   - Hermes keeps it in `sessions.pinned` and Desktop writes it through the dashboard's fenced
     REST `PATCH /api/sessions/{id} {pinned}` (`apps/desktop/src/api/sessions.ts:374-428`).

@@ -20,6 +20,8 @@ public protocol GatewayConnector: Sendable {
     var dashboardAPI: (any DashboardAPI)? { get }
     /// Searches the profiles' stored sessions, with the same credential.
     var searchSource: (any SessionSearchSource)? { get }
+    /// Reads and writes the watermark of what was read, with the same credential.
+    var readSource: (any SessionReadSource)? { get }
 }
 
 extension GatewayConnector {
@@ -28,6 +30,7 @@ extension GatewayConnector {
     public var cronSource: (any CronSource)? { nil }
     public var dashboardAPI: (any DashboardAPI)? { nil }
     public var searchSource: (any SessionSearchSource)? { nil }
+    public var readSource: (any SessionReadSource)? { nil }
 }
 
 /// Images and files on the gateway's disk, for a client that cannot read that disk.
@@ -140,6 +143,7 @@ public struct DashboardConnector: GatewayConnector {
     public var cronSource: (any CronSource)? { self }
     public var dashboardAPI: (any DashboardAPI)? { self }
     public var searchSource: (any SessionSearchSource)? { self }
+    public var readSource: (any SessionReadSource)? { self }
 
     /// At most one refresh per connect: proactively when the token is known
     /// to be expired, otherwise after the server rejects it (401

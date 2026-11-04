@@ -83,6 +83,49 @@ struct LiveGatewayTests {
         }
     }
 
+    @Test("A chat read on one connection is not unread on another",
+          .timeLimit(.minutes(4)), arguments: LiveServer.all)
+    func readSync(server: LiveServer) async throws {
+        let reader = GatewayConnection()
+        try await reader.connect(using: server.connector())
+        let chat = try await reader.newSideChat(profile: LiveServer.profile)
+        let other = GatewayConnection()
+        defer {
+            Task { @MainActor in
+                try? await reader.delete(chat)
+                await reader.disconnect()
+                await other.disconnect()
+            }
+        }
+        let marker = "PONG-\(Int.random(in: 1000...9999))"
+        try await chat.send("Reply with exactly \(marker) and nothing else. Do not use tools.")
+        try await waitUntil("the reply to start", timeout: .seconds(60)) { chat.transcript.isRunning }
+        try await waitUntil("the reply to finish", timeout: .seconds(150)) { !chat.transcript.isRunning }
+        try? await reader.rename(chat, to: "\(LiveServer.chatPrefix) \(marker)")
+        let storedID = try #require(chat.storedSessionID)
+
+        // The other device's marks started before the reply: it shows unread there.
+        var marks = SessionReadMarks()
+        marks.start(now: Date(timeIntervalSinceNow: -3600))
+        other.readMarks = marks
+        try await other.connect(using: server.connector())
+        other.selectListProfile(LiveServer.profile)
+        await other.checkForReplies()
+        let entry = try #require(other.history.first { $0.summary.id == storedID })
+        #expect(other.isUnread(entry))
+
+        // Seen on the first connection, which writes the watermark.
+        reader.selectListProfile(LiveServer.profile)
+        await reader.checkForReplies()
+        var read = false
+        for _ in 0..<100 where !read {
+            await other.checkForReplies()
+            read = other.history.first { $0.summary.id == storedID }.map { !other.isUnread($0) } ?? false
+            if !read { try await Task.sleep(for: .milliseconds(200)) }
+        }
+        #expect(read, "the mark reaches the other connection")
+    }
+
     @Test("Attaches a file, gets it back as a MEDIA: delivery and downloads it",
           .timeLimit(.minutes(4)), arguments: LiveServer.all)
     func fileRoundTrip(server: LiveServer) async throws {

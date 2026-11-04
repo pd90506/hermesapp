@@ -136,6 +136,12 @@ public final class GatewayConnection {
     public var readMarks = SessionReadMarks()
     /// Called with `readMarks` whenever they change, to save them.
     @ObservationIgnored public var readMarksChanged: (@MainActor (SessionReadMarks) -> Void)?
+    /// Hermes's watermark of each session it listed last, by `SessionReadMarks.key`.
+    @ObservationIgnored var serverReadMarks: [String: Double] = [:]
+    /// The last watermark write tried for each session (`pushReadMarks`).
+    @ObservationIgnored var readPushes: [String: ReadPush] = [:]
+    /// The running writes, one at a time.
+    @ObservationIgnored var readPushTask: Task<Void, Never>?
     /// Where system notifications go (`GatewayConnection+Alerts`): the app shows the
     /// alert or not (`AlertGate`) and says whether it did.
     @ObservationIgnored public var alertSink: (@MainActor (GatewayAlert) -> Bool)?
@@ -454,6 +460,7 @@ public final class GatewayConnection {
     var cronSource: (any CronSource)? { connector?.cronSource }
     var dashboardAPI: (any DashboardAPI)? { connector?.dashboardAPI }
     var searchSource: (any SessionSearchSource)? { connector?.searchSource }
+    var readSource: (any SessionReadSource)? { connector?.readSource }
 
     /// `session.resume` with a bounded ack, and the newest transcript page read
     /// alongside it, as Desktop opens chats (`use-session-actions/index.ts:2169-2194`).

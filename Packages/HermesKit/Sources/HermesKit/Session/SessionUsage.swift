@@ -106,6 +106,14 @@ public struct ContextBreakdown: Sendable, Hashable {
             return Category(id: id, label: row["label"]?.stringValue ?? id, tokens: Int(tokens))
         }
     }
+
+    /// What the categories leave out of `used` tokens. The occupancy is the provider's count
+    /// and the categories are estimates that price opaque thinking replays at nothing
+    /// (`agent/usage_anchor.py`, `agent/model_metadata.py:2523-2534`), so the two can part;
+    /// 0 when the estimates reach it.
+    public func unitemizedTokens(of used: Int) -> Int {
+        Swift.max(0, used - categories.reduce(0) { $0 + $1.tokens })
+    }
 }
 
 /// How full the chat's context is, as the composer's gauge shows it.

@@ -25,7 +25,7 @@ struct ContextGaugeButton: View {
                     .accessibilityLabel("Context")
                     .accessibilityValue(gauge.map(ContextGaugeText.summary) ?? "")
                     .accessibilityIdentifier("contextGauge")
-                    .popover(isPresented: $isShowingDetails, arrowEdge: .top) {
+                    .popover(isPresented: $isShowingDetails, arrowEdge: detailsArrowEdge) {
                         ContextUsageDetails(gauge: gauge, breakdown: session.contextBreakdown, usage: session.usage)
                             .presentationCompactAdaptation(.popover)
                     }
@@ -36,6 +36,16 @@ struct ContextGaugeButton: View {
             guard !session.transcript.isRunning, !composer.isCompressing else { return }
             await session.refreshUsage()
         }
+    }
+
+    /// Above the gauge on both. iOS takes the edge as the popover's own, and the keyboard
+    /// under the composer would crush it to a sliver.
+    private var detailsArrowEdge: Edge {
+        #if os(macOS)
+        .top
+        #else
+        .bottom
+        #endif
     }
 
     private struct RefreshKey: Hashable {
@@ -125,10 +135,20 @@ struct ContextUsageDetails: View {
             if let breakdown, !breakdown.categories.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(breakdown.categories) { category in
-                        row(category.label, ContextGaugeText.tokens(category.tokens))
+                        row(category.label, "~\(ContextGaugeText.tokens(category.tokens))")
+                    }
+                    if let gauge, !gauge.isEstimated {
+                        let unitemized = breakdown.unitemizedTokens(of: gauge.used)
+                        if unitemized > 0 { row("Not itemized", "~\(ContextGaugeText.tokens(unitemized))") }
                     }
                 }
                 .font(.callout)
+                if let gauge, !gauge.isEstimated {
+                    Text("Items are estimates. The total is the model's own count.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if let usage {
                 if gauge != nil { Divider() }

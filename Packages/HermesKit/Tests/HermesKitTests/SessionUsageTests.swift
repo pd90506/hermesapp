@@ -55,6 +55,13 @@ private let breakdown: JSONValue = [
         #expect(read.contextEstimated)
         #expect(ContextBreakdown(["categories": [], "context_max": 0, "context_used": 0]) == nil)
     }
+
+    @Test func unitemizedTokensAreWhatTheEstimatesMiss() throws {
+        let read = try #require(ContextBreakdown(breakdown))
+        #expect(read.unitemizedTokens(of: 30_000) == 17_000)
+        #expect(read.unitemizedTokens(of: 13_000) == 0)
+        #expect(read.unitemizedTokens(of: 10_000) == 0)
+    }
 }
 
 @MainActor

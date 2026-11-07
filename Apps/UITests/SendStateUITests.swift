@@ -184,8 +184,10 @@ final class SendStateUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(3))
 
         send("/compress", composer: composer, in: app)
-        let compressing = app.staticTexts["Compressing context…"]
-        XCTAssertTrue(compressing.waitForExistence(timeout: 10), "the composer shows the compression")
+        let compressing = app.descendants(matching: .any)["compressingContext"]
+        let shown = compressing.waitForExistence(timeout: 10)
+        if !shown { attach(app, "0 no compressing row") }
+        XCTAssertTrue(shown, "the composer shows the compression")
         let answer = "AFTER\(Int.random(in: 1000...9999))"
         let queuedText = "QUEUED Reply with exactly \(answer) and nothing else."
         send(queuedText, composer: composer, in: app)
@@ -199,7 +201,9 @@ final class SendStateUITests: XCTestCase {
         }
         XCTAssertTrue(carded, "the queued message shows as a card")
 
-        XCTAssertTrue(waitForMessage(answer, exactly: true, in: app, timeout: 300), "the queued message ran")
+        let ran = waitForMessage(answer, exactly: true, in: app, timeout: 300)
+        if !ran { attach(app, "1b the queued message did not run") }
+        XCTAssertTrue(ran, "the queued message ran")
         XCTAssertFalse(card.exists, "the card is gone once its turn started")
         XCTAssertTrue(waitForMessage(queuedText, exactly: false, in: app, timeout: 5), "its bubble is in the chat")
         XCTAssertFalse(compressing.exists, "the compression is over")

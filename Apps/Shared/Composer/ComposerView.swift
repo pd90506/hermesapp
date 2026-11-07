@@ -232,6 +232,7 @@ struct ComposerView: View {
         .padding(.horizontal, Self.inset.text)
         .padding(.top, Self.inset.top)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("compressingContext")
     }
 
     /// A message Hermes queued that no turn has taken yet (`Transcript.queuedPrompts`),

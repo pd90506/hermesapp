@@ -140,7 +140,7 @@ import Testing
     /// the reply shows, the status line is back below it.
     @Test func theStatusIsTheHintWhileWaiting() throws {
         var transcript = waitingTranscript()
-        transcript.apply(event("status.update", ["kind": "compacting", "text": "Summarizing thread"]))
+        transcript.apply(event("status.update", ["kind": "lifecycle", "text": "Summarizing thread"]))
         let waiting = try #require(transcript.waiting)
         #expect(waiting.label == "Summarizing thread")
         #expect(abs(height(rows(transcript, Drawn())) - height(promptAndWaiting(waiting))) <= 1,

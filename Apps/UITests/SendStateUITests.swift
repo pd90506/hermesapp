@@ -183,7 +183,9 @@ final class SendStateUITests: XCTestCase {
         }
         RunLoop.current.run(until: Date().addingTimeInterval(3))
 
-        send("/compress", composer: composer, in: app)
+        // All but the newest exchange (`partial_compress.py:21-47`): a short chat is otherwise
+        // all protected tail, and its compression is a no-op over before the next send.
+        send("/compress --keep 1", composer: composer, in: app)
         let compressing = app.descendants(matching: .any)["compressingContext"]
         let shown = compressing.waitForExistence(timeout: 10)
         if !shown { attach(app, "0 no compressing row") }
@@ -208,7 +210,7 @@ final class SendStateUITests: XCTestCase {
         XCTAssertTrue(waitForMessage(queuedText, exactly: false, in: app, timeout: 5), "its bubble is in the chat")
         XCTAssertFalse(compressing.exists, "the compression is over")
 
-        let note = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Compressed' OR value BEGINSWITH 'Compressed'"))
+        let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Approx request size' OR value CONTAINS 'Approx request size'"))
             .firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 5), "the compression's result is shown")
         attach(app, "2 done, the result centred")

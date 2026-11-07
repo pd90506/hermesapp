@@ -1281,9 +1281,10 @@ public struct Transcript: Sendable, Hashable {
         dropPromptsShownByRows()
         // No turn will finish to settle it if none runs (Hermes may have dropped or
         // merged it, or its turn has not started): read the newest rows again. Not for one
-        // still waiting in the queue: its turn's end reads them, and a read now would show
-        // the row Hermes stored when it took it (`_persist_queued_user_row`) in the chat too.
-        if !turnActive, !waits, paging.rereadable { needsReread = true }
+        // queued behind a compression, which holds the session busy without a turn
+        // (`session_compression.py:242-259`): its turn follows, and a read now would show the
+        // row Hermes stored when it took it (`_persist_queued_user_row`) in the chat too.
+        if !turnActive, !(waits && isCompacting), paging.rereadable { needsReread = true }
     }
 
     /// Marks a failed submit: the bubble stays (only it holds the text), and the

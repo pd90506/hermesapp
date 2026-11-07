@@ -14,6 +14,14 @@ public struct TranscriptItem: Sendable, Hashable, Identifiable {
     public var reasoning: String = ""
     /// Local submission state, never a claim of delivery.
     public var outgoingStatus: String?
+    /// `outgoingStatus` of a prompt Hermes queued that no turn has taken yet.
+    public static let queuedStatus = "Queued"
+    /// A prompt waiting in Hermes's queue (`Transcript.queuedPrompts`).
+    public var isQueuedPrompt: Bool { role == .user && outgoingStatus == Self.queuedStatus }
+    /// `displayKind` of the local line with a compression's result (`ChatSession.compress`).
+    public static let compressionDisplayKind = "compression"
+    /// The chat centres it.
+    public var isCompressionNote: Bool { role == .system && displayKind == Self.compressionDisplayKind }
 
     /// Tool rows: the tool name.
     public var toolName: String?
@@ -202,8 +210,14 @@ public struct Transcript: Sendable, Hashable {
     public private(set) var paging = HistoryPaging()
     /// A turn is running (between submit/`message.start` and `message.complete`).
     public private(set) var isRunning = false
-    /// Latest `status.update` text while running.
+    /// Latest `status.update` text while running. Compaction's own statuses are not
+    /// kept: the composer shows them (`isCompacting`).
     public private(set) var status: String?
+    /// Hermes is compressing the context: an automatic compaction in a turn
+    /// (`compacting` … `compacted`) or a `/compress` from any client (`compressing` …
+    /// `ready`), as Desktop tracks it (`store/compaction.ts`, `gateway-event/status.ts:52-63`).
+    /// The composer shows it as it shows a `/compress` sent here.
+    public private(set) var isCompacting = false
     /// An explained provider wait from `thinking.delta` ("⏳ still waiting on …"),
     /// cleared by the next model output. Other `thinking.delta` frames are spinner
     /// text and are dropped, as in Desktop (`gateway-event/message-stream.ts:195-205`).
@@ -666,6 +680,8 @@ public struct Transcript: Sendable, Hashable {
         serverBusy = false
         expectedStarts = expectedStarts.filter { prompts[$0] == .sent }
         queuedStarts.formIntersection(expectedStarts)
+        // Nothing runs, so nothing waits in Hermes's queue any more.
+        releaseQueuedPrompts()
         refreshRunning()
     }
 
@@ -682,6 +698,7 @@ public struct Transcript: Sendable, Hashable {
         turnActive = false
         turnPromptRow = nil
         status = nil
+        isCompacting = false
     }
 
     /// `session.info` with `running: false` (`tui_gateway/server.py:2400`): every turn
@@ -721,7 +738,36 @@ public struct Transcript: Sendable, Hashable {
         expectedStarts.subtract(queuedStarts)
         queuedStarts = []
         queueClearedBeforeAnswer.formUnion(sentBeforeStop.filter { prompts[$0] == .sent })
+        // Their rows stay stored (above): back in the chat, where they were sent.
+        releaseQueuedPrompts()
         refreshRunning()
+    }
+
+    // MARK: - Queued prompts
+
+    /// Prompts Hermes queued behind the running turn (or a `/compress`) that no turn has
+    /// taken yet, the oldest first. The chat leaves them out (`TranscriptGrouping`); the
+    /// composer shows them above its text, as Desktop's queue panel
+    /// (`composer/queue-slot.tsx`).
+    public var queuedPrompts: [TranscriptItem] {
+        items[historyCount...].filter(\.isQueuedPrompt)
+    }
+
+    /// The oldest queued prompt starts its turn: it goes to the end of the chat, before
+    /// the reply, where Hermes stores it too.
+    private mutating func handOffQueuedPrompt() {
+        guard let index = items.indices.first(where: { $0 >= historyCount && items[$0].isQueuedPrompt }) else { return }
+        var item = items.remove(at: index)
+        item.outgoingStatus = nil
+        items.append(item)
+        lastPromptID = item.id
+    }
+
+    /// No turn will take the queued prompts: they show in the chat as sent.
+    private mutating func releaseQueuedPrompts() {
+        for index in items.indices where index >= historyCount && items[index].isQueuedPrompt {
+            items[index].outgoingStatus = nil
+        }
     }
 
     /// Prompts sent here whose submit is not answered yet.
@@ -742,6 +788,7 @@ public struct Transcript: Sendable, Hashable {
             lastSentAt = nil
             buildNotice = nil
             status = nil
+            isCompacting = false
         }
     }
 
@@ -854,7 +901,9 @@ public struct Transcript: Sendable, Hashable {
         finishedItems = finishedItems.filter { !settled.contains($0.key) }
         let unsettled = Set(finishedItems.values)
         receiptRowByCompletion = receiptRowByCompletion.filter { unsettled.contains($0.key) }
-        let quiet = !turnActive && starts == ticket.starts && !prompts.values.contains(.sent)
+        // A compression holds the session busy without a turn (`session_compression.py:242-259`):
+        // a prompt queued behind it is waiting, not merged or dropped.
+        let quiet = !turnActive && !isCompacting && starts == ticket.starts && !prompts.values.contains(.sent)
         var eligible: Set<String> = [], storedAtSubmit: Set<String> = []
         for (id, state) in prompts where quiet {
             guard case .answered(let at, let storedRow) = state, at <= ticket.clock else { continue }
@@ -1138,8 +1187,12 @@ public struct Transcript: Sendable, Hashable {
     }
 
     /// A local system line (slash-command output, notices). Never stored.
-    public mutating func appendNote(_ text: String) {
-        appendLocal(TranscriptItem(id: nextID(), role: .system, text: text))
+    /// - Parameter displayKind: `compression` for a compression's result, which the chat
+    ///   centres.
+    public mutating func appendNote(_ text: String, displayKind: String? = nil) {
+        var item = TranscriptItem(id: nextID(), role: .system, text: text)
+        item.displayKind = displayKind
+        appendLocal(item)
     }
 
     /// Shows a `/btw` question or `/bg` task until its answer arrives. The answer can
@@ -1180,9 +1233,14 @@ public struct Transcript: Sendable, Hashable {
     /// finished (`finishedItems`). If no turn ever starts, it stays: no row holds it.
     public mutating func promptAnswered(itemID: String, status: String? = nil, userRowID: Int? = nil) {
         guard prompts[itemID] != nil else { return }
-        if let index = items.firstIndex(where: { $0.id == itemID }) { items[index].outgoingStatus = status == "queued" ? "Queued" : nil }
-        defer { refreshRunning() }
         let queueCleared = queueClearedBeforeAnswer.remove(itemID) != nil
+        // Queued: it waits, above the composer, for its turn (`queuedPrompts`). A turn that
+        // began after it was sent is its own: then it is no longer waiting.
+        let waits = status == "queued" && !queueCleared && expectedStarts.contains(itemID)
+        if let index = items.firstIndex(where: { $0.id == itemID }) {
+            items[index].outgoingStatus = waits ? TranscriptItem.queuedStatus : nil
+        }
+        defer { refreshRunning() }
         if status == "steered" || status == "queued", lateTail?.promptID == itemID { lateTail?.keepsRound = true }
         switch status {
         case "steered", "redirected":
@@ -1222,8 +1280,11 @@ public struct Transcript: Sendable, Hashable {
         // A re-read can land before the answer (a fast reply): its row may already show.
         dropPromptsShownByRows()
         // No turn will finish to settle it if none runs (Hermes may have dropped or
-        // merged it, or its turn has not started): read the newest rows again.
-        if !turnActive, paging.rereadable { needsReread = true }
+        // merged it, or its turn has not started): read the newest rows again. Not for one
+        // queued behind a compression, which holds the session busy without a turn
+        // (`session_compression.py:242-259`): its turn follows, and a read now would show the
+        // row Hermes stored when it took it (`_persist_queued_user_row`) in the chat too.
+        if !turnActive, !(waits && isCompacting), paging.rereadable { needsReread = true }
     }
 
     /// Marks a failed submit: the bubble stays (only it holds the text), and the
@@ -1381,6 +1442,12 @@ public struct Transcript: Sendable, Hashable {
             // The memory recall indicator is not shown, as in Desktop, which drops
             // every `lifecycle` status but fallback switches (`gateway-event/status.ts`).
             if Self.isMemoryRecallIndicator(update) { break }
+            if let compacting = Self.compactionEdge(update) {
+                isCompacting = compacting
+                // Not in the chat as well: the composer shows it.
+                if status != nil { status = nil }
+                break
+            }
             status = update.text.isEmpty ? nil : update.text
 
         case .btwComplete(let answer):
@@ -1394,6 +1461,7 @@ public struct Transcript: Sendable, Hashable {
 
         case .error(let payload):
             lastError = payload.message
+            isCompacting = false
             // Before any turn starts, an `error` is the end of what was sent: Hermes
             // cancelled or refused it and sends nothing more (Stop during the agent build,
             // `methods_prompt.py:625-635`; an ownership refusal, `prompt_turn.py:123-134`;
@@ -1513,6 +1581,21 @@ public struct Transcript: Sendable, Hashable {
     static func isVisibleOutput(_ item: TranscriptItem) -> Bool {
         item.role == .tool
             || (item.role == .assistant && !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    /// Whether `update` starts (`true`) or ends (`false`) a compaction; nil for any other
+    /// status. Automatic compaction is `compacting` … `compacted`
+    /// (`agent/conversation_compression.py:72-99`, re-tagged by `tui_gateway/server.py:872-882`);
+    /// `/compress` pins `compressing` and always ends with `ready`, which `_status_update`
+    /// sends without text, so as `{kind: "status", text: "ready"}`
+    /// (`methods_session.py:2092,2115`, `server.py:872-874`).
+    static func compactionEdge(_ update: StatusUpdate) -> Bool? {
+        switch update.kind {
+        case "compacting", "compressing": return true
+        case "compacted", "ready": return false
+        case "status" where update.text == "ready": return false
+        default: return nil
+        }
     }
 
     /// The line a memory provider's recall sends at the start of a turn, one segment per
@@ -1721,6 +1804,11 @@ public struct Transcript: Sendable, Hashable {
     /// turn this chat saw no start of).
     private mutating func startTurn() {
         guard !turnActive else { return }
+        // A turn starting here with none known to run is the next queued prompt's: Hermes
+        // runs one per turn, the oldest first (`_drain_queued_prompt`,
+        // `session_auto_continue.py:457-497`), and moves its row to the end. One running
+        // when the chat opened (`serverBusy`) is the turn it waits behind.
+        if !serverBusy { handOffQueuedPrompt() }
         turnActive = true
         openTurnRowFloor = max(heldRowIDs.max() ?? 0, newestReceiptRow)
         starts += 1
@@ -1829,6 +1917,7 @@ public struct Transcript: Sendable, Hashable {
         }
         if complete.status == "error" { lastError = complete.error ?? "The turn failed." }
         status = nil
+        isCompacting = false
 
         // The turn's rows are stored before `message.complete` (`prompt_turn.py:1153-1182`).
         // The segment still streaming when the turn ended may not be:

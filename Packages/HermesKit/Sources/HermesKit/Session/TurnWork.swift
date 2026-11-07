@@ -257,7 +257,8 @@ public enum TranscriptGrouping {
 
     private static func group(_ items: [TranscriptItem], isRunning: Bool) -> [TranscriptBlock] {
         var turns: [[TranscriptItem]] = []
-        for item in items {
+        // A queued prompt waits above the composer (`Transcript.queuedPrompts`).
+        for item in items where !item.isQueuedPrompt {
             if turns.isEmpty || (item.role == .user && !item.isSteer) {
                 turns.append([item])
             } else {

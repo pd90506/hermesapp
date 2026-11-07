@@ -233,7 +233,7 @@ public enum ConversationMarkdown {
     /// no text yet has none either (nothing to copy), so while the reply is awaited
     /// the bar stays on the prompt.
     public static func newestMessageID(in items: [TranscriptItem]) -> String? {
-        items.last { ($0.role == .user && $0.backgroundNotice == nil) || hasActionBar($0) }?.id
+        items.last { ($0.role == .user && $0.backgroundNotice == nil && !$0.isQueuedPrompt) || hasActionBar($0) }?.id
     }
 
     /// An assistant row gets an action bar once it has text to copy.

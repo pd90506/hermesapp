@@ -20,7 +20,7 @@ public struct PromptMark: Sendable, Hashable, Identifiable {
     /// user turn (`backgroundNotice`) is not a prompt and gets no mark.
     public static func marks(in items: [TranscriptItem]) -> [PromptMark] {
         items.compactMap { item in
-            guard item.role == .user, item.backgroundNotice == nil else { return nil }
+            guard item.role == .user, item.backgroundNotice == nil, !item.isQueuedPrompt else { return nil }
             return PromptMark(id: item.id, label: label(for: item))
         }
     }

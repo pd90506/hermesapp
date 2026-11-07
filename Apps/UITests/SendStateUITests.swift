@@ -166,6 +166,71 @@ final class SendStateUITests: XCTestCase {
         checkOrder(correction: slow, answer: answer, in: app, "settled")
     }
 
+    /// A `/compress` shows its row in the composer; a message sent meanwhile waits in
+    /// Hermes's queue as a card under that row, out of the chat, and runs once the
+    /// compression is done. The compression's result is centred in the chat.
+    @MainActor
+    func testAMessageSentDuringACompressWaitsAboveTheComposer() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let composer = try openNewChat(app)
+        // Enough for a compression past the protected head (`protect_first_n`, 3) and the
+        // kept exchange (`context_compressor.py:2812`).
+        // Long replies, so the summary takes long enough to send a message meanwhile.
+        for round in 1...6 {
+            let word = "WORD\(round)X\(Int.random(in: 1000...9999))"
+            send("Write \(word), then the whole numbers from 1 to 120 as English words, comma-separated, "
+                 + "in one paragraph. Do not use tools.", composer: composer, in: app)
+            XCTAssertTrue(waitForMessage(word, exactly: false, in: app, timeout: 150), "reply \(round)")
+            XCTAssertTrue(eventually(timeout: 150) { app.buttons["Send"].firstMatch.exists }, "reply \(round) done")
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+
+        // All but the newest exchange (`partial_compress.py:21-47`): a short chat is otherwise
+        // all protected tail, and its compression is a no-op over before the next send.
+        send("/compress --keep 1", composer: composer, in: app)
+        let compressing = app.descendants(matching: .any)["compressingContext"]
+        let shown = compressing.waitForExistence(timeout: 10)
+        if !shown { attach(app, "0 no compressing row") }
+        XCTAssertTrue(shown, "the composer shows the compression")
+        let answer = "AFTER\(Int.random(in: 1000...9999))"
+        let queuedText = "Reply with exactly \(answer)"
+        let typing = Date()
+        send(queuedText, composer: composer, in: app)
+        record(["typed and sent in \(Date().timeIntervalSince(typing))s, compressing still \(compressing.exists)"],
+               "queued send")
+        let card = app.descendants(matching: .any)["queuedPrompt"]
+        let carded = card.waitForExistence(timeout: 20)
+        attach(app, "1 compressing, a message queued under it")
+        if carded {
+            XCTAssertLessThan(compressing.frame.maxY, card.frame.minY + 1, "the card is under the compressing row")
+            XCTAssertLessThan(card.frame.maxY, composer.frame.minY + 1, "the card is above the text")
+            XCTAssertTrue(compressing.exists, "queued while compressing")
+        }
+        XCTAssertTrue(carded, "the queued message shows as a card")
+
+        let ran = waitForMessage(answer, exactly: true, in: app, timeout: 300)
+        if !ran { attach(app, "1b the queued message did not run") }
+        XCTAssertTrue(ran, "the queued message ran")
+        XCTAssertFalse(card.exists, "the card is gone once its turn started")
+        XCTAssertTrue(waitForMessage(queuedText, exactly: false, in: app, timeout: 5), "its bubble is in the chat")
+        XCTAssertFalse(compressing.exists, "the compression is over")
+
+        let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Approx request size' OR value CONTAINS 'Approx request size'"))
+            .firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "the compression's result is shown")
+        attach(app, "2 done, the result centred")
+        record(["note \(note.frame)", "composer \(composer.frame)"], "note frames")
+        #if os(macOS)
+        // Beside the sidebar: the chat's middle is the composer card's.
+        let middle = composer.frame.midX
+        #else
+        let middle = app.windows.firstMatch.frame.midX
+        #endif
+        XCTAssertEqual(note.frame.midX, middle, accuracy: 40, "the result is centred")
+    }
+
     /// The counting reply's text is above the correction (holding `correction`), and the
     /// answer, when given, below it.
     @MainActor

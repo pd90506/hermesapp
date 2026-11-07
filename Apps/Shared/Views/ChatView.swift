@@ -424,6 +424,12 @@ private struct MessageRow: View {
         case .tool:
             ToolMessageContent(item: item)
                 .contextMenu { copyMenu }
+        case .system where item.isCompressionNote:
+            // A compression's result, centred, as a divider in the conversation.
+            Text(item.text).uiFont(.caption).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .contextMenu { copyMenu }
         case .system:
             Text(item.text).uiFont(.caption).foregroundStyle(.secondary)
                 .contextMenu { copyMenu }

@@ -1,9 +1,10 @@
 import XCTest
 
 /// A process Hermes leaves running in the background (`terminal(background=true)`): the
-/// background-tasks pill shows above the composer, opens into its row with Stop, and the
-/// chat's row in the sidebar carries the hollow "background task running" dot. Stop
-/// kills it and the pill goes. Screenshots at each step.
+/// background-tasks pill shows above the composer, in one row with the scroll-to-bottom
+/// arrow, opens a card with its row and Stop, which closes with a click outside, and the
+/// chat's row in the sidebar carries the hollow "background task running" dot. Stop kills
+/// it and the pill goes. Screenshots at each step.
 /// Compiled into HermesMacUITests and HermesiOSUITests. Makes one chat; the script's
 /// sweep deletes it. Skipped without `HERMES_UITEST_URL` and `HERMES_UITEST_TOKEN`.
 final class BackgroundTasksUITests: XCTestCase {
@@ -25,7 +26,8 @@ final class BackgroundTasksUITests: XCTestCase {
 
         let digits = Int.random(in: 1000...9999), marker = "STARTED\(digits)"
         send("Call the terminal tool exactly once with command \"sleep 600\" and background true. "
-            + "Do nothing else, then reply with the word STARTED immediately followed by the digits \(digits), and nothing else.",
+            + "Do nothing else, then reply with 40 lines, each just \"line\" and its number, then a last line "
+            + "with the word STARTED immediately followed by the digits \(digits), and nothing else.",
             composer: composer, in: app)
         XCTAssertTrue(waitForMessage(marker, in: app, timeout: 180), "Hermes started it and replied")
 
@@ -39,11 +41,44 @@ final class BackgroundTasksUITests: XCTestCase {
         #endif
         attach(app, "1 pill")
 
+        // Scrolled up, the scroll-to-bottom arrow shows beside the pill, in one row.
+        let jump = app.descendants(matching: .any).matching(identifier: "scrollToBottom").firstMatch
+        for _ in 0..<8 where !jump.exists {
+            #if os(macOS)
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.4))
+                .scroll(byDeltaX: 0, deltaY: 400)
+            #else
+            app.swipeDown()
+            #endif
+        }
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "scrolled up, the scroll-to-bottom pill")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "1b both pills")
+        XCTAssertFalse(jump.frame.intersects(pill.frame), "apart: \(jump.frame) and \(pill.frame)")
+        XCTAssertLessThan(abs(jump.frame.midY - pill.frame.midY), 2, "in one row: \(jump.frame) and \(pill.frame)")
+        XCTAssertLessThan(jump.frame.maxX, pill.frame.minX, "the scroll pill first")
+
         press(pill)
         let row = app.descendants(matching: .any).matching(identifier: "backgroundProcessRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the card lists it")
         XCTAssertTrue(row.label.contains("sleep 600"), "by its command: \(row.label)")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
         attach(app, "2 card")
+        XCTAssertFalse(app.buttons["backgroundProcessesClose"].exists, "no close button beside Stop")
+
+        // A click on the chat closes it, and so does one on the composer.
+        tapOutside(app)
+        XCTAssertTrue(eventually(timeout: 5) { !row.exists }, "a click on the chat closes it")
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "the pill is back")
+        press(pill)
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the pill opens it again")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        press(composer)
+        XCTAssertTrue(eventually(timeout: 5) { !row.exists }, "a click on the composer closes it")
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "the pill is back")
+        press(pill)
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "and opens it once more")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
 
         let stop = app.buttons["backgroundProcessStop"].firstMatch
         XCTAssertTrue(stop.exists, "a running one has Stop")
@@ -102,6 +137,16 @@ final class BackgroundTasksUITests: XCTestCase {
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
+    }
+
+    /// A click or tap well away from the card, in the upper part of the chat.
+    @MainActor
+    private func tapOutside(_ app: XCUIApplication) {
+        #if os(macOS)
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.2)).click()
+        #else
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        #endif
     }
 
     /// A coordinate click on the Mac: XCUITest's `tap()` doesn't trigger SwiftUI buttons

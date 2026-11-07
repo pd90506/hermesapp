@@ -4,59 +4,14 @@ import SwiftUI
 /// The processes the chat's agent left running in the background
 /// (`ChatSession.backgroundProcesses`), as Desktop's status stack lists them above its
 /// composer (`apps/desktop/src/app/chat/composer/status-stack/`): a glass pill
-/// ("1 background task") like the subagents' (`SubagentsPill`), which opens into a card.
-/// Each row shows its command and how it ended; picked, its newest output. A running one
-/// has Stop, a finished one goes by itself after a few seconds, or with its ✕.
+/// ("1 background task") in the row over the composer (`ChatPillRow`), which opens into a
+/// card as wide as the composer. Each row shows its command and how it ended; picked, its
+/// newest output. A running one has Stop, a finished one goes by itself after a few
+/// seconds, or with its ✕.
 ///
-/// It reads the gateway's registry when the chat shows, then every 5 s while a process
-/// runs (Desktop's `BACKGROUND_POLL_MS`); `ChatSession` reads it too after the tools that
-/// start or reap one, and when the gateway announces one finished.
+/// The card closes with a click or tap anywhere outside it (`dismissesOnOutsideTap`), so it
+/// needs no close button of its own beside Stop (the user, 2026-11-06).
 struct BackgroundProcessesPill: View {
-    let session: ChatSession
-    /// False while the chat is kept built but hidden: no polling then.
-    var isShown = true
-    @Binding var isOpen: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let processes = session.backgroundProcesses.processes
-        let running = processes.contains(where: \.isRunning)
-        ZStack(alignment: .bottom) {
-            if !processes.isEmpty {
-                if isOpen {
-                    GlassEffectContainer(spacing: 0) {
-                        BackgroundProcessesPanel(session: session, processes: processes) { isOpen = false }
-                    }
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
-                } else {
-                    GlassEffectContainer(spacing: 0) { BackgroundProcessesPillLabel(processes: processes, isOpen: $isOpen) }
-                        .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
-                }
-            }
-        }
-        .padding(.bottom, processes.isEmpty ? 0 : 8)
-        .animation(Motion.jumpButton, value: processes.isEmpty)
-        .animation(Motion.swap, value: isOpen)
-        .onChange(of: processes.isEmpty) { _, gone in if gone { isOpen = false } }
-        .task(id: "\(session.sessionID):\(isShown):\(running)") {
-            guard isShown else { return }
-            await session.refreshBackgroundProcesses()
-            while running, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled else { return }
-                await session.refreshBackgroundProcesses()
-            }
-        }
-    }
-}
-
-enum BackgroundProcessesText {
-    static func title(_ count: Int) -> String {
-        count == 1 ? "1 background task" : "\(count) background tasks"
-    }
-}
-
-private struct BackgroundProcessesPillLabel: View {
     let processes: [BackgroundProcess]
     @Binding var isOpen: Bool
     @State private var isHovered = false
@@ -95,33 +50,25 @@ private struct BackgroundProcessesPillLabel: View {
     }
 }
 
-private struct BackgroundProcessesPanel: View {
+enum BackgroundProcessesText {
+    static func title(_ count: Int) -> String {
+        count == 1 ? "1 background task" : "\(count) background tasks"
+    }
+}
+
+struct BackgroundProcessesPanel: View {
     let session: ChatSession
     let processes: [BackgroundProcess]
-    let close: () -> Void
     @State private var picked: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(BackgroundProcessesText.title(processes.count))
-                    .font(.body.weight(.medium))
-                    .monospacedDigit()
-                Spacer(minLength: 12)
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close")
-                .accessibilityIdentifier("backgroundProcessesClose")
-            }
-            .padding(.leading, 18)
-            .padding(.trailing, 10)
-            .padding(.vertical, 8)
+            Text(BackgroundProcessesText.title(processes.count))
+                .font(.body.weight(.medium))
+                .monospacedDigit()
+                .frame(minHeight: 28)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
 
             Divider().padding(.horizontal, 18)
 

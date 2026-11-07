@@ -70,6 +70,10 @@ public final class ChatComposer {
     /// commands never block the composer; Desktop sends one without waiting for it
     /// (`use-composer-submit.ts:133-144`), busy or not (:291-315).
     public private(set) var isCompressing = false
+    /// The composer's "Compressing context…" row: a `/compress` sent here, or any
+    /// compaction Hermes reports for the session (an automatic one in a turn, a
+    /// `/compress` from another client; `Transcript.isCompacting`), shown the same way.
+    public var showsCompressing: Bool { isCompressing || session.transcript.isCompacting }
     public private(set) var catalog: ModelCatalog?
     /// A model switch the gateway refused until the user confirms it
     /// (`confirm_required`, e.g. an expensive model).

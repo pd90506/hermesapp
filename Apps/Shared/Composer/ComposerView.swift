@@ -49,7 +49,8 @@ struct ComposerView: View {
                 cards
             }
             SlashSuggestionList(composer: composer) { focusRequest += 1 }
-            if composer.isCompressing { compressingRow }
+            if composer.showsCompressing { compressingRow }
+            ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
             // The text area keeps its place in both layouts, so the text view, and the
             // keyboard it has, stay when the card grows or shrinks.
             HStack(spacing: 8) {
@@ -217,7 +218,8 @@ struct ComposerView: View {
         .padding(.top, Self.inset.top)
     }
 
-    /// A `/compress` still running (it can take minutes). The composer stays usable
+    /// A compression still running (it can take minutes): a `/compress`, or one Hermes
+    /// started in a turn (`ChatComposer.showsCompressing`). The composer stays usable
     /// meanwhile; Desktop shows the same notice, for a compaction only (`slash.ts:703-709`).
     private var compressingRow: some View {
         HStack(spacing: 6) {
@@ -230,6 +232,26 @@ struct ComposerView: View {
         .padding(.horizontal, Self.inset.text)
         .padding(.top, Self.inset.top)
         .accessibilityElement(children: .combine)
+    }
+
+    /// A message Hermes queued that no turn has taken yet (`Transcript.queuedPrompts`),
+    /// under the compressing row and in its look, as Desktop lists its queue above the
+    /// composer (`composer/queue-slot.tsx`). It moves into the chat when its turn starts.
+    private func queuedRow(_ item: TranscriptItem) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "clock")
+                .imageScale(.small)
+            Text(PromptMark.label(for: item, limit: 200))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .uiFont(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, Self.inset.text)
+        .padding(.top, Self.inset.top)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Queued: \(PromptMark.label(for: item, limit: 200))")
+        .accessibilityIdentifier("queuedPrompt")
     }
 
     private var cards: some View {
@@ -297,7 +319,8 @@ struct ComposerView: View {
         #if os(iOS)
         !isFocused && composer.draft.isEmpty && !isComposing && composer.attachments.isEmpty
             && composer.files.isEmpty && composer.uploadingFiles == 0 && composer.error == nil && stopError == nil
-            && !composer.isCompressing && !composer.slashIsOpen && !composer.isModelPickerRequested
+            && !composer.showsCompressing && session.transcript.queuedPrompts.isEmpty
+            && !composer.slashIsOpen && !composer.isModelPickerRequested
         #else
         false
         #endif

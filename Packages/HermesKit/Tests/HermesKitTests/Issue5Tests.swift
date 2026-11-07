@@ -231,9 +231,9 @@ private func idle() -> Transcript {
         #expect(transcript.waiting?.hint == "Drafting patch…", "drafting beats the build notice")
         transcript.apply(event("thinking.delta", ["text": "⏳ still waiting on the provider (45s)"]))
         #expect(transcript.waiting?.hint == "⏳ still waiting on the provider (45s)", "provider wait beats the rest")
-        transcript.apply(event("status.update", ["kind": "compacting", "text": "Summarizing thread"]))
-        #expect(transcript.waiting?.hint == "Summarizing thread", "status beats everything")
-        #expect(transcript.waiting?.label == "Summarizing thread")
+        transcript.apply(event("status.update", ["kind": "lifecycle", "text": "Switched to fallback model x"]))
+        #expect(transcript.waiting?.hint == "Switched to fallback model x", "status beats everything")
+        #expect(transcript.waiting?.label == "Switched to fallback model x")
     }
 
     @Test func theLabelIsNeverABareEllipsis() {

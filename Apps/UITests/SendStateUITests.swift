@@ -166,6 +166,58 @@ final class SendStateUITests: XCTestCase {
         checkOrder(correction: slow, answer: answer, in: app, "settled")
     }
 
+    /// A `/compress` shows its row in the composer; a message sent meanwhile waits in
+    /// Hermes's queue as a card under that row, out of the chat, and runs once the
+    /// compression is done. The compression's result is centred in the chat.
+    @MainActor
+    func testAMessageSentDuringACompressWaitsAboveTheComposer() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        let composer = try openNewChat(app)
+        // Enough for a compression (`MIN_MESSAGES`, `conversation_compression_manual.py:19`).
+        for round in 1...3 {
+            let word = "WORD\(round)X\(Int.random(in: 1000...9999))"
+            send("Reply with exactly \(word) and nothing else.", composer: composer, in: app)
+            XCTAssertTrue(waitForMessage(word, exactly: true, in: app, timeout: 150), "reply \(round)")
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+
+        send("/compress", composer: composer, in: app)
+        let compressing = app.staticTexts["Compressing context…"]
+        XCTAssertTrue(compressing.waitForExistence(timeout: 10), "the composer shows the compression")
+        let answer = "AFTER\(Int.random(in: 1000...9999))"
+        let queuedText = "QUEUED Reply with exactly \(answer) and nothing else."
+        send(queuedText, composer: composer, in: app)
+        let card = app.descendants(matching: .any)["queuedPrompt"]
+        let carded = card.waitForExistence(timeout: 20)
+        attach(app, "1 compressing, a message queued under it")
+        if carded {
+            XCTAssertLessThan(compressing.frame.maxY, card.frame.minY + 1, "the card is under the compressing row")
+            XCTAssertLessThan(card.frame.maxY, composer.frame.minY + 1, "the card is above the text")
+            XCTAssertTrue(compressing.exists, "queued while compressing")
+        }
+        XCTAssertTrue(carded, "the queued message shows as a card")
+
+        XCTAssertTrue(waitForMessage(answer, exactly: true, in: app, timeout: 300), "the queued message ran")
+        XCTAssertFalse(card.exists, "the card is gone once its turn started")
+        XCTAssertTrue(waitForMessage(queuedText, exactly: false, in: app, timeout: 5), "its bubble is in the chat")
+        XCTAssertFalse(compressing.exists, "the compression is over")
+
+        let note = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Compressed' OR value BEGINSWITH 'Compressed'"))
+            .firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "the compression's result is shown")
+        attach(app, "2 done, the result centred")
+        record(["note \(note.frame)", "composer \(composer.frame)"], "note frames")
+        #if os(macOS)
+        // Beside the sidebar: the chat's middle is the composer card's.
+        let middle = composer.frame.midX
+        #else
+        let middle = app.windows.firstMatch.frame.midX
+        #endif
+        XCTAssertEqual(note.frame.midX, middle, accuracy: 40, "the result is centred")
+    }
+
     /// The counting reply's text is above the correction (holding `correction`), and the
     /// answer, when given, below it.
     @MainActor

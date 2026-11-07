@@ -1229,7 +1229,7 @@ public final class ChatSession: Identifiable {
         } else {
             message = "nothing to compress"
         }
-        current.appendNote(message)
+        current.appendNote(message, displayKind: TranscriptItem.compressionDisplayKind)
         return message
     }
 

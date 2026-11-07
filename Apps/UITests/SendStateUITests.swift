@@ -175,8 +175,9 @@ final class SendStateUITests: XCTestCase {
         let app = try launchApp()
         defer { app.terminate() }
         let composer = try openNewChat(app)
-        // Enough for a compression (`MIN_MESSAGES`, `conversation_compression_manual.py:19`).
-        for round in 1...3 {
+        // Enough for a compression past the protected head (`protect_first_n`, 3) and the
+        // kept exchange (`context_compressor.py:2812`).
+        for round in 1...6 {
             let word = "WORD\(round)X\(Int.random(in: 1000...9999))"
             send("Reply with exactly \(word) and nothing else.", composer: composer, in: app)
             XCTAssertTrue(waitForMessage(word, exactly: true, in: app, timeout: 150), "reply \(round)")

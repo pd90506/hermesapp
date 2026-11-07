@@ -177,10 +177,13 @@ final class SendStateUITests: XCTestCase {
         let composer = try openNewChat(app)
         // Enough for a compression past the protected head (`protect_first_n`, 3) and the
         // kept exchange (`context_compressor.py:2812`).
+        // Long replies, so the summary takes long enough to send a message meanwhile.
         for round in 1...6 {
             let word = "WORD\(round)X\(Int.random(in: 1000...9999))"
-            send("Reply with exactly \(word) and nothing else.", composer: composer, in: app)
-            XCTAssertTrue(waitForMessage(word, exactly: true, in: app, timeout: 150), "reply \(round)")
+            send("Write \(word), then the whole numbers from 1 to 120 as English words, comma-separated, "
+                 + "in one paragraph. Do not use tools.", composer: composer, in: app)
+            XCTAssertTrue(waitForMessage(word, exactly: false, in: app, timeout: 150), "reply \(round)")
+            XCTAssertTrue(eventually(timeout: 150) { app.buttons["Send"].firstMatch.exists }, "reply \(round) done")
         }
         RunLoop.current.run(until: Date().addingTimeInterval(3))
 
@@ -192,8 +195,11 @@ final class SendStateUITests: XCTestCase {
         if !shown { attach(app, "0 no compressing row") }
         XCTAssertTrue(shown, "the composer shows the compression")
         let answer = "AFTER\(Int.random(in: 1000...9999))"
-        let queuedText = "QUEUED Reply with exactly \(answer) and nothing else."
+        let queuedText = "Reply with exactly \(answer)"
+        let typing = Date()
         send(queuedText, composer: composer, in: app)
+        record(["typed and sent in \(Date().timeIntervalSince(typing))s, compressing still \(compressing.exists)"],
+               "queued send")
         let card = app.descendants(matching: .any)["queuedPrompt"]
         let carded = card.waitForExistence(timeout: 20)
         attach(app, "1 compressing, a message queued under it")

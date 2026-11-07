@@ -41,6 +41,21 @@ final class BackgroundTasksUITests: XCTestCase {
         #endif
         attach(app, "1 pill")
 
+        // The card floats over the chat: opening it doesn't push the messages up.
+        let reply = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier != 'composer' AND (value CONTAINS %@ OR label CONTAINS %@)", marker, marker)).firstMatch
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let replyBefore = reply.frame
+        press(pill)
+        let openRow = app.descendants(matching: .any).matching(identifier: "backgroundProcessRow").firstMatch
+        XCTAssertTrue(openRow.waitForExistence(timeout: 5), "the card opens")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "1a card over the chat")
+        XCTAssertLessThan(abs(reply.frame.minY - replyBefore.minY), 2,
+                          "the messages stay put: \(replyBefore) then \(reply.frame)")
+        tapOutside(app)
+        XCTAssertTrue(eventually(timeout: 5) { !openRow.exists }, "closed again")
+
         // Scrolled up, the scroll-to-bottom arrow shows beside the pill, in one row.
         let jump = app.descendants(matching: .any).matching(identifier: "scrollToBottom").firstMatch
         for _ in 0..<8 where !jump.exists {

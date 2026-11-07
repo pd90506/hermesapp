@@ -5,7 +5,8 @@ import SwiftUI
 /// arrow while the chat is scrolled up (`ChatScroll.isAwayFromEnd`), the background tasks
 /// (`BackgroundProcessesPill`) and the task list (`TodoPillLabel`). One row, never one pill
 /// over another (the user, 2026-10-31 and 2026-11-06). Each opens into a card as wide as the
-/// composer, over what is left of the row.
+/// composer, over what is left of the row; the background tasks' one floats over the chat
+/// without making the row taller.
 ///
 /// A view of its own: it reads the transcript, which changes with every streamed word, and
 /// only it redraws for that, not the composer under it. While no pill shows, the
@@ -30,12 +31,10 @@ struct ChatPillRow: View {
         let running = processes.contains(where: \.isRunning)
         let showsPills = (plan != nil && !isTodoOpen) || (!processes.isEmpty && !isProcessesOpen)
         let showsJump = scroll.isAwayFromEnd
+        let processesOpen = !processes.isEmpty && isProcessesOpen
+        // Nothing else in the row: the open card covers the pill's place, which stays.
+        let holdsSlot = processesOpen && !showsPills && !(plan != nil && isTodoOpen)
         VStack(spacing: 8) {
-            if !processes.isEmpty, isProcessesOpen {
-                ownGlass { BackgroundProcessesPanel(session: session, processes: processes) }
-                    .dismissesOnOutsideTap { isProcessesOpen = false }
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
-            }
             if let plan, isTodoOpen {
                 ownGlass { TodoPanel(plan: plan) { isTodoOpen = false } }
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
@@ -45,6 +44,19 @@ struct ChatPillRow: View {
                     .transition(reduceMotion ? .opacity : .asymmetric(
                         insertion: .scale(scale: 1.1).combined(with: .opacity).combined(with: .offset(y: 5)),
                         removal: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 5))))
+            } else if holdsSlot {
+                Color.clear.frame(height: 32)
+            }
+        }
+        // The background tasks' card floats over the chat, an overlay that adds no room to
+        // the bar: opening it no longer pushes the messages up (the user, 2026-11-07). Over
+        // the pill's place when nothing else is in the row, else just above the row.
+        .overlay(alignment: holdsSlot ? .bottom : .top) {
+            if processesOpen {
+                ownGlass { BackgroundProcessesPanel(session: session, processes: processes) }
+                    .dismissesOnOutsideTap { isProcessesOpen = false }
+                    .alignmentGuide(.top) { $0[.bottom] + 8 }
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
             }
         }
         .animation(Motion.jumpButton, value: plan == nil)

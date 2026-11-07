@@ -901,7 +901,9 @@ public struct Transcript: Sendable, Hashable {
         finishedItems = finishedItems.filter { !settled.contains($0.key) }
         let unsettled = Set(finishedItems.values)
         receiptRowByCompletion = receiptRowByCompletion.filter { unsettled.contains($0.key) }
-        let quiet = !turnActive && starts == ticket.starts && !prompts.values.contains(.sent)
+        // A compression holds the session busy without a turn (`session_compression.py:242-259`):
+        // a prompt queued behind it is waiting, not merged or dropped.
+        let quiet = !turnActive && !isCompacting && starts == ticket.starts && !prompts.values.contains(.sent)
         var eligible: Set<String> = [], storedAtSubmit: Set<String> = []
         for (id, state) in prompts where quiet {
             guard case .answered(let at, let storedRow) = state, at <= ticket.clock else { continue }
@@ -1278,8 +1280,10 @@ public struct Transcript: Sendable, Hashable {
         // A re-read can land before the answer (a fast reply): its row may already show.
         dropPromptsShownByRows()
         // No turn will finish to settle it if none runs (Hermes may have dropped or
-        // merged it, or its turn has not started): read the newest rows again.
-        if !turnActive, paging.rereadable { needsReread = true }
+        // merged it, or its turn has not started): read the newest rows again. Not for one
+        // still waiting in the queue: its turn's end reads them, and a read now would show
+        // the row Hermes stored when it took it (`_persist_queued_user_row`) in the chat too.
+        if !turnActive, !waits, paging.rereadable { needsReread = true }
     }
 
     /// Marks a failed submit: the bubble stays (only it holds the text), and the

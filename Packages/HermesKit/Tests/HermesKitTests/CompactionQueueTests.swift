@@ -89,6 +89,7 @@ private func event(_ type: String, _ payload: JSONValue? = nil) -> GatewayEvent 
         let prompt = transcript.appendUserPrompt("after the compress")
         transcript.promptAnswered(itemID: prompt, status: "queued")
         #expect(transcript.queuedPrompts.map(\.id) == [prompt])
+        #expect(!transcript.needsReread, "a read now would show its stored row in the chat too")
         transcript.apply(event("status.update", ["kind": "status", "text": "ready"]))
         transcript.serverReportsIdle()
         #expect(transcript.queuedPrompts.map(\.id) == [prompt])

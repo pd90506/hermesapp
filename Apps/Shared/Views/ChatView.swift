@@ -34,7 +34,7 @@ struct ChatView: View {
     @State private var isTodoOpen = false
     /// The subagents' card is open (`SubagentsPill`).
     @State private var isSubagentsOpen = false
-    /// The background tasks' popover is open (`BackgroundProcessesPill`).
+    /// The background tasks' card is open (`BackgroundProcessesPill`).
     @State private var isProcessesOpen = false
     @Environment(\.textSizes) private var sizes
     @Environment(\.surfaces) private var surfaces
@@ -178,7 +178,8 @@ struct ChatView: View {
             // of the bar's blur and inside its own hit area.
             .overlay(alignment: .bottom) {
                 // In the row of pills instead, while any shows (`ChatPillRow`).
-                if (session.transcript.todoPlan == nil || isTodoOpen), session.backgroundProcesses.processes.isEmpty {
+                if session.transcript.todoPlan == nil || isTodoOpen,
+                   session.backgroundProcesses.processes.isEmpty || isProcessesOpen {
                     ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
                         #if os(macOS)
                         // 16 pt above the card (`pillGap`), as Desktop's, with the bar's 10 pt padding.

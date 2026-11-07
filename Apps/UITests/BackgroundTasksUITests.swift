@@ -2,7 +2,7 @@ import XCTest
 
 /// A process Hermes leaves running in the background (`terminal(background=true)`): the
 /// background-tasks pill shows above the composer, in one row with the scroll-to-bottom
-/// arrow, opens a popover with its row and Stop, which closes with a click outside, and the
+/// arrow, opens a card with its row and Stop, which closes with a click outside, and the
 /// chat's row in the sidebar carries the hollow "background task running" dot. Stop kills
 /// it and the pill goes. Screenshots at each step.
 /// Compiled into HermesMacUITests and HermesiOSUITests. Makes one chat; the script's
@@ -63,19 +63,19 @@ final class BackgroundTasksUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the card lists it")
         XCTAssertTrue(row.label.contains("sleep 600"), "by its command: \(row.label)")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        attach(app, "2 popover")
+        attach(app, "2 card")
         XCTAssertFalse(app.buttons["backgroundProcessesClose"].exists, "no close button beside Stop")
 
-        // Outside the popover, it closes; the pill stays where it was, and opens it again.
+        // A click on the chat closes it, and so does one on the composer.
         tapOutside(app)
-        XCTAssertTrue(eventually(timeout: 5) { !row.exists }, "a click outside closes it")
-        XCTAssertTrue(pill.exists, "the pill stays")
+        XCTAssertTrue(eventually(timeout: 5) { !row.exists }, "a click on the chat closes it")
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "the pill is back")
         press(pill)
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the pill opens it again")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
-        press(pill)
-        RunLoop.current.run(until: Date().addingTimeInterval(1))
-        XCTAssertFalse(row.exists, "the pill, while open, closes it: it is outside too")
+        press(composer)
+        XCTAssertTrue(eventually(timeout: 5) { !row.exists }, "a click on the composer closes it")
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "the pill is back")
         press(pill)
         XCTAssertTrue(row.waitForExistence(timeout: 5), "and opens it once more")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
@@ -139,7 +139,7 @@ final class BackgroundTasksUITests: XCTestCase {
         add(shot)
     }
 
-    /// A click or tap well away from the popover, in the upper part of the chat.
+    /// A click or tap well away from the card, in the upper part of the chat.
     @MainActor
     private func tapOutside(_ app: XCUIApplication) {
         #if os(macOS)

@@ -4,11 +4,11 @@ import SwiftUI
 /// The row of small glass pills just above the composer, centered: the scroll-to-bottom
 /// arrow while the chat is scrolled up (`ChatScroll.isAwayFromEnd`), the background tasks
 /// (`BackgroundProcessesPill`) and the task list (`TodoPillLabel`). One row, never one pill
-/// over another (the user, 2026-10-31 and 2026-11-06). The task list opens into a card over
-/// the row; the background tasks into a popover.
+/// over another (the user, 2026-10-31 and 2026-11-06). Each opens into a card as wide as the
+/// composer, over what is left of the row.
 ///
 /// A view of its own: it reads the transcript, which changes with every streamed word, and
-/// only it redraws for that, not the composer under it. While neither pill shows, the
+/// only it redraws for that, not the composer under it. While no pill shows, the
 /// scroll-to-bottom pill floats over the chat instead (`ChatView.chat`).
 ///
 /// It also reads the background tasks' registry when the chat shows, then every 5 s while a
@@ -22,17 +22,20 @@ struct ChatPillRow: View {
     var isShown = true
     @Binding var isTodoOpen: Bool
     @Binding var isProcessesOpen: Bool
-    /// The composer's width: the popover goes no wider, so it fits an iPhone.
-    @State private var width: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let plan = session.transcript.todoPlan
         let processes = session.backgroundProcesses.processes
         let running = processes.contains(where: \.isRunning)
-        let showsPills = (plan != nil && !isTodoOpen) || !processes.isEmpty
+        let showsPills = (plan != nil && !isTodoOpen) || (!processes.isEmpty && !isProcessesOpen)
         let showsJump = scroll.isAwayFromEnd
         VStack(spacing: 8) {
+            if !processes.isEmpty, isProcessesOpen {
+                ownGlass { BackgroundProcessesPanel(session: session, processes: processes) }
+                    .dismissesOnOutsideTap { isProcessesOpen = false }
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
+            }
             if let plan, isTodoOpen {
                 ownGlass { TodoPanel(plan: plan) { isTodoOpen = false } }
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
@@ -44,12 +47,11 @@ struct ChatPillRow: View {
                         removal: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 5))))
             }
         }
-        .frame(maxWidth: .infinity)
-        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
         .animation(Motion.jumpButton, value: plan == nil)
         .animation(Motion.jumpButton, value: processes.isEmpty)
         .animation(Motion.jumpButton, value: showsJump)
         .animation(Motion.swap, value: isTodoOpen)
+        .animation(Motion.swap, value: isProcessesOpen)
         .onChange(of: plan == nil) { _, gone in if gone { isTodoOpen = false } }
         .onChange(of: processes.isEmpty) { _, gone in if gone { isProcessesOpen = false } }
         .onChange(of: isShown) { _, shown in if !shown { isProcessesOpen = false } }
@@ -81,9 +83,8 @@ struct ChatPillRow: View {
                                      compact: true)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
             }
-            if !processes.isEmpty {
-                BackgroundProcessesPill(session: session, processes: processes, maxWidth: width,
-                                        isOpen: $isProcessesOpen)
+            if !processes.isEmpty, !isProcessesOpen {
+                BackgroundProcessesPill(processes: processes, isOpen: $isProcessesOpen)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
             }
             if let plan, !isTodoOpen {

@@ -4,17 +4,15 @@ import SwiftUI
 /// The processes the chat's agent left running in the background
 /// (`ChatSession.backgroundProcesses`), as Desktop's status stack lists them above its
 /// composer (`apps/desktop/src/app/chat/composer/status-stack/`): a glass pill
-/// ("1 background task") in the row over the composer (`ChatPillRow`), which opens a
-/// popover. Each row shows its command and how it ended; picked, its newest output. A
-/// running one has Stop, a finished one goes by itself after a few seconds, or with its ✕.
+/// ("1 background task") in the row over the composer (`ChatPillRow`), which opens into a
+/// card as wide as the composer. Each row shows its command and how it ended; picked, its
+/// newest output. A running one has Stop, a finished one goes by itself after a few
+/// seconds, or with its ✕.
 ///
-/// A popover rather than a card in the bar (the user, 2026-11-06): it closes with a click or
-/// tap anywhere outside, or Esc, so it needs no close button of its own beside Stop.
+/// The card closes with a click or tap anywhere outside it (`dismissesOnOutsideTap`), so it
+/// needs no close button of its own beside Stop (the user, 2026-11-06).
 struct BackgroundProcessesPill: View {
-    let session: ChatSession
     let processes: [BackgroundProcess]
-    /// How wide the popover may go, the composer's width (0 before it is known).
-    let maxWidth: CGFloat
     @Binding var isOpen: Bool
     @State private var isHovered = false
 
@@ -28,7 +26,7 @@ struct BackgroundProcessesPill: View {
                     .monospacedDigit()
             }
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(isHovered || isOpen ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.leading, 10)
             .padding(.trailing, 12)
             .frame(height: 32)
@@ -43,23 +41,6 @@ struct BackgroundProcessesPill: View {
         .accessibilityHint("Shows the background tasks")
         .accessibilityIdentifier("backgroundProcessesPill")
         .help(processes.map(\.title).joined(separator: "\n"))
-        .popover(isPresented: $isOpen, arrowEdge: popoverArrowEdge) {
-            BackgroundProcessesPanel(session: session)
-                .frame(width: maxWidth > 0 ? min(maxWidth, Self.panelWidth) : Self.panelWidth)
-                .presentationCompactAdaptation(.popover)
-        }
-    }
-
-    private static let panelWidth: CGFloat = 460
-
-    /// Above the pill on both. iOS takes the edge as the popover's own, and the keyboard
-    /// under the composer would crush it to a sliver (`ContextGaugeButton`).
-    private var popoverArrowEdge: Edge {
-        #if os(macOS)
-        .top
-        #else
-        .bottom
-        #endif
     }
 
     /// An outline while one runs, as the session row's dot (`ChatStatusDot`).
@@ -75,19 +56,19 @@ enum BackgroundProcessesText {
     }
 }
 
-private struct BackgroundProcessesPanel: View {
+struct BackgroundProcessesPanel: View {
     let session: ChatSession
+    let processes: [BackgroundProcess]
     @State private var picked: String?
 
     var body: some View {
-        // Read here, as a popover's content isn't redrawn with the pill.
-        let processes = session.backgroundProcesses.processes
         VStack(alignment: .leading, spacing: 0) {
             Text(BackgroundProcessesText.title(processes.count))
                 .font(.body.weight(.medium))
                 .monospacedDigit()
+                .frame(minHeight: 28)
                 .padding(.horizontal, 18)
-                .padding(.vertical, 12)
+                .padding(.vertical, 8)
 
             Divider().padding(.horizontal, 18)
 
@@ -107,6 +88,7 @@ private struct BackgroundProcessesPanel: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .floatingGlass(in: .rect(cornerRadius: 22))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("backgroundProcessesPanel")
     }
@@ -147,8 +129,6 @@ private struct BackgroundProcessRow: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                // The Mac's popover focuses its first control as it opens: no ring on the row.
-                .focusEffectDisabled()
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("backgroundProcessRow")
                 if process.isRunning {

@@ -2,63 +2,9 @@ import HermesKit
 import SwiftUI
 
 /// The agent's task list (`Transcript.todoPlan`), as Claude Code shows its own: a small
-/// glass pill centered above the composer ("3/5 tasks"), which opens into a glass card as
-/// wide as the composer, one line per task down a timeline, the done ones struck through.
-/// It goes with the list: a finished list at the next prompt (`TodoPlan.current`).
-///
-/// A view of its own: it reads the transcript, which changes with every streamed word,
-/// and only it redraws for that, not the composer under it.
-struct TodoPill<Jump: View>: View {
-    let transcript: Transcript
-    let scroll: ChatScroll
-    @Binding var isOpen: Bool
-    /// The chat's scroll-to-bottom pill, beside this one while the chat is scrolled up
-    /// (`ChatScroll.isAwayFromEnd`): one row of pills, never one over the other.
-    @ViewBuilder let jump: () -> Jump
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let plan = transcript.todoPlan
-        let showsJump = scroll.isAwayFromEnd
-        ZStack(alignment: .bottom) {
-            if let plan {
-                if isOpen {
-                    ownGlass { TodoPanel(plan: plan) { isOpen = false } }
-                        .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
-                } else {
-                    ownGlass { pills(plan, showsJump: showsJump) }
-                        .transition(reduceMotion ? .opacity : .asymmetric(
-                            insertion: .scale(scale: 1.1).combined(with: .opacity).combined(with: .offset(y: 5)),
-                            removal: .scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 5))))
-                }
-            }
-        }
-        .animation(Motion.jumpButton, value: plan == nil)
-        .animation(Motion.jumpButton, value: showsJump)
-        .animation(Motion.swap, value: isOpen)
-        .onChange(of: plan == nil) { _, gone in if gone { isOpen = false } }
-    }
-
-    /// A glass container of its own, with no room to merge: in the chat's (`ChatView`),
-    /// whose glass merges shapes 16 pt apart so the scroll pill grows out of the composer,
-    /// these pills and the composer under them ran together into one shape (the user,
-    /// 2026-10-31). One for the pills and one for the card, not one around both: on the
-    /// Mac the pill then kept the card's frame for accessibility once the card closed.
-    private func ownGlass(@ViewBuilder _ content: () -> some View) -> some View {
-        GlassEffectContainer(spacing: 0, content: content)
-    }
-
-    /// The row: the scroll-to-bottom pill (when it shows), then this one.
-    private func pills(_ plan: TodoPlan, showsJump: Bool) -> some View {
-        HStack(spacing: 8) {
-            if showsJump {
-                jump()
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
-            }
-            TodoPillLabel(plan: plan, isOpen: $isOpen)
-        }
-    }
-}
+/// glass pill above the composer ("3/5 tasks", in `ChatPillRow`), which opens into a glass
+/// card as wide as the composer, one line per task down a timeline, the done ones struck
+/// through. It goes with the list: a finished list at the next prompt (`TodoPlan.current`).
 
 enum TodoPillID {
     static let pill = "todoPill"
@@ -77,7 +23,7 @@ enum TodoPillText {
     }
 }
 
-private struct TodoPillLabel: View {
+struct TodoPillLabel: View {
     let plan: TodoPlan
     @Binding var isOpen: Bool
     @State private var isHovered = false

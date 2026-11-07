@@ -30,10 +30,11 @@ struct ChatView: View {
     /// remember meanwhile (`RowMemory`).
     @State private var laziness = TranscriptLaziness()
     @State private var rowMemory = RowMemory()
-    /// The task list's card is open (`TodoPill`).
+    /// The task list's card is open (`ChatPillRow`).
     @State private var isTodoOpen = false
     /// The subagents' card is open (`SubagentsPill`).
     @State private var isSubagentsOpen = false
+    /// The background tasks' popover is open (`BackgroundProcessesPill`).
     @State private var isProcessesOpen = false
     @Environment(\.textSizes) private var sizes
     @Environment(\.surfaces) private var surfaces
@@ -176,8 +177,8 @@ struct ChatView: View {
             // where the composer's bar begins, so the button sits just above the card, clear
             // of the bar's blur and inside its own hit area.
             .overlay(alignment: .bottom) {
-                // Beside the task list's pill instead, while that shows (`composerRow`).
-                if session.transcript.todoPlan == nil || isTodoOpen {
+                // In the row of pills instead, while any shows (`ChatPillRow`).
+                if (session.transcript.todoPlan == nil || isTodoOpen), session.backgroundProcesses.processes.isEmpty {
                     ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks)
                         #if os(macOS)
                         // 16 pt above the card (`pillGap`), as Desktop's, with the bar's 10 pt padding.
@@ -208,20 +209,18 @@ struct ChatView: View {
     /// from the bar's top to the card's middle, so the card's glass shows them blurred
     /// under its top as they go.
     ///
-    /// The agent's task list rides on top of the card (`TodoPill`), inside the bar. While
-    /// it shows, the scroll-to-bottom pill joins it there as a round arrow, side by side,
-    /// rather than float over it, as Claude Code's (the user, 2026-10-31).
+    /// The agent's task list and background tasks ride on top of the card (`ChatPillRow`),
+    /// inside the bar. While either shows, the scroll-to-bottom pill joins them there as a
+    /// round arrow, side by side, rather than float over them, as Claude Code's (the user,
+    /// 2026-10-31).
     private var composerRow: some View {
         VStack(spacing: 8) {
-            // Background processes, then the subagents over the task list, in one slot: with
-            // none, the slot adds no room over the card.
+            // The subagents over the row of pills, in one slot: with none, the slot adds no
+            // room over the card.
             VStack(spacing: 0) {
-                BackgroundProcessesPill(session: session, isShown: isShown, isOpen: $isProcessesOpen)
                 SubagentsPill(session: session, isShown: isShown, isOpen: $isSubagentsOpen)
-                TodoPill(transcript: session.transcript, scroll: scroll, isOpen: $isTodoOpen) {
-                    ScrollToBottomButton(transcript: session.transcript, scroll: scroll, visibleBlocks: visibleBlocks,
-                                         compact: true)
-                }
+                ChatPillRow(session: session, scroll: scroll, visibleBlocks: visibleBlocks, isShown: isShown,
+                            isTodoOpen: $isTodoOpen, isProcessesOpen: $isProcessesOpen)
             }
             ComposerView(composer: composer, isConnected: server.isConnected)
                 .environment(\.chatIsShown, isShown)

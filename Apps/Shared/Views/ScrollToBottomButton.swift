@@ -14,8 +14,8 @@ struct ScrollToBottomButton: View {
     let transcript: Transcript
     let scroll: ChatScroll
     let visibleBlocks: VisibleBlocks
-    /// Just the arrow, in a circle: beside the task list's pill (`TodoPill`), as Claude
-    /// Code's (the user, 2026-10-31).
+    /// Just the arrow, in a circle: in the row of pills (`ChatPillRow`), as Claude Code's
+    /// (the user, 2026-10-31).
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

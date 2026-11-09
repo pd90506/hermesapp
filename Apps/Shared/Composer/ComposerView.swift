@@ -42,8 +42,18 @@ struct ComposerView: View {
         // The compression and the queue over the card, each its own bubble as wide as the
         // card, the newest nearest it, so they stack upward (the user, 2026-11-08).
         VStack(spacing: Self.bubbleGap) {
-            if composer.showsCompressing { compressingRow }
-            ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
+            // A container of their own, spacing 0: in the chat's (`ChatView`, the Mac's,
+            // spacing 16) their glass ran into the card's and each other's across the gap
+            // (VM, 2026-11-09).
+            // None: no container, so no gap over the card.
+            if composer.showsCompressing || !session.transcript.queuedPrompts.isEmpty {
+                GlassEffectContainer(spacing: 0) {
+                    VStack(spacing: Self.bubbleGap) {
+                        if composer.showsCompressing { compressingRow }
+                        ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
+                    }
+                }
+            }
             card
         }
     }

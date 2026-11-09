@@ -144,7 +144,7 @@ final class SendStateUITests: XCTestCase {
         let composer = try openNewChat(app)
 
         // Long enough to still be streaming once the next message is typed.
-        send("Write the whole numbers from 1 to 600 as English words, each on its own line, and nothing else. "
+        send("Write the whole numbers from 1 to 1500 as English words, each on its own line, and nothing else. "
              + "Do not use tools.", composer: composer, in: app)
         XCTAssertTrue(waitForMessage("twenty", exactly: false, in: app, timeout: 150), "the reply streams")
         let answer = "PONG\(Int.random(in: 1000...9999))"
@@ -164,7 +164,13 @@ final class SendStateUITests: XCTestCase {
         press(composer)
         composer.typeText("a draft")
         press(app.buttons["cancelHeldPrompt"].firstMatch)
-        let ok = app.buttons["OK"].firstMatch
+        #if os(macOS)
+        // On the Mac `app.buttons["OK"]` also matches the alert's Touch Bar twin, which
+        // can't be clicked: the dialog's own.
+        let ok = app.dialogs.buttons["OK"].firstMatch
+        #else
+        let ok = app.alerts.buttons["OK"].firstMatch
+        #endif
         XCTAssertTrue(ok.waitForExistence(timeout: 5), "an alert asks to save the draft first")
         attach(app, "2 save the draft first")
         press(ok)

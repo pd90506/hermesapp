@@ -149,7 +149,7 @@ final class SendStateUITests: XCTestCase {
              + "After it finishes, reply with only the word finished.", composer: composer, in: app)
         // The tool's row: a work group on iOS, the bare step on the Mac.
         let steps = app.buttons.matching(identifier: "workGroupRow")
-        let bash = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Bash' OR value == 'Bash'"))
+        let bash = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Bash' OR value BEGINSWITH 'Bash'"))
         guard eventually(timeout: 150, { steps.count > 0 || bash.count > 0 }) else {
             attach(app, "no step yet")
             throw XCTSkip("The model ran no step (no model key in the VM?)")

@@ -179,12 +179,12 @@ final class SendStateUITests: XCTestCase {
         XCTAssertTrue(ok.waitForExistence(timeout: 5), "an alert asks to save the draft first")
         attach(app, "2 save the draft first")
         #if os(macOS)
-        // The first "OK" can be the alert's Touch Bar twin, which takes no click: the one
-        // on screen.
-        let okButtons = app.buttons.matching(identifier: "OK").allElementsBoundByIndex
-        guard let onScreen = okButtons.first(where: { $0.isHittable }) else {
+        // `app.buttons["OK"]` can be the alert's Touch Bar twin, which takes no click (and
+        // counts as hittable): the alert's own, in the window, its sheet or a dialog.
+        let candidates = [app.sheets.buttons["OK"], app.dialogs.buttons["OK"], app.windows.buttons["OK"]]
+        guard let onScreen = candidates.first(where: { $0.firstMatch.exists })?.firstMatch else {
             attachTree(of: app, "OK buttons")
-            return XCTFail("no OK button on screen among \(okButtons.count)")
+            return XCTFail("no OK button outside the Touch Bar")
         }
         press(onScreen)
         #else

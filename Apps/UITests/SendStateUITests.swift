@@ -179,13 +179,18 @@ final class SendStateUITests: XCTestCase {
         XCTAssertTrue(ok.waitForExistence(timeout: 5), "an alert asks to save the draft first")
         attach(app, "2 save the draft first")
         #if os(macOS)
-        // The first "OK" can be the alert's Touch Bar twin, which takes no click: Return
-        // presses the alert's default button.
-        app.typeKey(.return, modifierFlags: [])
-        XCTAssertTrue(eventually { !ok.exists }, "the alert closed")
+        // The first "OK" can be the alert's Touch Bar twin, which takes no click: the one
+        // on screen.
+        let okButtons = app.buttons.matching(identifier: "OK").allElementsBoundByIndex
+        guard let onScreen = okButtons.first(where: { $0.isHittable }) else {
+            attachTree(of: app, "OK buttons")
+            return XCTFail("no OK button on screen among \(okButtons.count)")
+        }
+        press(onScreen)
         #else
         press(ok)
         #endif
+        XCTAssertTrue(eventually { !app.staticTexts["Save Your Draft First"].exists }, "the alert closed")
         XCTAssertTrue(held.exists, "still held")
         XCTAssertEqual(composerText(composer), "a draft", "the draft is untouched")
 

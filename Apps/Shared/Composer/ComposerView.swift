@@ -39,9 +39,20 @@ struct ComposerView: View {
     private var session: ChatSession { composer.session }
 
     var body: some View {
+        // The compression and the queue over the card, each its own bubble as wide as the
+        // card, the newest nearest it, so they stack upward (the user, 2026-11-08).
+        VStack(spacing: Self.bubbleGap) {
+            if composer.showsCompressing { compressingRow }
+            ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
+            card
+        }
+    }
+
+    /// The composer's own card: the text area, its attachments and its toolbar.
+    private var card: some View {
         @Bindable var composer = composer
 
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             if let message = composer.error ?? stopError {
                 errorRow(message)
             }
@@ -49,8 +60,6 @@ struct ComposerView: View {
                 cards
             }
             SlashSuggestionList(composer: composer) { focusRequest += 1 }
-            if composer.showsCompressing { compressingRow }
-            ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
             // The text area keeps its place in both layouts, so the text view, and the
             // keyboard it has, stay when the card grows or shrinks.
             HStack(spacing: 8) {
@@ -170,7 +179,7 @@ struct ComposerView: View {
 
     /// On the Mac rounder than the system's fields, as Desktop's composer; on iOS a
     /// large card, as the Claude app's.
-    private static var cornerRadius: CGFloat {
+    fileprivate static var cornerRadius: CGFloat {
         #if os(macOS)
         12
         #else
@@ -188,8 +197,12 @@ struct ComposerView: View {
         #endif
     }
 
+    /// The space between the bubbles over the card, and between them and the card: the
+    /// gap between the card and the row of pills over it (`ChatView.composerRow`).
+    private static let bubbleGap: CGFloat = 8
+
     /// The space between the card's edge and its text, cards and controls.
-    private static var inset: (text: CGFloat, top: CGFloat, cards: CGFloat, toolbar: CGFloat) {
+    fileprivate static var inset: (text: CGFloat, top: CGFloat, cards: CGFloat, toolbar: CGFloat) {
         #if os(macOS)
         (text: 10, top: 8, cards: 8, toolbar: 6)
         #else
@@ -229,14 +242,13 @@ struct ComposerView: View {
                 .uiFont(.callout)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, Self.inset.text)
-        .padding(.top, Self.inset.top)
+        .statusBubble()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("compressingContext")
     }
 
     /// A message Hermes queued that no turn has taken yet (`Transcript.queuedPrompts`),
-    /// under the compressing row and in its look, as Desktop lists its queue above the
+    /// a bubble under the compressing one and in its look, as Desktop lists its queue above the
     /// composer (`composer/queue-slot.tsx`). It moves into the chat when its turn starts.
     private func queuedRow(_ item: TranscriptItem) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -248,8 +260,7 @@ struct ComposerView: View {
         }
         .uiFont(.callout)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, Self.inset.text)
-        .padding(.top, Self.inset.top)
+        .statusBubble()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Queued: \(PromptMark.label(for: item, limit: 200))")
         .accessibilityIdentifier("queuedPrompt")
@@ -320,7 +331,6 @@ struct ComposerView: View {
         #if os(iOS)
         !isFocused && composer.draft.isEmpty && !isComposing && composer.attachments.isEmpty
             && composer.files.isEmpty && composer.uploadingFiles == 0 && composer.error == nil && stopError == nil
-            && !composer.showsCompressing && session.transcript.queuedPrompts.isEmpty
             && !composer.slashIsOpen && !composer.isModelPickerRequested
         #else
         false
@@ -811,5 +821,25 @@ private struct CircleButton: View {
         guard isProminent else { return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary) }
         // The circle's opposite, black or white, for the reason `fill` gives.
         return AnyShapeStyle(colorScheme == .dark ? Color.black : Color.white)
+    }
+}
+
+private extension View {
+    /// A bubble of its own over the composer's card (`ComposerView.body`), as wide as the
+    /// card and in its glass, corners and hairline, the text inset as in the card.
+    func statusBubble() -> some View {
+        let shape = RoundedRectangle(cornerRadius: ComposerView.cornerRadius, style: .continuous)
+        return self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, ComposerView.inset.text)
+            .padding(.vertical, ComposerView.inset.toolbar + 2)
+            .floatingGlass(in: shape)
+            .overlay {
+                // Just outside the glass's edge, as the card's.
+                RoundedRectangle(cornerRadius: ComposerView.cornerRadius + 1, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(ComposerView.borderOpacity), lineWidth: 1)
+                    .padding(-1)
+                    .allowsHitTesting(false)
+            }
     }
 }

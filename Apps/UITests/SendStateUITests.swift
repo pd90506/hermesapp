@@ -173,16 +173,17 @@ final class SendStateUITests: XCTestCase {
         press(composer)
         composer.typeText("a draft")
         press(app.buttons["cancelHeldPrompt"].firstMatch)
-        #if os(macOS)
-        // On the Mac `app.buttons["OK"]` also matches the alert's Touch Bar twin, which
-        // can't be clicked: the dialog's own.
-        let ok = app.dialogs.buttons["OK"].firstMatch
-        #else
-        let ok = app.alerts.buttons["OK"].firstMatch
-        #endif
+        let ok = app.buttons["OK"].firstMatch
         XCTAssertTrue(ok.waitForExistence(timeout: 5), "an alert asks to save the draft first")
         attach(app, "2 save the draft first")
+        #if os(macOS)
+        // The first "OK" can be the alert's Touch Bar twin, which takes no click: Return
+        // presses the alert's default button.
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(eventually { !ok.exists }, "the alert closed")
+        #else
         press(ok)
+        #endif
         XCTAssertTrue(held.exists, "still held")
         XCTAssertEqual(composerText(composer), "a draft", "the draft is untouched")
 

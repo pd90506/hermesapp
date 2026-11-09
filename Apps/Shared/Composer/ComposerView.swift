@@ -26,6 +26,8 @@ struct ComposerView: View {
     @State private var isImportingFile = false
     @State private var isDropTargeted = false
     @State private var stopError: String?
+    /// A held message's Cancel found text in the draft (`ChatComposer.cancelHeld`).
+    @State private var isHeldCancelBlocked = false
     #if os(iOS)
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
@@ -39,9 +41,52 @@ struct ComposerView: View {
     private var session: ChatSession { composer.session }
 
     var body: some View {
+        // The compression and the queue over the card, each its own bubble as wide as the
+        // card, the newest nearest it, so they stack upward (the user, 2026-11-08).
+        VStack(spacing: Self.bubbleGap) {
+            // A container of their own, spacing 0: in the chat's (`ChatView`, the Mac's,
+            // spacing 16) their glass ran into the card's and each other's across the gap
+            // (VM, 2026-11-09).
+            // None: no container, so no gap over the card.
+            if composer.showsCompressing || !session.transcript.queuedPrompts.isEmpty || !composer.heldPrompts.isEmpty {
+                GlassEffectContainer(spacing: 0) {
+                    VStack(spacing: Self.bubbleGap) {
+                        if composer.showsCompressing { compressingRow }
+                        ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
+                        ForEach(composer.heldPrompts) { heldRow($0) }
+                    }
+                }
+            }
+            card
+        }
+        // A held message goes out once the session is free (`ChatComposer.sendNextHeld`).
+        .task(id: HeldKey(isRunning: session.transcript.isRunning, isCompressing: composer.showsCompressing,
+                          queued: session.transcript.queuedPrompts.count, held: composer.heldPrompts.count,
+                          isConnected: isConnected)) {
+            guard isConnected else { return }
+            await composer.sendNextHeld()
+        }
+        .alert("Save Your Draft First", isPresented: $isHeldCancelBlocked) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The message box already has text. Send, copy or clear it, then cancel the queued message again.")
+        }
+    }
+
+    /// What `sendNextHeld` waits on.
+    private struct HeldKey: Hashable {
+        var isRunning: Bool
+        var isCompressing: Bool
+        var queued: Int
+        var held: Int
+        var isConnected: Bool
+    }
+
+    /// The composer's own card: the text area, its attachments and its toolbar.
+    private var card: some View {
         @Bindable var composer = composer
 
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             if let message = composer.error ?? stopError {
                 errorRow(message)
             }
@@ -49,8 +94,6 @@ struct ComposerView: View {
                 cards
             }
             SlashSuggestionList(composer: composer) { focusRequest += 1 }
-            if composer.showsCompressing { compressingRow }
-            ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
             // The text area keeps its place in both layouts, so the text view, and the
             // keyboard it has, stay when the card grows or shrinks.
             HStack(spacing: 8) {
@@ -170,7 +213,7 @@ struct ComposerView: View {
 
     /// On the Mac rounder than the system's fields, as Desktop's composer; on iOS a
     /// large card, as the Claude app's.
-    private static var cornerRadius: CGFloat {
+    fileprivate static var cornerRadius: CGFloat {
         #if os(macOS)
         12
         #else
@@ -188,8 +231,12 @@ struct ComposerView: View {
         #endif
     }
 
+    /// The space between the bubbles over the card, and between them and the card: the
+    /// gap between the card and the row of pills over it (`ChatView.composerRow`).
+    private static let bubbleGap: CGFloat = 8
+
     /// The space between the card's edge and its text, cards and controls.
-    private static var inset: (text: CGFloat, top: CGFloat, cards: CGFloat, toolbar: CGFloat) {
+    fileprivate static var inset: (text: CGFloat, top: CGFloat, cards: CGFloat, toolbar: CGFloat) {
         #if os(macOS)
         (text: 10, top: 8, cards: 8, toolbar: 6)
         #else
@@ -229,14 +276,13 @@ struct ComposerView: View {
                 .uiFont(.callout)
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, Self.inset.text)
-        .padding(.top, Self.inset.top)
+        .statusBubble()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("compressingContext")
     }
 
     /// A message Hermes queued that no turn has taken yet (`Transcript.queuedPrompts`),
-    /// under the compressing row and in its look, as Desktop lists its queue above the
+    /// a bubble under the compressing one and in its look, as Desktop lists its queue above the
     /// composer (`composer/queue-slot.tsx`). It moves into the chat when its turn starts.
     private func queuedRow(_ item: TranscriptItem) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -248,11 +294,45 @@ struct ComposerView: View {
         }
         .uiFont(.callout)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, Self.inset.text)
-        .padding(.top, Self.inset.top)
+        .statusBubble()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Queued: \(PromptMark.label(for: item, limit: 200))")
         .accessibilityIdentifier("queuedPrompt")
+    }
+
+    /// A message sent during a reply or a compression, waiting in the app
+    /// (`ChatComposer.heldPrompts`), in the queued bubble's look, with Steer (while a
+    /// reply runs) and Cancel, as Desktop's queue panel (`composer/queue-panel.tsx`).
+    private func heldRow(_ prompt: ChatComposer.HeldPrompt) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: "clock")
+                .imageScale(.small)
+            Text(prompt.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Queued: \(prompt.text)")
+                .accessibilityIdentifier("heldPrompt")
+            if composer.canSteerHeld {
+                Button("Steer Now", systemImage: "arrowshape.turn.up.right") {
+                    Task { await composer.steerHeld(prompt.id) }
+                }
+                .labelStyle(.iconOnly)
+                .hoverButtonStyle(.circle, padding: 3)
+                .help("Send it into the current reply now, as a steer")
+                .accessibilityIdentifier("steerHeldPrompt")
+            }
+            Button("Cancel", systemImage: "xmark") {
+                if !composer.cancelHeld(prompt.id) { isHeldCancelBlocked = true }
+            }
+            .labelStyle(.iconOnly)
+            .hoverButtonStyle(.circle, padding: 3)
+            .help("Cancel it and put the text back in the message box")
+            .accessibilityIdentifier("cancelHeldPrompt")
+        }
+        .uiFont(.callout)
+        .foregroundStyle(.secondary)
+        .statusBubble()
     }
 
     private var cards: some View {
@@ -320,7 +400,6 @@ struct ComposerView: View {
         #if os(iOS)
         !isFocused && composer.draft.isEmpty && !isComposing && composer.attachments.isEmpty
             && composer.files.isEmpty && composer.uploadingFiles == 0 && composer.error == nil && stopError == nil
-            && !composer.showsCompressing && session.transcript.queuedPrompts.isEmpty
             && !composer.slashIsOpen && !composer.isModelPickerRequested
         #else
         false
@@ -559,12 +638,10 @@ struct ComposerView: View {
                             .buttonStyle(CircleButtonStyle(isProminent: false))
                             .disabled(!composer.canSubmit)
                             .keyboardShortcut(.return, modifiers: .command)
-                            .help(composer.attachments.isEmpty
-                                  ? "Send now. By default Hermes redirects or stops the current reply for it (its busy-input setting)."
-                                  : "Send now. Hermes queues a message with images to run after the current reply.")
-                            .accessibilityHint(composer.attachments.isEmpty
-                                               ? "May redirect or stop the current reply."
-                                               : "Queued to run after the current reply.")
+                            .help(composer.attachments.isEmpty && composer.files.isEmpty
+                                  ? "Queue it to send after the current reply. Above the message box you can steer it in now or cancel it."
+                                  : "Send now. Hermes queues a message with attachments to run after the current reply.")
+                            .accessibilityHint("Queued to run after the current reply.")
                             .transition(.swapped)
                     }
                 }
@@ -811,5 +888,25 @@ private struct CircleButton: View {
         guard isProminent else { return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary) }
         // The circle's opposite, black or white, for the reason `fill` gives.
         return AnyShapeStyle(colorScheme == .dark ? Color.black : Color.white)
+    }
+}
+
+private extension View {
+    /// A bubble of its own over the composer's card (`ComposerView.body`), as wide as the
+    /// card and in its glass, corners and hairline, the text inset as in the card.
+    func statusBubble() -> some View {
+        let shape = RoundedRectangle(cornerRadius: ComposerView.cornerRadius, style: .continuous)
+        return self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, ComposerView.inset.text)
+            .padding(.vertical, ComposerView.inset.toolbar + 2)
+            .floatingGlass(in: shape)
+            .overlay {
+                // Just outside the glass's edge, as the card's.
+                RoundedRectangle(cornerRadius: ComposerView.cornerRadius + 1, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(ComposerView.borderOpacity), lineWidth: 1)
+                    .padding(-1)
+                    .allowsHitTesting(false)
+            }
     }
 }

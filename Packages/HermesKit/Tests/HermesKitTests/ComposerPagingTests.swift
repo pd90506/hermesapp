@@ -56,7 +56,7 @@ struct ComposerPagingTests {
             && session.transcript.historyCount == session.transcript.items.count
     }
 
-    /// Text sent from the composer while the reply streams, answered `redirected` (the
+    /// Text sent while the reply streams, answered `redirected` (the
     /// default `busy_input_mode`, `tui_gateway/server.py:375-377`): Hermes stores the
     /// partial reply, the correction and the new reply (`agent/interrupt_control.py:261-305`).
     @Test func composerTextRedirectingAReplySettlesToOneCopyOfEachText() async throws {
@@ -65,10 +65,10 @@ struct ComposerPagingTests {
         #expect(session.transcript.isRunning)
         server.busyStatus.withLock { $0 = "redirected" }
 
-        composer.draft = "换个思路"
-        #expect(composer.canSubmit)
-        await composer.submit()
-        #expect(composer.draft.isEmpty && composer.error == nil)
+        // Straight to the session: the composer holds text sent mid-reply in the app
+        // (`ChatComposer.heldPrompts`) and sends it this way once the reply ends; another
+        // client's message reaches Hermes mid-reply like this.
+        try await session.send("换个思路")
         #expect(log.requests("prompt.submit").last?["params"]?["text"] == "换个思路")
         #expect(occurrences(session.transcript, "换个思路") == 1)
 

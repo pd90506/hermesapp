@@ -133,41 +133,85 @@ final class SendStateUITests: XCTestCase {
         if inComposer { clear(composer, in: app) }
     }
 
-    /// A correction sent while a reply streams shows below the reply so far, and what that
-    /// reply streams until Hermes takes the correction stays above it, as Hermes stores it.
-    /// The uplink holds the correction (`SLOW-`) for `submitDelay` seconds, as a slow
-    /// network does, while the reply streams on. Hermes's default busy mode then redirects
-    /// the reply with it, and the answer comes below the correction.
+    /// A message sent while a reply streams waits in a bubble above the composer, out of
+    /// the chat (`ChatComposer.heldPrompts`). Cancel puts its text back, but not over a
+    /// draft: then an alert asks to save the draft first. Steer hands it to the reply.
     @MainActor
-    func testACorrectionMidReplyKeepsTheReplySoFarAboveIt() throws {
+    func testAMessageSentMidReplyWaitsAndCanBeCancelledOrSteered() throws {
         continueAfterFailure = false
         let app = try launchApp()
         defer { app.terminate() }
         let composer = try openNewChat(app)
 
-        send("Write the whole numbers from 1 to 150 as English words, each on its own line, and nothing else. "
-             + "Do not use tools.", composer: composer, in: app)
-        XCTAssertTrue(waitForMessage("twenty", exactly: false, in: app, timeout: 150), "the reply streams")
-        let slow = "SLOW-\(Int.random(in: 1000...9999))"
+        // A turn that runs for a while whatever the model's speed: a streamed reply ended
+        // before the simulator had typed the next message (VM, 2026-11-09).
+        send("Call the terminal tool exactly once with command \"sleep 150\", background false and timeout 300. "
+             + "After it finishes, reply with only the word finished.", composer: composer, in: app)
+        // The tool's row: a work group on iOS, the bare step on the Mac.
+        let steps = app.buttons.matching(identifier: "workGroupRow")
+        let bash = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Bash' OR value BEGINSWITH 'Bash'"))
+        guard eventually(timeout: 150, { steps.count > 0 || bash.count > 0 }) else {
+            attach(app, "no step yet")
+            throw XCTSkip("The model ran no step (no model key in the VM?)")
+        }
+        guard app.buttons["Stop"].firstMatch.exists else {
+            attach(app, "0 the turn already ended")
+            return XCTFail("The sleep ended the turn early: no reply runs to queue behind")
+        }
         let answer = "PONG\(Int.random(in: 1000...9999))"
-        send("\(slow) Stop counting. Reply with exactly \(answer) and nothing else.", composer: composer, in: app)
-        XCTAssertTrue(waitForMessage(slow, exactly: false, in: app, timeout: 2), "the correction shows at once")
-        attach(app, "1 correction sent")
-        RunLoop.current.run(until: Date().addingTimeInterval(Self.submitDelay - 2))
-        attach(app, "2 the reply streamed on while the correction waited")
-        checkOrder(correction: slow, answer: nil, in: app, "while it waited")
+        let text = "Reply with exactly \(answer) and nothing else."
+        send(text, composer: composer, in: app)
+        let held = app.descendants(matching: .any)["heldPrompt"]
+        let waits = held.waitForExistence(timeout: 5)
+        if !waits {
+            attach(app, "0 no held bubble")
+            record(["reply running: \(app.buttons["Stop"].firstMatch.exists)"], "no held bubble")
+        }
+        XCTAssertTrue(waits, "the message waits above the composer")
+        XCTAssertLessThan(held.frame.maxY, composer.frame.minY + 1, "the bubble is above the composer")
+        XCTAssertTrue(composerText(composer).isEmpty, "the composer emptied")
+        attach(app, "1 held above the composer")
 
-        XCTAssertTrue(waitForMessage(answer, exactly: true, in: app, timeout: 150), "answer \(answer) shown")
-        attach(app, "3 the answer")
-        checkOrder(correction: slow, answer: answer, in: app, "answered")
-        // The stored rows take over once the session is quiet; the order holds.
-        RunLoop.current.run(until: Date().addingTimeInterval(5))
-        attach(app, "4 settled")
-        checkOrder(correction: slow, answer: answer, in: app, "settled")
+        press(composer)
+        composer.typeText("a draft")
+        press(app.buttons["cancelHeldPrompt"].firstMatch)
+        let ok = app.buttons["OK"].firstMatch
+        XCTAssertTrue(ok.waitForExistence(timeout: 5), "an alert asks to save the draft first")
+        attach(app, "2 save the draft first")
+        #if os(macOS)
+        // `app.buttons["OK"]` can be the alert's Touch Bar twin, which takes no click (and
+        // counts as hittable): the alert's own, in the window, its sheet or a dialog.
+        let candidates = [app.sheets.buttons["OK"], app.dialogs.buttons["OK"], app.windows.buttons["OK"]]
+        guard let onScreen = candidates.first(where: { $0.firstMatch.exists })?.firstMatch else {
+            attachTree(of: app, "OK buttons")
+            return XCTFail("no OK button outside the Touch Bar")
+        }
+        press(onScreen)
+        #else
+        press(ok)
+        #endif
+        XCTAssertTrue(eventually { !app.staticTexts["Save Your Draft First"].exists }, "the alert closed")
+        XCTAssertTrue(held.exists, "still held")
+        XCTAssertEqual(composerText(composer), "a draft", "the draft is untouched")
+
+        clear(composer, in: app)
+        press(app.buttons["cancelHeldPrompt"].firstMatch)
+        XCTAssertTrue(eventually { !held.exists }, "the bubble is gone")
+        XCTAssertEqual(composerText(composer), text, "its text is back in the composer")
+        attach(app, "3 cancelled, the text back")
+
+        press(app.buttons["Send"].firstMatch)
+        XCTAssertTrue(held.waitForExistence(timeout: 5), "held again")
+        let steer = app.buttons["steerHeldPrompt"].firstMatch
+        XCTAssertTrue(steer.waitForExistence(timeout: 5), "Steer shows while the reply runs")
+        press(steer)
+        XCTAssertTrue(eventually { !held.exists }, "steered: the bubble is gone")
+        XCTAssertTrue(waitForMessage(answer, exactly: false, in: app, timeout: 240), "the steer was answered")
+        attach(app, "4 steered and answered")
     }
 
     /// A `/compress` shows its row in the composer; a message sent meanwhile waits in
-    /// Hermes's queue as a card under that row, out of the chat, and runs once the
+    /// the app as a card under that row, out of the chat, and runs once the
     /// compression is done. The compression's result is centred in the chat.
     @MainActor
     func testAMessageSentDuringACompressWaitsAboveTheComposer() throws {
@@ -200,7 +244,8 @@ final class SendStateUITests: XCTestCase {
         send(queuedText, composer: composer, in: app)
         record(["typed and sent in \(Date().timeIntervalSince(typing))s, compressing still \(compressing.exists)"],
                "queued send")
-        let card = app.descendants(matching: .any)["queuedPrompt"]
+        // Held in the app while the compression runs (`ChatComposer.heldPrompts`).
+        let card = app.descendants(matching: .any)["heldPrompt"]
         let carded = card.waitForExistence(timeout: 20)
         attach(app, "1 compressing, a message queued under it")
         if carded {
@@ -229,49 +274,6 @@ final class SendStateUITests: XCTestCase {
         let middle = app.windows.firstMatch.frame.midX
         #endif
         XCTAssertEqual(note.frame.midX, middle, accuracy: 40, "the result is centred")
-    }
-
-    /// The counting reply's text is above the correction (holding `correction`), and the
-    /// answer, when given, below it.
-    @MainActor
-    private func checkOrder(correction: String, answer: String?, in app: XCUIApplication, _ moment: String) {
-        // One snapshot of the tree, read here. Asking each element for its value and frame
-        // costs a round trip each: over a long reply on iOS that took half an hour.
-        guard let root = try? app.snapshot() else { return XCTFail("\(moment): no snapshot of the app") }
-        var texts: [XCUIElementSnapshot] = []
-        func collect(_ element: XCUIElementSnapshot) {
-            if element.elementType == .textView || element.elementType == .staticText,
-               element.identifier != "composer", element.frame.height > 0 {
-                texts.append(element)
-            }
-            element.children.forEach(collect)
-        }
-        collect(root)
-        func text(_ element: XCUIElementSnapshot) -> String {
-            let value = element.value as? String ?? ""
-            return value.isEmpty ? element.label : value
-        }
-        guard let bubble = texts.filter({ text($0).contains(correction) }).min(by: { $0.frame.height < $1.frame.height })
-        else { return XCTFail("\(moment): no correction bubble") }
-        let counting = texts.filter { element in
-            let words = text(element).lowercased()
-            return !words.contains(correction.lowercased()) && !words.contains("english words")
-                && ["twenty", "thirty", "forty", "hundred", "seven", "nine"].contains { words.contains($0) }
-        }
-        record(["correction \(bubble.frame)"] + counting.map { "counting \($0.frame): \(text($0).suffix(40))" },
-               "order \(moment)")
-        XCTAssertFalse(counting.isEmpty, "\(moment): the reply so far is shown")
-        for element in counting {
-            XCTAssertLessThan(element.frame.minY, bubble.frame.minY,
-                              "\(moment): reply text below the correction: \(text(element).suffix(40))")
-        }
-        if let answer {
-            let reply = texts.filter { text($0) == answer }
-            XCTAssertFalse(reply.isEmpty, "\(moment): the answer is shown")
-            for element in reply {
-                XCTAssertGreaterThan(element.frame.minY, bubble.frame.maxY, "\(moment): the answer is below the correction")
-            }
-        }
     }
 
     #if os(iOS)

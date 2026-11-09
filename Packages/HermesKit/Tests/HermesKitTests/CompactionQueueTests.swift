@@ -26,6 +26,24 @@ private func event(_ type: String, _ payload: JSONValue? = nil) -> GatewayEvent 
         #expect(transcript.status == nil)
     }
 
+    /// A preflight compaction that didn't commit sends no `compacted`
+    /// (`conversation_compression.py:2533-2541`): the turn's next model call ends it.
+    @Test func theTurnMovingOnEndsACompactionWithNoDoneEdge() {
+        for next in [event("thinking.delta", ["text": "⠋ thinking"]), event("message.delta", ["text": "Hi"]),
+                     event("reasoning.delta", ["text": "hmm"]),
+                     event("tool.start", ["tool_id": "t1", "name": "terminal"])] {
+            var transcript = Transcript()
+            transcript.apply(event("message.start"))
+            transcript.apply(event("status.update", ["kind": "compacting",
+                                                     "text": "📦 Preflight compression: ~120,000 tokens >= 100,000 threshold. This may take a moment."]))
+            #expect(transcript.isCompacting)
+            transcript.apply(event("status.update", ["kind": "compacting", "text": "🗜️ Compacting context — still summarizing earlier conversation so I can continue..."]))
+            #expect(transcript.isCompacting, "a heartbeat is still the compaction")
+            transcript.apply(next)
+            #expect(!transcript.isCompacting, "\(next.type)")
+        }
+    }
+
     @Test func aTurnsEndEndsItsCompaction() {
         var transcript = Transcript()
         transcript.apply(event("message.start"))

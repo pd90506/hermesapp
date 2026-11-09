@@ -1319,6 +1319,7 @@ public struct Transcript: Sendable, Hashable {
 
     public mutating func apply(_ event: GatewayEvent) {
         clearSupersededIndicators(event.type)
+        if isCompacting, Self.showsTheTurnMovedOn(event.kind) { isCompacting = false }
         if Self.endsLateTail(event.kind) { lateTail = nil }
         switch event.kind {
         case .messageStart:
@@ -1589,6 +1590,22 @@ public struct Transcript: Sendable, Hashable {
     /// `/compress` pins `compressing` and always ends with `ready`, which `_status_update`
     /// sends without text, so as `{kind: "status", text: "ready"}`
     /// (`methods_session.py:2092,2115`, `server.py:872-874`).
+    /// The turn's model call is under way again, so no compaction holds it up: a model call
+    /// waits for one (`agent/conversation_compression.py`), and a compaction's own summary
+    /// call streams none of these (`thinking.delta` comes from the agent's API-call loop,
+    /// `turn_iteration_prep.py:319-324`). A compaction doesn't always send its done edge: the
+    /// preflight line ("📦 Preflight compression: … This may take a moment.",
+    /// `agent/turn_context_compaction.py:368-379`) is tagged `compacting`
+    /// (`server.py:878-881`, `is_compaction_progress_status`), but `compacted` comes only
+    /// when the compaction committed (`conversation_compression.py:2533-2541`); a skipped or
+    /// aborted one sends none. The row then stayed up through the turn (the user, 2026-11-08).
+    static func showsTheTurnMovedOn(_ kind: GatewayEventKind) -> Bool {
+        switch kind {
+        case .messageDelta, .reasoningDelta, .thinkingDelta, .messageInterim, .toolGenerating, .toolStart: true
+        default: false
+        }
+    }
+
     static func compactionEdge(_ update: StatusUpdate) -> Bool? {
         switch update.kind {
         case "compacting", "compressing": return true

@@ -145,12 +145,16 @@ final class SendStateUITests: XCTestCase {
 
         // A turn that runs for a while whatever the model's speed: a streamed reply ended
         // before the simulator had typed the next message (VM, 2026-11-09).
-        send("Use the terminal tool to run `sleep 120`. After it finishes, reply with only the word finished.",
-             composer: composer, in: app)
+        send("Call the terminal tool exactly once with command \"sleep 150\", background false and timeout 300. "
+             + "After it finishes, reply with only the word finished.", composer: composer, in: app)
         let steps = app.buttons.matching(identifier: "workGroupRow")
         guard eventually(timeout: 150, { steps.count > 0 }) else {
             attach(app, "no step yet")
             throw XCTSkip("The model ran no step (no model key in the VM?)")
+        }
+        guard app.buttons["Stop"].firstMatch.exists else {
+            attach(app, "0 the turn already ended")
+            return XCTFail("The sleep ended the turn early: no reply runs to queue behind")
         }
         let answer = "PONG\(Int.random(in: 1000...9999))"
         let text = "Reply with exactly \(answer) and nothing else."

@@ -147,8 +147,10 @@ final class SendStateUITests: XCTestCase {
         // before the simulator had typed the next message (VM, 2026-11-09).
         send("Call the terminal tool exactly once with command \"sleep 150\", background false and timeout 300. "
              + "After it finishes, reply with only the word finished.", composer: composer, in: app)
+        // The tool's row: a work group on iOS, the bare step on the Mac.
         let steps = app.buttons.matching(identifier: "workGroupRow")
-        guard eventually(timeout: 150, { steps.count > 0 }) else {
+        let bash = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Bash' OR value == 'Bash'"))
+        guard eventually(timeout: 150, { steps.count > 0 || bash.count > 0 }) else {
             attach(app, "no step yet")
             throw XCTSkip("The model ran no step (no model key in the VM?)")
         }

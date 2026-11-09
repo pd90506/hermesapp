@@ -26,6 +26,8 @@ struct ComposerView: View {
     @State private var isImportingFile = false
     @State private var isDropTargeted = false
     @State private var stopError: String?
+    /// A held message's Cancel found text in the draft (`ChatComposer.cancelHeld`).
+    @State private var isHeldCancelBlocked = false
     #if os(iOS)
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
@@ -46,16 +48,38 @@ struct ComposerView: View {
             // spacing 16) their glass ran into the card's and each other's across the gap
             // (VM, 2026-11-09).
             // None: no container, so no gap over the card.
-            if composer.showsCompressing || !session.transcript.queuedPrompts.isEmpty {
+            if composer.showsCompressing || !session.transcript.queuedPrompts.isEmpty || !composer.heldPrompts.isEmpty {
                 GlassEffectContainer(spacing: 0) {
                     VStack(spacing: Self.bubbleGap) {
                         if composer.showsCompressing { compressingRow }
                         ForEach(session.transcript.queuedPrompts) { queuedRow($0) }
+                        ForEach(composer.heldPrompts) { heldRow($0) }
                     }
                 }
             }
             card
         }
+        // A held message goes out once the session is free (`ChatComposer.sendNextHeld`).
+        .task(id: HeldKey(isRunning: session.transcript.isRunning, isCompressing: composer.showsCompressing,
+                          queued: session.transcript.queuedPrompts.count, held: composer.heldPrompts.count,
+                          isConnected: isConnected)) {
+            guard isConnected else { return }
+            await composer.sendNextHeld()
+        }
+        .alert("Save Your Draft First", isPresented: $isHeldCancelBlocked) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The message box already has text. Send, copy or clear it, then cancel the queued message again.")
+        }
+    }
+
+    /// What `sendNextHeld` waits on.
+    private struct HeldKey: Hashable {
+        var isRunning: Bool
+        var isCompressing: Bool
+        var queued: Int
+        var held: Int
+        var isConnected: Bool
     }
 
     /// The composer's own card: the text area, its attachments and its toolbar.
@@ -274,6 +298,41 @@ struct ComposerView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Queued: \(PromptMark.label(for: item, limit: 200))")
         .accessibilityIdentifier("queuedPrompt")
+    }
+
+    /// A message sent during a reply or a compression, waiting in the app
+    /// (`ChatComposer.heldPrompts`), in the queued bubble's look, with Steer (while a
+    /// reply runs) and Cancel, as Desktop's queue panel (`composer/queue-panel.tsx`).
+    private func heldRow(_ prompt: ChatComposer.HeldPrompt) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: "clock")
+                .imageScale(.small)
+            Text(prompt.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Queued: \(prompt.text)")
+                .accessibilityIdentifier("heldPrompt")
+            if composer.canSteerHeld {
+                Button("Steer Now", systemImage: "arrowshape.turn.up.right") {
+                    Task { await composer.steerHeld(prompt.id) }
+                }
+                .labelStyle(.iconOnly)
+                .hoverButtonStyle(.circle, padding: 3)
+                .help("Send it into the current reply now, as a steer")
+                .accessibilityIdentifier("steerHeldPrompt")
+            }
+            Button("Cancel", systemImage: "xmark") {
+                if !composer.cancelHeld(prompt.id) { isHeldCancelBlocked = true }
+            }
+            .labelStyle(.iconOnly)
+            .hoverButtonStyle(.circle, padding: 3)
+            .help("Cancel it and put the text back in the message box")
+            .accessibilityIdentifier("cancelHeldPrompt")
+        }
+        .uiFont(.callout)
+        .foregroundStyle(.secondary)
+        .statusBubble()
     }
 
     private var cards: some View {
@@ -579,12 +638,10 @@ struct ComposerView: View {
                             .buttonStyle(CircleButtonStyle(isProminent: false))
                             .disabled(!composer.canSubmit)
                             .keyboardShortcut(.return, modifiers: .command)
-                            .help(composer.attachments.isEmpty
-                                  ? "Send now. By default Hermes redirects or stops the current reply for it (its busy-input setting)."
-                                  : "Send now. Hermes queues a message with images to run after the current reply.")
-                            .accessibilityHint(composer.attachments.isEmpty
-                                               ? "May redirect or stop the current reply."
-                                               : "Queued to run after the current reply.")
+                            .help(composer.attachments.isEmpty && composer.files.isEmpty
+                                  ? "Queue it to send after the current reply. Above the message box you can steer it in now or cancel it."
+                                  : "Send now. Hermes queues a message with attachments to run after the current reply.")
+                            .accessibilityHint("Queued to run after the current reply.")
                             .transition(.swapped)
                     }
                 }

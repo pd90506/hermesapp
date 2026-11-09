@@ -1527,8 +1527,12 @@ Swift: `HermesProtocol/ComposerMethods.swift` holds the wire types. `HermesKit/C
 | `session.interrupt` | `{session_id}` | `{status}` | §4 |
 
 These are explicit actions (`ChatSession.steer`, `redirect`, `askBTW`). `ChatComposer.submit`
-while a turn runs stays a plain `prompt.submit`, which Hermes handles by `busy_input_mode`
-(§10.3).
+while a turn or a compression runs holds text-only messages in the app (`heldPrompts`) and sends
+each as a plain `prompt.submit` once the session is free; the user can take one back or steer it
+in (`steerHeld`). `[client choice]`, as Desktop does for a remote dashboard
+(`store/composer-queue.ts:13-28`): the dashboard's own queue has no call that removes one prompt
+(`session_auto_continue.py:147-176`; only `session.interrupt` clears it all). A send with images
+or files still goes at once, and Hermes queues it by `busy_input_mode` (§10.3).
 - **Steer** injects the text into the running turn's next tool result, without a new user turn.
   - On an idle session it answers `rejected`, and the client should send the text as a normal
     prompt (`methods_session.py:2472-2475`). `ChatSession.steer` does.

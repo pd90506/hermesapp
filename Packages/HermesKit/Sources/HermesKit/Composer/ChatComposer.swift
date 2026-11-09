@@ -418,10 +418,9 @@ public final class ChatComposer {
 
     /// Whether Return / Send would submit something now. Also while a turn
     /// runs. Hermes then queues a submit with images as its own turn
-    /// (`tui_gateway/session_auto_continue.py:414-448`). Text alone follows the
-    /// profile's `display.busy_input_mode`: by default (`interrupt`) it redirects
-    /// or stops the running reply, otherwise it is queued or steered
-    /// (`tui_gateway/server.py:375-377`; docs/protocol.md §10.3).
+    /// (`tui_gateway/session_auto_continue.py:414-448`). Text alone waits in the app
+    /// (`heldPrompts`) until the session is free, whatever the profile's
+    /// `display.busy_input_mode`; the user can steer it in (the user, 2026-11-08).
     public var canSubmit: Bool {
         guard uploadingImageIDs.isEmpty else { return false }
         return hasSomethingToSend
@@ -439,6 +438,13 @@ public final class ChatComposer {
     /// the Send button waits for them too, so only a caller that skips it waits here.
     public func submit() async {
         guard hasSomethingToSend else { return }
+        if holdsNextSend {
+            heldPrompts.append(HeldPrompt(text: draft))
+            draft = ""
+            suppressedSlashText = nil
+            error = nil
+            return
+        }
         let text = draft
         draft = ""
         suppressedSlashText = nil
@@ -502,6 +508,93 @@ public final class ChatComposer {
             draft = text
         } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             draft = text + "\n" + draft
+        }
+    }
+
+    // MARK: Held prompts
+
+    /// A message sent while a reply or a compression runs, waiting here, not in Hermes's
+    /// queue, until the session is free (`heldPrompts`).
+    public struct HeldPrompt: Identifiable, Sendable, Hashable {
+        public let id: UUID
+        public let text: String
+
+        public init(id: UUID = UUID(), text: String) {
+            self.id = id
+            self.text = text
+        }
+    }
+
+    /// Messages sent while a reply or a compression runs, oldest first. They wait in the
+    /// app, where they can be taken back (`cancelHeld`) or handed to the running turn
+    /// (`steerHeld`), and go out one at a time once the session is free (`sendNextHeld`).
+    /// The dashboard's own queue can't give one back: no RPC removes a queued prompt,
+    /// only Stop clears them all (`tui_gateway/session_auto_continue.py:147-176`,
+    /// `methods_session_interrupt.py:56`). Desktop keeps a remote dashboard's queue in
+    /// the client for the same reason (`store/composer-queue.ts:13-28`,
+    /// `use-composer-submit.ts:277-286`). Kept on this device only, like Desktop's.
+    public private(set) var heldPrompts: [HeldPrompt] = []
+    /// `sendNextHeld` is sending one: the next waits for its turn.
+    private var isSendingHeld = false
+
+    /// Whether `submit()` holds the draft instead of sending it: text alone (images and
+    /// files go to Hermes, which queues them as their own turn), while a reply or a
+    /// compression runs, or behind messages already held.
+    private var holdsNextSend: Bool {
+        guard attachments.isEmpty, files.isEmpty, uploadingFiles == 0 else { return false }
+        return !isSessionFree || !heldPrompts.isEmpty
+    }
+
+    /// No reply, compression or prompt queued in Hermes ahead of a held one.
+    private var isSessionFree: Bool {
+        !session.transcript.isRunning && !showsCompressing && session.transcript.queuedPrompts.isEmpty
+            && !isSendingHeld
+    }
+
+    /// Whether a held message can go to the running turn as a steer: only while a reply
+    /// runs. During a compression alone Hermes would queue it, out of reach again.
+    public var canSteerHeld: Bool { session.transcript.isRunning && !showsCompressing }
+
+    /// Sends the oldest held message if the session is free; the view calls it whenever
+    /// that may have changed (a turn or compression ends, a reconnect). The next waits
+    /// for the turn this one starts. One that never reached Hermes comes back to the
+    /// front; a failed `prompt.submit` shows in the chat, as any failed send.
+    public func sendNextHeld() async {
+        guard let next = heldPrompts.first, isSessionFree else { return }
+        heldPrompts.removeFirst()
+        isSendingHeld = true
+        defer { isSendingHeld = false }
+        do {
+            try await session.send(next.text)
+        } catch let failure as ComposerError {
+            heldPrompts.insert(next, at: 0)
+            show(failure.message, cause: failure)
+        } catch is CancellationError {
+            heldPrompts.insert(next, at: 0)
+        } catch {}
+    }
+
+    /// Takes a held message back into the composer. Only into an empty draft: with text
+    /// there, false, and the message stays held, so nothing typed is lost or mixed up
+    /// (the view asks the user to save the draft first).
+    public func cancelHeld(_ id: HeldPrompt.ID) -> Bool {
+        guard let index = heldPrompts.firstIndex(where: { $0.id == id }) else { return true }
+        guard draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        draft = heldPrompts.remove(at: index).text
+        return true
+    }
+
+    /// Hands a held message to the running turn (`ChatSession.steer`): the agent sees it
+    /// with its next tool result. If the turn ended meanwhile, Hermes answers `rejected`
+    /// and it goes as a normal prompt. A failed call keeps it held, in its place.
+    public func steerHeld(_ id: HeldPrompt.ID) async {
+        guard let index = heldPrompts.firstIndex(where: { $0.id == id }) else { return }
+        let prompt = heldPrompts.remove(at: index)
+        do {
+            try await session.steer(prompt.text)
+        } catch {
+            heldPrompts.insert(prompt, at: min(index, heldPrompts.count))
+            self.error = GatewayConnection.describe(error)
         }
     }
 

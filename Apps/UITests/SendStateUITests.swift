@@ -143,14 +143,20 @@ final class SendStateUITests: XCTestCase {
         defer { app.terminate() }
         let composer = try openNewChat(app)
 
-        send("Write the whole numbers from 1 to 150 as English words, each on its own line, and nothing else. "
+        // Long enough to still be streaming once the next message is typed.
+        send("Write the whole numbers from 1 to 600 as English words, each on its own line, and nothing else. "
              + "Do not use tools.", composer: composer, in: app)
         XCTAssertTrue(waitForMessage("twenty", exactly: false, in: app, timeout: 150), "the reply streams")
         let answer = "PONG\(Int.random(in: 1000...9999))"
         let text = "Reply with exactly \(answer) and nothing else."
         send(text, composer: composer, in: app)
         let held = app.descendants(matching: .any)["heldPrompt"]
-        XCTAssertTrue(held.waitForExistence(timeout: 5), "the message waits above the composer")
+        let waits = held.waitForExistence(timeout: 5)
+        if !waits {
+            attach(app, "0 no held bubble")
+            record(["reply running: \(app.buttons["Stop"].firstMatch.exists)"], "no held bubble")
+        }
+        XCTAssertTrue(waits, "the message waits above the composer")
         XCTAssertLessThan(held.frame.maxY, composer.frame.minY + 1, "the bubble is above the composer")
         XCTAssertTrue(composerText(composer).isEmpty, "the composer emptied")
         attach(app, "1 held above the composer")

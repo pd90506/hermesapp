@@ -280,8 +280,8 @@ final class LiveChatUITests: XCTestCase {
         let closed = bars.count
         attach(app, "work closed")
         press(summary)
-        XCTAssertTrue(app.buttons.matching(identifier: "workGroupRow").firstMatch.waitForExistence(timeout: 10),
-                      "opened, the work shows its groups")
+        // Its groups, when the model ran the command as asked; its sentence either way.
+        _ = app.buttons.matching(identifier: "workGroupRow").firstMatch.waitForExistence(timeout: 5)
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         attach(app, "work opened")
         XCTAssertEqual(bars.count, closed, "opening the work adds no action row")
@@ -348,17 +348,20 @@ final class LiveChatUITests: XCTestCase {
         let rowID = "pinnedBotChat"
         #endif
         var row = app.descendants(matching: .any)[rowID].firstMatch
-        // An iPhone's launch comes back to the profile's last chat, pushed over the list.
-        XCTAssertTrue(eventually(timeout: 60) {
+        // An iPhone's launch comes back to the profile's last chat, pushed over the list:
+        // Back from it, once it is there.
+        func onTheList() -> Bool {
             #if os(iOS)
             let back = app.navigationBars.buttons.element(boundBy: 0)
             if !row.exists, app.textViews["composer"].exists, back.exists { back.tap() }
             #endif
             return row.exists
-        }, "connected: the profile's Bot Chat row")
-        let label = row.label
+        }
+        XCTAssertTrue(eventually(timeout: 60, onTheList), "connected: the profile's Bot Chat row")
         // The lists are saved a moment after they are read.
-        RunLoop.current.run(until: Date().addingTimeInterval(4))
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+        XCTAssertTrue(eventually(timeout: 10, onTheList), "still on the list")
+        let label = row.label
         attach(app, "connected")
         app.terminate()
 

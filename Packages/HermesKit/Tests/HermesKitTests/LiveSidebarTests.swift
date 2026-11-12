@@ -75,7 +75,6 @@ struct LiveSidebarTests {
         broadcast(gateway, "sessions.changed")
 
         #expect(await eventually { connection.history.map(\.summary.id) == ["from-desktop"] })
-        #expect(gateway.params("session.list").contains { $0 == ["limit": 50] })  // the launch profile's list too
     }
 
     /// Real frame delivery: a burst of `sessions.changed` refreshes once and leaves one

@@ -17,6 +17,13 @@ struct HermesiOSApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // An iPhone keeps its one layout, the list with the chat pushed over it,
+                // turned sideways too: a large one is wide enough there for the system's
+                // regular width, which swapped in the iPad's three columns, all open,
+                // whatever was on screen before (the user, 2026-11-12).
+                .transformEnvironment(\.horizontalSizeClass) { sizeClass in
+                    if UIDevice.current.userInterfaceIdiom == .phone { sizeClass = .compact }
+                }
                 .environment(model)
                 .appearance(model.appearance)
                 .markdownColors(model.markdownColors)

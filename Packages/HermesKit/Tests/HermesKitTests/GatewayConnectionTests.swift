@@ -65,7 +65,6 @@ struct GatewayConnectionTests {
 
         try await connection.connect(using: FakeConnector([transport]))
         #expect(connection.state == .connected)
-        #expect(connection.sessions.map(\.id) == ["stored-1"])
 
         let session = try await connection.newSession()
         #expect(session.storedSessionID == "stored-new")
@@ -119,7 +118,7 @@ struct GatewayConnectionTests {
 
         // session.title carries the STORED key (prompt_turn.py:795-797).
         transport.sendEvent("session.title", sessionID: "sid-1", payload: ["session_id": "stored-1", "title": "Renamed"])
-        #expect(await eventually { session.title == "Renamed" && connection.sessions.first?.title == "Renamed" })
+        #expect(await eventually { session.title == "Renamed" })
 
         // Compression rotates the key: session.info carries the new one.
         transport.sendEvent("session.info", sessionID: "sid-1", payload: ["stored_session_id": "stored-1b"])
@@ -450,7 +449,6 @@ struct GatewayConnectionTests {
         await connection.disconnect()
         #expect(connection.activeSession == nil)
         #expect(connection.otherSessionRequests.isEmpty)
-        #expect(connection.sessions.isEmpty)
         #expect(connection.state == .disconnected)
     }
 }

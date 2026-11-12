@@ -88,7 +88,7 @@ extension GatewayConnection {
         let target = session.isRuntimeGone ? (session.storedSessionID ?? session.sessionID) : session.sessionID
         try await client.setArchived(sessionID: target, archived: true, profile: session.profile)
         if let key = session.storedSessionID { dropLocalRows(storedID: key, profile: session.profile) }
-        refreshListsInBackground(includingSessions: true)
+        refreshListsInBackground()
     }
 
     public func archive(_ entry: HistoryEntry) async throws {
@@ -97,7 +97,7 @@ extension GatewayConnection {
         guard let client else { throw GatewayClientError.notConnected }
         try await client.setArchived(sessionID: entry.summary.id, archived: true, profile: entry.profile)
         dropLocalRows(storedID: entry.summary.id, profile: entry.profile)
-        refreshListsInBackground(includingSessions: true)
+        refreshListsInBackground()
     }
 
     /// Undoes `archive` (e.g. from an "Undo" toast). Archived rows are not
@@ -106,7 +106,7 @@ extension GatewayConnection {
         guard !isProtected(entry) else { throw SessionActionError.botChatProtected }
         guard let client else { throw GatewayClientError.notConnected }
         try await client.setArchived(sessionID: entry.summary.id, archived: false, profile: entry.profile)
-        refreshListsInBackground(includingSessions: true)
+        refreshListsInBackground()
     }
 
     // MARK: Fork
@@ -184,7 +184,7 @@ extension GatewayConnection {
             }
             dropLocalRows(storedID: storedID, profile: profile)
         }
-        refreshListsInBackground(includingSessions: true)
+        refreshListsInBackground()
     }
 
     // MARK: Helpers
@@ -200,14 +200,12 @@ extension GatewayConnection {
     }
 
     private func renameLocalRows(storedID: String, profile: String?, to title: String) {
-        if profile == nil, let index = sessions.firstIndex(where: { $0.id == storedID }) { sessions[index].title = title }
         for index in history.indices where history[index].profile == profile && history[index].summary.id == storedID {
             history[index].summary.title = title
         }
     }
 
     private func dropLocalRows(storedID: String, profile: String?) {
-        if profile == nil { sessions.removeAll { $0.id == storedID } }
         history.removeAll { $0.profile == profile && ($0.summary.id == storedID || $0.summary.resolvedID == storedID) }
     }
 }

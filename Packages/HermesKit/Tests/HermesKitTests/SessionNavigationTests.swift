@@ -1,3 +1,4 @@
+import Foundation
 import HermesProtocol
 import Testing
 @testable import HermesKit
@@ -201,5 +202,82 @@ struct SessionNavigationTests {
         gateway.transport.respond(to: held, result: ["sessions": [sessionRow(id: "stale")]])
         await old.value
         #expect(connection.historyProfile == nil)
+    }
+
+    /// A profile picked again shows the list it had, at once, while it is read again
+    /// (the user, 2026-11-12: every switch showed "Loading sessions…").
+    @Test func aProfilePickedAgainShowsItsListAtOnce() async throws {
+        let (connection, gateway) = try await connect()
+        gateway.on("session.list") { params in
+            .result(["sessions": [sessionRow(id: params["profile"] == "coder" ? "c1" : "d1")]])
+        }
+        connection.selectListProfile("coder")
+        await connection.refreshSessionList()
+        #expect(connection.history.map(\.id) == ["coder/c1"])
+        connection.selectListProfile("default")
+        #expect(connection.history.isEmpty && connection.historyProfile == nil)
+        await connection.refreshSessionList()
+        #expect(connection.history.map(\.id) == ["default/d1"])
+
+        // Back on coder: its rows before any read, and a read replaces them.
+        gateway.on("session.list") { _ in nil }
+        connection.selectListProfile("coder")
+        #expect(connection.history.map(\.id) == ["coder/c1"])
+        #expect(connection.historyProfile == "coder")
+        let reads = connection.sessionListReads
+        let read = Task { await connection.refreshSessionList() }
+        #expect(await eventually { connection.sessionListLoading })
+        #expect(connection.history.map(\.id) == ["coder/c1"])
+        let held = try #require(gateway.log.requests("session.list").last)
+        gateway.transport.respond(to: held, result: ["sessions": [sessionRow(id: "c2"), sessionRow(id: "c1")]])
+        await read.value
+        #expect(connection.history.map(\.id) == ["coder/c2", "coder/c1"])
+        #expect(connection.sessionListReads == reads + 1)
+        // The limit the first read settled on: one read, not two.
+        #expect(gateway.params("session.list").filter { $0["profile"] == "coder" }.count == 3)
+    }
+
+    /// The lists kept from the last launch (`SessionListCache`) show before the connect:
+    /// the roster, the picked profile's sessions and what their rows read. The first
+    /// read after the connect replaces them, in one request.
+    @Test func keptListsShowBeforeTheConnect() async throws {
+        let (first, gateway) = try await connect()
+        gateway.on("session.list") { _ in .result(["sessions": [sessionRow(id: "c1", title: "Kept")]]) }
+        first.selectListProfile("coder")
+        await first.refreshSessionList()
+        await first.rowActivityTask?.value
+        let kept = try JSONDecoder().decode(SessionListCache.self, from: JSONEncoder().encode(first.listCache))
+        #expect(kept == first.listCache)
+        #expect(kept.profiles.map(\.name) == ["default", "coder"])
+        #expect(kept.lists["coder"]?.rows.map(\.id) == ["c1"])
+
+        let next = GatewayConnection()
+        var changes = 0
+        next.listCacheChanged = { changes += 1 }
+        next.preferredListProfile = "coder"
+        next.restore(kept)
+        #expect(next.state == .disconnected)
+        #expect(next.bots.map(\.name) == ["default", "coder"])
+        #expect(next.listProfile == "coder")
+        #expect(next.history.map(\.summary.title) == ["Kept"])
+        #expect(next.historyProfile == "coder" && next.sessionListReads == 0)
+        #expect(next.listCache == kept)
+
+        let server = ScriptedGateway().withDefaults()
+        server.on("profiles.list", result: [
+            "profiles": [profileRowPayload("coder"), profileRowPayload("default", isDefault: true)],
+            "bot_mode_protocol": true, "install_id": "test",
+        ])
+        server.on("session.list") { _ in .result(["sessions": [sessionRow(id: "c2", title: "New")]]) }
+        next.navigationPage = .sessions
+        server.start()
+        try await next.connect(using: FakeConnector([server.transport]))
+        #expect(await eventually { next.history.map(\.summary.title) == ["New"] })
+        #expect(next.listProfile == "coder")
+        #expect(server.params("session.list").filter { $0["profile"] == "coder" }.count == 1)
+        #expect(changes > 0)
+        // A disconnect forgets them, and says so, so the app's copy goes too.
+        await next.disconnect()
+        #expect(next.listCache.isEmpty)
     }
 }

@@ -20,6 +20,7 @@ extension GatewayConnection {
                 // The roster may have dropped it meanwhile.
                 if let image, self.bots.contains(where: { $0.name == name && $0.hasAvatar }) {
                     self.avatars[name] = image
+                    self.listCacheChanged?()
                 }
             }
         }

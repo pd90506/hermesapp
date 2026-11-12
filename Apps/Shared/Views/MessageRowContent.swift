@@ -20,6 +20,7 @@ struct AssistantMessageContent: View {
     /// Branch in New Chat from this reply; without it the bar has no "…" menu.
     var branch: (() -> Void)?
     let copy: () -> Void
+    @Environment(\.isInTurnWork) private var isInTurnWork
 
     /// No text (whitespace counts as none, as for the waiting row and the action bar),
     /// no reasoning and no outcome to show: the row has no content yet.
@@ -54,7 +55,9 @@ struct AssistantMessageContent: View {
                 }
             }
             // Directly under the message, so moving down onto it never leaves the row.
-            if ConversationMarkdown.hasActionBar(item) {
+            // Not under a paragraph of a turn's opened work (the user, 2026-11-12: a row
+            // nobody used, that took room, and whose Branch said nothing of what it took).
+            if ConversationMarkdown.hasActionBar(item), !isInTurnWork {
                 MessageActionBar(isHovering: isHovering, isNewest: isNewest, timestamp: item.timestamp,
                                  branch: branch, copy: copy)
             }
@@ -619,6 +622,11 @@ struct ReviewNoteRow: View {
     }
 }
 
+extension EnvironmentValues {
+    /// Inside a turn's opened work (`TurnWorkView`): its paragraphs have no action bar.
+    @Entry var isInTurnWork = false
+}
+
 /// A turn's work before its answer (`TurnWork`), in the three layers the user asked
 /// for: one line, "Completed in 45s" (live: "Working… 12s"), with a thin rule under it
 /// and the answer below; opened, under the rule, the turn's commentary and groups of
@@ -661,6 +669,7 @@ struct TurnWorkView<Message: View>: View {
                         }
                     }
                 }
+                .environment(\.isInTurnWork, true)
             }
         }
         .onChange(of: work.isLive) { _, isLive in settledAt = isLive ? nil : Date() }

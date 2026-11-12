@@ -45,11 +45,14 @@ extension GatewayConnection {
         let profiles = try await client.listProfiles()
         guard gen == generation else { return }
         bots = Bot.roster(profiles)
+        let names = Set(bots.map(\.name))
+        profileLists = profileLists.filter { names.contains($0.key) }
         loadAvatars()
         if !bots.contains(where: { $0.name == listProfile }) {
             let preferred = bots.first { $0.name == preferredListProfile }
             selectListProfile((preferred ?? bots.first(where: \.isDefault) ?? bots.first)?.name)
         }
+        listCacheChanged?()
     }
 
     /// A Bot Chat is never a History row, even if a listing shows it. Matching
@@ -61,11 +64,10 @@ extension GatewayConnection {
             || row.resolvedID.map(bot.chatStoredIDs.contains) == true
     }
 
-    /// Refreshes the roster, then the visible selected profile (and with `includingSessions` the
-    /// launch profile's `sessions`), without blocking the caller. A call while
+    /// Refreshes the roster, then the visible selected profile, without blocking the caller. A call while
     /// a refresh runs queues exactly one more, so a change that landed
     /// mid-refresh is not lost.
-    public func refreshListsInBackground(includingSessions: Bool = false) {
+    public func refreshListsInBackground() {
         guard client != nil else { return }
         guard listsRefreshTask == nil else {
             listsRefreshQueued = true
@@ -73,14 +75,13 @@ extension GatewayConnection {
         }
         let gen = generation
         listsRefreshTask = Task { [weak self] in
-            if includingSessions { try? await self?.refreshSessions() }
             try? await self?.refreshBots()
             await self?.refreshSessionListIfVisible()
             guard let self, gen == self.generation else { return }
             self.listsRefreshTask = nil
             if self.listsRefreshQueued {
                 self.listsRefreshQueued = false
-                self.refreshListsInBackground(includingSessions: true)
+                self.refreshListsInBackground()
             }
         }
     }
@@ -395,8 +396,6 @@ extension GatewayConnection {
         guard listProfile != profile else { return }
         listProfile = profile
         sessionListToken += 1
-        history = []
-        historyProfile = nil
         sessionListLoading = false
         sessionListError = nil
         cron.reset(to: profile)
@@ -439,6 +438,7 @@ extension GatewayConnection {
                 next()
             }
         }
+        listCacheChanged?()
     }
 
     static let rowActivityReadLimit = 4
@@ -542,14 +542,14 @@ extension GatewayConnection {
                 if rows.count < limit && (settledBefore || rows.count <= previousCount) {
                     sessionListLimits[profile] = limit
                     let bot = bots.first { $0.name == profile }
-                    history = rows.filter { row in
+                    let listed = rows.filter { row in
                         guard SessionSourceSettings.isListed(row.source) else { return false }
                         if let bot { return !Self.isBotChat(row, of: bot) }
                         return !Bot.isChatRow(row)
                     }.map { HistoryEntry(profile: profile, summary: $0) }
-                    historyProfile = profile
+                    profileLists[profile] = listed
                     sessionListReads += 1
-                    let listed = history
+                    listCacheChanged?()
                     rowActivityTask = Task { await readRowActivity(listed) }
                     return
                 }

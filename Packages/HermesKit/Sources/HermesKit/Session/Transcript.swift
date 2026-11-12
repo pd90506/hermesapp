@@ -295,6 +295,10 @@ public struct Transcript: Sendable, Hashable {
     private var outputSinceWait = false
     /// `requestReread` came before the newest page: read again once it is in.
     private var rereadWhenLoaded = false
+    /// The open turn's prompt was not sent here (another device's, a scheduled job's): its
+    /// row is read when the turn starts, and once more at the turn's first output
+    /// (`startTurn`).
+    private var readsPromptAtFirstOutput = false
     /// Prompts answered `streaming` without `user_row_id` whose turn has not started
     /// yet: no row exists until that turn runs (see `promptAnswered`).
     private var awaitingTurn: Set<String> = []
@@ -1321,9 +1325,15 @@ public struct Transcript: Sendable, Hashable {
         clearSupersededIndicators(event.type)
         if isCompacting, Self.showsTheTurnMovedOn(event.kind) { isCompacting = false }
         if Self.endsLateTail(event.kind) { lateTail = nil }
+        defer {
+            if readsPromptAtFirstOutput, outputSinceWait || !turnActive {
+                readsPromptAtFirstOutput = false
+                if turnActive { requestReread() }
+            }
+        }
         switch event.kind {
         case .messageStart:
-            startTurn()
+            startTurn(announced: true)
             if activeAssistantIndex == nil { append(.assistant, "", active: true) }
 
         case .messageDelta(let delta):
@@ -1819,13 +1829,25 @@ public struct Transcript: Sendable, Hashable {
 
     /// A turn's first event starts it (`message.start`, or any streamed event of a
     /// turn this chat saw no start of).
-    private mutating func startTurn() {
+    ///
+    /// - Parameter announced: by its `message.start`. A turn first seen through a later
+    ///   event was running when the chat opened, and the page read then holds its prompt.
+    private mutating func startTurn(announced: Bool = false) {
         guard !turnActive else { return }
         // A turn starting here with none known to run is the next queued prompt's: Hermes
         // runs one per turn, the oldest first (`_drain_queued_prompt`,
         // `session_auto_continue.py:457-497`), and moves its row to the end. One running
         // when the chat opened (`serverBusy`) is the turn it waits behind.
         if !serverBusy { handOffQueuedPrompt() }
+        // A turn no prompt sent here waits for was asked for elsewhere (the user's other
+        // device): its prompt shows now, not when the turn ends (the user, 2026-11-12).
+        // Hermes stored the row at its submit, before this start (`_persist_submit_user_row`,
+        // `tui_gateway/methods_prompt.py:646`), with the text alone; the images sent with
+        // it join the row in the turn's prologue (`_adopt_submit_user_row`,
+        // `prompt_turn.py:819`), before the first model call, so the row is read again at
+        // the turn's first output.
+        readsPromptAtFirstOutput = announced && expectedStarts.isEmpty && !serverBusy
+        if readsPromptAtFirstOutput { requestReread() }
         turnActive = true
         openTurnRowFloor = max(heldRowIDs.max() ?? 0, newestReceiptRow)
         starts += 1

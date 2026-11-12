@@ -144,6 +144,10 @@ struct ChatView: View {
             // in the Claude app. The automatic style, which the bar alone gave, left them
             // sharp under and around the card (VM, 2026-10-19).
             .scrollEdgeEffectStyle(.soft, for: .bottom)
+            // And under the title bar's floating controls: the automatic style drew a band
+            // with a line under it across the screen, as a bar of its own (the user,
+            // 2026-11-12).
+            .scrollEdgeEffectStyle(.soft, for: .top)
             // The keyboard goes as on iOS's own chats: a drag down on the transcript takes
             // it along under the finger (back up, it stays), and a tap on the transcript
             // puts it away. Before, nothing did, once the composer had the keyboard.

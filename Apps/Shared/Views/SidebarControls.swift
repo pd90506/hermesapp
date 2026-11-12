@@ -77,7 +77,19 @@ struct NewChatButton: View {
     var action: () -> Void
 
     var body: some View {
-        Button("New chat", systemImage: "square.and.pencil", action: action)
+        Button(action: action) {
+            Label {
+                Text("New chat")
+            } icon: {
+                Image(systemName: "square.and.pencil")
+                    #if os(iOS)
+                    // The glyph is centred by its box, which the pencil's tip widens up
+                    // and to the right: in the glass circle its square sat low (the user,
+                    // 2026-11-12; the Mac's toolbar balances it by itself).
+                    .offset(x: -1, y: -1.5)
+                    #endif
+            }
+        }
             .labelStyle(.iconOnly)
             #if os(iOS)
             .buttonStyle(.glass)

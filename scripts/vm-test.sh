@@ -17,6 +17,8 @@
 #   scripts/vm-test.sh          # all of the above
 #   scripts/vm-test.sh --ios    # also the iOS-simulator UI test, run in the VM
 #   scripts/vm-test.sh --slow   # also the slow window tests in suites no --test names
+#   HERMES_VM_IPHONE="iPhone Air" scripts/vm-test.sh --ios ...   # on that simulator (a
+#                               #  large iPhone is regular width sideways), not the first
 #   scripts/vm-test.sh --keep   # leave the VM running afterwards, and keep it for this
 #                               #  worktree's next run for 3 minutes (a batch of runs)
 #
@@ -351,10 +353,10 @@ sim=""
 boot_sim() {
   ((ios)) && [[ -z $sim ]] || return 0
   sim=$(vexec "xcrun simctl list devices available -j" | python3 -c '
-import json, sys
+import json, os, sys
 for runtime, devices in sorted(json.load(sys.stdin)["devices"].items(), reverse=True):
     for d in devices:
-        if "iOS" in runtime and d["name"].startswith("iPhone"):
+        if "iOS" in runtime and d["name"].startswith(os.environ.get("HERMES_VM_IPHONE", "iPhone")):
             print(d["udid"]); sys.exit()')
   [[ -n $sim ]] || { echo "No iPhone simulator in the VM." >&2; return 1; }
   # Pinyin as the other keyboard only for a run with SendStateUITests or ComposerUITests

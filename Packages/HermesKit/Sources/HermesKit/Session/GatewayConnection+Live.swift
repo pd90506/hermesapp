@@ -47,9 +47,6 @@ extension GatewayConnection {
 
     /// Stored ids are per profile db; the event's runtime sid says which profile.
     private func renameRows(storedID: String, profile: String?, to title: String) {
-        if profile == nil, let index = sessions.firstIndex(where: { $0.id == storedID }) {
-            sessions[index].title = title
-        }
         for index in history.indices where history[index].summary.id == storedID
             && (profile == nil || history[index].profile == profile)
         {
@@ -88,7 +85,7 @@ extension GatewayConnection {
 
     private func runPushedRefresh() {
         lastPushedRefresh = .now
-        refreshListsInBackground(includingSessions: true)
+        refreshListsInBackground()
     }
 
     // MARK: Reclaimed sessions

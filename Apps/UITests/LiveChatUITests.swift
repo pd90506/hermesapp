@@ -17,14 +17,16 @@ final class LiveChatUITests: XCTestCase {
     private func launchApp(servers: Int = 1, motionScale: Double? = nil,
                            dropsSocketsInBackground: Bool = false,
                            reconnectNoticeDelay: Double? = nil,
-                           keepsState: Bool = false, freshState: Bool = false) throws -> XCUIApplication {
+                           keepsState: Bool = false, freshState: Bool = false,
+                           refused: Bool = false) throws -> XCUIApplication {
         let env = ProcessInfo.processInfo.environment
         guard let url = env["HERMES_UITEST_URL"], let token = env["HERMES_UITEST_TOKEN"] else {
             throw XCTSkip("No live server (run scripts/live-test.sh --ui)")
         }
         let app = XCUIApplication()
         app.launchEnvironment["HERMES_UITEST_URL"] = url
-        app.launchEnvironment["HERMES_UITEST_TOKEN"] = token
+        // Refused: the same server (the lists kept are its own) turns the app away.
+        app.launchEnvironment["HERMES_UITEST_TOKEN"] = refused ? "not-the-token" : token
         app.launchEnvironment["HERMES_UITEST_PROFILE"] = env["HERMES_UITEST_PROFILE"] ?? "hermesapp-test"
         app.launchEnvironment["HERMES_UITEST_SERVERS"] = String(servers)
         // The app's animations this many times slower (`Motion`), to see them part way.
@@ -238,6 +240,138 @@ final class LiveChatUITests: XCTestCase {
         #if os(macOS)
         XCTAssertEqual(app.popovers.count, 0, "a step opens in place, not in a popover")
         #endif
+    }
+
+    /// The paragraphs the model wrote between its steps, in a turn's opened work, have no
+    /// row of their own with Copy, "…" and the time: only the messages do (the prompt and
+    /// the answer), opened or closed (the user, 2026-11-12).
+    @MainActor
+    func testOpenedWorkParagraphsHaveNoActionRow() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer { app.terminate() }
+        #if os(iOS)
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        #endif
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: newChat)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 30), .completed, "New chat enabled")
+        press(newChat)
+        let composer = app.textViews["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "composer shown")
+        press(composer)
+        let marker = "DONE-\(Int.random(in: 1000...9999))"
+        composer.typeText("First write one short sentence saying which command you are about to run. Then run "
+            + "`echo alpha` with the terminal tool. Then reply with exactly \(marker) and nothing else.")
+        press(app.buttons["Send"].firstMatch)
+
+        let summary = app.buttons.matching(identifier: "turnWorkSummary").firstMatch
+        let settled = NSPredicate(format: "label BEGINSWITH 'Completed'")
+        let deadline = Date().addingTimeInterval(180)
+        while !(summary.exists && settled.evaluate(with: summary)), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
+        XCTAssertTrue(summary.exists && settled.evaluate(with: summary), "the turn completed")
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        // On iOS every message's row shows; on the Mac the newest's, and one under the pointer.
+        let bars = app.descendants(matching: .any).matching(identifier: "messageActionBar")
+        let closed = bars.count
+        attach(app, "work closed")
+        press(summary)
+        // Its groups, when the model ran the command as asked; its sentence either way.
+        _ = app.buttons.matching(identifier: "workGroupRow").firstMatch.waitForExistence(timeout: 5)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        attach(app, "work opened")
+        XCTAssertEqual(bars.count, closed, "opening the work adds no action row")
+    }
+
+    #if os(iOS)
+    /// Turned sideways, an iPhone keeps what it showed upright: the session list stays the
+    /// list, with the profiles still in their drawer, and a chat stays the chat. A large
+    /// iPhone is regular width there, and used to swap in the iPad's three columns, all
+    /// open (the user, 2026-11-12). Run it on a large one (`HERMES_VM_IPHONE`).
+    @MainActor
+    func testTurningThePhoneKeepsWhatItShowed() throws {
+        continueAfterFailure = false
+        let app = try launchApp()
+        defer {
+            XCUIDevice.shared.orientation = .portrait
+            app.terminate()
+        }
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
+        let newChat = app.buttons["New chat"]
+        XCTAssertTrue(newChat.waitForExistence(timeout: 30), "connected, Sessions page shown")
+        let rail = app.descendants(matching: .any)["profileRail"].firstMatch
+        let composer = app.textViews["composer"]
+        let botChat = app.descendants(matching: .any)["botChatRow"].firstMatch
+        XCTAssertTrue(botChat.waitForExistence(timeout: 30), "the Bot Chat's row")
+        attach(app, "list, upright")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "list, sideways")
+        XCTAssertTrue(newChat.exists && botChat.exists, "still the session list")
+        XCTAssertFalse(rail.exists, "the profiles stay in their drawer")
+        XCTAssertFalse(composer.exists, "no chat beside the list")
+        XCTAssertTrue(app.buttons["profilesButton"].exists, "the avatar that opens the drawer")
+
+        XCUIDevice.shared.orientation = .portrait
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        botChat.tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "the Bot Chat opened")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "chat, upright")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attach(app, "chat, sideways")
+        XCTAssertTrue(composer.exists, "still the chat")
+        XCTAssertFalse(newChat.exists || rail.exists, "no list or profiles beside it")
+        XCUIDevice.shared.orientation = .portrait
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        XCTAssertTrue(composer.exists, "and upright again")
+    }
+    #endif
+
+    /// A relaunch shows the profiles and the picked profile's list as they were, at once,
+    /// before the server answers: here it turns the app away (the user, 2026-11-12: the list
+    /// stayed on "Loading sessions…" until the whole list was read again).
+    @MainActor
+    func testARelaunchShowsTheListsBeforeTheServerAnswers() throws {
+        continueAfterFailure = false
+        var app = try launchApp(keepsState: true, freshState: true)
+        #if os(iOS)
+        let rowID = "botChatRow"
+        #else
+        let rowID = "pinnedBotChat"
+        #endif
+        var row = app.descendants(matching: .any)[rowID].firstMatch
+        // An iPhone's launch comes back to the profile's last chat, pushed over the list:
+        // Back from it, once it is there.
+        func onTheList() -> Bool {
+            #if os(iOS)
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            if !row.exists, app.textViews["composer"].exists, back.exists { back.tap() }
+            #endif
+            return row.exists
+        }
+        XCTAssertTrue(eventually(timeout: 60, onTheList), "connected: the profile's Bot Chat row")
+        // The lists are saved a moment after they are read.
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+        XCTAssertTrue(eventually(timeout: 10, onTheList), "still on the list")
+        let label = row.label
+        attach(app, "connected")
+        app.terminate()
+
+        app = try launchApp(keepsState: true, refused: true)
+        defer { app.terminate() }
+        row = app.descendants(matching: .any)[rowID].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the list shows with no server")
+        XCTAssertEqual(row.label, label, "as it was")
+        XCTAssertFalse(app.staticTexts["Loading sessions…"].exists, "nothing loading")
+        attach(app, "relaunched, refused by the server")
     }
 
     /// A relaunch while a turn runs comes back to that turn, still working: its prompt

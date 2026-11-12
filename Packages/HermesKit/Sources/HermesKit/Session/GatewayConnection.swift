@@ -40,7 +40,6 @@ public final class GatewayConnection {
     @ObservationIgnored private var tryingNoticeTask: Task<Void, Never>?
     /// The last state that was not an attempt: what the apps show while one is quiet.
     @ObservationIgnored private var settledState: State = .disconnected
-    public internal(set) var sessions: [SessionSummary] = []
     public internal(set) var activeSession: ChatSession? {
         didSet {
             guard activeSession !== oldValue, isChatOnScreen else { return }
@@ -73,8 +72,19 @@ public final class GatewayConnection {
     /// Per profile, the `session.list` limit the last full read settled on.
     @ObservationIgnored var sessionListLimits: [String: Int] = [:]
 
+    /// Each profile's ordinary sessions as read last, in server order, by profile name. A
+    /// profile picked again shows its list at once while it is read again (the user,
+    /// 2026-11-12: every switch showed "Loading sessions…"), and the app keeps them
+    /// across launches (`SessionListCache`).
+    var profileLists: [String: [HistoryEntry]] = [:]
     /// Ordinary sessions for the selected list profile, in server order.
-    public internal(set) var history: [HistoryEntry] = []
+    public internal(set) var history: [HistoryEntry] {
+        get { listProfile.flatMap { profileLists[$0] } ?? [] }
+        set {
+            // Only a list that was read: an empty one would say "no sessions".
+            if let listProfile, profileLists[listProfile] != nil { profileLists[listProfile] = newValue }
+        }
+    }
     /// Which sources the lists hide and which source new sessions carry (`AppModel`).
     public var sourceSettings = SessionSourceSettings()
     /// `history` without the rows of hidden sources: what the session list shows.
@@ -83,9 +93,10 @@ public final class GatewayConnection {
     public var historySources: Set<String> {
         Set(history.compactMap { SessionSourceSettings.normalized($0.summary.source) })
     }
-    /// The profile whose sessions `history` holds: `nil` until the first read of the
-    /// selected profile's list comes back (an empty `history` is then "no sessions").
-    public internal(set) var historyProfile: String?
+    /// The profile whose sessions `history` holds: `nil` until the selected profile's
+    /// list was read, now or at an earlier launch (an empty `history` is then "no
+    /// sessions"). `sessionListReads` tells a list read since some moment from an older one.
+    public var historyProfile: String? { listProfile.flatMap { profileLists[$0] == nil ? nil : $0 } }
     /// How many times a session list was read, to tell a list read after some moment
     /// from one read before it.
     public internal(set) var sessionListReads = 0
@@ -155,6 +166,8 @@ public final class GatewayConnection {
     @ObservationIgnored var alertsQuietUntil = Date.distantPast
     /// The last list's row reads (`readRowActivity`), for `checkForReplies` to wait on.
     @ObservationIgnored var rowActivityTask: Task<Void, Never>?
+    /// Called when what `listCache` holds changed, for the app to save it.
+    @ObservationIgnored public var listCacheChanged: (@MainActor () -> Void)?
     /// Whether `activeSession` is on screen: not on iPhone's session list, nor while
     /// another server's chat is shown. Its replies count as seen only then.
     public var isChatOnScreen = true {
@@ -288,7 +301,6 @@ public final class GatewayConnection {
             self.connector = nil
             throw error
         }
-        try? await refreshSessions()
         refreshListsInBackground()
     }
 
@@ -304,12 +316,10 @@ public final class GatewayConnection {
         unsentChats = [:]
         composers = [:]
         otherSessionRequests = []
-        sessions = []
         bots = []
         avatars = [:]
         avatarLoads = []
-        history = []
-        historyProfile = nil
+        profileLists = [:]
         listProfile = nil
         sessionListToken += 1
         sessionListLimits = [:]
@@ -320,6 +330,7 @@ public final class GatewayConnection {
         liveRuntimeIDs = [:]
         committedEpoch = nil
         state = .disconnected
+        listCacheChanged?()
     }
 
     /// Drops the socket as iOS does a suspended app's: the connection reconnects and
@@ -417,11 +428,6 @@ public final class GatewayConnection {
     }
 
     // MARK: - Sessions
-
-    public func refreshSessions(limit: Int = 50) async throws {
-        guard let client else { throw GatewayClientError.notConnected }
-        sessions = try await client.listSessions(limit: limit)
-    }
 
     /// Creates a new live session and makes it active.
     @discardableResult
@@ -661,7 +667,6 @@ public final class GatewayConnection {
                 state = .connected
                 reconnectTask = nil
                 flushStrandedImagesInBackground()
-                try? await refreshSessions()
                 refreshListsInBackground()
                 return
             } catch {

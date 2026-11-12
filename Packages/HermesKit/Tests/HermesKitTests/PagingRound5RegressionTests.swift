@@ -269,23 +269,32 @@ struct PagingRound5ConnectionTests {
         withExtendedLifetime(connection) {}
     }
 
-    /// A turn that started after the page (a bot DM) is settled by one bounded read of
-    /// the newest rows, like every finished turn: the stored rows show it, including
-    /// the prompt this chat never streamed. (Through round 5 such turns were not read
-    /// again; the design is now that every finished turn is shown from stored rows.)
-    @Test func aTurnAfterThePageIsSettledByOneBoundedRead() async throws {
+    /// A turn that started after the page (a bot DM, a prompt from the user's other
+    /// device) shows its prompt as it starts, from the row Hermes stored at the submit
+    /// (`_persist_submit_user_row`, `tui_gateway/methods_prompt.py:646`), not only once
+    /// it ends (the user, 2026-11-12). The row is read again at the turn's first output,
+    /// for the images that join it in the turn's prologue (`_adopt_submit_user_row`,
+    /// `prompt_turn.py:819`), and the turn is settled by bounded reads of the newest
+    /// rows, like every finished turn.
+    @Test func aTurnAfterThePageShowsItsPromptAtOnce() async throws {
         let server = PagedServer(store: FakeMessageStore(count: 300))
         let (connection, transport) = try await server.connect(log: FrameLog())
         let session = try await connection.openBotChat(profile: "coder")
         await settle(session)
         let reads = server.store.queries.count
-        server.store.append([user(301, "在吗"), assistant(302, "在的")])
+        server.store.append([user(301, "在吗")])
         transport.sendEvent("message.start", sessionID: session.sessionID, seq: 1)
+        #expect(await eventually { occurrences(session.transcript, "在吗") == 1 && session.rereadTask == nil })
+        #expect(session.transcript.isRunning)
+        #expect(server.store.queries.count == reads + 1)
+        server.store.append([assistant(302, "在的")])
         transport.sendEvent("message.delta", sessionID: session.sessionID, seq: 2, payload: ["text": "在的"])
+        #expect(await eventually { server.store.queries.count == reads + 2 && session.rereadTask == nil })
+        #expect(occurrences(session.transcript, "在吗") == 1 && occurrences(session.transcript, "在的") == 1)
         transport.sendEvent("message.complete", sessionID: session.sessionID, seq: 3,
                             payload: complete("在的", rows: [301, 302]))
         #expect(await eventually { settled(session) && occurrences(session.transcript, "在吗") == 1 })
-        #expect(server.store.queries.count == reads + 1)
+        #expect(server.store.queries.count == reads + 3)
         #expect(server.store.queries.last?.offset == 0 && server.store.queries.last?.limit == 120)
         #expect(session.transcript.items.suffix(2).map(\.text) == ["在吗", "在的"])
         #expect(session.transcript.historyCount == session.transcript.items.count)

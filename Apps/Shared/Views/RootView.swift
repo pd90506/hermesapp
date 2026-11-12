@@ -208,11 +208,17 @@ struct RootView: View {
         .navigationTitle(chatTitle)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        // The title floats over the chat on glass of its own, as the Back button beside
+        // it and the composer below: no bar across the screen (the user, 2026-11-12).
         // A connection still getting back after a few seconds says so under the title,
         // never over the chat; a quicker one shows nothing (user, 2026-10-19).
         .toolbar {
-            if model.activeServer?.connection.isTryingNoticeably == true, !chatTitle.isEmpty {
-                ToolbarItem(placement: .principal) { ReconnectingTitle(title: chatTitle) }
+            if !chatTitle.isEmpty {
+                ToolbarItem(placement: .principal) {
+                    ChatTitle(title: chatTitle,
+                              isReconnecting: model.activeServer?.connection.isTryingNoticeably == true)
+                }
+                .sharedBackgroundVisibility(.hidden)
             }
         }
         #else
@@ -316,6 +322,7 @@ struct RootView: View {
         guard let selected = model.selectedProfile else { return nil }
         let connection = selected.server.connection
         return ShownProfile(server: selected.server.id, profile: selected.profile,
+                            isConnected: selected.server.isConnected,
                             listRead: connection.historyProfile == selected.profile,
                             listReads: connection.sessionListReads,
                             listFailed: connection.sessionListError != nil)
@@ -324,7 +331,8 @@ struct RootView: View {
     private func restoreProfileChat() {
         // The first profile shown after launch (the one picked last) shows its last chat,
         // unless a notification's chat came first. Every list read since launch is current.
-        if model.restoresLaunchProfileChat, let shown = shownProfile {
+        // Not before the server is connected: the lists can show from the last launch.
+        if model.restoresLaunchProfileChat, let shown = shownProfile, shown.isConnected {
             model.restoresLaunchProfileChat = false
             model.saveLastProfile(shown.ref)
             if model.pendingProfileChat == nil, selection == nil, alertedStoredID == nil, model.alertTarget == nil {
@@ -395,6 +403,7 @@ struct RootView: View {
         guard let server = model.server(item.server) else { return }
         // The chat area follows the row's server at once, so it shows the chat opening.
         model.activeServerID = server.id
+        await model.waitWhileConnecting(server)
         do {
             switch item {
             case .bot(_, let profile):
@@ -496,6 +505,8 @@ struct RootView: View {
 private struct ShownProfile: Equatable {
     var server: UUID
     var profile: String
+    /// Its server is connected: only then can a chat be opened.
+    var isConnected: Bool
     /// Whether its session list has been read, and how many lists its server has read.
     var listRead: Bool
     var listReads: Int
@@ -505,26 +516,33 @@ private struct ShownProfile: Equatable {
 }
 
 #if os(iOS)
-/// The chat's title, with a small spinner and "Reconnecting…" under it, while its
-/// connection has been trying to get back for a few seconds (`isTryingNoticeably`).
-private struct ReconnectingTitle: View {
+/// The chat's title on a capsule of Liquid Glass, floating over the chat. While its
+/// connection has been trying to get back for a few seconds (`isTryingNoticeably`), a
+/// small spinner and "Reconnecting…" under it.
+private struct ChatTitle: View {
     let title: String
+    var isReconnecting = false
 
     var body: some View {
         VStack(spacing: 1) {
             Text(title)
                 .font(.headline)
                 .lineLimit(1)
-            HStack(spacing: 4) {
-                ProgressView()
-                    .controlSize(.mini)
-                Text("Reconnecting…")
+            if isReconnecting {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Reconnecting…")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("reconnectingIndicator")
             }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("reconnectingIndicator")
+        .padding(.horizontal, 16)
+        .frame(minHeight: 44)
+        .glassEffect(.regular, in: .capsule)
     }
 }
 #endif

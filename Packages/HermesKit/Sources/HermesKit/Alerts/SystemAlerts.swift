@@ -21,10 +21,6 @@ public enum AlertKind: String, CaseIterable, Codable, Sendable {
     /// sees only in its session list, such as a Telegram or cron session's.
     case otherReply
 
-    /// Blocking prompts: they break through even while the app is in front, when they
-    /// are for a chat that isn't on screen (`ATTENTION_KINDS`, `native-notifications.ts:39-40`).
-    public var isAttention: Bool { self == .approval || self == .input }
-
     var isOnByDefault: Bool { self != .otherReply }
 }
 
@@ -44,9 +40,6 @@ public struct AlertPreferences: Sendable, Hashable, Codable {
     public func isOn(_ kind: AlertKind) -> Bool {
         isEnabled && (kinds[kind.rawValue] ?? kind.isOnByDefault)
     }
-
-    /// The kind's own switch, whatever `isEnabled` says.
-    public func kindSwitch(_ kind: AlertKind) -> Bool { kinds[kind.rawValue] ?? kind.isOnByDefault }
 
     public mutating func set(_ kind: AlertKind, on: Bool) { kinds[kind.rawValue] = on }
 

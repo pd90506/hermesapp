@@ -70,6 +70,15 @@ final class ServerConnection: Identifiable {
     var probeResult: String?
     fileprivate(set) var isConnecting = false
     fileprivate var connectedEndpoint: GatewayEndpoint?
+    /// The address the lists shown from the last launch were read from
+    /// (`AppModel.restoreLists`), until the server is connected.
+    fileprivate var restoredListsAddress: String?
+
+    /// What this server's kept lists are told apart by: its address, which the user can
+    /// change; this Mac's backend gets a new one at every start, and is the same Hermes.
+    fileprivate var listsAddress: String {
+        isLocal ? "local" : config.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// Its chats show streamed text a batch at a time, as Desktop does (`StreamedTextQueue`).
     let connection = GatewayConnection(coalescesStreamedText: true)
@@ -182,6 +191,8 @@ final class AppModel {
     @ObservationIgnored let notifier = SystemNotifier()
     /// The chat a clicked notification asked for; `RootView` opens it and clears this.
     var alertTarget: AlertTarget?
+    /// Each server's lists as read last, kept across launches (`restoreLists`).
+    @ObservationIgnored private let listCaches: ListCacheStore
 
     init() {
         AppSignposts.install()
@@ -197,6 +208,10 @@ final class AppModel {
                                          serverURL: launch.serverURL, authMode: .sessionToken),
                     secret: launch.token)
             }
+            // Lists are kept only by the tests that keep state across launches.
+            let caches = ListCacheStore(name: launch.stateSuite.map { "SessionLists-\($0)" })
+            if launch.startsStateFresh { caches.removeAll() }
+            listCaches = caches
             if let delay = launch.reconnectNoticeDelay {
                 for server in servers { server.connection.tryingNoticeDelay = .milliseconds(Int(delay * 1000)) }
             }
@@ -210,10 +225,12 @@ final class AppModel {
                 UserDefaults.standard.removePersistentDomain(forName: suite)
             }
             if let state = launch.state { loadProfileState(from: state, servers: servers) }
+            for server in servers { restoreLists(of: server) }
             notifier.model = self
             return
         }
         #endif
+        listCaches = ListCacheStore(name: "SessionLists")
         let defaults = UserDefaults.standard
         let loaded = ServerList.load(current: defaults.data(forKey: ServerList.defaultsKey),
                                      legacy: defaults.data(forKey: ServerList.legacyDefaultsKey))
@@ -256,6 +273,7 @@ final class AppModel {
         }
         notifier.gate.preferences = alertPreferences
         notifier.model = self
+        for server in servers { restoreLists(of: server) }
         if let migrated = loaded.migrated, let server = servers.first(where: { $0.id == migrated.id }) {
             saveServers()
             if (try? KeychainStore.write(server.secret, account: migrated.secretAccount)) != nil {
@@ -294,6 +312,7 @@ final class AppModel {
         let server = ServerConnection(config: ServerConfig(), secret: "")
         server.connection.sourceSettings = sourceSettings
         applyReadMarks(to: server)
+        restoreLists(of: server)
         servers.append(server)
         selectedServerID = server.id
         if sessionsServerID == nil { sessionsServerID = server.id }
@@ -309,6 +328,7 @@ final class AppModel {
         if sessionsServerID == server.id { sessionsServerID = servers.first?.id }
         pins.forgetServer(server.id)
         profileChats.forgetServer(server.id)
+        listCaches.forget(server.id)
         if !Self.isUITest {
             saveServers()
             savePins()
@@ -401,6 +421,32 @@ final class AppModel {
         return .standard
     }
 
+    /// Shows the lists `server` read at the last launch, at once, and keeps what it reads
+    /// from now on. After the profile picked last is known (`loadProfileState`), which
+    /// the lists then open on.
+    private func restoreLists(of server: ServerConnection) {
+        let connection = server.connection
+        let address = server.listsAddress
+        if let cache = listCaches.load(for: server.id, address: address) {
+            connection.restore(cache)
+            server.restoredListsAddress = address
+        }
+        connection.listCacheChanged = { [weak self, weak server] in
+            guard let self, let server else { return }
+            // Under the address they were read from, also if the user is typing another.
+            let address = server.restoredListsAddress ?? server.listsAddress
+            self.listCaches.saveSoon(for: server.id, address: address) { server.connection.listCache }
+        }
+    }
+
+    /// Waits while `server`'s first connect is under way: a row picked in the lists kept
+    /// from the last launch opens once the server is connected.
+    func waitWhileConnecting(_ server: ServerConnection) async {
+        while server.isConnecting, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     private func syncPages() {
         let listing = sessionsServer?.id
         for server in servers {
@@ -445,8 +491,11 @@ final class AppModel {
                     server.lastError = error.localizedDescription
                 }
             }
-            if server.connectedEndpoint != endpoint {
-                // Another address: its sessions must not stay on screen or be restored.
+            let restoredElsewhere = server.restoredListsAddress.map { $0 != server.listsAddress } ?? false
+            if server.connectedEndpoint.map({ $0 != endpoint }) ?? restoredElsewhere {
+                // Another address: its sessions must not stay on screen or be restored,
+                // nor its lists from the last launch.
+                server.restoredListsAddress = nil
                 await server.connection.disconnect()
                 if activeServerID == server.id { activeServerID = nil }
             }
@@ -459,6 +508,7 @@ final class AppModel {
             #endif
             try await server.connection.connect(using: connector)
             server.connectedEndpoint = endpoint
+            server.restoredListsAddress = nil
             syncPages()
             #if DEBUG
             if let profile = UITestLaunch.current?.profile {
@@ -593,6 +643,7 @@ final class AppModel {
             let server = ServerConnection(localBackend: .hermes())
             server.connection.sourceSettings = sourceSettings
             applyReadMarks(to: server)
+            restoreLists(of: server)
             servers.insert(server, at: 0)
             selectedServerID = server.id
             await connect(server)

@@ -9,7 +9,7 @@ import HermesProtocol
 /// (`last_active`, `tui_gateway/methods_session.py:148`), two chats answering at once
 /// swapped places with every reply. `session.list` rows carry neither time
 /// (`_session_row_summary`, `:110-122`), so both come from the dashboard's REST reads.
-public struct SessionRowActivity: Sendable, Hashable {
+public struct SessionRowActivity: Sendable, Hashable, Codable {
     /// The newest prompt the user typed (`GET /api/sessions/{id}/timeline`), nil when the
     /// session has none or the server has no timeline.
     public var lastPrompt: Date?

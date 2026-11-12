@@ -14,14 +14,9 @@ struct HermesiOSApp: App {
     /// The least time between two refreshes asked of iOS; it picks the actual times.
     static let refreshInterval: TimeInterval = 15 * 60
 
-    /// The window's top inset, for the chat's blur behind the status bar.
-    @State private var statusBarHeight: CGFloat = 0
-
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(\.statusBarHeight, statusBarHeight)
-                .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { statusBarHeight = $0 }
                 // An iPhone keeps its one layout, the list with the chat pushed over it,
                 // turned sideways too: a large one is wide enough there for the system's
                 // regular width, which swapped in the iPad's three columns, all open,

@@ -144,13 +144,13 @@ struct ChatView: View {
             // in the Claude app. The automatic style, which the bar alone gave, left them
             // sharp under and around the card (VM, 2026-10-19).
             .scrollEdgeEffectStyle(.soft, for: .bottom)
-            // At the top they stay sharp under the title bar's floating controls and blur
-            // away only behind the status bar, as in the Claude app (`StatusBarBlur`). The
-            // system's own edge effect covers the whole bar: its automatic style drew a
-            // band with a line under it, as a bar of its own, and its soft one blurred the
-            // messages to well below the controls (the user, 2026-11-12).
+            // At the top they blur away from the lower edge of the title bar's floating
+            // controls up, and are sharp below it (`TitleBarBlur`). The system's own edge
+            // effect didn't end there: its automatic style drew a band with a line under
+            // it, as a bar of its own, and its soft one blurred the messages to well below
+            // the controls (the user, 2026-11-12).
             .scrollEdgeEffectHidden(true, for: .top)
-            .overlay { StatusBarBlur() }
+            .overlay { TitleBarBlur() }
             // The keyboard goes as on iOS's own chats: a drag down on the transcript takes
             // it along under the finger (back up, it stays), and a tap on the transcript
             // puts it away. Before, nothing did, once the composer had the keyboard.
@@ -471,28 +471,22 @@ private struct MessageRow: View {
 }
 
 #if os(iOS)
-extension EnvironmentValues {
-    /// The height of the window's top inset, the status bar's: zero where there is none.
-    /// A view under a navigation bar can't measure it, as its own inset has the bar's too.
-    @Entry var statusBarHeight: CGFloat = 0
-}
-
-/// The chat's messages blurring away behind the status bar, over a chat whose title bar
-/// shows no edge effect of its own: the system's material, fading out to the status
-/// bar's lower edge.
-private struct StatusBarBlur: View {
-    @Environment(\.statusBarHeight) private var height
-
+/// The chat's messages blurring away behind the title bar's floating controls, over a chat
+/// whose title bar shows no edge effect of its own: the system's material from the
+/// screen's top to the controls' lower edge (the chat's top inset), fading out there.
+private struct TitleBarBlur: View {
     var body: some View {
-        Rectangle()
-            .fill(.regularMaterial)
-            .mask { LinearGradient(stops: [.init(color: .black, location: 0.8), .init(color: .clear, location: 1)],
-                                   startPoint: .top, endPoint: .bottom) }
-            .frame(height: height)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        GeometryReader { proxy in
+            Rectangle()
+                .fill(.regularMaterial)
+                .mask { LinearGradient(stops: [.init(color: .black, location: 0.8), .init(color: .clear, location: 1)],
+                                       startPoint: .top, endPoint: .bottom) }
+                .frame(height: proxy.safeAreaInsets.top)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea(edges: .top)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 #endif

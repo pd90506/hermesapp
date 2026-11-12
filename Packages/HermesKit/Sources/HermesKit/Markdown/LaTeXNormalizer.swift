@@ -4,12 +4,15 @@ import Foundation
 ///
 /// The apps render math natively with SwiftMath, whose parser rejects a number
 /// of common amsmath commands and environments. Where a faithful equivalent
-/// exists it is substituted here (often a Unicode symbol, which the parser
-/// accepts and Latin Modern Math has a glyph for); a few constructs with no
-/// equivalent get a close approximation (`\boxed` drops the box, `\underbrace`
-/// becomes an underline). Anything else is left alone so the renderer fails
-/// and the app shows the original source. The tables below were checked
-/// against SwiftMath 1.7.3's `MTMathListBuilder` on the Mac.
+/// exists it is substituted here; a few constructs with no equivalent get a
+/// close approximation (`\boxed` drops the box, `\underbrace` becomes an
+/// underline). Symbol commands SwiftMath lacks are added to it by the apps
+/// (`addedSymbols`), and Unicode symbols typed into math become commands
+/// (`unicodeCommands`), because SwiftMath silently drops non-ASCII characters
+/// in math. A command still unknown is shown as source by the app
+/// (`revealingUnknownCommand`); anything else it rejects makes the app show
+/// the whole formula's source. The tables below were checked against
+/// SwiftMath 1.7.3's `MTMathListBuilder` on the Mac.
 ///
 /// Input is model-controlled: brace, bracket and environment matching is
 /// precomputed in one pass, and recursion into arguments and environments
@@ -23,28 +26,63 @@ public enum LaTeXNormalizer {
         return rewriter.rewrite(0..<rewriter.chars.count, depth: 0)
     }
 
+    /// After SwiftMath rejected `latex` (already normalized) with
+    /// `parseError`: the formula with the command it named shown as source
+    /// (`\backslash\mathrm{name}`), so the rest still renders. KaTeX does the
+    /// same, drawing only the unknown command in its error colour. Nil when
+    /// the error is not an unknown command or the command is not found, so a
+    /// caller retrying in a loop always ends.
+    public static func revealingUnknownCommand(_ latex: String, parseError: String) -> String? {
+        let prefix = #"Invalid command \"#
+        guard parseError.hasPrefix(prefix) else { return nil }
+        let name = Array(parseError.dropFirst(prefix.count))
+        guard !name.isEmpty, name.allSatisfy(\.isASCIILetter) else { return nil }
+        let chars = Array(latex)
+        var out = ""
+        var found = false
+        var i = 0
+        while i < chars.count {
+            guard chars[i] == "\\", i + 1 < chars.count else {
+                out.append(chars[i])
+                i += 1
+                continue
+            }
+            // A control word, or a control symbol such as `\\` or `\{`.
+            var j = i + 1
+            if chars[j].isASCIILetter {
+                while j < chars.count, chars[j].isASCIILetter { j += 1 }
+            } else {
+                j += 1
+            }
+            if chars[(i + 1)..<j].elementsEqual(name) {
+                out += #"\backslash\mathrm{"# + String(name) + "}"
+                // A thin space keeps it apart from what follows, unless a script attaches to it.
+                let following = chars[j...].first { !$0.isWhitespace }
+                if let following, !"_^}".contains(following) { out += #"\,"# }
+                found = true
+            } else {
+                out += String(chars[i..<j])
+            }
+            i = j
+        }
+        return found ? out : nil
+    }
+
     // MARK: - Tables
 
-    /// Argument-free commands replaced by a supported command or symbol.
+    /// Argument-free commands replaced by a supported command. Symbols
+    /// SwiftMath lacks are not rewritten here but added to it by the apps
+    /// (`addedSymbols`).
     static let symbols: [String: String] = [
         "dots": #"\ldots"#, "dotsc": #"\ldots"#, "dotso": #"\ldots"#,
         "dotsb": #"\cdots"#, "dotsm": #"\cdots"#, "dotsi": #"\cdots"#,
         "implies": #"\Longrightarrow"#, "impliedby": #"\Longleftarrow"#,
-        "iint": #"\int\!\!\int"#, "iiint": #"\int\!\!\int\!\!\int"#, "oiint": "∯",
+        "iint": #"\int\!\!\int"#, "iiint": #"\int\!\!\int\!\!\int"#,
         "varnothing": #"\emptyset"#, "smallsetminus": #"\setminus"#,
-        "leqslant": #"\leq"#, "geqslant": #"\geq"#, "leqq": "≦", "geqq": "≧",
+        "leqslant": #"\leq"#, "geqslant": #"\geq"#,
         "lt": "<", "gt": ">",
         "lvert": "|", "rvert": "|", "lVert": #"\|"#, "rVert": #"\|"#,
-        "Box": #"\square"#, "blacksquare": "■", "lozenge": "◊", "checkmark": "✓",
-        "nexists": "∄", "complement": "∁", "therefore": "∴", "because": "∵",
-        "hookrightarrow": "↪", "hookleftarrow": "↩", "longmapsto": "⟼",
-        "rightleftharpoons": "⇌", "leftrightharpoons": "⇋",
-        "rightleftarrows": "⇄", "leftrightarrows": "⇆",
-        "twoheadrightarrow": "↠", "rightsquigarrow": "⇝", "leadsto": "⇝", "nRightarrow": "⇏",
-        "nmid": "∤", "nparallel": "∦", "nleq": "≰", "ngeq": "≱", "ncong": "≇", "nsim": "≁",
-        "subsetneq": "⊊", "supsetneq": "⊋", "nsubseteq": "⊈", "nsupseteq": "⊉",
-        "triangleq": "≜", "coloneqq": "≔", "vdash": "⊢", "dashv": "⊣", "vDash": "⊨",
-        "lesssim": "≲", "gtrsim": "≳", "llbracket": "⟦", "rrbracket": "⟧",
+        "Box": #"\square"#,
         "mod": #"\;\mathrm{mod}\;"#, "bmod": #"\;\mathrm{mod}\;"#,
         // Medium space (`\:`, `\>`) is rejected; the thick space is the nearest.
         ":": #"\;"#, ">": #"\;"#,
@@ -64,11 +102,20 @@ public enum LaTeXNormalizer {
 
     /// `\not` followed by one of these becomes the negated symbol.
     static let negations: [String: String] = [
-        "=": "≠", "<": "≮", ">": "≯",
-        "in": #"\notin"#, "ni": "∌", "exists": "∄", "mid": "∤", "parallel": "∦",
-        "subset": "⊄", "supset": "⊅", "subseteq": "⊈", "supseteq": "⊉",
-        "equiv": "≢", "sim": "≁", "cong": "≇", "approx": "≉",
-        "le": "≰", "leq": "≰", "ge": "≱", "geq": "≱",
+        "=": #"\neq"#, "<": #"\nless"#, ">": #"\ngtr"#,
+        "in": #"\notin"#, "ni": #"\notni"#, "exists": #"\nexists"#, "mid": #"\nmid"#,
+        "parallel": #"\nparallel"#, "subset": #"\nsubset"#, "supset": #"\nsupset"#,
+        "subseteq": #"\nsubseteq"#, "supseteq": #"\nsupseteq"#, "equiv": #"\nequiv"#,
+        "sim": #"\nsim"#, "cong": #"\ncong"#, "approx": #"\napprox"#,
+        "le": #"\nleq"#, "leq": #"\nleq"#, "ge": #"\ngeq"#, "geq": #"\ngeq"#,
+    ]
+
+    /// Commands whose argument is text, copied as is (`\text{≤ 5 €}` keeps
+    /// its characters), under the name SwiftMath takes.
+    static let textCommands: [String: String] = [
+        "text": "text", "textrm": "textrm", "textit": "textit", "textbf": "textbf",
+        "textsf": "textsf", "texttt": "texttt",
+        "mbox": "text", "textnormal": "text", "textup": "text", "fbox": "text", "emph": "textit",
     ]
 
     /// Commands whose arguments are rewritten into a supported form. The
@@ -89,17 +136,12 @@ public enum LaTeXNormalizer {
         "boldsymbol": .init(count: 1) { _, a in #"\mathbf{"# + a[0] + "}" },
         "pmb": .init(count: 1) { _, a in #"\mathbf{"# + a[0] + "}" },
         "mathscr": .init(count: 1) { _, a in #"\mathcal{"# + a[0] + "}" },
-        "mbox": .init(count: 1) { _, a in #"\text{"# + a[0] + "}" },
-        "textnormal": .init(count: 1) { _, a in #"\text{"# + a[0] + "}" },
-        "textup": .init(count: 1) { _, a in #"\text{"# + a[0] + "}" },
-        "emph": .init(count: 1) { _, a in #"\textit{"# + a[0] + "}" },
         "pmod": .init(count: 1) { _, a in #"\quad(\mathrm{mod}\ "# + a[0] + ")" },
         "overrightarrow": .init(count: 1) { _, a in #"\vec{"# + a[0] + "}" },
         "hspace": .init(count: 1) { _, _ in #"\quad "# },
         "substack": .init(count: 1) { _, a in #"\begin{matrix}"# + a[0] + #"\end{matrix}"# },
         // Approximations: no SwiftMath equivalent, but the content still reads correctly.
         "boxed": .init(count: 1) { _, a in "{" + a[0] + "}" },
-        "fbox": .init(count: 1) { _, a in #"\text{"# + a[0] + "}" },
         "underbrace": .init(count: 1) { _, a in #"\underline{"# + a[0] + "}" },
         "overbrace": .init(count: 1) { _, a in #"\overline{"# + a[0] + "}" },
         "overset": .init(count: 2) { _, a in "{" + a[1] + "}^{" + a[0] + "}" },
@@ -189,7 +231,13 @@ private struct Rewriter {
         while i < end {
             let c = chars[i]
             guard c == "\\", i + 1 < end else {
-                out.append(c)
+                if !c.isASCII, let command = LaTeXNormalizer.unicodeCommands[c] {
+                    out.emit("\\" + command)
+                } else if !c.isASCII, let letter = LaTeXNormalizer.unicodeLetters[c] {
+                    out.emit(letter)
+                } else {
+                    out.append(c)
+                }
                 i += 1
                 continue
             }
@@ -203,6 +251,10 @@ private struct Rewriter {
             } else if name == "begin", let env = environment(at: i, nameStart: next, end: end) {
                 out.emit(rewriteEnvironment(env.name, env.body, depth: depth + 1))
                 i = env.after
+            } else if let text = LaTeXNormalizer.textCommands[name],
+                      let argument = readArgument(at: next, end: end), chars[argument.range.lowerBound - 1] == "{" {
+                out.emit("\\" + text + "{" + String(chars[argument.range]) + "}")
+                i = argument.after
             } else if let symbol = LaTeXNormalizer.symbols[name] {
                 out.emit(symbol)
                 i = next

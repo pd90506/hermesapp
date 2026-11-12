@@ -40,8 +40,67 @@ import Testing
         #expect(normalize(#"\left\lvert x \right\rvert"#) == #"\left| x \right|"#)
         #expect(normalize(#"\iint f \, dA"#) == #"\int\!\!\int f \, dA"#)
         #expect(normalize(#"1, 2, \dots, n \leqslant \varnothing"#) == #"1, 2, \ldots, n \leq \emptyset"#)
-        #expect(normalize(#"\nexists x \hookrightarrow \rightleftharpoons \blacksquare"#) == "∄ x ↪ ⇌ ■")
-        #expect(normalize(#"a \not= b, x \not\in A, \not\subset"#) == #"a ≠ b, x \notin A, ⊄"#)
+        #expect(normalize(#"\nexists x \hookrightarrow \rightleftharpoons \blacksquare"#) == #"\nexists x \hookrightarrow \rightleftharpoons \blacksquare"#)
+        #expect(normalize(#"a \not= b, x \not\in A, \not\subset"#) == #"a \neq b, x \notin A, \nsubset"#)
+    }
+
+    @Test func unicodeSymbolsBecomeCommands() {
+        // SwiftMath drops characters outside ASCII in math; KaTeX takes them.
+        #expect(normalize("α ≤ β, x ∈ ℝ, a ≠ b") == #"\alpha \le \beta, x \in \mathbb{R}, a \neq b"#)
+        #expect(normalize("x^{↺}") == #"x^{\circlearrowleft}"#)
+        // A letter after the new command stays separate from it.
+        #expect(normalize("≤x") == #"\le x"#)
+        // Text keeps its characters, also under the names rewritten to `\text`.
+        #expect(normalize(#"\text{≤ 5 €} \mbox{α} \emph{β}"#) == #"\text{≤ 5 €} \text{α} \textit{β}"#)
+        // A character with no command is left for SwiftMath.
+        #expect(normalize("x 若") == "x 若")
+    }
+
+    @Test func addedSymbols() {
+        // From a chat: one unknown arrow used to make the whole display formula fall back.
+        let formula = #"(a_i \to a_{ij},\ a_{ij};\ a_i)^{\circlearrowleft} \qquad x"#
+        #expect(normalize(formula) == formula)
+        #expect(LaTeXNormalizer.addedSymbols["circlearrowleft"] == .init("↺", .relation))
+        #expect(LaTeXNormalizer.addedSymbols["boxplus"] == .init("⊞", .binary))
+        #expect(LaTeXNormalizer.addedSymbols["ncong"] == .init("≇", .relation))
+        // `\And` is `&` in KaTeX, a column separator here; accents and operators keep their commands.
+        #expect(LaTeXNormalizer.addedSymbols["And"] == nil)
+        #expect(LaTeXNormalizer.addedSymbols["mathring"] == nil)
+        #expect(LaTeXNormalizer.addedSymbols["intop"] == nil)
+        for (name, symbol) in LaTeXNormalizer.addedSymbols {
+            #expect(name.allSatisfy { $0.isASCIILetter }, "\(name)")
+            #expect(symbol.character.count == 1 && !"&\\{}^_%#$ ~".contains(symbol.character), "\(name)")
+        }
+    }
+
+    /// Every command the tables emit is ASCII, so SwiftMath does not drop it,
+    /// and every symbol command they name that SwiftMath lacks is added.
+    @Test func rewritesEmitOnlyASCII() {
+        let outputs = Array(LaTeXNormalizer.symbols.values) + Array(LaTeXNormalizer.negations.values)
+        for output in outputs {
+            #expect(output.allSatisfy { $0.isASCII }, "\(output)")
+        }
+        for name in ["notni", "nsubset", "nsupset", "nequiv", "napprox", "nless", "ngtr", "nexists", "nmid",
+                     "nparallel", "nsubseteq", "nsupseteq", "nsim", "ncong", "nleq", "ngeq"] {
+            #expect(LaTeXNormalizer.addedSymbols[name] != nil, "\(name)")
+        }
+        for (character, name) in LaTeXNormalizer.unicodeCommands {
+            #expect(!character.isASCII && name.allSatisfy { $0.isASCIILetter }, "\(name)")
+        }
+    }
+
+    @Test func revealingUnknownCommand() {
+        let reveal = LaTeXNormalizer.revealingUnknownCommand
+        #expect(reveal(#"x^{\bigstar} + \bigstar_1"#, #"Invalid command \bigstar"#)
+            == #"x^{\backslash\mathrm{bigstar}} + \backslash\mathrm{bigstar}_1"#)
+        // Only that exact control word, not one it prefixes or a `\\` before it.
+        #expect(reveal(#"\foo \foobar \\foo"#, #"Invalid command \foo"#)
+            == #"\backslash\mathrm{foo}\, \foobar \\foo"#)
+        #expect(reveal(#"\foo{x}"#, #"Invalid command \foo"#) == #"\backslash\mathrm{foo}\,{x}"#)
+        // Nothing to reveal: the caller stops retrying.
+        #expect(reveal(#"\bar x"#, #"Invalid command \foo"#) == nil)
+        #expect(reveal(#"\begin{foo}x\end{foo}"#, "Unknown environment foo") == nil)
+        #expect(reveal(#"\foo"#, #"Invalid command \"#) == nil)
     }
 
     @Test func droppedSizingAndNumbering() {

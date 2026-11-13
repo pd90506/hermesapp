@@ -209,6 +209,15 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     `com.example.hermesapp.mac`), the one in that DerivedData. Remove any stray copy (and
     `lsregister -u` it) rather than leaving extra builds around (decided by the user,
     2026-10-16).
+  - Every other built Talaria.app on the host shows up in Spotlight as one more Talaria, with
+    a "can't open" icon (decided by the user, 2026-11-13: only one may show). So never build
+    from a worktree into Xcode's default DerivedData (a plain `xcodebuild build` or `test` in
+    a worktree does that; use `scripts/vm-test.sh`), and after installing an iOS build on a
+    device or simulator, `lsregister -u` and delete the built `Debug-iphoneos` or
+    `Debug-iphonesimulator` Talaria.app (the intermediates stay, so the next build is still
+    incremental). Don't count on `.metadata_never_index` or a `.noindex` folder to hide it:
+    recent macOS ignores the first, and on this Mac Spotlight still lists files inside
+    DerivedData's own `.noindex` folders.
   - Only if the user asks to try a PR on the Mac before it merges: check `git status` first
     (never discard uncommitted work), switch the main checkout to the branch, build, and switch
     back to `main` once they have tried it.

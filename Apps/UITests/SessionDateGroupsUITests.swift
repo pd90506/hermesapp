@@ -38,25 +38,55 @@ final class SessionDateGroupsUITests: XCTestCase {
         let back = app.navigationBars.buttons.element(boundBy: 0)
         if !app.buttons["New chat"].waitForExistence(timeout: 5), back.exists { back.tap() }
         #endif
-        XCTAssertTrue(app.staticTexts[year.title].waitForExistence(timeout: 30), "the imported sessions listed")
+        XCTAssertTrue(app.staticTexts[recent.title].waitForExistence(timeout: 30), "the imported sessions listed")
 
         let monthHeader = Self.monthTitle(month.date, now: now)
         let yearHeader = Self.monthTitle(year.date, now: now)
-        XCTAssertTrue(app.staticTexts[monthHeader].waitForExistence(timeout: 20), "the header \(monthHeader)")
-        XCTAssertTrue(app.staticTexts[yearHeader].waitForExistence(timeout: 20), "the header \(yearHeader)")
+        // Newest first: the recent session, then the month, then the month of last year.
+        // Earlier tests' chats (a full run deletes them only at its end) can push the older
+        // ones below the screen, where a lazy list hasn't built them: scroll down to each in
+        // turn, and compare it with the one before while that is still on screen.
+        let order = [(recent.title, "the newest"), (monthHeader, "the header \(monthHeader)"),
+                     (month.title, "the month's session"), (yearHeader, "the header \(yearHeader)"),
+                     (year.title, "last year's session")]
+        var previous: (element: XCUIElement, what: String)?
+        for (text, what) in order {
+            let element = app.staticTexts[text]
+            XCTAssertTrue(Self.scrollDown(to: element, in: app), "\(what) in the list")
+            if let previous, Self.onScreen(previous.element) {
+                XCTAssertLessThan(previous.element.frame.minY, element.frame.minY, "\(what) after \(previous.what)")
+            }
+            previous = (element, what)
+        }
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "session list date groups"
         shot.lifetime = .keepAlways
         add(shot)
-        // Newest first: Sessions, then the month, then the month of last year.
-        let sessions = app.staticTexts["Sessions"].firstMatch
-        let rows = [recent.title, month.title, year.title].map { app.staticTexts[$0].frame.minY }
-        XCTAssertEqual(rows, rows.sorted(), "the sessions in the list's order")
-        if sessions.exists { XCTAssertLessThan(sessions.frame.minY, rows[0], "the newest under Sessions") }
-        XCTAssertLessThan(rows[0], app.staticTexts[monthHeader].frame.minY, "the month after the newest")
-        XCTAssertLessThan(app.staticTexts[monthHeader].frame.minY, rows[1], "the month's session under it")
-        XCTAssertLessThan(rows[1], app.staticTexts[yearHeader].frame.minY, "last year's month after it")
-        XCTAssertLessThan(app.staticTexts[yearHeader].frame.minY, rows[2], "last year's session under it")
+    }
+
+    /// Scrolls the list down until `element` is on screen: a lazy iPhone list builds a row
+    /// only once it is near. The list only moves down, so what was passed stays above. The
+    /// Mac's sidebar holds them all (its headers are never hittable): there it only waits.
+    @MainActor
+    private static func scrollDown(to element: XCUIElement, in app: XCUIApplication) -> Bool {
+        #if os(iOS)
+        for _ in 0..<15 {
+            if onScreen(element) { return true }
+            app.swipeUp(velocity: .slow)
+        }
+        return onScreen(element)
+        #else
+        return element.waitForExistence(timeout: 20)
+        #endif
+    }
+
+    @MainActor
+    private static func onScreen(_ element: XCUIElement) -> Bool {
+        #if os(iOS)
+        element.waitForExistence(timeout: 1) && element.isHittable
+        #else
+        element.exists
+        #endif
     }
 
     /// The header for `date` (`SessionDateBucket.title`): the month, with its year when it

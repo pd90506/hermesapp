@@ -99,13 +99,14 @@ final class NotificationSettingsUITests: XCTestCase {
         XCTAssertTrue(notification.waitForExistence(timeout: 10), "the test notification")
         attachScreen("banner outside the app")
         notification.tap()
-        // In Notification Center the first tap may only spread the app's stack: then tap its
-        // newest notification, the row under Show Less.
-        let showLess = springboard.buttons.matching(NSPredicate(format: "label ==[c] %@", "show less")).firstMatch
-        if !app.wait(for: .runningForeground, timeout: 3), showLess.exists {
-            attachScreen("the stack spread")
-            springboard.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: springboard.frame.midX, dy: showLess.frame.maxY + 45)).tap()
+        // The simulator keeps the app's earlier notifications (other tests, earlier runs), so
+        // they sit in a stack, and a tap on a stack only spreads it; in the VM the first tap
+        // on Notification Center is also sometimes lost. Then tap the newest one again, a
+        // row of its own once spread (the first match: the newest is on top).
+        for attempt in 1...4 where !app.wait(for: .runningForeground, timeout: 3) {
+            attachScreen("tap \(attempt) left the app in the background")
+            guard notification.exists else { break }
+            notification.tap()
         }
 
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "the tap opened the app")

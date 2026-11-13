@@ -81,7 +81,9 @@ final class ClarifyCardUITests: XCTestCase {
         back.tap()
         #endif
         let banner = app.descendants(matching: .any).matching(identifier: "waitingChatsBanner").firstMatch
-        XCTAssertTrue(banner.waitForExistence(timeout: 15), "the list says a chat waits")
+        // Failed once in a full iOS run and never alone (2026-11-13): keep what the list showed.
+        if !banner.waitForExistence(timeout: 15) { attach(app, "1b no waiting banner") }
+        XCTAssertTrue(banner.exists, "the list says a chat waits")
         #if os(iOS)
         let waitingText = app.descendants(matching: .any).matching(identifier: "sessionWaitingText").firstMatch
         XCTAssertTrue(waitingText.exists, "the chat's own row says it waits")

@@ -373,6 +373,31 @@ import Testing
         #expect(labels == ["a+b", "x^2"])
     }
 
+    // MARK: Symbols SwiftMath lacks
+
+    /// From a chat: `\circlearrowleft`, unknown to SwiftMath, turned the whole
+    /// display formula into its source.
+    @Test func displayFormulaWithAnAddedSymbolRenders() throws {
+        let formula = #"\tau(a_i, a_{ij}) = (a_i \to a_{ij},\ a_{ij};\ a_i)^{\circlearrowleft} \qquad \tau(a_{ij}, a_j) = (a_{ij} \to a_j,\ a_j;\ a_{ij})^{\circlearrowleft}"#
+        let hosted = try host("Intro.\n\n$$\(formula)$$")
+        #expect(hosted.attachmentIndices.count == 1)
+        #expect(!hosted.string.contains("circlearrowleft"))
+    }
+
+    /// Added commands and Unicode symbols draw something (SwiftMath used to drop
+    /// the characters silently), and an unknown command leaves the rest rendered.
+    @Test func addedAndUnicodeSymbolsAreDrawn() throws {
+        func width(_ source: String) throws -> CGFloat {
+            let latex = MathSnippet(source: source, isDisplay: false).latex
+            return try #require(MathRenderer.render(latex, fontSize: 13, display: false), "\(source)").image.size.width
+        }
+        #expect(try width(#"x^{\circlearrowleft}"#) > width("x"))
+        #expect(try width("a ≠ b") > width("a b") + 4)
+        #expect(try width(#"a \not= b"#) > width("a b") + 4)
+        #expect(try width(#"\blacksquare"#) > 2)
+        #expect(try width(#"x + \cancel{y}"#) > width("x + y"))
+    }
+
     // MARK: 2. Wide display math
 
     @Test func wideFormulaShrinksToTheColumn() throws {

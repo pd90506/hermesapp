@@ -60,8 +60,12 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     per message is too heavy in a long, streaming, lazily scrolled transcript.
   - Division of work: HermesKit parses Markdown and rewrites LaTeX into the subset SwiftMath
     1.7.3 accepts (`Sources/HermesKit/Markdown/`, see `LaTeXNormalizer`). The apps only typeset
-    and lay out (`Apps/Shared/Views/Markdown/`). If SwiftMath still rejects a formula, the app
-    shows the LaTeX source.
+    and lay out (`Apps/Shared/Views/Markdown/`). The apps also register the symbol commands
+    SwiftMath lacks (`LaTeXNormalizer.addedSymbols`, from KaTeX's table). A command SwiftMath
+    still rejects is shown as source inside the rendered formula; any other parse error makes
+    the app show the whole formula's LaTeX source.
+  - SwiftMath silently drops non-ASCII characters in math mode, so the normalizer must emit
+    commands, never Unicode symbols.
   - Before bumping the pin: re-probe the parser (`MTMathListBuilder.build(fromString:error:)`)
     against the normalizer's outputs. The rewrite tables assume 1.7.3's command set.
 

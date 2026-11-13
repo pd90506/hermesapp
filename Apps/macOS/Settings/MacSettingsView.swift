@@ -8,32 +8,99 @@ struct MacSettingsView: View {
     /// The width of every tab (the Servers tab's list and details need it all).
     static let paneWidth: CGFloat = 760
 
+    /// The tabs, in the toolbar's order.
+    enum Pane: String { case servers, providers, capabilities, sessionSources, appearance, notifications }
+
+    /// The tab shown, kept across launches as the TabView kept it on its own.
+    @AppStorage("settingsPane") private var pane: Pane = .servers
+    /// The height each tab is given, once it has been measured. The window takes the
+    /// height of the tab shown, so this is what resizes it.
+    @State private var heights: [Pane: CGFloat] = [:]
+
     var body: some View {
-        TabView {
-            Tab("Servers", systemImage: "server.rack") {
-                ServersSettingsPane()
+        // The window follows the shown tab's height. Changed inside an animation, that
+        // height resizes the window smoothly, as AppKit's preference windows do; changed
+        // outside one, the window jumps (macOS 26, `windowResizeAnchor(_:)`'s
+        // documentation: drive window animations by changing the size of a view).
+        TabView(selection: Binding(get: { pane }, set: { select($0) })) {
+            Tab("Servers", systemImage: "server.rack", value: Pane.servers) {
+                sized(.servers) { ServersSettingsPane() }
             }
-            Tab("Providers", systemImage: "key") {
-                ProvidersView()
-                    .frame(width: Self.paneWidth, height: 600)
+            Tab("Providers", systemImage: "key", value: Pane.providers) {
+                sized(.providers) {
+                    ProvidersView()
+                        .frame(width: Self.paneWidth, height: 600)
+                }
             }
-            Tab("Capabilities", systemImage: "puzzlepiece.extension") {
-                CapabilitiesView()
-                    .padding(20)
-                    .frame(width: Self.paneWidth)
+            Tab("Capabilities", systemImage: "puzzlepiece.extension", value: Pane.capabilities) {
+                sized(.capabilities) {
+                    CapabilitiesView()
+                        .padding(20)
+                        .frame(width: Self.paneWidth)
+                }
             }
-            Tab("Session Sources", systemImage: "tray.2") {
-                SessionSourcesSettingsPane()
+            Tab("Session Sources", systemImage: "tray.2", value: Pane.sessionSources) {
+                sized(.sessionSources) { SessionSourcesSettingsPane() }
             }
-            Tab("Appearance", systemImage: "paintpalette") {
-                AppearanceSettingsPane()
+            Tab("Appearance", systemImage: "paintpalette", value: Pane.appearance) {
+                sized(.appearance) { AppearanceSettingsPane() }
             }
-            Tab("Notifications", systemImage: "bell.badge") {
-                NotificationsSettingsPane()
+            Tab("Notifications", systemImage: "bell.badge", value: Pane.notifications) {
+                sized(.notifications) { NotificationsSettingsPane() }
             }
             // The Markdown tab (`MarkdownSettingsPane`, a colour per element) is hidden for
             // now (user, 2026-10): the theme in Appearance sets the Markdown colours.
         }
+    }
+
+    /// Shows `new`. Its height (when it has been shown before) changes in the same
+    /// animation, so the window resizes smoothly to it. A tab not shown before starts at
+    /// the window's height, so the window doesn't jump to it when its content comes (a
+    /// tab can take a moment to build the first time); `sized` then animates to it.
+    private func select(_ new: Pane) {
+        guard new != pane else { return }
+        if heights[new] == nil, let current = heights[pane] { heights[new] = current }
+        let duration = heights[pane].flatMap { from in heights[new].map { ResizeTiming.duration(from: from, to: $0) } }
+        withAnimation(.easeInOut(duration: duration ?? ResizeTiming.unknown)) { pane = new }
+    }
+
+    /// A tab at its own height, measured, and given that height through `heights`: the
+    /// first measure as it is, a later change (a tab whose content grows after it shows,
+    /// or a text size changed) in an animation, so the window follows smoothly.
+    private func sized(_ tab: Pane, @ViewBuilder _ content: () -> some View) -> some View {
+        content()
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                guard let old = heights[tab] else { heights[tab] = height; return }
+                guard abs(old - height) >= 0.5 else { return }
+                if tab == pane {
+                    withAnimation(.easeInOut(duration: ResizeTiming.duration(from: old, to: height))) {
+                        heights[tab] = height
+                    }
+                } else {
+                    heights[tab] = height
+                }
+            }
+            .frame(height: heights[tab], alignment: .top)
+    }
+}
+
+/// How long a window takes to resize, ease in and out, as AppKit animates one
+/// (`NSWindow.animationResizeTime(_:)`): longer for a longer distance, about 0.1 s for
+/// 50 pt and 0.22 s for 150 pt, at most 0.35 s. Preview's settings window takes these
+/// times (VM, 2026-11-13).
+@MainActor
+private enum ResizeTiming {
+    /// For a tab not measured yet.
+    static let unknown = 0.25
+
+    /// A window that is never shown, only asked how long a resize of its frame takes.
+    private static let probe = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+                                        styleMask: [.titled], backing: .buffered, defer: true)
+
+    static func duration(from: CGFloat, to: CGFloat) -> Double {
+        probe.setFrame(NSRect(x: 0, y: 0, width: 100, height: from), display: false)
+        return probe.animationResizeTime(NSRect(x: 0, y: 0, width: 100, height: to))
     }
 }
 

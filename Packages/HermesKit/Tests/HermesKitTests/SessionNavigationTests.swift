@@ -225,8 +225,12 @@ struct SessionNavigationTests {
         #expect(connection.history.map(\.id) == ["coder/c1"])
         #expect(connection.historyProfile == "coder")
         let reads = connection.sessionListReads
+        let sent = gateway.log.requests("session.list").count
         let read = Task { await connection.refreshSessionList() }
-        #expect(await eventually { connection.sessionListLoading })
+        // Wait for the request itself: `sessionListLoading` turns on before it is sent, and
+        // `.last` would then be the answered `default` read, so the read never ends.
+        #expect(await eventually { gateway.log.requests("session.list").count > sent })
+        #expect(connection.sessionListLoading)
         #expect(connection.history.map(\.id) == ["coder/c1"])
         let held = try #require(gateway.log.requests("session.list").last)
         gateway.transport.respond(to: held, result: ["sessions": [sessionRow(id: "c2"), sessionRow(id: "c1")]])

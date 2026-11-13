@@ -155,6 +155,51 @@ struct ReclaimedRuntimeTests {
         #expect(gateway.params("session.activate").isEmpty)
     }
 
+    /// The same when the revival ends while the revisit still looks the Bot Chat up
+    /// (CI, 2026-10-22: a slow runner answered the lookup after the revival): the
+    /// revived chat is not bound again.
+    @Test func aRevivalThatEndsDuringTheLookupIsNotBoundAgain() async throws {
+        let gateway = sideChatGateway(listing: [])
+        let botChatRow: JSONValue = ["sessions": [["id": "coder-chat", "resolved_id": "coder-chat", "title": "Bot Chat",
+                                                   "preview": "", "started_at": 1_700_000_000, "message_count": 2,
+                                                   "source": "desktop"]]]
+        gateway.on("session.list") { params in
+            params["title"]?.stringValue == "Bot Chat" ? .result(botChatRow) : .result(["sessions": []])
+        }
+        gateway.on("session.create", result: createdPayload(sid: "rt-side", key: "side-1"))
+        let connection = try await gateway.connect()
+        connections.keep(connection)
+        try await connection.refreshBots()
+        let botChat = try await connection.openBotChat(profile: "coder")
+        gateway.on("session.resume") { _ in nil }  // the revival's resume waits below
+        let resumes = gateway.params("session.resume").count
+
+        reclaim(gateway.transport, runtime: "rt-coder-chat", stored: "coder-chat")
+        #expect(await eventually { gateway.params("session.resume").count == resumes + 1 })
+        try await connection.newSideChat(profile: "coder")
+        // The revisit's Bot Chat lookup waits too.
+        let isLookup = { (request: JSONValue) in request["params"]?["title"]?.stringValue == "Bot Chat" }
+        let lookups = gateway.log.requests("session.list").filter(isLookup).count
+        gateway.on("session.list") { params in
+            params["title"]?.stringValue == "Bot Chat" ? nil : .result(["sessions": []])
+        }
+        let shown = try await connection.openBotChat(profile: "coder")
+        #expect(shown === botChat)
+        #expect(await eventually { gateway.log.requests("session.list").filter(isLookup).count == lookups + 1 })
+
+        // The revival ends first, then the lookup.
+        let held = gateway.log.requests("session.resume")[resumes]
+        gateway.transport.respond(to: held, result: resumedPayload(sid: "rt-coder-chat-2", key: "coder-chat"))
+        #expect(await eventually { !botChat.isRuntimeGone })
+        let lookup = gateway.log.requests("session.list").filter(isLookup)[lookups]
+        gateway.transport.respond(to: lookup, result: botChatRow)
+
+        #expect(await eventually { !botChat.isReconciling && botChat.revival == nil })
+        #expect(botChat.sessionID == "rt-coder-chat-2")
+        #expect(gateway.params("session.resume").count == resumes + 1)
+        #expect(gateway.params("session.activate").isEmpty)
+    }
+
     /// Deleting a History row whose chat is warm closes that runtime and forgets
     /// the chat (and its composer).
     @Test func deletingAWarmChatForgetsIt() async throws {

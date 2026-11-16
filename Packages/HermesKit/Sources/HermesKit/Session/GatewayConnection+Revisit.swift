@@ -71,8 +71,10 @@ extension GatewayConnection {
         session.isReconciling = true
         session.reconcileClient = client
         let gen = generation
+        // Taken now: a revival can end while the reconcile still looks the Bot Chat up.
+        let revival = session.isRuntimeGone ? session.revival : nil
         session.revisitTask = Task {
-            await self.reconcile(session, client: client, gen: gen)
+            await self.reconcile(session, client: client, gen: gen, revival: revival)
             if session.revisitToken == mine {
                 session.isReconciling = false
                 session.reconcileClient = nil
@@ -88,7 +90,10 @@ extension GatewayConnection {
         gen == generation && client === self.client && !Task.isCancelled
     }
 
-    private func reconcile(_ session: ChatSession, client: GatewayClient, gen: Int) async {
+    /// `revival`: the chat's revival (its runtime reclaimed) under way when it was shown
+    /// again.
+    private func reconcile(_ session: ChatSession, client: GatewayClient, gen: Int,
+                           revival: Task<Void, any Error>?) async {
         do {
             if session.kind == .botChat, let profile = session.profile {
                 let target = try await botChatRestoreTarget(profile: profile, client: client)
@@ -99,8 +104,10 @@ extension GatewayConnection {
                     return
                 }
             }
-            if session.isRuntimeGone, let running = session.revival {
-                // A revival already resumes it: one resume per chat.
+            if let running = revival ?? (session.isRuntimeGone ? session.revival : nil) {
+                // A revival already resumes it: one resume per chat, and nothing to bind
+                // once it has, also when it ended during the lookup above (the runtime
+                // was no longer gone by then, and the chat was bound again for nothing).
                 _ = try? await running.value
                 if !session.isRuntimeGone { return }
             }

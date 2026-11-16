@@ -19,6 +19,10 @@ overview and `docs/protocol.md` for the protocol.
    - UI code (`Apps/`) can be written on Linux, but compiling, running and UI testing happen on
      the Mac.
    - Never report UI code as "working" or "tested" from Linux. Say "unbuilt, needs a Mac check".
+   - **Each host checks only its own platform** (decided by the user, 2026-11-16). On the
+     Windows PC, the package must build and pass its tests on Windows; see
+     [Windows host](#windows-host). The Mac and the NUC don't need to check Windows, and the
+     Windows PC doesn't check macOS or iOS.
 2. **Keep logic out of the apps.** Anything that isn't a View goes in `Packages/HermesKit`, with
    tests: protocol types, networking, auth, reconnect, transcript or session state, parsing. App
    code should be a thin SwiftUI layer over `GatewayConnection` / `ChatSession`.
@@ -180,6 +184,36 @@ Every third-party dependency, its license, pin and reason. Add a row here before
 - Async tests that wait on streams use `.timeLimit`. Keep fakes deterministic; poll with
   `eventually {}` only for main-actor UI state.
 - Don't name a test target or suite after a type it doesn't exercise.
+
+## Windows host
+
+The Windows PC develops the Windows desktop app (planned: a Flutter UI over `HermesKit`). These
+rules apply only there (decided by the user, 2026-11-16); the Mac and the NUC don't check
+Windows, and CI doesn't run on Windows.
+
+- **Verification** on Windows is the package build and tests, as on Linux:
+  ```sh
+  swift build --package-path Packages/HermesKit --build-tests
+  swift test  --package-path Packages/HermesKit
+  ```
+  - Toolchain: Swift from swift.org (`winget install Swift.Toolchain`) and Visual Studio Build
+    Tools with the C++ workload and a Windows SDK. A shell that predates the install needs
+    `vcvars64.bat` run and `SDKROOT` set to the toolchain's `Windows.sdk` before `swift` works.
+  - Platform code in the package or its tests uses `#if os(Windows)` / `canImport(WinSDK)`
+    beside the Glibc and Darwin branches, never in place of them.
+  - Keep build output out of the repo and out of long paths: MSBuild (used by Flutter) fails
+    on paths over 260 characters.
+- **Tests that need a Hermes run in WSL**, not on Windows itself: Hermes is installed in an
+  Ubuntu WSL distro, uses the `hermesapp-test` profile there, and serves the dashboard on
+  loopback, which Windows reaches as `127.0.0.1`. Keep everything for it inside the WSL distro.
+  - The model key lives in the git-ignored `.env` at the repo root (the user writes it). It is
+    copied into the test profile's `.env` in WSL (mode 600) and nowhere else. Never put it in a
+    commit, a log or a chat message.
+- **Known issue:** on Windows, swift-corelibs-foundation's `URLSessionWebSocketTask` delivers a
+  message longer than about 4 KB as several separate messages (seen with Swift 6.4.2: a 5000-byte
+  frame arrives as 4084 + 916). Hermes frames often exceed that, so `URLSessionWebSocketTransport`
+  is not usable on Windows; the Windows app needs another `MessageTransport`. Live tests that
+  receive large frames fail on Windows until then.
 
 ## Workflow
 

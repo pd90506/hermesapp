@@ -3,6 +3,8 @@ import Foundation
 import Glibc
 #elseif canImport(Darwin)
 import Darwin
+#elseif canImport(WinSDK)
+import WinSDK
 #endif
 import Testing
 
@@ -92,11 +94,19 @@ import Testing
     }
 
     /// CPU time of this thread in `body`; `body` is synchronous, so it never leaves the thread.
+    /// On Windows it counts CPU cycles instead of seconds: callers only compare ratios, and
+    /// `GetThreadTimes` advances in ~15 ms ticks, too coarse for the small inputs.
     private func cpuSeconds(_ body: () -> Void) -> Double {
         func now() -> Double {
+            #if os(Windows)
+            var cycles: UInt64 = 0
+            QueryThreadCycleTime(GetCurrentThread(), &cycles)
+            return Double(cycles)
+            #else
             var time = timespec()
             clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time)
             return Double(time.tv_sec) + Double(time.tv_nsec) / 1e9
+            #endif
         }
         let start = now()
         body()

@@ -101,7 +101,9 @@ extension GatewayConnection {
             }
             if session.isRuntimeGone, let running = session.revival {
                 // A revival already resumes it: one resume per chat.
+                session.reconcileWaitsOnRevival = true
                 _ = try? await running.value
+                session.reconcileWaitsOnRevival = false
                 if !session.isRuntimeGone { return }
             }
             if session.isRuntimeGone {

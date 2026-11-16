@@ -54,11 +54,23 @@ import Testing
         return session
     }
 
-    /// Records when a session's transcript changes: each change it is told of, until it
-    /// looks again on the next turn of the main actor.
+    /// Records when a session's transcript changes: the first change it is told of, until
+    /// it looks again on the next turn of the main actor.
+    ///
+    /// The time is taken in `onChange`, which runs synchronously as the change is made
+    /// (always on the main actor here), not in the task that tracks again: on a loaded
+    /// runner that task can start late for one batch and on time for the next, and the
+    /// gap between them then looked shorter than the queue's floor (CI, 23 ms after a
+    /// late one).
     @MainActor private final class ChangeLog {
+        /// Written from `onChange`, which runs on the main actor here (as `Flag`).
+        private final class Times: @unchecked Sendable {
+            var values: [ContinuousClock.Instant] = []
+        }
+
         let session: ChatSession
-        var times: [ContinuousClock.Instant] = []
+        private let log = Times()
+        var times: [ContinuousClock.Instant] { log.values }
 
         init(_ session: ChatSession) {
             self.session = session
@@ -66,11 +78,10 @@ import Testing
         }
 
         func track() {
+            let log = log
             withObservationTracking { _ = session.transcript } onChange: { [weak self] in
-                Task { @MainActor in
-                    self?.times.append(.now)
-                    self?.track()
-                }
+                log.values.append(.now)
+                Task { @MainActor in self?.track() }
             }
         }
     }

@@ -239,6 +239,16 @@ func eventually(seconds: Int = 3, _ condition: @MainActor () -> Bool) async -> B
     return condition()
 }
 
+/// `eventually` for a condition that awaits (an actor's state), polled the same way.
+@MainActor
+func eventuallyAsync(seconds: Int = 3, _ condition: @MainActor () async -> Bool) async -> Bool {
+    for _ in 0..<(seconds * 100) {
+        if await condition() { return true }
+        do { try await Task.sleep(for: .milliseconds(10)) } catch { break }
+    }
+    return await condition()
+}
+
 /// Reads `GatewayClient.Inbound` items for assertions. Used from one test task only.
 final class InboundRecorder: @unchecked Sendable {
     private var iterator: AsyncStream<GatewayClient.Inbound>.AsyncIterator

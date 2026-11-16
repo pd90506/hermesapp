@@ -87,8 +87,9 @@ import Testing
         // A fixed port: the shell's PID (`$$`) can be above 65535 and is then no port.
         let backend = fake(#"echo "HERMES_BACKEND_READY port=4322"; sleep 0.3"#)
         let first = try await backend.start()
-        try await Task.sleep(for: .seconds(1))
-        #expect(await !backend.isRunning)
+        // The script exits 0.3 s after its announcement; when the exit is seen depends on
+        // the runner (a fixed 1 s wait was too short under a full parallel run).
+        #expect(await eventuallyAsync(seconds: 20) { await !backend.isRunning })
         let second = try await backend.start()
         #expect(second.token != first.token)
         await backend.stop()

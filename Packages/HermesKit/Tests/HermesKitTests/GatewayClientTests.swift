@@ -338,6 +338,8 @@ struct GatewayClientTests {
                 break
             }
         }
-        #expect(transport.isClosed)
+        // The client tells its subscribers before it closes the transport
+        // (`connectionEnded`), so the close may still be on its way.
+        #expect(await eventually { transport.isClosed })
     }
 }

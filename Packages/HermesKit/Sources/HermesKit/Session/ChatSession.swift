@@ -118,6 +118,9 @@ public final class ChatSession: Identifiable {
     @ObservationIgnored var identityGate: Task<Void, Never>?
     /// The resume of a reclaimed runtime in flight (`GatewayConnection.revive`).
     @ObservationIgnored var revival: Task<Void, any Error>?
+    /// A reconcile waits on `revival` instead of resuming the chat itself. Read only by
+    /// tests: it is their signal that the reconcile has joined the revival.
+    @ObservationIgnored var reconcileWaitsOnRevival = false
 
     /// Waits until the chat knows which runtime session it is (`GatewayConnection.revisit`
     /// may still be binding it again, resuming it, or following a Bot Chat to a new

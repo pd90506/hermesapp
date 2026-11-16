@@ -138,8 +138,10 @@ struct ReclaimedRuntimeTests {
         try await connection.newSideChat(profile: "coder")
         let shown = try await connection.openBotChat(profile: "coder")
         #expect(botChat.isReconciling)
-        // No signal says the revisit is past its Bot Chat lookup and waiting on the revival.
-        try await Task.sleep(for: .milliseconds(100))
+        // The revisit is past its Bot Chat lookup and waits on the revival. A fixed 100 ms
+        // wait here was too short on a loaded runner: the revival was answered before the
+        // revisit got there, so the revisit found a live chat and sent `session.activate`.
+        #expect(await eventually { botChat.reconcileWaitsOnRevival })
         #expect(gateway.params("session.resume").count == resumes + 1)
 
         // A second resume, if one were sent, gets an answer too, so the revisit can end.
@@ -150,6 +152,7 @@ struct ReclaimedRuntimeTests {
         #expect(shown === botChat)
         // The revisit has ended: nothing else can resume the chat now.
         #expect(await eventually { !botChat.isReconciling && botChat.revival == nil })
+        #expect(!botChat.reconcileWaitsOnRevival)
         #expect(!botChat.isRuntimeGone && botChat.sessionID == "rt-coder-chat-2")
         #expect(gateway.params("session.resume").count == resumes + 1)
         #expect(gateway.params("session.activate").isEmpty)

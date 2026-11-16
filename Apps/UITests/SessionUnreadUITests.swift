@@ -40,10 +40,16 @@ final class SessionUnreadUITests: XCTestCase {
         XCTAssertTrue(waitForMessage("Write the numbers", in: app, timeout: 10), "A's prompt shown")
         showSessionList(app)
 
-        let pongB = "PONG\(Int.random(in: 1000...9999))"
+        // The marker never appears whole in the prompt, so only the reply matches it: with
+        // it in the prompt, the prompt's own bubble matched, the test left B before its
+        // reply, and B's reply then marked B unread too.
+        let digitsB = Int.random(in: 1000...9999), pongB = "PONG\(digitsB)"
         let composerB = try openNewChat(app)
-        send("Reply with exactly \(pongB) and nothing else. Do not use tools.", composer: composerB, in: app)
+        send("Reply with the word PONG immediately followed by the digits \(digitsB), and nothing else. Do not use tools.",
+             composer: composerB, in: app)
         XCTAssertTrue(waitForMessage(pongB, in: app, timeout: 150), "B's reply shown")
+        // And its turn is over (Stop is Send again), so B is read before the list shows.
+        XCTAssertTrue(eventually(timeout: 60) { app.buttons["Send"].firstMatch.exists }, "B's turn done")
         attach(app, "1 B answered")
         showSessionList(app)
 

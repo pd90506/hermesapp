@@ -216,6 +216,12 @@ Windows, and CI doesn't run on Windows.
   picks `WinHTTPWebSocketTransport` on Windows and `URLSessionWebSocketTransport` elsewhere.
   WinHTTP comes from the `CWinHTTP` system-library target, a header module of the Windows
   SDK used only on Windows; it is not a third-party dependency.
+- **The desktop app talks to `HermesKit` through `HermesBridge`** (`docs/desktop-bridge.md`):
+  a C interface with JSON commands in and snapshots out, and no logic of its own. Its Dart
+  side, `Apps/Desktop/hermes_bridge`, uses `dart:ffi` only. Dart and Flutter packages need a
+  recorded decision in [Dependencies](#dependencies), like Swift ones.
+  - Check a bridge change with `swift test --filter HermesBridgeTests`, then the live probe
+    against the Hermes in WSL (`bin/live_probe.dart`).
 
 ## Workflow
 

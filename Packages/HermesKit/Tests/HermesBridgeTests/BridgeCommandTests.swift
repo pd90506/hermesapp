@@ -1,0 +1,64 @@
+import Foundation
+import Synchronization
+import Testing
+
+@testable import HermesBridge
+
+/// Collects what the bridge emits.
+private final class Outbox: Sendable {
+    private let events = Mutex<[String]>([])
+    func append(_ json: String) { events.withLock { $0.append(json) } }
+    var all: [[String: Any]] {
+        events.withLock { $0 }.map { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] ?? [:] }
+    }
+}
+
+@MainActor
+@Suite struct BridgeCommandTests {
+    @Test func startsWithADisconnectedSnapshot() {
+        let outbox = Outbox()
+        _ = Bridge(emit: { outbox.append($0) })
+        let first = outbox.all.first
+        #expect(first?["type"] as? String == "connection")
+        #expect(first?["state"] as? String == "disconnected")
+        #expect((first?["sessions"] as? [Any])?.isEmpty == true)
+    }
+
+    @Test func repliesToEachCommandById() async {
+        let outbox = Outbox()
+        let bridge = Bridge(emit: { outbox.append($0) })
+        await bridge.receive(#"{"id":"c1","method":"closeChat"}"#)
+        let reply = outbox.all.last
+        #expect(reply?["type"] as? String == "reply")
+        #expect(reply?["id"] as? String == "c1")
+        #expect(reply?["error"] == nil)
+    }
+
+    @Test func unknownMethodsAndMissingParametersAreErrors() async {
+        let outbox = Outbox()
+        let bridge = Bridge(emit: { outbox.append($0) })
+        await bridge.receive(#"{"id":"c1","method":"nope"}"#)
+        #expect(outbox.all.last?["error"] as? String == "unknown method nope")
+        await bridge.receive(#"{"id":"c2","method":"openBotChat","params":{}}"#)
+        #expect(outbox.all.last?["error"] as? String == "missing profile")
+        await bridge.receive(#"{"id":"c3","method":"send","params":{"text":"hi"}}"#)
+        #expect(outbox.all.last?["error"] as? String == "no open chat")
+    }
+
+    @Test func aMalformedCommandIsReportedWithoutAnId() async {
+        let outbox = Outbox()
+        let bridge = Bridge(emit: { outbox.append($0) })
+        await bridge.receive("not json")
+        #expect(outbox.all.last?["type"] as? String == "reply")
+        #expect(outbox.all.last?["id"] as? String == "")
+        #expect(outbox.all.last?["error"] as? String == "malformed command")
+    }
+
+    @Test func aBadUrlFailsTheConnect() async {
+        let outbox = Outbox()
+        let bridge = Bridge(emit: { outbox.append($0) })
+        await bridge.receive(#"{"id":"c1","method":"connect","params":{"url":"","token":"t"}}"#)
+        #expect(outbox.all.last?["id"] as? String == "c1")
+        #expect(outbox.all.last?["error"] != nil)
+    }
+}

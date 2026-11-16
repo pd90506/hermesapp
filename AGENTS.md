@@ -203,6 +203,18 @@ Windows, and CI doesn't run on Windows.
     beside the Glibc and Darwin branches, never in place of them.
   - Keep build output out of the repo and out of long paths: MSBuild (used by Flutter) fails
     on paths over 260 characters.
+- **UI tests run in a headless Hyper-V VM** (decided by the user, 2026-11-16), never on
+  the host's screen. The VM is `TalariaTest`, in `C:\VMs\TalariaTest`: Windows 11 Pro, not
+  activated, auto-logon as a local test account. Its name and account are in the
+  git-ignored `.env` (`TALARIA_TEST_VM_*`).
+  - `scripts/windows-test-vm/New-TestVM.ps1` builds it from a Windows 11 ISO with an
+    unattended install. Your account must be in "Hyper-V Administrators".
+  - Drive it with PowerShell Direct (`Invoke-Command -VMName TalariaTest -Credential ...`).
+  - Take screenshots with `Get-VMScreenshot.ps1`, which reads the VM's screen through
+    Hyper-V without opening a window. Every PR that changes the Windows UI carries
+    screenshots taken this way.
+  - Checkpoint `clean-install` is the freshly installed system; restore it
+    (`Restore-VMSnapshot`) when a run leaves the VM in a bad state.
 - **Tests that need a Hermes run in WSL**, not on Windows itself: Hermes is installed in an
   Ubuntu WSL distro, uses the `hermesapp-test` profile there, and serves the dashboard on
   loopback, which Windows reaches as `127.0.0.1`. Keep everything for it inside the WSL distro.

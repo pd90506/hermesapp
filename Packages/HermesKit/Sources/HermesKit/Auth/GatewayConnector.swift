@@ -82,6 +82,16 @@ public enum GatewayCredential: Sendable, Hashable {
     case sessionToken(String)
 }
 
+/// The platform's WebSocket transport: WinHTTP on Windows, where `URLSessionWebSocketTask`
+/// splits long messages (AGENTS.md, "Windows host"); `URLSessionWebSocketTransport` elsewhere.
+@Sendable public func platformWebSocket(_ request: URLRequest) -> any MessageTransport {
+    #if os(Windows)
+    WinHTTPWebSocketTransport(request: request)
+    #else
+    URLSessionWebSocketTransport(request: request)
+    #endif
+}
+
 /// `GatewayConnector` for the Hermes dashboard's `/api/ws`.
 public struct DashboardConnector: GatewayConnector {
     public let endpoint: GatewayEndpoint
@@ -93,9 +103,7 @@ public struct DashboardConnector: GatewayConnector {
         endpoint: GatewayEndpoint,
         credential: GatewayCredential,
         http: any HTTPClient = URLSessionHTTPClient.ephemeral(),
-        makeSocket: @escaping @Sendable (URLRequest) -> any MessageTransport = {
-            URLSessionWebSocketTransport(request: $0)
-        }
+        makeSocket: @escaping @Sendable (URLRequest) -> any MessageTransport = platformWebSocket
     ) {
         self.endpoint = endpoint
         self.credential = credential

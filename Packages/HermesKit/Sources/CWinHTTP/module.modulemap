@@ -1,0 +1,7 @@
+// WinHTTP from the Windows SDK, which Swift's WinSDK module does not include.
+// Imported only on Windows (`WinHTTPWebSocketTransport`).
+module CWinHTTP [system] {
+    header "shim.h"
+    link "winhttp"
+    export *
+}

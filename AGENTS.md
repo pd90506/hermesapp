@@ -209,11 +209,13 @@ Windows, and CI doesn't run on Windows.
   - The model key lives in the git-ignored `.env` at the repo root (the user writes it). It is
     copied into the test profile's `.env` in WSL (mode 600) and nowhere else. Never put it in a
     commit, a log or a chat message.
-- **Known issue:** on Windows, swift-corelibs-foundation's `URLSessionWebSocketTask` delivers a
-  message longer than about 4 KB as several separate messages (seen with Swift 6.4.2: a 5000-byte
-  frame arrives as 4084 + 916). Hermes frames often exceed that, so `URLSessionWebSocketTransport`
-  is not usable on Windows; the Windows app needs another `MessageTransport`. Live tests that
-  receive large frames fail on Windows until then.
+- **WebSockets on Windows use WinHTTP** (decided by the user, 2026-11-16). There,
+  swift-corelibs-foundation's `URLSessionWebSocketTask` delivers a message longer than about
+  4 KB as several separate messages (Swift 6.4.2: a 5000-byte frame arrives as 4084 + 916), and
+  Hermes frames are often longer. So `platformWebSocket` (the `DashboardConnector` default)
+  picks `WinHTTPWebSocketTransport` on Windows and `URLSessionWebSocketTransport` elsewhere.
+  WinHTTP comes from the `CWinHTTP` system-library target, a header module of the Windows
+  SDK used only on Windows; it is not a third-party dependency.
 
 ## Workflow
 

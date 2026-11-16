@@ -133,15 +133,6 @@ private func connected(_ source: ReadSource, marksSince: Double = 1_000) async t
         #expect(await source.marked.isEmpty)
         await connection.disconnect()
     }
-
-    @MainActor
-    private func eventuallyAsync(_ condition: @MainActor () async -> Bool) async -> Bool {
-        for _ in 0..<300 {
-            if await condition() { return true }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        return await condition()
-    }
 }
 
 /// The dashboard's fenced write, shaped as `apps/desktop/src/api/sessions.ts:380-428` sends it.

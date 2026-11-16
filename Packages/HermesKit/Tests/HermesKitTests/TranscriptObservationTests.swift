@@ -63,8 +63,14 @@ import Testing
     /// gap between them then looked shorter than the queue's floor (CI, 23 ms after a
     /// late one).
     @MainActor private final class ChangeLog {
+        /// Written from `onChange`, which runs on the main actor here (as `Flag`).
+        private final class Times: @unchecked Sendable {
+            var values: [ContinuousClock.Instant] = []
+        }
+
         let session: ChatSession
-        var times: [ContinuousClock.Instant] = []
+        private let log = Times()
+        var times: [ContinuousClock.Instant] { log.values }
 
         init(_ session: ChatSession) {
             self.session = session
@@ -72,9 +78,9 @@ import Testing
         }
 
         func track() {
+            let log = log
             withObservationTracking { _ = session.transcript } onChange: { [weak self] in
-                let now = ContinuousClock.now
-                MainActor.assumeIsolated { self?.times.append(now) }
+                log.values.append(.now)
                 Task { @MainActor in self?.track() }
             }
         }

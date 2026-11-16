@@ -19,7 +19,14 @@ let package = Package(
         .target(name: "HermesProtocol"),
         // Transport abstraction, URLSession WebSocket transport, the
         // JSON-RPC client (id correlation + dispatch), auth, session state.
-        .target(name: "HermesKit", dependencies: ["HermesProtocol"]),
+        .target(name: "HermesKit", dependencies: [
+            "HermesProtocol",
+            .target(name: "CWinHTTP", condition: .when(platforms: [.windows])),
+        ]),
+        // WinHTTP from the Windows SDK, for the Windows WebSocket transport
+        // (`WinHTTPWebSocketTransport`). A system header module: nothing is compiled,
+        // and it is used only on Windows. See AGENTS.md "Windows host".
+        .systemLibrary(name: "CWinHTTP"),
         .testTarget(name: "HermesProtocolTests", dependencies: ["HermesProtocol"]),
         .testTarget(name: "HermesKitTests", dependencies: ["HermesKit"]),
         // Opt-in end-to-end tests against real Hermes dashboards. Skipped unless

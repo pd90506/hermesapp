@@ -12,6 +12,8 @@ let package = Package(
     products: [
         .library(name: "HermesProtocol", targets: ["HermesProtocol"]),
         .library(name: "HermesKit", targets: ["HermesKit"]),
+        // The C interface the Flutter desktop app loads (docs/desktop-bridge.md).
+        .library(name: "HermesBridge", type: .dynamic, targets: ["HermesBridge"]),
     ],
     targets: [
         // Pure Codable wire types: JSON-RPC envelope, JSONValue, gateway
@@ -27,6 +29,10 @@ let package = Package(
         // (`WinHTTPWebSocketTransport`). A system header module: nothing is compiled,
         // and it is used only on Windows. See AGENTS.md "Windows host".
         .systemLibrary(name: "CWinHTTP"),
+        // A thin C interface over HermesKit for the Flutter desktop app: JSON commands in,
+        // JSON snapshots and replies out. No logic of its own (docs/desktop-bridge.md).
+        .target(name: "HermesBridge", dependencies: ["HermesKit"]),
+        .testTarget(name: "HermesBridgeTests", dependencies: ["HermesBridge"]),
         .testTarget(name: "HermesProtocolTests", dependencies: ["HermesProtocol"]),
         .testTarget(name: "HermesKitTests", dependencies: ["HermesKit"]),
         // Opt-in end-to-end tests against real Hermes dashboards. Skipped unless

@@ -23,6 +23,8 @@ class Palette {
     required this.codeBg,
     required this.inputFill,
     required this.inputStroke,
+    required this.inputFocusedFill,
+    required this.inputStrongStroke,
     required this.caution,
     required this.success,
   });
@@ -30,7 +32,24 @@ class Palette {
   final bool dark;
   final Color accent, layer, layerStroke, card, cardStroke, subtle, subtle2;
   final Color text, text2, text3, onAccent, divider, codeBg, inputFill, inputStroke;
+
+  /// WinUI's text field: `ControlFillColorInputActive` while focused, and
+  /// `ControlStrongStrokeColorDefault`, the line along its bottom edge.
+  final Color inputFocusedFill, inputStrongStroke;
   final Color caution, success;
+
+  /// Code colours by `CodeHighlighter` kind: Visual Studio Code's default Light+ and
+  /// Dark+ themes, the colours Windows developers see in their editor.
+  Color? code(String kind) => switch (kind) {
+        'keyword' => dark ? const Color(0xFF569CD6) : const Color(0xFF0000FF),
+        'string' => dark ? const Color(0xFFCE9178) : const Color(0xFFA31515),
+        'comment' => dark ? const Color(0xFF6A9955) : const Color(0xFF008000),
+        'number' => dark ? const Color(0xFFB5CEA8) : const Color(0xFF098658),
+        'type' => dark ? const Color(0xFF4EC9B0) : const Color(0xFF267F99),
+        'function' => dark ? const Color(0xFFDCDCAA) : const Color(0xFF795E26),
+        'literal' => dark ? const Color(0xFF569CD6) : const Color(0xFF0000FF),
+        _ => null,
+      };
 
   /// The user's messages: the accent, faint.
   Color get userBubble => accent.withValues(alpha: dark ? 0.16 : 0.10);
@@ -51,8 +70,10 @@ class Palette {
           onAccent: const Color(0xFF000000),
           divider: const Color(0x15FFFFFF),
           codeBg: const Color(0x0FFFFFFF),
-          inputFill: const Color(0xFF1F1F1F),
+          inputFill: const Color(0xFF2B2B2B),
           inputStroke: const Color(0x12FFFFFF),
+          inputFocusedFill: const Color(0xFF1F1F1F),
+          inputStrongStroke: const Color(0x8BFFFFFF),
           caution: const Color(0xFFFCE100),
           success: const Color(0xFF6CCB5F),
         )
@@ -71,8 +92,10 @@ class Palette {
           onAccent: const Color(0xFFFFFFFF),
           divider: const Color(0x0F000000),
           codeBg: const Color(0x08000000),
-          inputFill: const Color(0xFFFFFFFF),
+          inputFill: const Color(0xFFFBFBFB),
           inputStroke: const Color(0x0F000000),
+          inputFocusedFill: const Color(0xFFFFFFFF),
+          inputStrongStroke: const Color(0x72000000),
           caution: const Color(0xFF9D5D00),
           success: const Color(0xFF0F7B0F),
         );

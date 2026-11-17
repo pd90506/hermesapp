@@ -43,6 +43,10 @@ import Testing
         #expect(code?["language"] as? String == "swift")
         #expect(code?["text"] as? String == "let x = 1")
         #expect(code?["isClosed"] as? Bool == true)
+        let spans = code?["spans"] as? [[String: Any]]
+        #expect(spans?.compactMap { $0["text"] as? String }.joined() == "let x = 1")
+        #expect(spans?.first?["kind"] as? String == "keyword")
+        #expect(spans?.contains { $0["text"] as? String == "1" && $0["kind"] as? String == "number" } == true)
 
         let table = parts[2]["table"] as? [String: Any]
         #expect(table?["alignments"] as? [String] == ["leading", "trailing"])

@@ -455,6 +455,7 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     _controller.addListener(() => setState(() {}));
+    _focus.addListener(() => setState(() {}));
     // The chat just opened: the keyboard goes to its composer, as on the Mac. (A
     // TextBox's autofocus loses to the window's own focus node, which has it already.)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -538,8 +539,10 @@ class _ComposerState extends State<Composer> {
     final app = widget.app;
     final composer = _composer;
     final running = app.chat.isRunning;
+    final focused = _focus.hasFocus;
     _askAboutSwitch();
-    final box = Focus(
+    // The text, borderless: the card around it is the field (its fill, stroke and focus line).
+    final field = Focus(
       onKeyEvent: (node, event) {
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
         if (event.logicalKey == LogicalKeyboardKey.enter && !HardwareKeyboard.instance.isShiftPressed) {
@@ -556,39 +559,84 @@ class _ComposerState extends State<Composer> {
         controller: _controller,
         focusNode: _focus,
         placeholder: 'Message Hermes',
-        minLines: 2,
-        maxLines: 8,
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        style: const TextStyle(fontSize: 14, height: 1.45),
-        suffixMode: OverlayVisibilityMode.always,
-        suffix: Padding(
-          padding: const EdgeInsets.all(6),
-          child: running && _controller.text.trim().isEmpty && !_hasCards
-              ? Tooltip(
-                  message: 'Stop the reply',
-                  child: FilledButton(
-                    onPressed: app.interrupt,
-                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Glyphs.stop, size: 11),
-                      SizedBox(width: 6),
-                      Text('Stop'),
+        placeholderStyle: TextStyle(fontSize: 14, height: 1.45, color: p.text3),
+        minLines: 1,
+        maxLines: 10,
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+        style: TextStyle(fontSize: 14, height: 1.45, color: p.text),
+        decoration: const WidgetStatePropertyAll(BoxDecoration(color: Color(0x00000000))),
+        foregroundDecoration: const WidgetStatePropertyAll(BoxDecoration()),
+        highlightColor: const Color(0x00000000),
+        unfocusedColor: const Color(0x00000000),
+      ),
+    );
+    final Widget action;
+    if (running && _controller.text.trim().isEmpty && !_hasCards) {
+      action = _ComposerAction(icon: Glyphs.stop, iconSize: 12, tooltip: 'Stop the reply', onPressed: app.interrupt);
+    } else {
+      action = _ComposerAction(
+        icon: Glyphs.send,
+        tooltip: running ? 'Send now (Enter); Hermes takes it in during the reply' : 'Send (Enter)',
+        busy: _sending || composer.isSubmitting,
+        onPressed: _canSend ? _send : null,
+      );
+    }
+    // One card, as Windows 11's own chat boxes and Hermes Desktop's composer: the cards,
+    // the text, and a row of commands along the bottom with Send at its end. It wears
+    // WinUI's text field colours, and its accent line along the bottom when focused (or
+    // while files are dragged over the window).
+    final card = MouseRegion(
+      cursor: SystemMouseCursors.text,
+      child: GestureDetector(
+        onTap: _focus.requestFocus,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: focused ? p.inputFocusedFill : p.inputFill,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: app.isDraggingFiles ? p.accent : p.inputStroke),
+            ),
+            child: Stack(children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+                if (composer.hasCards)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                    child: Wrap(spacing: 8, runSpacing: 8, children: [
+                      for (final card in composer.attachments)
+                        _AttachmentCardView(
+                            card: card, preview: app.previews[card.id], onRemove: () => app.removeAttachment(card.id)),
+                      for (final name in composer.uploadingFiles) _AttachmentCardView.uploading(name),
                     ]),
                   ),
-                )
-              : Tooltip(
-                  message: running ? 'Send now (Enter); Hermes takes it in during the reply' : 'Send (Enter)',
-                  child: FilledButton(
-                    onPressed: _canSend ? _send : null,
-                    child: _sending || composer.isSubmitting
-                        ? const SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2))
-                        : const Icon(Glyphs.send, size: 14),
-                  ),
+                field,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 2, 8, 8),
+                  child: Row(children: [
+                    IconAction(Glyphs.attach, size: 15, tooltip: 'Attach images or files', onPressed: app.pickFiles),
+                    const SizedBox(width: 2),
+                    _ModelPicker(app: app),
+                    if (composer.efforts.isNotEmpty) _EffortPicker(app: app),
+                    const Spacer(),
+                    action,
+                  ]),
                 ),
+              ]),
+              // WinUI's focus line: 2 px of accent along the bottom edge.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: focused || app.isDraggingFiles ? 2 : 1,
+                child: ColoredBox(color: focused || app.isDraggingFiles ? p.accent : p.inputStrongStroke),
+              ),
+            ]),
+          ),
         ),
       ),
     );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: ChatPane.contentWidth),
@@ -602,35 +650,39 @@ class _ComposerState extends State<Composer> {
                   onClose: app.dismissComposerError,
                 ),
               ),
-            if (composer.hasCards)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Wrap(spacing: 8, runSpacing: 8, children: [
-                  for (final card in composer.attachments)
-                    _AttachmentCardView(card: card, preview: app.previews[card.id], onRemove: () => app.removeAttachment(card.id)),
-                  for (final name in composer.uploadingFiles) _AttachmentCardView.uploading(name),
-                ]),
-              ),
-            // Files dragged over the window land here: the box takes the accent's edge.
-            DecoratedBox(
-              position: DecorationPosition.foreground,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                border: app.isDraggingFiles ? Border.all(color: p.accent, width: 2) : null,
-              ),
-              child: box,
-            ),
-            const SizedBox(height: 4),
-            Row(children: [
-              IconAction(Glyphs.attach, size: 14, tooltip: 'Attach images or files', onPressed: app.pickFiles),
-              const SizedBox(width: 4),
-              _ModelPicker(app: app),
-              if (composer.efforts.isNotEmpty) ...[
-                const SizedBox(width: 4),
-                _EffortPicker(app: app),
-              ],
-            ]),
+            card,
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Send or Stop: WinUI's accent button, icon only, 32 px square, at the end of the
+/// composer's command row. Disabled, it takes the system's disabled accent colours.
+class _ComposerAction extends StatelessWidget {
+  const _ComposerAction({required this.icon, required this.tooltip, this.onPressed, this.busy = false, this.iconSize = 14});
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool busy;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: FilledButton(
+          onPressed: onPressed,
+          style: const ButtonStyle(padding: WidgetStatePropertyAll(EdgeInsets.zero)),
+          child: Center(
+            child: busy
+                ? const SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2))
+                : Icon(icon, size: iconSize),
+          ),
         ),
       ),
     );

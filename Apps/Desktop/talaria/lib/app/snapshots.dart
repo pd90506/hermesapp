@@ -91,6 +91,8 @@ class ChatItem {
     this.isActive = false,
     this.outgoingStatus,
     this.timestamp,
+    this.markdown = const [],
+    this.reasoningMarkdown = const [],
   });
   final String id;
   final Role role;
@@ -102,6 +104,10 @@ class ChatItem {
   final String? outgoingStatus;
   final DateTime? timestamp;
 
+  /// An assistant item's text and reasoning, parsed by HermesKit; empty from an older bridge.
+  final List<MdPart> markdown;
+  final List<MdPart> reasoningMarkdown;
+
   static ChatItem fromJson(Map<String, Object?> j) => ChatItem(
         id: j['id'] as String? ?? '',
         role: Role.values.asNameMap()[j['role']] ?? Role.system,
@@ -112,6 +118,97 @@ class ChatItem {
         isActive: j['isActive'] as bool? ?? false,
         outgoingStatus: j['outgoingStatus'] as String?,
         timestamp: _seconds(j['timestamp']),
+        markdown: _list(j['markdown']).map(MdPart.fromJson).toList(),
+        reasoningMarkdown: _list(j['reasoningMarkdown']).map(MdPart.fromJson).toList(),
+      );
+}
+
+/// A part of a parsed message (docs/desktop-bridge.md, "Markdown"): prose runs, a code
+/// block, or a table.
+class MdPart {
+  const MdPart({required this.id, this.prose, this.code, this.table});
+  final int id;
+  final List<MdRun>? prose;
+  final MdCode? code;
+  final MdTable? table;
+
+  static MdPart fromJson(Map<String, Object?> j) {
+    final code = j['code'] as Map<String, Object?>?;
+    final table = j['table'] as Map<String, Object?>?;
+    return MdPart(
+      id: j['id'] as int? ?? 0,
+      prose: j['prose'] == null ? null : _list(j['prose']).map(MdRun.fromJson).toList(),
+      code: code == null
+          ? null
+          : MdCode(
+              language: code['language'] as String?,
+              text: code['text'] as String? ?? '',
+              isClosed: code['isClosed'] as bool? ?? true),
+      table: table == null
+          ? null
+          : MdTable(
+              alignments: (table['alignments'] as List?)?.cast<String>() ?? const [],
+              header: _cells(table['header']),
+              rows: ((table['rows'] as List?) ?? const []).map(_cells).toList()),
+    );
+  }
+
+  static List<List<MdRun>> _cells(Object? v) =>
+      ((v as List?) ?? const []).map((cell) => _list(cell).map(MdRun.fromJson).toList()).toList();
+}
+
+class MdCode {
+  const MdCode({this.language, required this.text, this.isClosed = true});
+  final String? language;
+  final String text;
+  final bool isClosed;
+}
+
+class MdTable {
+  const MdTable({required this.alignments, required this.header, required this.rows});
+  final List<String> alignments;
+  final List<List<MdRun>> header;
+  final List<List<List<MdRun>>> rows;
+}
+
+/// A run of text with its role and styles (HermesKit's `MarkdownSelection.Run`).
+class MdRun {
+  const MdRun({
+    required this.text,
+    this.role = 'body',
+    this.level,
+    this.bold = false,
+    this.italic = false,
+    this.strike = false,
+    this.inlineCode = false,
+    this.link,
+    this.math,
+    this.display = false,
+    this.indents = const [],
+    this.gap,
+  });
+  final String text;
+  final String role;
+  final int? level;
+  final bool bold, italic, strike, inlineCode, display;
+  final String? link;
+  final String? math;
+  final List<String> indents;
+  final String? gap;
+
+  static MdRun fromJson(Map<String, Object?> j) => MdRun(
+        text: j['text'] as String? ?? '',
+        role: j['role'] as String? ?? 'body',
+        level: j['level'] as int?,
+        bold: j['bold'] as bool? ?? false,
+        italic: j['italic'] as bool? ?? false,
+        strike: j['strike'] as bool? ?? false,
+        inlineCode: j['inlineCode'] as bool? ?? false,
+        link: j['link'] as String?,
+        math: j['math'] as String?,
+        display: j['display'] as bool? ?? false,
+        indents: (j['indents'] as List?)?.cast<String>() ?? const [],
+        gap: j['gap'] as String?,
       );
 }
 

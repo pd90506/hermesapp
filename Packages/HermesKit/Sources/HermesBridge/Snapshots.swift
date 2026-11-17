@@ -106,6 +106,9 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
         var outgoingStatus: String?
         /// Unix seconds.
         var timestamp: Double?
+        /// An assistant item's `text` and `reasoning`, parsed (docs/desktop-bridge.md, "Markdown").
+        var markdown: [MarkdownPart]?
+        var reasoningMarkdown: [MarkdownPart]?
     }
 
     var sessionID: String
@@ -116,7 +119,7 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
     var lastError: String?
     var items: [Item]
 
-    @MainActor init(_ chat: ChatSession) {
+    @MainActor init(_ chat: ChatSession, markdown cache: MarkdownCache = MarkdownCache()) {
         sessionID = chat.sessionID
         storedSessionID = chat.storedSessionID
         profile = chat.profile
@@ -130,9 +133,18 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
             case .tool: "tool"
             case .system: "system"
             }
-            return Item(id: item.id, role: role, text: item.text, reasoning: item.reasoning,
-                        toolName: item.toolName, detail: item.detail, isActive: item.isActive,
-                        outgoingStatus: item.outgoingStatus, timestamp: item.timestamp?.timeIntervalSince1970)
+            var row = Item(id: item.id, role: role, text: item.text, reasoning: item.reasoning,
+                           toolName: item.toolName, detail: item.detail, isActive: item.isActive,
+                           outgoingStatus: item.outgoingStatus, timestamp: item.timestamp?.timeIntervalSince1970)
+            if item.role == .assistant {
+                if !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    row.markdown = cache.parts(item.text, streaming: item.isActive)
+                }
+                if !item.reasoning.isEmpty {
+                    row.reasoningMarkdown = cache.parts(item.reasoning, streaming: item.isActive)
+                }
+            }
+            return row
         }
     }
 }

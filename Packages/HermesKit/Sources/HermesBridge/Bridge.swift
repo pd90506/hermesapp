@@ -31,6 +31,7 @@ final class Bridge {
     private var generation = 0
     private var lastConnection: ConnectionSnapshot?
     private var lastChat: ChatSnapshot?
+    private let markdown = MarkdownCache()
 
     init(emit: @escaping @Sendable (String) -> Void,
          makeConnector: @escaping (GatewayEndpoint, GatewayCredential) -> any GatewayConnector = {
@@ -152,7 +153,7 @@ final class Bridge {
     private func observeChat(_ generation: Int) {
         guard generation == self.generation, let chat else { return }
         let snapshot = withObservationTracking {
-            ChatSnapshot(chat)
+            ChatSnapshot(chat, markdown: markdown)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeChat(generation) }
         }

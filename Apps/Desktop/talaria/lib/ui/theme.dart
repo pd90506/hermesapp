@@ -117,4 +117,6 @@ abstract final class Glyphs {
   static const tool = IconData(0xE90F, fontFamily: _f); // Repair
   static const lightbulb = IconData(0xEA80, fontFamily: _f);
   static const globe = IconData(0xE774, fontFamily: _f);
+  static const checkbox = IconData(0xE739, fontFamily: _f);
+  static const checkboxChecked = IconData(0xE73A, fontFamily: _f);
 }

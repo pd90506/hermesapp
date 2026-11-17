@@ -48,4 +48,50 @@ void main() {
     expect(relativeTime(DateTime(2026, 11, 2), now: now), 'Nov 2');
     expect(relativeTime(DateTime(2025, 11, 2), now: now), 'Nov 2, 2025');
   });
+
+  test('an assistant item carries its parsed parts', () {
+    final item = ChatItem.fromJson({
+      'id': 'a1',
+      'role': 'assistant',
+      'text': '# Hi',
+      'markdown': [
+        {
+          'id': 0,
+          'prose': [
+            {'text': 'Hi', 'role': 'heading', 'level': 1},
+            {'text': '\n', 'role': 'separator'},
+            {'text': '\t•\t', 'role': 'listMarker', 'indents': ['list'], 'gap': 'block'},
+            {'text': 'go', 'role': 'body', 'bold': true, 'link': 'https://example.com', 'indents': ['list']},
+          ],
+        },
+        {'id': 1, 'code': {'language': 'dart', 'text': 'x', 'isClosed': false}},
+        {
+          'id': 2,
+          'table': {
+            'alignments': ['leading', 'trailing'],
+            'header': [
+              [{'text': 'A', 'role': 'tableHeader'}],
+              [{'text': 'B', 'role': 'tableHeader'}],
+            ],
+            'rows': [
+              [
+                [{'text': '1', 'role': 'tableCell'}],
+                [{'text': '2', 'role': 'tableCell'}],
+              ],
+            ],
+          },
+        },
+      ],
+    });
+    final prose = item.markdown[0].prose!;
+    expect(prose.first.level, 1);
+    expect(prose[2].indents, ['list']);
+    expect(prose[2].gap, 'block');
+    expect(prose[3].bold, isTrue);
+    expect(prose[3].italic, isFalse);
+    expect(prose[3].link, 'https://example.com');
+    expect(item.markdown[1].code!.isClosed, isFalse);
+    expect(item.markdown[2].table!.rows.single.last.single.text, '2');
+    expect(item.reasoningMarkdown, isEmpty);
+  });
 }

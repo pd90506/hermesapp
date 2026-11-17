@@ -32,6 +32,19 @@ class Palette {
   final Color text, text2, text3, onAccent, divider, codeBg, inputFill, inputStroke;
   final Color caution, success;
 
+  /// Code colours by `CodeHighlighter` kind: Visual Studio Code's default Light+ and
+  /// Dark+ themes, the colours Windows developers see in their editor.
+  Color? code(String kind) => switch (kind) {
+        'keyword' => dark ? const Color(0xFF569CD6) : const Color(0xFF0000FF),
+        'string' => dark ? const Color(0xFFCE9178) : const Color(0xFFA31515),
+        'comment' => dark ? const Color(0xFF6A9955) : const Color(0xFF008000),
+        'number' => dark ? const Color(0xFFB5CEA8) : const Color(0xFF098658),
+        'type' => dark ? const Color(0xFF4EC9B0) : const Color(0xFF267F99),
+        'function' => dark ? const Color(0xFFDCDCAA) : const Color(0xFF795E26),
+        'literal' => dark ? const Color(0xFF569CD6) : const Color(0xFF0000FF),
+        _ => null,
+      };
+
   /// The user's messages: the accent, faint.
   Color get userBubble => accent.withValues(alpha: dark ? 0.16 : 0.10);
 
@@ -117,4 +130,6 @@ abstract final class Glyphs {
   static const tool = IconData(0xE90F, fontFamily: _f); // Repair
   static const lightbulb = IconData(0xEA80, fontFamily: _f);
   static const globe = IconData(0xE774, fontFamily: _f);
+  static const checkbox = IconData(0xE739, fontFamily: _f);
+  static const checkboxChecked = IconData(0xE73A, fontFamily: _f);
 }

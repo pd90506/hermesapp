@@ -69,7 +69,37 @@ didn't change.
 
 `chat`: `sessionID`, `storedSessionID`, `profile`, `title`, `isRunning`, `lastError`, `items`
 (`id`, `role` (`user`, `assistant`, `tool` or `system`), `text`, `reasoning`, `toolName`,
-`detail`, `isActive`, `outgoingStatus`, `timestamp`).
+`detail`, `isActive`, `outgoingStatus`, `timestamp`, and for an assistant item `markdown` and
+`reasoningMarkdown`, below).
+
+### Markdown
+
+An assistant item's `text` (as `markdown`, when it has any) and `reasoning` (as
+`reasoningMarkdown`) come parsed by HermesKit, in the parts the Mac app lays out
+(`MarkdownPresentation`): the app only lays them out. A finished message is parsed once and
+cached; the streaming one (`isActive`) is parsed again on each delta, in streaming mode (an
+unclosed fence stays open instead of reflowing).
+
+Each part has an `id` (the index of its first block, stable while the tail streams) and one of:
+
+- `prose`: runs (`MarkdownSelection.Run`), in order. Runs up to a `separator` run form a
+  paragraph; the paragraph's indents and gap are its first run's.
+- `code`: `language`, `text`, `isClosed` (false while the closing fence is still coming), and
+  `spans`: the code cut by HermesKit's `CodeHighlighter` into consecutive `text` runs, each with
+  a `kind` (`keyword`, `string`, `comment`, `number`, `type`, `function`, `literal`, `plain`)
+  for its colour. Their texts joined are `text`.
+- `table`: `alignments` (`none`, `leading`, `center`, `trailing` per column), `header` (a
+  list of cells) and `rows` (a list of rows of cells); a cell is a list of runs.
+
+A run: `text`, `role` (`body`, `heading` with `level`, `listMarker`, `codeLanguage`, `code`,
+`tableHeader`, `tableCell`, `math`, `separator`), and, only when set: `bold`, `italic`,
+`strike`, `inlineCode`, `link` (its destination), `math` (the LaTeX source; `text` is the same
+source, and `display` is true for display math), `indents` (outermost first: `list`,
+`orderedList`, `quote`) and `gap` (space above the paragraph it starts: `block` or
+`listItem`). A list marker's text is the shown marker between tabs (`"\t•\t"`, `"\t2.\t"`,
+`"\t☐\t"`). A thematic break is one `body` run of `─` characters. A code block or table
+inside a list or quote stays in the prose, as its runs (`codeLanguage` then `code`;
+`tableHeader`/`tableCell` cells separated by tabs).
 
 The contract grows with the desktop app. Add fields freely; renaming or removing one bumps
 `hb_version`.

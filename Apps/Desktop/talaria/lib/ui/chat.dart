@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../app/app_state.dart';
 import '../app/snapshots.dart';
 import 'common.dart';
+import 'markdown.dart';
 import 'theme.dart';
 
 /// The open chat: a header with its title and commands, the transcript, the composer.
@@ -197,8 +198,11 @@ class _MessageView extends StatelessWidget {
       case Role.assistant:
       case Role.tool:
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if ((item.reasoning ?? '').isNotEmpty) _Reasoning(text: item.reasoning!),
-          if (item.text.trim().isNotEmpty) SelectableText(item.text.trim(), style: body),
+          if ((item.reasoning ?? '').isNotEmpty) _Reasoning(text: item.reasoning!, parts: item.reasoningMarkdown),
+          if (item.markdown.isNotEmpty)
+            _Selectable(child: MarkdownBody(parts: item.markdown))
+          else if (item.text.trim().isNotEmpty)
+            SelectableText(item.text.trim(), style: body),
           if (item.text.trim().isNotEmpty && !item.isActive)
             Padding(
               padding: const EdgeInsets.only(top: 2),
@@ -219,10 +223,24 @@ class _MessageView extends StatelessWidget {
   }
 }
 
+/// Text that can be selected across a message's paragraphs, code and tables, and copied
+/// with Ctrl+C.
+class _Selectable extends StatelessWidget {
+  const _Selectable({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => SelectionArea(
+        selectionControls: WindowsTextSelectionHandleControls(),
+        contextMenuBuilder: null,
+        child: child,
+      );
+}
+
 /// A reply's reasoning, folded under one line, as the Mac's.
 class _Reasoning extends StatefulWidget {
-  const _Reasoning({required this.text});
+  const _Reasoning({required this.text, this.parts = const []});
   final String text;
+  final List<MdPart> parts;
   @override
   State<_Reasoning> createState() => _ReasoningState();
 }
@@ -246,7 +264,9 @@ class _ReasoningState extends State<_Reasoning> {
         if (_open)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: SelectableText(widget.text.trim(), style: TextStyle(fontSize: 13, color: p.text2, height: 1.5)),
+            child: widget.parts.isNotEmpty
+                ? _Selectable(child: MarkdownBody(parts: widget.parts, secondary: true))
+                : SelectableText(widget.text.trim(), style: TextStyle(fontSize: 13, color: p.text2, height: 1.5)),
           ),
       ]),
     );

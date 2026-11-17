@@ -163,3 +163,24 @@ Uint8List? readUserRegistry(String key, String value) {
   }
 }
 
+
+// --- Shell -------------------------------------------------------------------------
+
+final _shell32 = DynamicLibrary.open('shell32.dll');
+final _shellExecute = _shell32.lookupFunction<
+    IntPtr Function(IntPtr, Pointer<Uint16>, Pointer<Uint16>, Pointer<Uint16>, Pointer<Uint16>, Int32),
+    int Function(int, Pointer<Uint16>, Pointer<Uint16>, Pointer<Uint16>, Pointer<Uint16>, int)>('ShellExecuteW');
+
+/// Opens a web or mail link in the user's default app (`ShellExecuteW`, "open"). Other
+/// schemes are refused: a link in a reply must not start a program.
+bool openLink(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || !const {'http', 'https', 'mailto'}.contains(uri.scheme.toLowerCase())) return false;
+  final arena = Arena();
+  try {
+    const swShowNormal = 1;
+    return _shellExecute(0, arena.wide('open'), arena.wide(uri.toString()), nullptr, nullptr, swShowNormal) > 32;
+  } finally {
+    arena.freeAll();
+  }
+}

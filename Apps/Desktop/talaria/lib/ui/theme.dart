@@ -23,6 +23,8 @@ class Palette {
     required this.codeBg,
     required this.inputFill,
     required this.inputStroke,
+    required this.inputFocusedFill,
+    required this.inputStrongStroke,
     required this.caution,
     required this.success,
   });
@@ -30,6 +32,10 @@ class Palette {
   final bool dark;
   final Color accent, layer, layerStroke, card, cardStroke, subtle, subtle2;
   final Color text, text2, text3, onAccent, divider, codeBg, inputFill, inputStroke;
+
+  /// WinUI's text field: `ControlFillColorInputActive` while focused, and
+  /// `ControlStrongStrokeColorDefault`, the line along its bottom edge.
+  final Color inputFocusedFill, inputStrongStroke;
   final Color caution, success;
 
   /// Code colours by `CodeHighlighter` kind: Visual Studio Code's default Light+ and
@@ -64,8 +70,10 @@ class Palette {
           onAccent: const Color(0xFF000000),
           divider: const Color(0x15FFFFFF),
           codeBg: const Color(0x0FFFFFFF),
-          inputFill: const Color(0xFF1F1F1F),
+          inputFill: const Color(0xFF2B2B2B),
           inputStroke: const Color(0x12FFFFFF),
+          inputFocusedFill: const Color(0xFF1F1F1F),
+          inputStrongStroke: const Color(0x8BFFFFFF),
           caution: const Color(0xFFFCE100),
           success: const Color(0xFF6CCB5F),
         )
@@ -84,8 +92,10 @@ class Palette {
           onAccent: const Color(0xFFFFFFFF),
           divider: const Color(0x0F000000),
           codeBg: const Color(0x08000000),
-          inputFill: const Color(0xFFFFFFFF),
+          inputFill: const Color(0xFFFBFBFB),
           inputStroke: const Color(0x0F000000),
+          inputFocusedFill: const Color(0xFFFFFFFF),
+          inputStrongStroke: const Color(0x72000000),
           caution: const Color(0xFF9D5D00),
           success: const Color(0xFF0F7B0F),
         );
@@ -131,5 +141,9 @@ abstract final class Glyphs {
   static const lightbulb = IconData(0xEA80, fontFamily: _f);
   static const globe = IconData(0xE774, fontFamily: _f);
   static const checkbox = IconData(0xE739, fontFamily: _f);
+  static const attach = IconData(0xE723, fontFamily: _f);
+  static const document = IconData(0xE8A5, fontFamily: _f);
+  static const photo = IconData(0xEB9F, fontFamily: _f);
+  static const cancel = IconData(0xE711, fontFamily: _f);
   static const checkboxChecked = IconData(0xE73A, fontFamily: _f);
 }

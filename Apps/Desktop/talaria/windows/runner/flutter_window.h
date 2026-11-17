@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "native_files.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -31,8 +32,12 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
 
-  // "talaria/window": the app tells the frame its light/dark choice.
+  // "talaria/window": the app tells the frame its light/dark choice, and asks for
+  // files (the Open dialog, the clipboard); the window tells the app of drags.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
+
+  // Files dragged over the Flutter view.
+  native_files::DropTarget* drop_target_ = nullptr;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

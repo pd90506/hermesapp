@@ -36,3 +36,49 @@ class WindowFrame {
 
   static Future<void> setTheme(AppTheme theme) => _channel.invokeMethod('setTheme', theme.name);
 }
+
+/// What the clipboard holds (`windows/runner/native_files.cpp`): its formats as
+/// uniform type identifiers, its text and its files, for HermesKit's paste decision.
+class ClipboardContents {
+  const ClipboardContents({this.types = const [], this.text, this.files = const []});
+  final List<String> types;
+  final String? text;
+  final List<String> files;
+}
+
+/// Files from Windows into the composer (`windows/runner/native_files.cpp`): the Open
+/// dialog, the clipboard, and files dragged onto the window.
+class NativeFiles {
+  static const _channel = MethodChannel('talaria/window');
+
+  /// The Open dialog, several files at a time; empty when cancelled.
+  static Future<List<String>> pick() async =>
+      ((await _channel.invokeMethod<List<Object?>>('pickFiles')) ?? const []).cast<String>();
+
+  static Future<ClipboardContents> readClipboard() async {
+    final map = await _channel.invokeMethod<Map<Object?, Object?>>('readClipboard') ?? const {};
+    return ClipboardContents(
+      types: ((map['types'] as List?) ?? const []).cast<String>(),
+      text: map['text'] as String?,
+      files: ((map['files'] as List?) ?? const []).cast<String>(),
+    );
+  }
+
+  /// The clipboard's image in [type] (a uniform type identifier); null when it has none.
+  static Future<Uint8List?> readClipboardImage(String type) =>
+      _channel.invokeMethod<Uint8List>('readClipboardImage', type);
+
+  /// Files dragged over the window: [onDrag] as a drag enters (true) and leaves or
+  /// drops (false), [onDrop] with the dropped paths.
+  static void listen({required void Function(bool) onDrag, required void Function(List<String>) onDrop}) {
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'dragChanged':
+          onDrag(call.arguments as bool? ?? false);
+        case 'filesDropped':
+          onDrop(((call.arguments as List?) ?? const []).cast<String>());
+      }
+      return null;
+    });
+  }
+}

@@ -51,10 +51,20 @@ possible later; it would need libdispatch SPI, so it waits until the timer shows
 | `openSession` | `id` from a `connection` snapshot's `sessions` | Opens it as the chat |
 | `openBotChat` | `profile` | Opens the profile's Bot Chat |
 | `newChat` | `profile` | Opens a new side chat |
-| `send` | `text` | Sends a prompt in the open chat |
+| `send` | `text` (may be empty when the composer has cards) | Sends a prompt in the open chat; with attachment cards, through the composer (`ChatComposer.submit`), which sends them with it |
 | `interrupt` | — | Stops the running turn |
 | `closeChat` | — | Stops showing the chat |
 | `deleteChat` | — | Deletes the open chat |
+| `reloadModels` | — | Reloads the model catalog (`ChatComposer.loadOptions`; also done when a chat opens) |
+| `selectModel` | `provider`, `model` | Switches the chat's model; a switch Hermes wants confirmed shows as `pendingModelSwitch` |
+| `confirmModelSwitch` / `cancelModelSwitch` | — | Answers `pendingModelSwitch` |
+| `selectEffort` | `effort` (a value from `efforts`) | Sets the chat's reasoning effort |
+| `attachFile` | `path` | Attaches a file from disk (a folder, or a file over the size limit, is refused before it is read); result `{"id": card id}` |
+| `attachData` | `data` (base64), `filename` | Attaches bytes, e.g. a pasted image; result `{"id": card id}` |
+| `removeAttachment` | `id` | Removes a card (an uploaded image is taken back off the session's queue) |
+| `dismissComposerError` | — | Clears the composer's `error` |
+| `decidePaste` | `types` (uniform type identifiers on the clipboard), `string`, `files` (paths) | What a paste does (`ClipboardPolicy`): result `{"decision": "text"}`, `{"decision": "files", "files": [...]}`, `{"decision": "imageData", "type": uti}` or `{"decision": "fileItems"}` |
+| `imageData` | `path`, `profile` | A sent image's bytes from the gateway, for its thumbnail: result `{"data": base64}` |
 
 ## Events
 
@@ -69,8 +79,17 @@ didn't change.
 
 `chat`: `sessionID`, `storedSessionID`, `profile`, `title`, `isRunning`, `lastError`, `items`
 (`id`, `role` (`user`, `assistant`, `tool` or `system`), `text`, `reasoning`, `toolName`,
-`detail`, `isActive`, `outgoingStatus`, `timestamp`, and for an assistant item `markdown` and
-`reasoningMarkdown`, below).
+`detail`, `isActive`, `outgoingStatus`, `timestamp`, for an assistant item `markdown` and
+`reasoningMarkdown` (below), and for a user item `images` (`name`, `path`, and `localID`: the
+composer card it was sent from) and `attachments` (the names of its files)).
+
+`composer`: the open chat's composer (`ChatComposer`), sent as it changes. `sessionID`,
+`model`, `provider`, `modelLabel` (`ModelLabel.displayName`), `providers` (null until the
+catalog loads; each `slug`, `name`, `models` with `model`, `label`, `isCurrent`), `efforts`
+(`value`, `label`; empty when the model has no reasoning control, which hides the picker),
+`effort`, `effortLabel`, `pendingModelSwitch` (`provider`, `model`, `label`, `message`),
+`error`, `attachments` (`id`, `kind` (`image` or `file`), `name`, `detail`, `isUploading`,
+`failure`), `uploadingFiles` (names), `isSubmitting`, `canSubmit`.
 
 ### Markdown
 

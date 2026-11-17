@@ -27,10 +27,13 @@ final class Bridge {
     private let makeConnector: (GatewayEndpoint, GatewayCredential) -> any GatewayConnector
     private(set) var connection = GatewayConnection()
     private(set) var chat: ChatSession?
+    /// The open chat's composer: its pickers and attachment cards.
+    private(set) var composer: ChatComposer?
     /// Bumped whenever the observed objects change, so stale observers stop.
     private var generation = 0
     private var lastConnection: ConnectionSnapshot?
     private var lastChat: ChatSnapshot?
+    private var lastComposer: ComposerSnapshot?
     private let markdown = MarkdownCache()
 
     init(emit: @escaping @Sendable (String) -> Void,
@@ -83,8 +86,17 @@ final class Bridge {
         case "newChat":
             show(try await connection.newSideChat(profile: try string(params, "profile")))
         case "send":
-            guard let chat else { throw BridgeError("no open chat") }
-            try await chat.send(try string(params, "text"))
+            guard let chat, let composer else { throw BridgeError("no open chat") }
+            let text = params["text"]?.stringValue ?? ""
+            if composer.attachments.isEmpty && composer.files.isEmpty {
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw BridgeError("missing text") }
+                try await chat.send(text)
+            } else {
+                // With cards, the composer sends them with the text (and puts them back if
+                // the send fails, its error in the `composer` snapshot).
+                composer.draft = text
+                await composer.submit()
+            }
         case "interrupt":
             guard let chat else { throw BridgeError("no open chat") }
             try await chat.interrupt()
@@ -94,10 +106,79 @@ final class Bridge {
             guard let chat else { throw BridgeError("no open chat") }
             show(nil)
             try await connection.delete(chat)
+        case "reloadModels":
+            try await requireComposer().loadOptions()
+        case "selectModel":
+            let composer = try requireComposer()
+            await composer.selectModel(ModelChoice(provider: try string(params, "provider"), model: try string(params, "model")))
+        case "confirmModelSwitch":
+            try await requireComposer().confirmPendingModelSwitch()
+        case "cancelModelSwitch":
+            try requireComposer().cancelPendingModelSwitch()
+        case "selectEffort":
+            let composer = try requireComposer()
+            await composer.selectEffort(try string(params, "effort"))
+        case "attachFile":
+            let composer = try requireComposer()
+            let file = try AttachmentFile.load(path: try string(params, "path"))
+            return try await attach(file.data, filename: file.filename, to: composer)
+        case "attachData":
+            let composer = try requireComposer()
+            guard let data = Data(base64Encoded: try string(params, "data")) else { throw BridgeError("data is not base64") }
+            return try await attach(data, filename: try string(params, "filename"), to: composer)
+        case "removeAttachment":
+            let id = try string(params, "id")
+            guard let uuid = UUID(uuidString: id) else { throw BridgeError("no attachment \(id)") }
+            try requireComposer().removeAttachment(id: uuid)
+        case "dismissComposerError":
+            try requireComposer().error = nil
+        case "decidePaste":
+            return decidePaste(params)
+        case "imageData":
+            // A sent image's bytes, for its thumbnail in the transcript (the Mac's
+            // `GatewayConnection.imageData`).
+            let data = try await connection.imageData(path: try string(params, "path"),
+                                                      profile: params["profile"]?.stringValue)
+            return .object(["data": .string(data.base64EncodedString())])
         default:
             throw BridgeError("unknown method \(method)")
         }
         return .null
+    }
+
+    private func requireComposer() throws -> ChatComposer {
+        guard let composer else { throw BridgeError("no open chat") }
+        return composer
+    }
+
+    /// Attaches a file's contents (`ChatComposer.attachFile`: an image Hermes takes as it
+    /// is becomes an image card, anything else is staged with `file.attach`) and answers
+    /// `{"id": card id}`, so the app can match a thumbnail to the card.
+    private func attach(_ data: Data, filename: String, to composer: ChatComposer) async throws -> JSONValue {
+        let before = Set(composer.attachments.map(\.id) + composer.files.map(\.id))
+        guard await composer.attachFile(data, filename: filename) else {
+            throw BridgeError(composer.error ?? "Couldn't attach \(filename)")
+        }
+        let added = (composer.attachments.map(\.id) + composer.files.map(\.id)).first { !before.contains($0) }
+        return .object(["id": added.map { .string($0.uuidString) } ?? .null])
+    }
+
+    /// What a paste into the composer does (`ClipboardPolicy`), from what the app read off
+    /// the clipboard: `types` (uniform type identifiers), `string`, `files` (paths).
+    private func decidePaste(_ params: JSONValue) -> JSONValue {
+        func strings(_ key: String) -> [String] {
+            guard case .array(let values)? = params[key] else { return [] }
+            return values.compactMap(\.stringValue)
+        }
+        let files = strings("files")
+        let contents = ClipboardPolicy.Contents(types: strings("types"), string: params["string"]?.stringValue,
+                                                fileURLs: files.map { URL(fileURLWithPath: $0) })
+        let decision = ClipboardPolicy.decide(contents)
+        if case .files = decision {
+            // The paths as the app gave them: a URL's own spelling of a Windows path differs.
+            return .object(["decision": .string("files"), "files": .array(files.map(JSONValue.string))])
+        }
+        return decision.json
     }
 
     /// `{url, token}` for a token (un-gated loopback dashboard), `{url, accessToken}` for a
@@ -131,10 +212,17 @@ final class Bridge {
 
     private func show(_ chat: ChatSession?) {
         self.chat = chat
+        composer = chat.map { ChatComposer(session: $0) }
         generation += 1
         lastChat = nil
+        lastComposer = nil
         observeConnection(generation)
-        if chat != nil { observeChat(generation) }
+        if chat != nil {
+            observeChat(generation)
+            observeComposer(generation)
+        }
+        // The model and effort pickers' choices, as the Mac's composer loads them on open.
+        if let composer { Task { await composer.loadOptions() } }
     }
 
     private func observeConnection(_ generation: Int) {
@@ -147,6 +235,19 @@ final class Bridge {
         if snapshot != lastConnection {
             lastConnection = snapshot
             emit(BridgeEvent.connection(snapshot).json())
+        }
+    }
+
+    private func observeComposer(_ generation: Int) {
+        guard generation == self.generation, let composer else { return }
+        let snapshot = withObservationTracking {
+            ComposerSnapshot(composer)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeComposer(generation) }
+        }
+        if snapshot != lastComposer {
+            lastComposer = snapshot
+            emit(BridgeEvent.composer(snapshot).json())
         }
     }
 

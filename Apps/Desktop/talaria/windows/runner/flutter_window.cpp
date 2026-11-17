@@ -9,6 +9,16 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "native_frame.h"
 
+namespace {
+
+flutter::EncodableValue Strings(const std::vector<std::string>& strings) {
+  flutter::EncodableList list;
+  for (const auto& s : strings) list.emplace_back(s);
+  return flutter::EncodableValue(list);
+}
+
+}  // namespace
+
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
 
@@ -41,16 +51,49 @@ bool FlutterWindow::OnCreate() {
   window_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-        if (call.method_name() != "setTheme") {
+        const std::string& method = call.method_name();
+        if (method == "setTheme") {
+          const auto* name = std::get_if<std::string>(call.arguments());
+          native_frame::Theme theme = native_frame::Theme::kSystem;
+          if (name && *name == "light") theme = native_frame::Theme::kLight;
+          if (name && *name == "dark") theme = native_frame::Theme::kDark;
+          native_frame::SetTheme(GetHandle(), theme);
+          result->Success();
+        } else if (method == "pickFiles") {
+          result->Success(Strings(native_files::PickFiles(GetHandle())));
+        } else if (method == "readClipboard") {
+          const auto contents = native_files::ReadClipboard(GetHandle());
+          flutter::EncodableMap map;
+          map[flutter::EncodableValue("types")] = Strings(contents.types);
+          map[flutter::EncodableValue("files")] = Strings(contents.files);
+          if (contents.text) map[flutter::EncodableValue("text")] = flutter::EncodableValue(*contents.text);
+          result->Success(flutter::EncodableValue(map));
+        } else if (method == "readClipboardImage") {
+          const auto* type = std::get_if<std::string>(call.arguments());
+          auto bytes = native_files::ReadClipboardImage(GetHandle(), type ? *type : std::string());
+          if (bytes.empty()) {
+            result->Success();
+          } else {
+            result->Success(flutter::EncodableValue(std::move(bytes)));
+          }
+        } else {
           result->NotImplemented();
-          return;
         }
-        const auto* name = std::get_if<std::string>(call.arguments());
-        native_frame::Theme theme = native_frame::Theme::kSystem;
-        if (name && *name == "light") theme = native_frame::Theme::kLight;
-        if (name && *name == "dark") theme = native_frame::Theme::kDark;
-        native_frame::SetTheme(GetHandle(), theme);
-        result->Success();
+      });
+
+  // Files dragged from Explorer onto the window: the app highlights the composer while
+  // they are over it and attaches them when dropped.
+  drop_target_ = native_files::RegisterDropTarget(
+      flutter_controller_->view()->GetNativeWindow(),
+      [this](bool entered) {
+        if (window_channel_) {
+          window_channel_->InvokeMethod("dragChanged", std::make_unique<flutter::EncodableValue>(entered));
+        }
+      },
+      [this](std::vector<std::string> paths) {
+        if (window_channel_) {
+          window_channel_->InvokeMethod("filesDropped", std::make_unique<flutter::EncodableValue>(Strings(paths)));
+        }
       });
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -66,6 +109,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (flutter_controller_ && flutter_controller_->view()) {
+    native_files::RevokeDropTarget(flutter_controller_->view()->GetNativeWindow(), drop_target_);
+  }
+  drop_target_ = nullptr;
   window_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;

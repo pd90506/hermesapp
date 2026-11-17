@@ -29,6 +29,9 @@ class SessionEntry {
     this.preview,
     this.startedAt,
     this.isUnread = false,
+    this.isPinned = false,
+    this.group = 'recent',
+    this.groupTitle,
   });
   final String id;
   final String profile;
@@ -38,6 +41,12 @@ class SessionEntry {
   final DateTime? startedAt;
   final bool isUnread;
 
+  /// The list's section (docs/desktop-bridge.md): `pinned`, `recent` (the unlabelled
+  /// head, under "Sessions"), or a date range titled [groupTitle].
+  final bool isPinned;
+  final String group;
+  final String? groupTitle;
+
   static SessionEntry fromJson(Map<String, Object?> j) => SessionEntry(
         id: j['id'] as String? ?? '',
         profile: j['profile'] as String? ?? '',
@@ -46,6 +55,9 @@ class SessionEntry {
         preview: j['preview'] as String?,
         startedAt: _seconds(j['startedAt']),
         isUnread: j['isUnread'] as bool? ?? false,
+        isPinned: j['isPinned'] as bool? ?? false,
+        group: j['group'] as String? ?? 'recent',
+        groupTitle: j['groupTitle'] as String?,
       );
 }
 

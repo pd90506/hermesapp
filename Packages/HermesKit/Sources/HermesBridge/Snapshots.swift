@@ -64,6 +64,11 @@ struct ConnectionSnapshot: Encodable, Sendable, Equatable {
         var startedAt: Double?
         var messageCount: Int?
         var isUnread: Bool
+        var isPinned: Bool
+        /// The list's section: `pinned`, `recent` (the unlabelled head, under "Sessions"),
+        /// or a date range's id (`SessionDateBucket.id`), titled by `groupTitle`.
+        var group: String
+        var groupTitle: String?
     }
 
     var state: String
@@ -74,7 +79,10 @@ struct ConnectionSnapshot: Encodable, Sendable, Equatable {
     var sessionListLoading: Bool
     var sessionListError: String?
 
-    @MainActor init(_ connection: GatewayConnection) {
+    /// `pins` and `server`: the pinned sessions (`SessionPins`), listed first under
+    /// "Pinned"; the rest in Desktop's date groups (`sessionDateGroups`), as the Mac's list.
+    @MainActor init(_ connection: GatewayConnection, pins: SessionPins = SessionPins(), server: UUID = UUID(),
+                    now: Date = .now) {
         switch connection.shownState {
         case .disconnected: state = "disconnected"; detail = nil
         case .connecting: state = "connecting"; detail = nil
@@ -86,12 +94,17 @@ struct ConnectionSnapshot: Encodable, Sendable, Equatable {
             BotRow(name: $0.name, displayName: $0.displayName, preview: $0.preview, isDefault: $0.isDefault)
         }
         listProfile = connection.listProfile
-        sessions = connection.sessionListOrder(connection.visibleHistory).map { entry in
+        func row(_ entry: HistoryEntry, group: String, title: String?, pinned: Bool) -> SessionRow {
             SessionRow(id: entry.id, profile: entry.profile, storedID: entry.summary.id,
                        title: entry.summary.title, preview: entry.summary.preview,
                        startedAt: entry.summary.startedAt, messageCount: entry.summary.messageCount,
-                       isUnread: connection.isUnread(entry))
+                       isUnread: connection.isUnread(entry), isPinned: pinned, group: group, groupTitle: title)
         }
+        let split = pins.split(connection.sessionListOrder(connection.visibleHistory), on: server)
+        sessions = split.pinned.map { row($0, group: "pinned", title: "Pinned", pinned: true) }
+            + connection.sessionDateGroups(split.others, now: now).flatMap { group in
+                group.items.map { row($0, group: group.id, title: group.bucket?.title(), pinned: false) }
+            }
         sessionListLoading = connection.sessionListLoading
         sessionListError = connection.sessionListError
     }

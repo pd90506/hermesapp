@@ -132,4 +132,19 @@ void main() {
     expect(c.hasCards, isTrue);
     expect(const ComposerSnapshot().providers, isNull);
   });
+
+  test('session rows carry their pin and date group', () {
+    final s = ConnectionSnapshot.fromJson({
+      'sessions': [
+        {'id': 'p/a', 'profile': 'p', 'isPinned': true, 'group': 'pinned', 'groupTitle': 'Pinned'},
+        {'id': 'p/b', 'profile': 'p', 'group': 'recent'},
+        {'id': 'p/c', 'profile': 'p', 'group': 'yesterday', 'groupTitle': 'Yesterday'},
+      ],
+    });
+    expect(s.sessions.first.isPinned, isTrue);
+    expect(s.sessions[1].group, 'recent');
+    expect(s.sessions[1].groupTitle, isNull);
+    expect(s.sessions.last.groupTitle, 'Yesterday');
+    expect(SessionEntry.fromJson({'id': 'x'}).group, 'recent');
+  });
 }

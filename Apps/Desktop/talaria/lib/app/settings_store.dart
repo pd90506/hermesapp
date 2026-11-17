@@ -30,6 +30,8 @@ class Settings {
     this.theme = AppTheme.system,
     this.lastProfile,
     this.lastSession,
+    this.serverId,
+    this.pins,
   });
 
   String serverUrl;
@@ -42,6 +44,11 @@ class Settings {
   String? lastProfile;
   String? lastSession;
 
+  /// The server's id, which its pins are kept under (HermesKit's `SessionPins` keys a
+  /// pin by server, profile and session), and the pins as HermesKit encodes them.
+  String? serverId;
+  Map<String, Object?>? pins;
+
   bool get hasServer => serverUrl.trim().isNotEmpty;
 
   Map<String, Object?> toJson() => {
@@ -51,6 +58,8 @@ class Settings {
         'theme': theme.name,
         'lastProfile': lastProfile,
         'lastSession': lastSession,
+        'serverId': serverId,
+        'pins': pins,
       };
 
   static Settings fromJson(Map<String, Object?> json) => Settings(
@@ -60,6 +69,8 @@ class Settings {
         theme: AppTheme.values.asNameMap()[json['theme']] ?? AppTheme.system,
         lastProfile: json['lastProfile'] as String?,
         lastSession: json['lastSession'] as String?,
+        serverId: json['serverId'] as String?,
+        pins: json['pins'] as Map<String, Object?>?,
       );
 }
 

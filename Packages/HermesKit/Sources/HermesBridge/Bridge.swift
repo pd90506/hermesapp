@@ -34,6 +34,10 @@ final class Bridge {
     private var lastConnection: ConnectionSnapshot?
     private var lastChat: ChatSnapshot?
     private var lastComposer: ComposerSnapshot?
+    /// The sessions pinned to the top of the list (`SessionPins`), kept by the app
+    /// (`setPins`), and the server they belong to.
+    private var pins = SessionPins()
+    private var pinServer = UUID()
     private let markdown = MarkdownCache()
 
     init(emit: @escaping @Sendable (String) -> Void,
@@ -134,6 +138,25 @@ final class Bridge {
             try requireComposer().error = nil
         case "decidePaste":
             return decidePaste(params)
+        case "setPins":
+            guard let server = UUID(uuidString: try string(params, "server")) else { throw BridgeError("server is not a UUID") }
+            pinServer = server
+            // None saved yet (absent or null): no pins.
+            if let saved = params["pins"], saved != .null {
+                pins = try saved.decode(SessionPins.self)
+            } else {
+                pins = SessionPins()
+            }
+            emitConnection()
+        case "pinSession":
+            let id = try string(params, "id")
+            guard let entry = connection.history.first(where: { $0.id == id }) else {
+                throw BridgeError("no session \(id) in the list")
+            }
+            pins.setPinned(params["pinned"].flatMap { if case .bool(let value) = $0 { value } else { nil } } ?? true,
+                           entry, on: pinServer)
+            emitConnection()
+            return .object(["pins": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(pins))])
         case "imageData":
             // A sent image's bytes, for its thumbnail in the transcript (the Mac's
             // `GatewayConnection.imageData`).
@@ -228,10 +251,20 @@ final class Bridge {
     private func observeConnection(_ generation: Int) {
         guard generation == self.generation else { return }
         let snapshot = withObservationTracking {
-            ConnectionSnapshot(connection)
+            ConnectionSnapshot(connection, pins: pins, server: pinServer)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeConnection(generation) }
         }
+        if snapshot != lastConnection {
+            lastConnection = snapshot
+            emit(BridgeEvent.connection(snapshot).json())
+        }
+    }
+
+    /// Sends the connection snapshot again after a change the observation doesn't see
+    /// (the pins, which the bridge keeps).
+    private func emitConnection() {
+        let snapshot = ConnectionSnapshot(connection, pins: pins, server: pinServer)
         if snapshot != lastConnection {
             lastConnection = snapshot
             emit(BridgeEvent.connection(snapshot).json())

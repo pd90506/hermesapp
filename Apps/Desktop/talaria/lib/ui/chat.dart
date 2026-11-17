@@ -564,7 +564,9 @@ class _ComposerState extends State<Composer> {
         maxLines: 10,
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
         style: TextStyle(fontSize: 14, height: 1.45, color: p.text),
-        decoration: const WidgetStatePropertyAll(BoxDecoration(color: Color(0x00000000))),
+        // No box of its own: a transparent border replaces the TextBox's default stroke.
+        decoration: const WidgetStatePropertyAll(
+            BoxDecoration(color: Color(0x00000000), border: Border.fromBorderSide(BorderSide(color: Color(0x00000000))))),
         foregroundDecoration: const WidgetStatePropertyAll(BoxDecoration()),
         highlightColor: const Color(0x00000000),
         unfocusedColor: const Color(0x00000000),

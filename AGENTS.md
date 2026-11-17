@@ -254,6 +254,10 @@ Windows, and CI doesn't run on Windows.
   Fluent controls, the caption buttons Windows draws; decided by the user, 2026-11-17).
   - Build it with `scripts/windows/Build-Desktop.ps1`: HermesBridge.dll, then the Flutter
     app, then the Swift and VC++ runtime DLLs beside the exe (a clean Windows has neither).
+  - **After every merge, reinstall it on the Windows PC** (decided by the user, 2026-11-17):
+    pull `main` in the main checkout and run `scripts/windows/Install-Desktop.ps1` there. It
+    replaces the copy in `%LOCALAPPDATA%\Programs\Talaria` (Start menu: Talaria), keeps the
+    user's settings and sign-in, and deletes every build output it made. Don't start the app.
   - Run it and take its screenshots in the VM with `scripts/windows-test-vm/Invoke-AppInVM.ps1`
     (`-Fresh` for the first-run page). The VM has no GPU, so Mica shows as its solid fallback
     there; say so when sending screenshots.

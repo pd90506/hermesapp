@@ -9,6 +9,7 @@ enum BridgeEvent: Encodable, Sendable {
     case failure(id: String, message: String)
     case connection(ConnectionSnapshot)
     case chat(ChatSnapshot)
+    case composer(ComposerSnapshot)
 
     private enum CodingKeys: String, CodingKey { case type, id, result, error }
 
@@ -29,6 +30,9 @@ enum BridgeEvent: Encodable, Sendable {
         case .chat(let snapshot):
             try snapshot.encode(to: encoder)
             try container.encode("chat", forKey: .type)
+        case .composer(let snapshot):
+            try snapshot.encode(to: encoder)
+            try container.encode("composer", forKey: .type)
         }
     }
 
@@ -109,6 +113,17 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
         /// An assistant item's `text` and `reasoning`, parsed (docs/desktop-bridge.md, "Markdown").
         var markdown: [MarkdownPart]?
         var reasoningMarkdown: [MarkdownPart]?
+        /// A user item's images (`name`, and `localID`: the composer card it was sent
+        /// from) and the names of its files.
+        var images: [Image]?
+        var attachments: [String]?
+    }
+
+    struct Image: Encodable, Sendable, Equatable {
+        var name: String
+        /// Where the image is on the gateway, for `imageData`.
+        var path: String?
+        var localID: String?
     }
 
     var sessionID: String
@@ -136,6 +151,12 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
             var row = Item(id: item.id, role: role, text: item.text, reasoning: item.reasoning,
                            toolName: item.toolName, detail: item.detail, isActive: item.isActive,
                            outgoingStatus: item.outgoingStatus, timestamp: item.timestamp?.timeIntervalSince1970)
+            if item.role == .user {
+                if !item.images.isEmpty {
+                    row.images = item.images.map { Image(name: $0.name, path: $0.path, localID: $0.localID?.uuidString) }
+                }
+                if !item.attachments.isEmpty { row.attachments = item.attachments }
+            }
             if item.role == .assistant {
                 if !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     row.markdown = cache.parts(item.text, streaming: item.isActive)

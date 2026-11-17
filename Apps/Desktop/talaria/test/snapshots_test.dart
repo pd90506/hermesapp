@@ -94,4 +94,42 @@ void main() {
     expect(item.markdown[2].table!.rows.single.last.single.text, '2');
     expect(item.reasoningMarkdown, isEmpty);
   });
+
+  test('a composer snapshot reads its pickers and cards', () {
+    final c = ComposerSnapshot.fromJson({
+      'type': 'composer',
+      'sessionID': 's1',
+      'model': 'claude-sonnet-5-5',
+      'modelLabel': 'Sonnet 5.5',
+      'providers': [
+        {
+          'slug': 'custom',
+          'name': 'Custom endpoint',
+          'models': [
+            {'model': 'claude-sonnet-5-5', 'label': 'Sonnet 5.5', 'isCurrent': true},
+            {'model': 'claude-haiku-5-5', 'label': 'Haiku 5.5', 'isCurrent': false},
+          ],
+        },
+      ],
+      'efforts': [
+        {'value': 'none', 'label': 'Off'},
+        {'value': 'high', 'label': 'High'},
+      ],
+      'effort': 'high',
+      'effortLabel': 'High',
+      'attachments': [
+        {'id': 'a', 'kind': 'image', 'name': 'Pasted Image.png', 'detail': '973 bytes', 'isUploading': true},
+        {'id': 'b', 'kind': 'file', 'name': 'notes.txt', 'detail': '50 bytes'},
+      ],
+      'uploadingFiles': ['big.pdf'],
+      'canSubmit': false,
+    });
+    expect(c.providers!.single.models.first.isCurrent, isTrue);
+    expect(c.efforts.last.label, 'High');
+    expect(c.attachments.first.isImage, isTrue);
+    expect(c.attachments.first.isUploading, isTrue);
+    expect(c.attachments.last.isImage, isFalse);
+    expect(c.hasCards, isTrue);
+    expect(const ComposerSnapshot().providers, isNull);
+  });
 }

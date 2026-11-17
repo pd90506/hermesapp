@@ -93,6 +93,8 @@ class ChatItem {
     this.timestamp,
     this.markdown = const [],
     this.reasoningMarkdown = const [],
+    this.images = const [],
+    this.attachments = const [],
   });
   final String id;
   final Role role;
@@ -108,6 +110,10 @@ class ChatItem {
   final List<MdPart> markdown;
   final List<MdPart> reasoningMarkdown;
 
+  /// A user item's images (`localID`: the composer card it was sent from) and files.
+  final List<SentImage> images;
+  final List<String> attachments;
+
   static ChatItem fromJson(Map<String, Object?> j) => ChatItem(
         id: j['id'] as String? ?? '',
         role: Role.values.asNameMap()[j['role']] ?? Role.system,
@@ -120,7 +126,155 @@ class ChatItem {
         timestamp: _seconds(j['timestamp']),
         markdown: _list(j['markdown']).map(MdPart.fromJson).toList(),
         reasoningMarkdown: _list(j['reasoningMarkdown']).map(MdPart.fromJson).toList(),
+        images: _list(j['images'])
+            .map((i) => SentImage(
+                name: i['name'] as String? ?? '', path: i['path'] as String?, localID: i['localID'] as String?))
+            .toList(),
+        attachments: ((j['attachments'] as List?) ?? const []).cast<String>(),
       );
+}
+
+class SentImage {
+  const SentImage({required this.name, this.path, this.localID});
+  final String name;
+  final String? path;
+  final String? localID;
+}
+
+/// The open chat's composer (docs/desktop-bridge.md, "Composer"): the model and
+/// reasoning-effort pickers and the attachment cards.
+class ComposerSnapshot {
+  const ComposerSnapshot({
+    this.sessionID,
+    this.model,
+    this.provider,
+    this.modelLabel,
+    this.providers,
+    this.efforts = const [],
+    this.effort = 'medium',
+    this.effortLabel = 'Medium',
+    this.pendingModelSwitch,
+    this.error,
+    this.attachments = const [],
+    this.uploadingFiles = const [],
+    this.isSubmitting = false,
+    this.canSubmit = false,
+  });
+  final String? sessionID;
+  final String? model;
+  final String? provider;
+  final String? modelLabel;
+
+  /// Null until the models load; empty when the gateway offers none.
+  final List<ModelProvider>? providers;
+  final List<EffortChoice> efforts;
+  final String effort;
+  final String effortLabel;
+  final PendingModelSwitch? pendingModelSwitch;
+  final String? error;
+  final List<AttachmentCard> attachments;
+  final List<String> uploadingFiles;
+  final bool isSubmitting;
+  final bool canSubmit;
+
+  bool get hasCards => attachments.isNotEmpty || uploadingFiles.isNotEmpty;
+
+  static ComposerSnapshot fromJson(Map<String, Object?> j) {
+    final pending = j['pendingModelSwitch'] as Map<String, Object?>?;
+    return ComposerSnapshot(
+      sessionID: j['sessionID'] as String?,
+      model: j['model'] as String?,
+      provider: j['provider'] as String?,
+      modelLabel: j['modelLabel'] as String?,
+      providers: j['providers'] == null
+          ? null
+          : _list(j['providers'])
+              .map((p) => ModelProvider(
+                    slug: p['slug'] as String? ?? '',
+                    name: p['name'] as String? ?? '',
+                    models: _list(p['models'])
+                        .map((m) => ModelOption(
+                              model: m['model'] as String? ?? '',
+                              label: m['label'] as String? ?? '',
+                              isCurrent: m['isCurrent'] as bool? ?? false,
+                            ))
+                        .toList(),
+                  ))
+              .toList(),
+      efforts: _list(j['efforts'])
+          .map((e) => EffortChoice(value: e['value'] as String? ?? '', label: e['label'] as String? ?? ''))
+          .toList(),
+      effort: j['effort'] as String? ?? 'medium',
+      effortLabel: j['effortLabel'] as String? ?? 'Medium',
+      pendingModelSwitch: pending == null
+          ? null
+          : PendingModelSwitch(
+              provider: pending['provider'] as String? ?? '',
+              model: pending['model'] as String? ?? '',
+              label: pending['label'] as String? ?? '',
+              message: pending['message'] as String? ?? '',
+            ),
+      error: j['error'] as String?,
+      attachments: _list(j['attachments'])
+          .map((a) => AttachmentCard(
+                id: a['id'] as String? ?? '',
+                isImage: a['kind'] == 'image',
+                name: a['name'] as String? ?? '',
+                detail: a['detail'] as String? ?? '',
+                isUploading: a['isUploading'] as bool? ?? false,
+                failure: a['failure'] as String?,
+              ))
+          .toList(),
+      uploadingFiles: ((j['uploadingFiles'] as List?) ?? const []).cast<String>(),
+      isSubmitting: j['isSubmitting'] as bool? ?? false,
+      canSubmit: j['canSubmit'] as bool? ?? false,
+    );
+  }
+}
+
+class ModelProvider {
+  const ModelProvider({required this.slug, required this.name, required this.models});
+  final String slug;
+  final String name;
+  final List<ModelOption> models;
+}
+
+class ModelOption {
+  const ModelOption({required this.model, required this.label, this.isCurrent = false});
+  final String model;
+  final String label;
+  final bool isCurrent;
+}
+
+class EffortChoice {
+  const EffortChoice({required this.value, required this.label});
+  final String value;
+  final String label;
+}
+
+class PendingModelSwitch {
+  const PendingModelSwitch({required this.provider, required this.model, required this.label, required this.message});
+  final String provider;
+  final String model;
+  final String label;
+  final String message;
+}
+
+class AttachmentCard {
+  const AttachmentCard({
+    required this.id,
+    required this.isImage,
+    required this.name,
+    required this.detail,
+    this.isUploading = false,
+    this.failure,
+  });
+  final String id;
+  final bool isImage;
+  final String name;
+  final String detail;
+  final bool isUploading;
+  final String? failure;
 }
 
 /// A part of a parsed message (docs/desktop-bridge.md, "Markdown"): prose runs, a code

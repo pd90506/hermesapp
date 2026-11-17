@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes_bridge/hermes_bridge.dart';
@@ -18,6 +20,15 @@ class AppState extends ChangeNotifier {
         settings = store.load() {
     _events = _bridge.events.listen(_receive);
     unawaited(WindowFrame.setTheme(settings.theme));
+    NativeFiles.listen(
+      onDrag: (over) {
+        isDraggingFiles = over && chat.isOpen;
+        notifyListeners();
+      },
+      onDrop: (paths) {
+        if (chat.isOpen) unawaited(attachPaths(paths));
+      },
+    );
   }
 
   final HermesBridge _bridge;
@@ -27,6 +38,14 @@ class AppState extends ChangeNotifier {
   Settings settings;
   ConnectionSnapshot connection = const ConnectionSnapshot();
   ChatSnapshot chat = const ChatSnapshot();
+  ComposerSnapshot composer = const ComposerSnapshot();
+
+  /// Thumbnails of the images attached here, by card id: the composer's cards and,
+  /// once sent, the prompt's bubble (`SentImage.localID`).
+  final Map<String, Uint8List> previews = {};
+
+  /// Files are being dragged over the window.
+  bool isDraggingFiles = false;
 
   /// The profile the rail has selected; its Bot Chat and sessions are listed.
   String? selectedProfile;
@@ -67,9 +86,12 @@ class AppState extends ChangeNotifier {
           unawaited(selectProfile(pick.name));
         }
         _restoreLastSession();
+      case 'composer':
+        composer = ComposerSnapshot.fromJson(event);
       case 'chat':
         final wasRunning = chat.isRunning;
         chat = ChatSnapshot.fromJson(event);
+        if (composer.sessionID != null && composer.sessionID != chat.sessionID) composer = const ComposerSnapshot();
         // A turn that started or ended changes the list: a new chat gets its row, a
         // finished one its title and time.
         if (wasRunning != chat.isRunning) unawaited(refreshSessions());
@@ -227,6 +249,7 @@ class AppState extends ChangeNotifier {
 
   // --- The open chat -----------------------------------------------------------------
 
+  /// Sends the text, with the composer's cards if there are any.
   Future<bool> send(String text) async {
     try {
       _trace('> send');
@@ -241,6 +264,123 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> interrupt() => _run('interrupt');
+
+  // --- The composer: model, effort, attachments ---------------------------------------
+
+  Future<void> selectModel(String provider, String model) =>
+      _run('selectModel', {'provider': provider, 'model': model});
+  Future<void> confirmModelSwitch() => _run('confirmModelSwitch');
+  Future<void> cancelModelSwitch() => _run('cancelModelSwitch');
+  Future<void> reloadModels() => _run('reloadModels');
+  Future<void> selectEffort(String effort) => _run('selectEffort', {'effort': effort});
+  Future<void> dismissComposerError() => _run('dismissComposerError');
+  Future<void> removeAttachment(String id) => _run('removeAttachment', {'id': id});
+
+  /// The Open dialog, then each picked file attached.
+  Future<void> pickFiles() async => attachPaths(await NativeFiles.pick());
+
+  /// Files from the Open dialog, a drop or a paste. HermesKit decides how each goes
+  /// (an image Hermes takes as it is becomes an image card, anything else a file).
+  Future<void> attachPaths(List<String> paths) async {
+    for (final path in paths) {
+      try {
+        _trace('> attachFile');
+        final result = await _bridge.call('attachFile', {'path': path});
+        final id = (result as Map?)?['id'] as String?;
+        if (id != null && _isImageName(path)) {
+          try {
+            previews[id] = await File(path).readAsBytes();
+          } on FileSystemException {
+            // No thumbnail; the card shows the file's name.
+          }
+          notifyListeners();
+        }
+      } on BridgeException catch (e) {
+        _trace('! attachFile: ${e.message}');
+        // The composer shows its own error; a refusal before it (a folder) shows here.
+        if (composer.error == null) {
+          error = e.message;
+          notifyListeners();
+        }
+      }
+    }
+  }
+
+  /// A sent image's bytes from the gateway, once per path; null when it can't be read.
+  Future<Uint8List?> sentImage(String path) => _sentImages.putIfAbsent(path, () async {
+        try {
+          final result = await _bridge.call('imageData', {'path': path, 'profile': chat.profile});
+          final data = (result as Map?)?['data'] as String?;
+          return data == null ? null : base64Decode(data);
+        } on BridgeException {
+          return null;
+        }
+      });
+  final Map<String, Future<Uint8List?>> _sentImages = {};
+
+  static bool _isImageName(String name) =>
+      RegExp(r'\.(png|jpe?g|gif|webp)$', caseSensitive: false).hasMatch(name);
+
+  /// Ctrl+V in the composer: files and images on the clipboard are attached
+  /// (HermesKit's `ClipboardPolicy`, as on the Mac); true when the paste is text, which
+  /// the caller inserts.
+  Future<bool> pasteIsText() async {
+    final clip = await NativeFiles.readClipboard();
+    if (clip.types.isEmpty) return false;
+    final Object? answer;
+    try {
+      answer = await _bridge.call('decidePaste', {'types': clip.types, 'string': clip.text, 'files': clip.files});
+    } on BridgeException {
+      return true;
+    }
+    final decision = answer as Map? ?? const {};
+    switch (decision['decision']) {
+      case 'files':
+        await attachPaths(((decision['files'] as List?) ?? const []).cast<String>());
+        return false;
+      case 'imageData':
+        await _attachClipboardImage(decision['type'] as String? ?? '');
+        return false;
+      default:
+        return true;
+    }
+  }
+
+  /// The clipboard's image, as a PNG unless it is a JPEG or GIF already (a bitmap is
+  /// converted: Hermes takes PNG, JPEG, GIF and WebP as they are).
+  Future<void> _attachClipboardImage(String type) async {
+    var bytes = await NativeFiles.readClipboardImage(type);
+    if (bytes == null) return;
+    var ext = switch (type) { 'public.jpeg' => 'jpg', 'com.compuserve.gif' => 'gif', _ => 'png' };
+    if (type == 'com.microsoft.bmp') {
+      final png = await _toPng(bytes);
+      if (png == null) return;
+      bytes = png;
+      ext = 'png';
+    }
+    try {
+      final result = await _bridge.call('attachData', {'data': base64Encode(bytes), 'filename': 'Pasted Image.$ext'});
+      final id = (result as Map?)?['id'] as String?;
+      if (id != null) previews[id] = bytes;
+      notifyListeners();
+    } on BridgeException catch (e) {
+      if (composer.error == null) {
+        error = e.message;
+        notifyListeners();
+      }
+    }
+  }
+
+  static Future<Uint8List?> _toPng(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      return data?.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> deleteChat() async {
     await _run('deleteChat');

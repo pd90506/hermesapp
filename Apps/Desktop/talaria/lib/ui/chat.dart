@@ -63,7 +63,7 @@ class ChatPane extends StatelessWidget {
           ),
         ]),
       ),
-      Expanded(child: _Transcript(chat: chat)),
+      Expanded(child: _Transcript(chat: chat, app: app)),
       if (chat.lastError case final error?)
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
@@ -102,8 +102,9 @@ class ChatPane extends StatelessWidget {
 
 /// The transcript, newest at the bottom; it follows the end while a reply streams.
 class _Transcript extends StatelessWidget {
-  const _Transcript({required this.chat});
+  const _Transcript({required this.chat, required this.app});
   final ChatSnapshot chat;
+  final AppState app;
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +124,7 @@ class _Transcript extends StatelessWidget {
             padding: const EdgeInsets.only(top: 14),
             child: switch (block) {
               _ToolRun(:final items) => _ToolCard(items: items),
-              _Single(:final item) => _MessageView(item: item),
+              _Single(:final item) => _MessageView(item: item, app: app),
             },
           ),
         );
@@ -173,8 +174,9 @@ class _Centered extends StatelessWidget {
 }
 
 class _MessageView extends StatelessWidget {
-  const _MessageView({required this.item});
+  const _MessageView({required this.item, required this.app});
   final ChatItem item;
+  final AppState app;
 
   @override
   Widget build(BuildContext context) {
@@ -182,15 +184,28 @@ class _MessageView extends StatelessWidget {
     final body = TextStyle(fontSize: 14, color: p.text, height: 1.55);
     switch (item.role) {
       case Role.user:
+        final sent = item.images.isNotEmpty || item.attachments.isNotEmpty;
         return Align(
           alignment: Alignment.centerRight,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 540),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(color: p.userBubble, borderRadius: BorderRadius.circular(8)),
-              child: SelectableText(item.text, style: body.copyWith(height: 1.45)),
-            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              // What was sent with the prompt, above its bubble, as on the Mac.
+              if (sent)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Wrap(alignment: WrapAlignment.end, spacing: 6, runSpacing: 6, children: [
+                    for (final image in item.images) _SentImageView(image: image, app: app),
+                    for (final name in item.attachments) _FileChip(icon: Glyphs.document, name: name),
+                  ]),
+                ),
+              if (item.text.trim().isNotEmpty || !sent)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(color: p.userBubble, borderRadius: BorderRadius.circular(8)),
+                  child: SelectableText(item.text, style: body.copyWith(height: 1.45)),
+                ),
+            ]),
           ),
         );
       case Role.system:
@@ -364,8 +379,63 @@ class _Working extends StatelessWidget {
   }
 }
 
-/// A multi-line TextBox with its command along the bottom: Enter sends, Shift+Enter
-/// starts a new line; Stop while a reply runs.
+/// An image sent with a prompt: the composer's thumbnail when it was sent from here,
+/// else the image from the gateway; its name until then, or if it can't be read.
+class _SentImageView extends StatelessWidget {
+  const _SentImageView({required this.image, required this.app});
+  final SentImage image;
+  final AppState app;
+
+  Widget _thumb(Uint8List bytes) => ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.memory(bytes, height: 120, fit: BoxFit.cover, gaplessPlayback: true),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    if (app.previews[image.localID] case final bytes?) return _thumb(bytes);
+    final path = image.path;
+    final chip = _FileChip(icon: Glyphs.photo, name: image.name);
+    if (path == null) return chip;
+    return FutureBuilder<Uint8List?>(
+      future: app.sentImage(path),
+      builder: (context, snapshot) => snapshot.data == null ? chip : _thumb(snapshot.data!),
+    );
+  }
+}
+
+/// A file sent with a prompt, by name: an image whose thumbnail isn't on this device,
+/// or a file staged with `file.attach`.
+class _FileChip extends StatelessWidget {
+  const _FileChip({required this.icon, required this.name});
+  final IconData icon;
+  final String name;
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: p.card,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: p.cardStroke),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: p.text2),
+        const SizedBox(width: 8),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: p.text)),
+        ),
+      ]),
+    );
+  }
+}
+
+/// The composer: the attached images and files as cards, a multi-line TextBox with its
+/// command at its end (Enter sends, Shift+Enter starts a new line; Stop while a reply
+/// runs), and a toolbar under it with Attach and the model and reasoning-effort pickers,
+/// as the Mac's composer. Files can also be dropped on the window, or pasted.
 class Composer extends StatefulWidget {
   const Composer({super.key, required this.app});
   final AppState app;
@@ -377,6 +447,9 @@ class _ComposerState extends State<Composer> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   bool _sending = false;
+
+  /// The model switch whose confirmation is showing, so it is asked once.
+  PendingModelSwitch? _asking;
 
   @override
   void initState() {
@@ -396,9 +469,15 @@ class _ComposerState extends State<Composer> {
     super.dispose();
   }
 
+  ComposerSnapshot get _composer => widget.app.composer;
+
+  bool get _hasCards => _composer.attachments.isNotEmpty;
+
   bool get _canSend =>
-      _controller.text.trim().isNotEmpty &&
+      (_controller.text.trim().isNotEmpty || _hasCards) &&
       !_sending &&
+      _composer.uploadingFiles.isEmpty &&
+      !_composer.attachments.any((a) => a.isUploading) &&
       widget.app.connection.state == LinkState.connected;
 
   Future<void> _send() async {
@@ -412,61 +491,329 @@ class _ComposerState extends State<Composer> {
     _focus.requestFocus();
   }
 
+  /// Ctrl+V: files and images on the clipboard are attached; text is inserted.
+  Future<void> _paste() async {
+    if (!await widget.app.pasteIsText()) return;
+    final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    if (text == null || !mounted) return;
+    final value = _controller.value;
+    final selection = value.selection.isValid ? value.selection : TextSelection.collapsed(offset: value.text.length);
+    _controller.value = TextEditingValue(
+      text: value.text.replaceRange(selection.start, selection.end, text),
+      selection: TextSelection.collapsed(offset: selection.start + text.length),
+    );
+  }
+
+  /// A switch the gateway wants confirmed (an expensive model): asked in a dialog, as
+  /// the Mac asks in an alert.
+  void _askAboutSwitch() {
+    final pending = _composer.pendingModelSwitch;
+    if (pending == null || identical(pending, _asking) || _asking?.model == pending.model) return;
+    _asking = pending;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => ContentDialog(
+          title: const Text('Switch model?'),
+          content: Text(pending.message),
+          actions: [
+            Button(child: const Text('Keep current model'), onPressed: () => Navigator.pop(context, false)),
+            FilledButton(child: Text('Switch to ${pending.label}'), onPressed: () => Navigator.pop(context, true)),
+          ],
+        ),
+      );
+      _asking = null;
+      if (ok == true) {
+        await widget.app.confirmModelSwitch();
+      } else {
+        await widget.app.cancelModelSwitch();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final running = widget.app.chat.isRunning;
+    final p = PaletteScope.of(context);
+    final app = widget.app;
+    final composer = _composer;
+    final running = app.chat.isRunning;
+    _askAboutSwitch();
+    final box = Focus(
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.enter && !HardwareKeyboard.instance.isShiftPressed) {
+          _send();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.keyV && HardwareKeyboard.instance.isControlPressed) {
+          _paste();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: TextBox(
+        controller: _controller,
+        focusNode: _focus,
+        placeholder: 'Message Hermes',
+        minLines: 2,
+        maxLines: 8,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        style: const TextStyle(fontSize: 14, height: 1.45),
+        suffixMode: OverlayVisibilityMode.always,
+        suffix: Padding(
+          padding: const EdgeInsets.all(6),
+          child: running && _controller.text.trim().isEmpty && !_hasCards
+              ? Tooltip(
+                  message: 'Stop the reply',
+                  child: FilledButton(
+                    onPressed: app.interrupt,
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Glyphs.stop, size: 11),
+                      SizedBox(width: 6),
+                      Text('Stop'),
+                    ]),
+                  ),
+                )
+              : Tooltip(
+                  message: running ? 'Send now (Enter); Hermes takes it in during the reply' : 'Send (Enter)',
+                  child: FilledButton(
+                    onPressed: _canSend ? _send : null,
+                    child: _sending || composer.isSubmitting
+                        ? const SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2))
+                        : const Icon(Glyphs.send, size: 14),
+                  ),
+                ),
+        ),
+      ),
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: ChatPane.contentWidth),
-          child: Focus(
-            onKeyEvent: (node, event) {
-              if (event is KeyDownEvent &&
-                  event.logicalKey == LogicalKeyboardKey.enter &&
-                  !HardwareKeyboard.instance.isShiftPressed) {
-                _send();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: TextBox(
-              controller: _controller,
-              focusNode: _focus,
-              placeholder: 'Message Hermes',
-              minLines: 2,
-              maxLines: 8,
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              style: const TextStyle(fontSize: 14, height: 1.45),
-              suffixMode: OverlayVisibilityMode.always,
-              suffix: Padding(
-                padding: const EdgeInsets.all(6),
-                child: running && _controller.text.trim().isEmpty
-                    ? Tooltip(
-                        message: 'Stop the reply',
-                        child: FilledButton(
-                          onPressed: widget.app.interrupt,
-                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Glyphs.stop, size: 11),
-                            SizedBox(width: 6),
-                            Text('Stop'),
-                          ]),
-                        ),
-                      )
-                    : Tooltip(
-                        message: running ? 'Send now (Enter); Hermes takes it in during the reply' : 'Send (Enter)',
-                        child: FilledButton(
-                          onPressed: _canSend ? _send : null,
-                          child: _sending
-                              ? const SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2))
-                              : const Icon(Glyphs.send, size: 14),
-                        ),
-                      ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+            if (composer.error case final message?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: InfoBar(
+                  title: Text(message),
+                  severity: InfoBarSeverity.warning,
+                  onClose: app.dismissComposerError,
+                ),
               ),
+            if (composer.hasCards)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final card in composer.attachments)
+                    _AttachmentCardView(card: card, preview: app.previews[card.id], onRemove: () => app.removeAttachment(card.id)),
+                  for (final name in composer.uploadingFiles) _AttachmentCardView.uploading(name),
+                ]),
+              ),
+            // Files dragged over the window land here: the box takes the accent's edge.
+            DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                border: app.isDraggingFiles ? Border.all(color: p.accent, width: 2) : null,
+              ),
+              child: box,
             ),
-          ),
+            const SizedBox(height: 4),
+            Row(children: [
+              IconAction(Glyphs.attach, size: 14, tooltip: 'Attach images or files', onPressed: app.pickFiles),
+              const SizedBox(width: 4),
+              _ModelPicker(app: app),
+              if (composer.efforts.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                _EffortPicker(app: app),
+              ],
+            ]),
+          ]),
         ),
       ),
+    );
+  }
+}
+
+/// The toolbar's pickers: a subtle button with the current value and a chevron, which
+/// opens a menu (WinUI's DropDownButton, without its border, as a command bar's).
+class _PickerButton extends StatelessWidget {
+  const _PickerButton({required this.label, required this.tooltip, required this.items});
+  final String label;
+  final String tooltip;
+  final List<MenuFlyoutItemBase> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: DropDownButton(
+        title: Text(label, style: TextStyle(fontSize: 12, color: p.text2)),
+        trailing: Icon(Glyphs.chevronDown, size: 8, color: p.text3),
+        buttonBuilder: (context, onOpen) => HoverButton(
+          onPressed: onOpen,
+          builder: (context, states) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: states.isHovered ? p.subtle : const Color(0x00000000),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(label, style: TextStyle(fontSize: 12, color: p.text2)),
+              const SizedBox(width: 6),
+              Icon(Glyphs.chevronDown, size: 8, color: p.text3),
+            ]),
+          ),
+        ),
+        items: items,
+      ),
+    );
+  }
+}
+
+/// A menu's section title, as WinUI menus head a group. (A menu is in the overlay,
+/// outside the window's PaletteScope: its colours come from the Fluent theme.)
+MenuFlyoutItemBase _menuHeader(String title) => MenuFlyoutItemBuilder(
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: FluentTheme.of(context).resources.textFillColorSecondary)),
+      ),
+    );
+
+/// The chat's model, by provider, as the Mac's model menu (Desktop's model picker).
+class _ModelPicker extends StatelessWidget {
+  const _ModelPicker({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final composer = app.composer;
+    final providers = composer.providers;
+    String key(String provider, String model) => '$provider\u0000$model';
+    final current = providers
+            ?.expand((p) => p.models.where((m) => m.isCurrent).map((m) => key(p.slug, m.model)))
+            .firstOrNull ??
+        '';
+    return _PickerButton(
+      label: composer.modelLabel ?? 'Model',
+      tooltip: composer.model == null ? 'Model for this chat' : 'Model for this chat: ${composer.model}',
+      items: [
+        if (providers == null)
+          MenuFlyoutItem(text: const Text('Loading models…'), onPressed: null)
+        else if (providers.isEmpty)
+          MenuFlyoutItem(text: const Text('No models available'), onPressed: null)
+        else
+          for (final provider in providers) ...[
+            _menuHeader(provider.name),
+            for (final model in provider.models)
+              RadioMenuFlyoutItem<String>(
+                text: Text(model.label),
+                value: key(provider.slug, model.model),
+                groupValue: current,
+                onChanged: (_) => app.selectModel(provider.slug, model.model),
+              ),
+          ],
+        const MenuFlyoutSeparator(),
+        MenuFlyoutItem(leading: const Icon(Glyphs.refresh), text: const Text('Reload models'), onPressed: app.reloadModels),
+      ],
+    );
+  }
+}
+
+/// The chat's reasoning effort, for a model that has the control.
+class _EffortPicker extends StatelessWidget {
+  const _EffortPicker({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final composer = app.composer;
+    return _PickerButton(
+      label: composer.effortLabel,
+      tooltip: 'Reasoning effort for this chat',
+      items: [
+        _menuHeader('Reasoning effort'),
+        for (final choice in composer.efforts)
+          RadioMenuFlyoutItem<String>(
+            text: Text(choice.label),
+            value: choice.value,
+            groupValue: composer.effort,
+            onChanged: (value) => app.selectEffort(value),
+          ),
+      ],
+    );
+  }
+}
+
+/// An attached image or file, above the text box: its thumbnail or icon, its name and
+/// size, and Remove. A card still uploading shows a ring; a failed image upload a
+/// warning (the send uploads it again).
+class _AttachmentCardView extends StatelessWidget {
+  const _AttachmentCardView({required this.card, this.preview, this.onRemove}) : uploadingName = null;
+  const _AttachmentCardView.uploading(String name)
+      : uploadingName = name,
+        card = null,
+        preview = null,
+        onRemove = null;
+
+  final AttachmentCard? card;
+  final String? uploadingName;
+  final Uint8List? preview;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final card = this.card;
+    final uploading = uploadingName != null || (card?.isUploading ?? false);
+    final failure = card?.failure;
+    Widget thumb;
+    if (preview case final bytes?) {
+      thumb = ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.memory(bytes, width: 36, height: 36, fit: BoxFit.cover, gaplessPlayback: true),
+      );
+    } else {
+      thumb = Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(color: p.subtle, borderRadius: BorderRadius.circular(4)),
+        child: Icon((card?.isImage ?? false) ? Glyphs.photo : Glyphs.document, size: 16, color: p.text2),
+      );
+    }
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.fromLTRB(6, 6, 2, 6),
+      decoration: BoxDecoration(
+        color: p.card,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: failure != null ? p.caution : p.cardStroke),
+      ),
+      child: Row(children: [
+        thumb,
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(card?.name ?? uploadingName ?? '',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: p.text)),
+            Text(
+              failure ?? (uploading ? 'Uploading…' : card?.detail ?? ''),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: failure != null ? p.caution : p.text3),
+            ),
+          ]),
+        ),
+        if (uploading)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2)),
+          ),
+        if (onRemove != null) IconAction(Glyphs.cancel, size: 10, tooltip: 'Remove', onPressed: onRemove),
+      ]),
     );
   }
 }

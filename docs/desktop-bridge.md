@@ -84,7 +84,10 @@ Each part has an `id` (the index of its first block, stable while the tail strea
 
 - `prose`: runs (`MarkdownSelection.Run`), in order. Runs up to a `separator` run form a
   paragraph; the paragraph's indents and gap are its first run's.
-- `code`: `language`, `text`, `isClosed` (false while the closing fence is still coming).
+- `code`: `language`, `text`, `isClosed` (false while the closing fence is still coming), and
+  `spans`: the code cut by HermesKit's `CodeHighlighter` into consecutive `text` runs, each with
+  a `kind` (`keyword`, `string`, `comment`, `number`, `type`, `function`, `literal`, `plain`)
+  for its colour. Their texts joined are `text`.
 - `table`: `alignments` (`none`, `leading`, `center`, `trailing` per column), `header` (a
   list of cells) and `rows` (a list of rows of cells); a cell is a list of runs.
 

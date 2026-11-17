@@ -6,9 +6,24 @@ import HermesKit
 /// docs/desktop-bridge.md, "Markdown". Parsing is HermesKit's; this only spells it out.
 struct MarkdownPart: Encodable, Sendable, Equatable {
     struct Code: Encodable, Sendable, Equatable {
+        /// A run of the code and what it is (`CodeHighlighter.Kind`), for its colour.
+        struct Span: Encodable, Sendable, Equatable {
+            var text: String
+            var kind: String
+        }
+
         var language: String?
         var text: String
         var isClosed: Bool
+        /// The code cut into coloured spans (`CodeHighlighter`); their texts joined are `text`.
+        var spans: [Span]
+
+        init(language: String?, text: String, isClosed: Bool) {
+            self.language = language
+            self.text = text
+            self.isClosed = isClosed
+            spans = CodeHighlighter.spans(text, language: language).map { Span(text: $0.text, kind: $0.kind.rawValue) }
+        }
     }
 
     struct Table: Encodable, Sendable, Equatable {

@@ -143,7 +143,10 @@ class MdPart {
           : MdCode(
               language: code['language'] as String?,
               text: code['text'] as String? ?? '',
-              isClosed: code['isClosed'] as bool? ?? true),
+              isClosed: code['isClosed'] as bool? ?? true,
+              spans: _list(code['spans'])
+                  .map((s) => (text: s['text'] as String? ?? '', kind: s['kind'] as String? ?? 'plain'))
+                  .toList()),
       table: table == null
           ? null
           : MdTable(
@@ -158,10 +161,14 @@ class MdPart {
 }
 
 class MdCode {
-  const MdCode({this.language, required this.text, this.isClosed = true});
+  const MdCode({this.language, required this.text, this.isClosed = true, this.spans = const []});
   final String? language;
   final String text;
   final bool isClosed;
+
+  /// The code cut into spans with their kind (`keyword`, `string`, `comment`, `number`,
+  /// `type`, `function`, `literal`, `plain`), from HermesKit's `CodeHighlighter`.
+  final List<({String text, String kind})> spans;
 }
 
 class MdTable {

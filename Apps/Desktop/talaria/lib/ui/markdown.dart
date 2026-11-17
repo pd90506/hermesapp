@@ -263,7 +263,15 @@ class CodeBlock extends StatelessWidget {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          child: Text(code.text, style: TextStyle(fontFamily: monoFont, fontSize: 13, height: 1.5, color: p.text)),
+          child: Text.rich(
+            TextSpan(
+              style: TextStyle(fontFamily: monoFont, fontSize: 13, height: 1.5, color: p.text),
+              // Coloured by HermesKit's highlighter; plain from an older bridge.
+              children: code.spans.isEmpty
+                  ? [TextSpan(text: code.text)]
+                  : [for (final s in code.spans) TextSpan(text: s.text, style: TextStyle(color: p.code(s.kind)))],
+            ),
+          ),
         ),
       ]),
     );

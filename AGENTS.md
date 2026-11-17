@@ -83,6 +83,18 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     release Mac's login keychain) and the app's code signature (the same team as the running app).
   - Off in Debug builds and when `HERMES_UPDATE_FEED_URL` or `HERMES_UPDATE_PUBLIC_KEY` is unset.
 
+- **fluent_ui** (https://github.com/bdlukaa/fluent_ui), BSD-3-Clause, pinned to **4.17.0** in
+  `Apps/Desktop/talaria/pubspec.lock`. Pure Dart; it brings `intl`, `scroll_pos`, `recase`,
+  `math_expressions` and Flutter's own `material_ui`.
+  - Used by: the **desktop app only** (`Apps/Desktop/talaria`), for Windows 11's Fluent
+    controls (TextBox, ComboBox, PasswordBox, buttons, InfoBar, ContentDialog, menus).
+  - Chosen with the Windows design the user approved (2026-11-17: "as native to Windows as
+    possible"). The alternative, drawing every control by hand, would drift from Windows.
+  - Flutter plugins with native code (window_manager, flutter_acrylic, system_theme) are not
+    used: building them needs symlinks, i.e. Windows' Developer Mode. The window frame
+    (Mica, the caption buttons) is in the runner (`windows/runner/native_frame.cpp`) and the
+    few Win32 calls (Credential Manager, the accent colour) go through `dart:ffi`.
+
 ## Protocol work
 
 - `docs/protocol.md` is the contract this repo relies on. Every claim cites a Hermes source path;
@@ -210,17 +222,21 @@ Windows, and CI doesn't run on Windows.
   - `scripts/windows-test-vm/New-TestVM.ps1` builds it from a Windows 11 ISO with an
     unattended install. Your account must be in "Hyper-V Administrators".
   - Drive it with PowerShell Direct (`Invoke-Command -VMName TalariaTest -Credential ...`).
-  - Take screenshots with `Get-VMScreenshot.ps1`, which reads the VM's screen through
-    Hyper-V without opening a window. Every PR that changes the Windows UI carries
-    screenshots taken this way.
+  - Every PR that changes the Windows UI carries screenshots taken in the VM: the app's
+    window with `Invoke-AppInVM.ps1` (true colour, from the user's session in the VM), the
+    whole screen with `Get-VMScreenshot.ps1` (Hyper-V's thumbnail, RGB565, no window opened).
   - Checkpoint `clean-install` is the freshly installed system; restore it
     (`Restore-VMSnapshot`) when a run leaves the VM in a bad state.
 - **Tests that need a Hermes run in WSL**, not on Windows itself: Hermes is installed in an
   Ubuntu WSL distro, uses the `hermesapp-test` profile there, and serves the dashboard on
   loopback, which Windows reaches as `127.0.0.1`. Keep everything for it inside the WSL distro.
+  - The UI-test VM can't reach that loopback, so it has a Hermes of its own, as the Mac's test
+    VM does: the official Windows install, the same profile, and a dashboard on the VM's
+    loopback started at logon (`scripts/windows-test-vm/Install-TestHermes.ps1`).
   - The model key lives in the git-ignored `.env` at the repo root (the user writes it). It is
-    copied into the test profile's `.env` in WSL (mode 600) and nowhere else. Never put it in a
-    commit, a log or a chat message.
+    copied into the test profile's `.env` in WSL (mode 600) and in the UI-test VM, and nowhere
+    else (decided by the user, 2026-11-16: every test VM gets it). Never put it in a commit, a
+    log or a chat message.
 - **WebSockets on Windows use WinHTTP** (decided by the user, 2026-11-16). There,
   swift-corelibs-foundation's `URLSessionWebSocketTask` delivers a message longer than about
   4 KB as several separate messages (Swift 6.4.2: a 5000-byte frame arrives as 4084 + 916), and
@@ -234,6 +250,20 @@ Windows, and CI doesn't run on Windows.
   recorded decision in [Dependencies](#dependencies), like Swift ones.
   - Check a bridge change with `swift test --filter HermesBridgeTests`, then the live probe
     against the Hermes in WSL (`bin/live_probe.dart`).
+- **The Windows desktop app** is `Apps/Desktop/talaria` (Flutter, Windows 11's look: Mica,
+  Fluent controls, the caption buttons Windows draws; decided by the user, 2026-11-17).
+  - Build it with `scripts/windows/Build-Desktop.ps1`: HermesBridge.dll, then the Flutter
+    app, then the Swift and VC++ runtime DLLs beside the exe (a clean Windows has neither).
+  - **After every merge, reinstall it on the Windows PC** (decided by the user, 2026-11-17):
+    pull `main` in the main checkout and run `scripts/windows/Install-Desktop.ps1` there. It
+    replaces the copy in `%LOCALAPPDATA%\Programs\Talaria` (Start menu: Talaria), keeps the
+    user's settings and sign-in, and deletes every build output it made. Don't start the app.
+  - Run it and take its screenshots in the VM with `scripts/windows-test-vm/Invoke-AppInVM.ps1`
+    (`-Fresh` for the first-run page). The VM has no GPU, so Mica shows as its solid fallback
+    there; say so when sending screenshots.
+  - Views only: anything that isn't a view goes in `HermesKit` behind the bridge, as for the
+    Apple apps. Settings are kept in `%APPDATA%\Talaria\settings.json`, the server's secret in
+    Credential Manager (`Talaria:server`).
 
 ## Workflow
 

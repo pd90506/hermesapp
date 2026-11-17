@@ -1,0 +1,20 @@
+name: talaria
+description: "Talaria for Windows: a Hermes client over HermesKit (docs/desktop-bridge.md)."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.14.0
+
+# Every dependency needs a recorded decision in AGENTS.md, "Dependencies".
+dependencies:
+  flutter:
+    sdk: flutter
+  fluent_ui: 4.17.0
+  hermes_bridge:
+    path: ../hermes_bridge
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

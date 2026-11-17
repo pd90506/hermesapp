@@ -73,7 +73,8 @@ class ChatPane extends StatelessWidget {
             ),
           ),
         ),
-      Composer(app: app),
+      // One composer per chat, which takes the keyboard as the chat opens.
+      Composer(key: ValueKey(chat.sessionID), app: app),
     ]);
   }
 
@@ -361,6 +362,11 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     _controller.addListener(() => setState(() {}));
+    // The chat just opened: the keyboard goes to its composer, as on the Mac. (A
+    // TextBox's autofocus loses to the window's own focus node, which has it already.)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
   }
 
   @override

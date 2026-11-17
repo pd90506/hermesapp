@@ -28,12 +28,19 @@ class Settings {
     this.signIn = SignIn.password,
     this.username = '',
     this.theme = AppTheme.system,
+    this.lastProfile,
+    this.lastSession,
   });
 
   String serverUrl;
   SignIn signIn;
   String username;
   AppTheme theme;
+
+  /// The profile picked last, and the session shown last: shown again at launch, as
+  /// the Mac app goes back to the chat a profile showed last.
+  String? lastProfile;
+  String? lastSession;
 
   bool get hasServer => serverUrl.trim().isNotEmpty;
 
@@ -42,6 +49,8 @@ class Settings {
         'signIn': signIn.name,
         'username': username,
         'theme': theme.name,
+        'lastProfile': lastProfile,
+        'lastSession': lastSession,
       };
 
   static Settings fromJson(Map<String, Object?> json) => Settings(
@@ -49,6 +58,8 @@ class Settings {
         signIn: SignIn.values.asNameMap()[json['signIn']] ?? SignIn.password,
         username: json['username'] as String? ?? '',
         theme: AppTheme.values.asNameMap()[json['theme']] ?? AppTheme.system,
+        lastProfile: json['lastProfile'] as String?,
+        lastSession: json['lastSession'] as String?,
       );
 }
 

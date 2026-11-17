@@ -52,8 +52,16 @@ try {
             Write-Host 'Installing Hermes (official Windows installer)'
             $installer = "$root\install.ps1"
             Invoke-WebRequest https://hermes-agent.nousresearch.com/install.ps1 -OutFile $installer -UseBasicParsing
-            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -NonInteractive -SkipBrowser -SkipComputerUse
-            if ($LASTEXITCODE -ne 0) { throw "Hermes installer failed ($LASTEXITCODE)" }
+            # Leftovers of an interrupted run, which the installer would trip on.
+            Remove-Item "$hermesHome\.hermes-clone-*" -Recurse -Force -ErrorAction SilentlyContinue
+            # git and the installer write progress to stderr: under 'Stop' that would end
+            # this script, so only the exit code counts here.
+            $ErrorActionPreference = 'Continue'
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -NonInteractive -SkipBrowser -SkipComputerUse 2>&1 |
+                ForEach-Object { "$_" }
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = 'Stop'
+            if ($code -ne 0) { throw "Hermes installer failed ($code)" }
             Remove-Item $installer
             $hermes = Find-Hermes
             if (-not $hermes) { throw "hermes not found under $hermesHome after the install" }

@@ -3,6 +3,7 @@
 #
 #   scripts/windows-test-vm/Invoke-AppInVM.ps1 -OutDir <dir> [-Name shot] [-Fresh]
 #       [-AppDir <Release folder>] [-Settings <json>] [-Secret <text>] [-WaitSeconds 6]
+#       [-Steps <PowerShell>]
 #
 # Copies the built app (scripts/windows/Build-Desktop.ps1) into C:\TalariaTest\app,
 # starts it in the test user's desktop session through a scheduled task (PowerShell
@@ -12,6 +13,10 @@
 #
 # -Fresh clears the app's settings and saved secret first (the first-run page).
 # -Settings writes %APPDATA%\Talaria\settings.json, and -Secret the secret, before start.
+# -Steps drives the app before the screenshot, in the user's session, with `Click x y`
+# (pixels from the window's top-left), `Write-Text 'text'` (into the focused field),
+# `Key 0x0D` (a key press by virtual-key code) and `Wait seconds`,
+# e.g. -Steps "Click 305 68; Wait 2; Click 790 755; Wait 1; Write-Text 'Hi'; Key 0x0D; Wait 20".
 param(
     [Parameter(Mandatory)] [string] $OutDir,
     [string] $Name = 'shot',
@@ -19,7 +24,8 @@ param(
     [switch] $Fresh,
     [string] $Settings,
     [string] $Secret,
-    [int] $WaitSeconds = 6
+    [int] $WaitSeconds = 6,
+    [string] $Steps
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path "$PSScriptRoot\..\..").Path
@@ -36,7 +42,7 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 
 # Captures the app's window as it shows on the screen, run inside the user's session.
 $capture = @'
-param([string]$Out)
+param([string]$Out, [string]$Steps)
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
@@ -46,6 +52,46 @@ public static class W {
   [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, int f, IntPtr e);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, IntPtr e);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr p);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool attach);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+  // Moves the keyboard focus to h: a background process may not, unless it shares
+  // the input queue of the window that has it.
+  public static bool Activate(IntPtr h) {
+    uint me = GetCurrentThreadId();
+    uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+    uint target = GetWindowThreadProcessId(h, IntPtr.Zero);
+    AttachThreadInput(me, fg, true); AttachThreadInput(me, target, true);
+    BringWindowToTop(h); SetForegroundWindow(h);
+    AttachThreadInput(me, fg, false); AttachThreadInput(me, target, false);
+    return GetForegroundWindow() == h;
+  }
+  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
+  // Key presses as a keyboard sends them, with their scan codes: Flutter reads keys by
+  // scan code, and drops SendKeys' VK_PACKET characters and keys without one.
+  static void Key(byte vk, bool up) { keybd_event(vk, (byte)MapVirtualKey(vk, 0), up ? 2 : 0, IntPtr.Zero); }
+  public static void Press(byte vk, bool shift) {
+    if (shift) Key(0x10, false);
+    Key(vk, false); Key(vk, true);
+    if (shift) Key(0x10, true);
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct GTI { public int cbSize; public int flags; public IntPtr active; public IntPtr focus; public IntPtr capture; public IntPtr menuOwner; public IntPtr moveSize; public IntPtr caret; public RECT rc; }
+  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint t, ref GTI g);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+  // Text as WM_CHAR messages to the window with the keyboard focus (the Flutter view):
+  // Flutter's text fields take no text from synthesized key presses in the VM, while
+  // its shortcuts and Enter do.
+  public static bool TypeText(IntPtr top, string text) {
+    var g = new GTI(); g.cbSize = Marshal.SizeOf(g);
+    GetGUIThreadInfo(GetWindowThreadProcessId(top, IntPtr.Zero), ref g);
+    if (g.focus == IntPtr.Zero) return false;
+    foreach (char c in text) { PostMessage(g.focus, 0x0102, (IntPtr)c, (IntPtr)1); System.Threading.Thread.Sleep(10); }
+    return true;
+  }
 }
 "@
 [W]::SetProcessDPIAware() | Out-Null
@@ -56,13 +102,32 @@ for ($i = 0; $i -lt 60 -and $h -eq [IntPtr]::Zero; $i++) {
     if ($h -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 500 }
 }
 if ($h -eq [IntPtr]::Zero) { 'no window' | Set-Content "$Out.err"; exit 1 }
-# Escape closes a Start menu left open; Alt lets this background process move the focus.
+# Escape closes a Start menu left open.
 [W]::keybd_event(0x1B, 0, 0, [IntPtr]::Zero); [W]::keybd_event(0x1B, 0, 2, [IntPtr]::Zero)
-[W]::keybd_event(0x12, 0, 0, [IntPtr]::Zero); [W]::SetForegroundWindow($h) | Out-Null
-[W]::keybd_event(0x12, 0, 2, [IntPtr]::Zero)
+[W]::Activate($h) | Out-Null
 Start-Sleep -Milliseconds 1200
 $r = New-Object W+RECT
 [W]::DwmGetWindowAttribute($h, 9, [ref]$r, 16) | Out-Null   # DWMWA_EXTENDED_FRAME_BOUNDS
+if ($Steps -and (Test-Path $Steps)) {
+    function Click([int]$x, [int]$y) {
+        [W]::SetCursorPos($r.L + $x, $r.T + $y) | Out-Null
+        [W]::mouse_event(0x2, 0, 0, 0, [IntPtr]::Zero); [W]::mouse_event(0x4, 0, 0, 0, [IntPtr]::Zero)
+        Start-Sleep -Milliseconds 300
+    }
+    # Not `Type`: PowerShell's alias for Get-Content would win over a function of that name.
+    function Write-Text([string]$text) {
+        if (-not [W]::TypeText($h, $text)) { 'Type: no window has the keyboard focus' | Add-Content "$Out.warn" }
+        Start-Sleep -Milliseconds 300
+    }
+    # A virtual-key code: 0x0D Enter, 0x1B Escape, 0x09 Tab.
+    function Key([int]$vk, [switch]$Shift) { [W]::Press([byte]$vk, $Shift.IsPresent) }
+    function Wait([double]$seconds) { Start-Sleep -Milliseconds ($seconds * 1000) }
+    if (-not [W]::Activate($h)) { 'the app is not in the foreground' | Set-Content "$Out.warn" }
+    try { . $Steps } catch { "steps failed: $_" | Add-Content "$Out.warn" }
+    [W]::SetCursorPos(0, 0) | Out-Null   # no hover left on the shot
+    Start-Sleep -Milliseconds 500
+    [W]::DwmGetWindowAttribute($h, 9, [ref]$r, 16) | Out-Null
+}
 $w = $r.R - $r.L; $hh = $r.B - $r.T
 $bmp = New-Object System.Drawing.Bitmap $w, $hh
 $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -80,10 +145,12 @@ try {
         New-Item -ItemType Directory -Force C:\TalariaTest\shots | Out-Null
     }
     Copy-Item $AppDir -Destination C:\TalariaTest\app -ToSession $s -Recurse
-    Invoke-Command -Session $s -ArgumentList $capture, $user, $Name, $Fresh.IsPresent, $Settings, $Secret, $WaitSeconds {
-        param($capture, $user, $name, $fresh, $settings, $secret, $wait)
+    Invoke-Command -Session $s -ArgumentList $capture, $user, $Name, $Fresh.IsPresent, $Settings, $Secret, $WaitSeconds, $Steps {
+        param($capture, $user, $name, $fresh, $settings, $secret, $wait, $steps)
         $ErrorActionPreference = 'Stop'
         Set-Content C:\TalariaTest\capture.ps1 $capture -Encoding utf8
+        Remove-Item C:\TalariaTest\steps.ps1 -ErrorAction SilentlyContinue
+        if ($steps) { Set-Content C:\TalariaTest\steps.ps1 $steps -Encoding utf8 }
         $appData = "$env:APPDATA\Talaria"
         if ($fresh) {
             Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
@@ -104,23 +171,27 @@ try {
             Unregister-ScheduledTask talaria-secret -Confirm:$false
             Remove-Item C:\TalariaTest\secret.txt
         }
-        $a = New-ScheduledTaskAction -Execute C:\TalariaTest\app\talaria.exe
+        # TALARIA_LOG: the app sums up every bridge event in shots\app.log.
+        $a = New-ScheduledTaskAction -Execute cmd.exe `
+            -Argument "/c set TALARIA_LOG=C:\TalariaTest\shots\app.log&& C:\TalariaTest\app\talaria.exe"
         Register-ScheduledTask -TaskName talaria-app -Action $a -Principal $principal -Force | Out-Null
         Start-ScheduledTask talaria-app
         Start-Sleep $wait
         $out = "C:\TalariaTest\shots\$name.png"
         $c = New-ScheduledTaskAction -Execute powershell.exe `
-            -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\TalariaTest\capture.ps1 -Out $out"
+            -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\TalariaTest\capture.ps1 -Out $out -Steps C:\TalariaTest\steps.ps1"
         Register-ScheduledTask -TaskName talaria-shot -Action $c -Principal $principal -Force | Out-Null
         Start-ScheduledTask talaria-shot
-        for ($i = 0; $i -lt 60 -and -not (Test-Path $out) -and -not (Test-Path "$out.err"); $i++) { Start-Sleep 1 }
+        for ($i = 0; $i -lt 300 -and -not (Test-Path $out) -and -not (Test-Path "$out.err"); $i++) { Start-Sleep 1 }
         Start-Sleep 1
         Get-Process talaria -ErrorAction SilentlyContinue | Stop-Process -Force
         Unregister-ScheduledTask talaria-app -Confirm:$false
         Unregister-ScheduledTask talaria-shot -Confirm:$false
         if (-not (Test-Path $out)) { throw "No screenshot: $(Get-Content "$out.err" -ErrorAction SilentlyContinue)" }
+        if (Test-Path "$out.warn") { Write-Warning (Get-Content "$out.warn" -Raw) }
     }
     Copy-Item "C:\TalariaTest\shots\$Name.png" -Destination $OutDir -FromSession $s -Force
+    Copy-Item "C:\TalariaTest\shots\app.log" -Destination (Join-Path $OutDir "$Name.log") -FromSession $s -Force -ErrorAction SilentlyContinue
     Get-Item (Join-Path $OutDir "$Name.png")
 } finally {
     Remove-PSSession $s

@@ -150,7 +150,9 @@ class SessionPane extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 2),
                 child: ListItem(
-                  selected: app.selectedRow == s.id,
+                  // Or the open chat's own row, once a new chat has one.
+                  selected: app.selectedRow == s.id ||
+                      (app.selectedRow == null && s.storedID != null && s.storedID == app.chat.storedSessionID),
                   height: 48,
                   onPressed: () => app.openSession(s),
                   child: _TwoLines(

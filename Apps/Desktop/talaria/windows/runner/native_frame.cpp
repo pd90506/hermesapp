@@ -81,9 +81,15 @@ void UpdateTheme(HWND window) {
 
 std::optional<LRESULT> HandleMessage(HWND window, UINT message, WPARAM wparam,
                                      LPARAM lparam) {
-  // The caption buttons DWM draws: their hover, press and hit-testing.
+  // The caption buttons DWM draws: their hover, press and hit-testing. Only the
+  // non-client mouse messages go to DWM: given WM_ACTIVATE too, it answers it, and the
+  // runner never moves the keyboard focus to the Flutter view.
+  const bool caption_mouse =
+      message == WM_NCHITTEST || message == WM_NCMOUSEMOVE ||
+      message == WM_NCMOUSEHOVER || message == WM_NCMOUSELEAVE ||
+      (message >= WM_NCLBUTTONDOWN && message <= WM_NCMBUTTONDBLCLK);
   LRESULT result = 0;
-  if (DwmDefWindowProc(window, message, wparam, lparam, &result)) {
+  if (caption_mouse && DwmDefWindowProc(window, message, wparam, lparam, &result)) {
     return result;
   }
   switch (message) {

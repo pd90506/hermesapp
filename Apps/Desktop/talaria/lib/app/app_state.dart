@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hermes_bridge/hermes_bridge.dart';
@@ -43,24 +44,66 @@ class AppState extends ChangeNotifier {
 
   bool get needsServer => !settings.hasServer;
 
+  /// With `TALARIA_LOG` set to a file path, every bridge event is summed up there: how
+  /// the UI tests in the VM see what the app received.
+  static final _log = Platform.environment['TALARIA_LOG'];
+
+  void _trace(String line) {
+    final path = _log;
+    if (path == null) return;
+    File(path).writeAsStringSync('${DateTime.now().toIso8601String()} $line\n', mode: FileMode.append);
+  }
+
   void _receive(Map<String, Object?> event) {
+    _trace('${event['type']} state=${event['state']} sessions=${(event['sessions'] as List?)?.length} '
+        'sid=${event['sessionID']} running=${event['isRunning']} items=${(event['items'] as List?)?.length} '
+        'error=${event['lastError'] ?? event['sessionListError']}');
     switch (event['type']) {
       case 'connection':
         connection = ConnectionSnapshot.fromJson(event);
         if (selectedProfile == null && connection.bots.isNotEmpty) {
-          final pick = connection.bots.firstWhere((b) => b.isDefault, orElse: () => connection.bots.first);
+          final pick = connection.bots.where((b) => b.name == settings.lastProfile).firstOrNull ??
+              connection.bots.firstWhere((b) => b.isDefault, orElse: () => connection.bots.first);
           unawaited(selectProfile(pick.name));
         }
+        _restoreLastSession();
       case 'chat':
+        final wasRunning = chat.isRunning;
         chat = ChatSnapshot.fromJson(event);
+        // A turn that started or ended changes the list: a new chat gets its row, a
+        // finished one its title and time.
+        if (wasRunning != chat.isRunning) unawaited(refreshSessions());
+        // Whichever way the chat came on screen (a click, New chat), it shows next time.
+        if (chat.storedSessionID case final stored? when chat.profile != null) {
+          final id = '${chat.profile}/$stored';
+          if (settings.lastSession != id) _remember(session: id);
+        }
     }
     notifyListeners();
   }
 
+  /// Once the list has the session shown last, shows it again (at launch only).
+  bool _restored = false;
+  void _restoreLastSession() {
+    if (_restored || chat.isOpen || connection.sessions.isEmpty) return;
+    final last = settings.lastSession;
+    final entry = connection.sessions.where((s) => s.id == last && s.profile == selectedProfile).firstOrNull;
+    _restored = true;
+    if (entry != null) unawaited(openSession(entry));
+  }
+
+  void _remember({String? profile, String? session}) {
+    if (profile != null) settings.lastProfile = profile;
+    settings.lastSession = session;
+    _store.save(settings);
+  }
+
   Future<void> _run(String method, [Map<String, Object?> params = const {}]) async {
     try {
+      _trace('> $method');
       await _bridge.call(method, params);
     } on BridgeException catch (e) {
+      _trace('! $method: ${e.message}');
       error = e.message;
       notifyListeners();
     }
@@ -152,7 +195,9 @@ class AppState extends ChangeNotifier {
   // --- Profiles and sessions -----------------------------------------------------------
 
   Future<void> selectProfile(String profile) async {
+    if (selectedProfile != null && selectedProfile != profile) _restored = true;
     selectedProfile = profile;
+    if (settings.lastProfile != profile) _remember(profile: profile, session: null);
     notifyListeners();
     await _run('selectProfile', {'profile': profile});
   }
@@ -165,6 +210,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> openSession(SessionEntry entry) async {
     selectedRow = entry.id;
+    _remember(session: entry.id);
     notifyListeners();
     await _run('openSession', {'id': entry.id});
   }
@@ -183,9 +229,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> send(String text) async {
     try {
+      _trace('> send');
       await _bridge.call('send', {'text': text});
       return true;
     } on BridgeException catch (e) {
+      _trace('! send: ${e.message}');
       error = e.message;
       notifyListeners();
       return false;

@@ -40,4 +40,7 @@ foreach ($dir in @((Join-Path $app 'build'), (Join-Path $app '.dart_tool'),
                    (Join-Path $env:LOCALAPPDATA 'talaria-build'))) {
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
 }
+# The Flutter build rewrites the checked-in windows/flutter/generated_* files with LF line
+# endings, which leaves the CRLF checkout modified: put them back.
+git -C $repo checkout -- Apps/Desktop/talaria/windows/flutter/
 Write-Host "Installed: $target\talaria.exe (Start menu: Talaria)"

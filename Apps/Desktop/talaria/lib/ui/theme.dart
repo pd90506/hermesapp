@@ -122,5 +122,7 @@ abstract final class Glyphs {
   static const document = IconData(0xE8A5, fontFamily: _f);
   static const photo = IconData(0xEB9F, fontFamily: _f);
   static const cancel = IconData(0xE711, fontFamily: _f);
+  static const pin = IconData(0xE718, fontFamily: _f);
+  static const unpin = IconData(0xE77A, fontFamily: _f);
   static const checkboxChecked = IconData(0xE73A, fontFamily: _f);
 }

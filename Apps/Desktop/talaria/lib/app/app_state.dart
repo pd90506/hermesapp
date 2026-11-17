@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -143,6 +144,11 @@ class AppState extends ChangeNotifier {
 
   /// Saves the server and its secret, then connects.
   Future<bool> saveServerAndConnect(Settings next, String secret) async {
+    // The same server keeps its id and pins; another one starts without.
+    if (next.serverUrl.trim() == settings.serverUrl.trim()) {
+      next.serverId = settings.serverId;
+      next.pins = settings.pins;
+    }
     settings = next;
     _store.save(settings);
     _store.writeSecret(secret, userName: next.username);
@@ -156,6 +162,7 @@ class AppState extends ChangeNotifier {
     selectedRow = null;
     chat = const ChatSnapshot();
     notifyListeners();
+    await _sendPins();
     final params = <String, Object?>{'url': settings.serverUrl.trim()};
     switch (settings.signIn) {
       case SignIn.password:
@@ -246,6 +253,38 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> refreshSessions() => _run('refreshSessions');
+
+  /// Pins a session to the top of the list, or unpins it (the Mac's Pin); kept in
+  /// settings.json, as the Mac keeps them in its defaults.
+  Future<void> setPinned(SessionEntry entry, bool pinned) async {
+    try {
+      final result = await _bridge.call('pinSession', {'id': entry.id, 'pinned': pinned});
+      settings.pins = ((result as Map?)?['pins'] as Map?)?.cast<String, Object?>();
+      _store.save(settings);
+    } on BridgeException catch (e) {
+      error = e.message;
+      notifyListeners();
+    }
+  }
+
+  /// Hands the bridge the saved pins and the server's id (made once, on first use).
+  Future<void> _sendPins() async {
+    if (settings.serverId == null) {
+      settings.serverId = _newUuid();
+      _store.save(settings);
+    }
+    await _run('setPins', {'server': settings.serverId, 'pins': settings.pins});
+  }
+
+  static String _newUuid() {
+    final r = Random.secure();
+    final b = List<int>.generate(16, (_) => r.nextInt(256));
+    b[6] = (b[6] & 0x0F) | 0x40;
+    b[8] = (b[8] & 0x3F) | 0x80;
+    final hex = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-'
+        '${hex.substring(16, 20)}-${hex.substring(20)}'.toUpperCase();
+  }
 
   // --- The open chat -----------------------------------------------------------------
 

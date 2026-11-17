@@ -64,6 +64,8 @@ possible later; it would need libdispatch SPI, so it waits until the timer shows
 | `removeAttachment` | `id` | Removes a card (an uploaded image is taken back off the session's queue) |
 | `dismissComposerError` | — | Clears the composer's `error` |
 | `decidePaste` | `types` (uniform type identifiers on the clipboard), `string`, `files` (paths) | What a paste does (`ClipboardPolicy`): result `{"decision": "text"}`, `{"decision": "files", "files": [...]}`, `{"decision": "imageData", "type": uti}` or `{"decision": "fileItems"}` |
+| `setPins` | `server` (a UUID the app keeps per server), `pins` (as `pinSession` last answered, or none) | Hands the bridge the app's saved pins (`SessionPins`); the app sends it before `connect` |
+| `pinSession` | `id`, `pinned` (default true) | Pins or unpins a listed session; result `{"pins": ...}`, for the app to save |
 | `imageData` | `path`, `profile` | A sent image's bytes from the gateway, for its thumbnail: result `{"data": base64}` |
 
 ## Events
@@ -74,8 +76,13 @@ didn't change.
 `connection`: `state` (`disconnected`, `connecting`, `connected`, `reconnecting`, `failed`),
 `detail` (the attempt number or the failure), `bots` (`name`, `displayName`, `preview`,
 `isDefault`), `listProfile`, `sessions` (`id`, `profile`, `storedID`, `title`, `preview`,
-`startedAt` in Unix seconds, `messageCount`, `isUnread`), `sessionListLoading`,
-`sessionListError`.
+`startedAt` in Unix seconds, `messageCount`, `isUnread`, `isPinned`, `group`, `groupTitle`),
+`sessionListLoading`, `sessionListError`. Sessions come in the Mac list's order: the pinned
+ones first (`group` `pinned`), then the rest in Desktop's date groups
+(`GatewayConnection.sessionDateGroups`): the unlabelled head (`group` `recent`, shown under
+"Sessions"), then one group per range, `group` its `SessionDateBucket.id` and `groupTitle` its
+title ("Yesterday", "Last week", "September", ...). A row moves to its range once its date
+(its newest message) has been read.
 
 `chat`: `sessionID`, `storedSessionID`, `profile`, `title`, `isRunning`, `lastError`, `items`
 (`id`, `role` (`user`, `assistant`, `tool` or `system`), `text`, `reasoning`, `toolName`,

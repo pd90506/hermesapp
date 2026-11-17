@@ -99,6 +99,8 @@ class SessionPane extends StatelessWidget {
     final profile = app.selectedProfile;
     final bot = app.connection.bots.where((b) => b.name == profile).firstOrNull;
     final sessions = app.connection.sessions.where((s) => s.profile == profile).toList();
+    final pinned = sessions.where((s) => s.isPinned).toList();
+    final others = sessions.where((s) => !s.isPinned).toList();
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -133,6 +135,11 @@ class SessionPane extends StatelessWidget {
                 ),
               ),
             ],
+            // Pinned sessions above the rest, while there are any, as on the Mac.
+            if (pinned.isNotEmpty) ...[
+              const _Header('Pinned'),
+              for (final s in pinned) _SessionRow(app: app, session: s),
+            ],
             const _Header('Sessions'),
             if (app.connection.sessionListLoading && sessions.isEmpty)
               const Padding(padding: EdgeInsets.all(16), child: Center(child: ProgressRing()))
@@ -146,28 +153,12 @@ class SessionPane extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
                 child: Text('No sessions yet', style: TextStyle(fontSize: 12, color: p.text2)),
               ),
-            for (final s in sessions)
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 2),
-                child: ListItem(
-                  // Or the open chat's own row, once a new chat has one.
-                  selected: app.selectedRow == s.id ||
-                      (app.selectedRow == null && s.storedID != null && s.storedID == app.chat.storedSessionID),
-                  height: 48,
-                  onPressed: () => app.openSession(s),
-                  child: _TwoLines(
-                    title: (s.title?.isNotEmpty ?? false) ? s.title! : 'Untitled chat',
-                    subtitle: s.startedAt == null ? '' : relativeTime(s.startedAt!),
-                    bold: s.isUnread,
-                    trailing: app.chat.isRunning && app.chat.storedSessionID == s.storedID
-                        ? const SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2))
-                        : s.isUnread
-                            ? Container(
-                                width: 8, height: 8, decoration: BoxDecoration(color: p.accent, shape: BoxShape.circle))
-                            : null,
-                  ),
-                ),
-              ),
+            // The rest in Desktop's date groups (HermesKit's `sessionDateGroups`): the newest
+            // run under "Sessions", then "Yesterday", "Last week", a month…
+            for (final (i, s) in others.indexed) ...[
+              if (i > 0 && s.group != others[i - 1].group && s.groupTitle != null) _Header(s.groupTitle!),
+              _SessionRow(app: app, session: s),
+            ],
           ]),
         ),
       ]),
@@ -181,6 +172,72 @@ class SessionPane extends StatelessWidget {
         LinkState.failed => 'Couldn\'t connect',
         LinkState.disconnected => 'Not connected',
       };
+}
+
+/// A session in the list. Right-click for Pin or Unpin.
+class _SessionRow extends StatefulWidget {
+  const _SessionRow({required this.app, required this.session});
+  final AppState app;
+  final SessionEntry session;
+  @override
+  State<_SessionRow> createState() => _SessionRowState();
+}
+
+class _SessionRowState extends State<_SessionRow> {
+  final _menu = FlyoutController();
+
+  @override
+  void dispose() {
+    _menu.dispose();
+    super.dispose();
+  }
+
+  void _showMenu(Offset position) {
+    final s = widget.session;
+    _menu.showFlyout(
+      position: position,
+      builder: (context) => MenuFlyout(items: [
+        MenuFlyoutItem(
+          leading: Icon(s.isPinned ? Glyphs.unpin : Glyphs.pin),
+          text: Text(s.isPinned ? 'Unpin' : 'Pin'),
+          onPressed: () => widget.app.setPinned(s, !s.isPinned),
+        ),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final app = widget.app;
+    final s = widget.session;
+    return FlyoutTarget(
+      controller: _menu,
+      child: GestureDetector(
+        onSecondaryTapUp: (details) => _showMenu(details.globalPosition),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 2),
+          child: ListItem(
+            // Or the open chat's own row, once a new chat has one.
+            selected: app.selectedRow == s.id ||
+                (app.selectedRow == null && s.storedID != null && s.storedID == app.chat.storedSessionID),
+            height: 48,
+            onPressed: () => app.openSession(s),
+            child: _TwoLines(
+              title: (s.title?.isNotEmpty ?? false) ? s.title! : 'Untitled chat',
+              subtitle: s.startedAt == null ? '' : relativeTime(s.startedAt!),
+              bold: s.isUnread,
+              trailing: app.chat.isRunning && app.chat.storedSessionID == s.storedID
+                  ? const SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2))
+                  : s.isUnread
+                      ? Container(width: 8, height: 8, decoration: BoxDecoration(color: p.accent, shape: BoxShape.circle))
+                      : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _Header extends StatelessWidget {

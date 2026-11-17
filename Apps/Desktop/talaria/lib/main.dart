@@ -6,6 +6,7 @@ import 'package:hermes_bridge/hermes_bridge.dart';
 
 import 'app/app_state.dart';
 import 'app/settings_store.dart';
+import 'platform/cjk_fonts.dart';
 import 'platform/system.dart';
 import 'ui/chat.dart';
 import 'ui/common.dart';
@@ -39,9 +40,25 @@ class TalariaApp extends StatelessWidget {
           AppTheme.dark => ThemeMode.dark,
           AppTheme.system => ThemeMode.system,
         };
+        // Chinese text in Chinese forms, not Yu Gothic's Japanese ones (platform/cjk_fonts.dart).
+        final cjk = CjkFonts.pick(WidgetsBinding.instance.platformDispatcher.locales);
+        TextStyle? withCjk(TextStyle? s) => s?.copyWith(fontFamilyFallback: cjk.fallback, locale: cjk.locale);
         FluentThemeData theme(Brightness b) => FluentThemeData(
               brightness: b,
               fontFamily: uiFont,
+              typography: () {
+                final t = Typography.fromBrightness(brightness: b);
+                return Typography.raw(
+                  display: withCjk(t.display),
+                  titleLarge: withCjk(t.titleLarge),
+                  title: withCjk(t.title),
+                  subtitle: withCjk(t.subtitle),
+                  bodyLarge: withCjk(t.bodyLarge),
+                  bodyStrong: withCjk(t.bodyStrong),
+                  body: withCjk(t.body),
+                  caption: withCjk(t.caption),
+                );
+              }(),
               accentColor: AccentColor.swatch({'normal': b == Brightness.dark ? accent.dark : accent.light}),
               // Clear: Mica, which Windows draws behind the window, shows through.
               scaffoldBackgroundColor: const Color(0x00000000),
@@ -58,7 +75,13 @@ class TalariaApp extends StatelessWidget {
             return PaletteScope(
               palette: palette,
               child: DefaultTextStyle(
-                style: TextStyle(fontFamily: uiFont, fontSize: 14, color: palette.text, height: 1.4),
+                style: TextStyle(
+                    fontFamily: uiFont,
+                    fontFamilyFallback: cjk.fallback,
+                    locale: cjk.locale,
+                    fontSize: 14,
+                    color: palette.text,
+                    height: 1.4),
                 child: _Shortcuts(app: app, child: MainWindow(app: app)),
               ),
             );

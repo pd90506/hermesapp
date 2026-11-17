@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:ui';
+
 import 'package:talaria/app/snapshots.dart';
+import 'package:talaria/platform/cjk_fonts.dart';
 import 'package:talaria/ui/sidebar.dart' show relativeTime;
 
 void main() {
@@ -146,5 +149,18 @@ void main() {
     expect(s.sessions[1].groupTitle, isNull);
     expect(s.sessions.last.groupTitle, 'Yesterday');
     expect(SessionEntry.fromJson({'id': 'x'}).group, 'recent');
+  });
+
+  test('Han characters follow the first Chinese, Japanese or Korean Windows language', () {
+    // An English Windows with Chinese (Singapore) added: Chinese forms.
+    final en = CjkFonts.pick(const [Locale('en', 'US'), Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans', countryCode: 'SG')]);
+    expect(en.fallback.first, 'Microsoft YaHei UI');
+    expect(en.locale.scriptCode, 'Hans');
+    expect(CjkFonts.pick(const [Locale('zh', 'TW')]).fallback.first, 'Microsoft JhengHei UI');
+    expect(CjkFonts.pick(const [Locale('ja', 'JP'), Locale('zh', 'CN')]).fallback.first, 'Yu Gothic UI');
+    expect(CjkFonts.pick(const [Locale('ko', 'KR')]).fallback.first, 'Malgun Gothic');
+    // No Asian language at all: Simplified Chinese.
+    expect(CjkFonts.pick(const [Locale('en', 'US')]).fallback.first, 'Microsoft YaHei UI');
+    expect(en.fallback.toSet().length, en.fallback.length);
   });
 }

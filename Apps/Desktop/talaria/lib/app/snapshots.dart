@@ -5,18 +5,44 @@ library;
 
 enum LinkState { disconnected, connecting, connected, reconnecting, failed }
 
+enum BotActivity { idle, recent, working, waitingForYou }
+
 class Bot {
-  const Bot({required this.name, required this.displayName, this.preview, this.isDefault = false});
+  const Bot({
+    required this.name,
+    required this.displayName,
+    this.preview,
+    this.isDefault = false,
+    this.hasAvatar = false,
+    this.avatarColor,
+    this.avatarID,
+    this.activity = BotActivity.idle,
+  });
   final String name;
   final String displayName;
   final String? preview;
   final bool isDefault;
+
+  /// The profile has an avatar image on the server; [avatarID] is set once it is
+  /// loaded, and changes with it.
+  final bool hasAvatar;
+  final String? avatarID;
+
+  /// The colour picked in Hermes Desktop, 0xRRGGBB.
+  final int? avatarColor;
+
+  /// What the rail's badge shows (HermesKit's `BotActivity`).
+  final BotActivity activity;
 
   static Bot fromJson(Map<String, Object?> j) => Bot(
         name: j['name'] as String? ?? '',
         displayName: j['displayName'] as String? ?? j['name'] as String? ?? '',
         preview: j['preview'] as String?,
         isDefault: j['isDefault'] as bool? ?? false,
+        hasAvatar: j['hasAvatar'] as bool? ?? false,
+        avatarColor: (j['avatarColor'] as num?)?.toInt(),
+        avatarID: j['avatarID'] as String?,
+        activity: BotActivity.values.asNameMap()[j['activity']] ?? BotActivity.idle,
       );
 }
 

@@ -51,6 +51,16 @@ struct ConnectionSnapshot: Encodable, Sendable, Equatable {
         var displayName: String
         var preview: String?
         var isDefault: Bool
+        /// The profile has an avatar image on the server.
+        var hasAvatar: Bool
+        /// The colour picked in Hermes Desktop, 0xRRGGBB, when there is one.
+        var avatarColor: UInt32?
+        /// Set while the profile's avatar image is loaded (`avatar` reads it); it changes
+        /// when the image does.
+        var avatarID: String?
+        /// `idle`, `recent` (its Bot Chat had a message in the last 90 s), `working` or
+        /// `waitingForYou` (`GatewayConnection.activity(for:)`).
+        var activity: String
     }
 
     struct SessionRow: Encodable, Sendable, Equatable {
@@ -90,8 +100,16 @@ struct ConnectionSnapshot: Encodable, Sendable, Equatable {
         case .reconnecting(let attempt): state = "reconnecting"; detail = String(attempt)
         case .failed(let message): state = "failed"; detail = message
         }
-        bots = connection.bots.map {
-            BotRow(name: $0.name, displayName: $0.displayName, preview: $0.preview, isDefault: $0.isDefault)
+        bots = connection.bots.map { bot in
+            let activity = switch connection.activity(for: bot, now: now) {
+            case .idle: "idle"
+            case .recent: "recent"
+            case .working: "working"
+            case .waitingForYou: "waitingForYou"
+            }
+            let avatarID = connection.avatars[bot.name].map { "\($0.count)-\($0.hashValue)" }
+            return BotRow(name: bot.name, displayName: bot.displayName, preview: bot.preview, isDefault: bot.isDefault,
+                          hasAvatar: bot.hasAvatar, avatarColor: bot.avatarColor, avatarID: avatarID, activity: activity)
         }
         listProfile = connection.listProfile
         func row(_ entry: HistoryEntry, group: String, title: String?, pinned: Bool) -> SessionRow {

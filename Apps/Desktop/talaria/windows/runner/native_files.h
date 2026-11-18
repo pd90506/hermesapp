@@ -16,6 +16,9 @@ namespace native_files {
 // The Open dialog (IFileOpenDialog), several files at a time. Empty when cancelled.
 std::vector<std::string> PickFiles(HWND owner);
 
+// The Open dialog for one image (a profile's avatar); empty when cancelled.
+std::string PickImage(HWND owner);
+
 // What the clipboard holds, as the composer's paste decides on it (HermesKit's
 // ClipboardPolicy): its formats as uniform type identifiers, its text, its files.
 struct ClipboardContents {

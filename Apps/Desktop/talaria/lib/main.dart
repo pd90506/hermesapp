@@ -144,13 +144,25 @@ class _MainWindowState extends State<MainWindow> {
       SizedBox(
         width: (_railShown ? ProfileRail.width : 8) + 272,
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // As the Mac's toolbar over the sidebar: the rail's toggle, the profile's name
+          // and New chat at the column's end (the user, 2026-11-18).
           WindowTitleBar(
-            title: 'Talaria',
+            title: app.connection.bots.where((b) => b.name == app.selectedProfile).firstOrNull?.displayName ??
+                'Talaria',
+            subtitle: SessionPane.status(app),
             leading: IconAction(
               Glyphs.menu,
               tooltip: _railShown ? 'Hide profiles' : 'Show profiles',
               onPressed: () => setState(() => _railShown = !_railShown),
             ),
+            trailing: IconAction(Glyphs.compose,
+                tooltip: 'New chat (Ctrl+N)', onPressed: app.selectedProfile == null ? null : app.newChat),
+          ),
+          Expanded(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (_railShown) ProfileRail(app: app) else const SizedBox(width: 8),
+              SizedBox(width: 272, child: SessionPane(app: app)),
+            ]),
           ),
           Expanded(
             child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

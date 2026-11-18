@@ -35,6 +35,12 @@ class WindowFrame {
   static const _channel = MethodChannel('talaria/window');
 
   static Future<void> setTheme(AppTheme theme) => _channel.invokeMethod('setTheme', theme.name);
+
+  /// The app's controls in the title band (`native_frame.cpp`): they take clicks,
+  /// where the rest of the band moves the window. Logical pixels.
+  static Future<void> setBandControls(List<Rect> rects) => _channel.invokeMethod('setBandControls', [
+        for (final r in rects) [r.left, r.top, r.right, r.bottom],
+      ]);
 }
 
 /// What the clipboard holds (`windows/runner/native_files.cpp`): its formats as
@@ -54,6 +60,9 @@ class NativeFiles {
   /// The Open dialog, several files at a time; empty when cancelled.
   static Future<List<String>> pick() async =>
       ((await _channel.invokeMethod<List<Object?>>('pickFiles')) ?? const []).cast<String>();
+
+  /// The Open dialog for one image (a profile's avatar); null when cancelled.
+  static Future<String?> pickImage() => _channel.invokeMethod<String>('pickImage');
 
   static Future<ClipboardContents> readClipboard() async {
     final map = await _channel.invokeMethod<Map<Object?, Object?>>('readClipboard') ?? const {};

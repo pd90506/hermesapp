@@ -429,6 +429,29 @@ class AppState extends ChangeNotifier {
     await refreshSessions();
   }
 
+  /// Branch in New Chat from a message (the Mac's action bar): the branch opens.
+  Future<void> branch(String itemID) async {
+    selectedRow = null;
+    await _run('branch', {'item': itemID});
+    notifyListeners();
+  }
+
+  /// What Copy Message copies (HermesKit's `ConversationMarkdown.messageSource`).
+  Future<String?> messageSource(String itemID) => _text('messageSource', {'item': itemID});
+
+  /// What Copy Conversation copies: the chat as Markdown.
+  Future<String?> conversationSource() => _text('conversationSource');
+
+  Future<String?> _text(String method, [Map<String, Object?> params = const {}]) async {
+    try {
+      final result = await _bridge.call(method, params);
+      return result is Map ? result['text'] as String? : null;
+    } on BridgeException catch (e) {
+      _trace('! $method: ${e.message}');
+      return null;
+    }
+  }
+
   @override
   void dispose() {
     _events.cancel();

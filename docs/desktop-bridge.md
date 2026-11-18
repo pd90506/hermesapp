@@ -76,6 +76,38 @@ possible later; it would need libdispatch SPI, so it waits until the timer shows
 | `branch` | `item` (an item id of the open chat) | Branch in New Chat from that message (`GatewayConnection.branch`); the branch opens as the chat |
 | `messageSource` | `item` | What Copy Message copies (`ConversationMarkdown.messageSource`): result `{"text": ...}` |
 | `conversationSource` | — | What Copy Conversation copies, the chat as Markdown (`ConversationMarkdown.export`): result `{"text": ...}` |
+| `searchSessions` | `query` | Searches the list profile's sessions (`GatewayConnection.searchSessions`); the results follow as the `search` snapshot. An empty query clears them |
+| `setDraft` | `text` | Keeps the composer's draft in step with the app's text field, and refreshes the slash list for it (`updateSlashSuggestions`; a lookup the gateway must answer waits 60 ms for the next keystroke, as Desktop's `use-live-completion-adapter.ts:43`) |
+| `slashKey` | `key` (`up`, `down`, `tab`, `accept`, `escape`) | A key the slash list takes (`handleSlashKey`); result `true` when the list used it, `false` when the text field should have it |
+| `acceptSlashRow` | `id` (a `slashRows` id) | Puts the row into the draft (`acceptSlashRow`) |
+| `dismissSlashSuggestions` | — | Closes the list for this draft (`dismissSlashSuggestions`) |
+| `setModelPickerRequested` | `shown` | Clears (or sets) `/model`'s request for the picker, once the app's own picker is open |
+| `answerApproval` | `id`, `choice` (`once`, `session`, `always`, `deny`), `all`? | Answers an approval request (`ChatSession.answer`); the card leaves the chat snapshot |
+| `answerClarify` | `id`, `selections`: `{qid: {choices: [...], other: "…"}}` | Answers a clarify request from the app's staged form, one selection per question; questions without one go as skipped. Without `selections` the request is cancelled (every question skipped) |
+| `answerValue` | `id`, `value` | Answers a sudo or secret request; an empty value means "skip" |
+| `refreshSubagents` | — | Re-reads the gateway's subagent roster for the chat (`subagent.list`) |
+| `steerSubagent` | `id`, `text` | Queues guidance for a running subagent (`subagent.steer`) |
+| `stopSubagent` | `id` | Stops a running subagent (`subagent.interrupt`) |
+| `refreshUsage` | — | Reads the session's usage and context breakdown again (`ChatSession.refreshUsage`); the `usage` snapshot follows |
+| `refreshCronJobs` | — | Re-reads the list profile's cron jobs; the `cron` snapshot follows |
+| `refreshCronRuns` | `id` | Re-reads a job's most recent runs |
+| `loadCronDeliveryTargets` | — | Reads where the profile's jobs can deliver, once per profile |
+| `loadCronBlueprints` | — | Reads the profile's ready-made jobs, once per profile |
+| `pauseCronJob` / `resumeCronJob` | `id` | Pauses or resumes a listed job |
+| `setCronDelivery` | `id`, `deliver` | Sets where a job delivers, as a comma list (`CronJob.deliver(toggling:on:)`) |
+| `triggerCronJob` | `id` | Runs a job now; answers when the run is recorded, then re-reads its runs |
+| `deleteCronJob` | `id` | Removes a job for good |
+| `openCronRun` | `id` (a `runs` id) | Opens a run with a session as a chat of the profile (`CronRun.historyEntry`) |
+| `cronModelCatalog` | — | The models a job can pin (`GatewayConnection.cronModelCatalog`): result `{providers: [{slug, name, models}]}` |
+| `createCronJob` | `draft` | Creates a job in the list profile from the editor's dialog, then re-reads the list |
+| `saveCronJob` | `id`, `draft` | Saves the editor's changes to a listed job |
+| `instantiateCronBlueprint` | `key`, `values` | Fills a blueprint's blanks in, which creates its job |
+
+A job `draft`: `{name, prompt, schedule: {frequency, hour, minute, weekday, dayOfMonth,
+custom}, deliver, provider, model}` (`CronJobDraft`; absent keys keep what the job already
+has, `provider`/`model` together pin a model and `null` for either unpins it). `frequency`
+is `daily`, `weekdays`, `weekly`, `monthly`, `hourly`, `every15Minutes` or `custom`.
+
 
 ## Events
 
@@ -95,7 +127,12 @@ ones first (`group` `pinned`), then the rest in Desktop's date groups
 title ("Yesterday", "Last week", "September", ...). A row moves to its range once its date
 (its newest message) has been read.
 
-`chat`: `sessionID`, `storedSessionID`, `profile`, `title`, `isRunning`, `lastError`, `items`
+`chat`: `sessionID`, `storedSessionID`, `profile`, `title`, `isRunning`, `lastError`,
+`pendingRequests` (the blocking server→client requests, as the transcript's cards: each
+`id`, `kind` (`approval`, `clarify`, `sudo`, `secret`, `unsupported`), `method`, `headline`,
+and for an approval `description`, `command`, `choices` (`value` of `once`, `session`,
+`always`, `deny` with its label), for a clarify `questions` (`qid`, `question`, `choices`
+as offered, `multiSelect`, `isLocked`), for a secret `envVar`, `prompt`); `items`
 (`id`, `role` (`user`, `assistant`, `tool` or `system`), `text`, `reasoning`, `toolName`,
 `detail`, `isActive`, `outgoingStatus`, `timestamp`, for an assistant item `markdown` and
 `reasoningMarkdown` (below), and for a user item `images` (`name`, `path`, and `localID`: the
@@ -108,12 +145,56 @@ reply with nothing to show yet), `hasActionBar`, `notice` and `review` (`headlin
 a background notice written as a user turn, what the review saved) and `isCompressionNote`.
 
 `composer`: the open chat's composer (`ChatComposer`), sent as it changes. `sessionID`,
-`model`, `provider`, `modelLabel` (`ModelLabel.displayName`), `providers` (null until the
-catalog loads; each `slug`, `name`, `models` with `model`, `label`, `isCurrent`), `efforts`
-(`value`, `label`; empty when the model has no reasoning control, which hides the picker),
-`effort`, `effortLabel`, `pendingModelSwitch` (`provider`, `model`, `label`, `message`),
-`error`, `attachments` (`id`, `kind` (`image` or `file`), `name`, `detail`, `isUploading`,
-`failure`), `uploadingFiles` (names), `isSubmitting`, `canSubmit`.
+`draft` (kept in step by `setDraft`; read it back rather than clearing the field after a
+slash send, which may put a prefill or a refused command back), `model`, `provider`,
+`modelLabel` (`ModelLabel.displayName`), `providers` (null until the catalog loads; each
+`slug`, `name`, `models` with `model`, `label`, `isCurrent`), `efforts` (`value`, `label`;
+empty when the model has no reasoning control, which hides the picker), `effort`,
+`effortLabel`, `pendingModelSwitch` (`provider`, `model`, `label`, `message`), `error`,
+`attachments` (`id`, `kind` (`image` or `file`), `name`, `detail`, `isUploading`,
+`failure`), `uploadingFiles` (names), `isSubmitting`, `canSubmit`, `slashIsOpen`,
+`slashRows` (each `id`, `header` (its category's first row), `text` (what accepting puts
+in the draft), `display`, `meta`, `kind` (`command` or `skill`), `isSelected`), `slashNotice`
+(Desktop's "No matches." or why the catalog failed to load), `isModelPickerRequested`
+(`/model` with no argument asked for the picker; the app opens its own and clears it).
+
+`search`: the session list's search (`GatewayConnection.search`), sent as it changes.
+`profile` (the list profile, null when the connection lists none), `query` (the query the
+results answer, trimmed), `results` (each `id` (`profile/storedID`, what `openSession`
+takes), `profile`, `storedID`, `title` (the Bot Chat's own title for its hit, else the
+row's), `preview`, `segments` (the matched text in order, matched runs `isMatch`), `role`
+(whose message matched; null for id and title matches), `date` (Unix seconds),
+`messageCount`, `isBotChat` (the hit's row is the profile's Bot Chat, which the app opens
+with `openBotChat`)), `isSearching`, `error`, `isAvailable` (false when the connection has
+no REST access).
+
+`subagents`: the open chat's running subagents (`ChatSession.subagents.live`), separate
+from the chat's own snapshot so a subagent event doesn't re-send its large JSON.
+`sessionID`, `runs` (each `id`, `goal`, `model`, `status` (`queued` or `running`),
+`taskIndex`, `taskCount`, `startedAt`/`updatedAt` (Unix seconds), `currentTool`, `activity`
+(each `kind` (`tool`, `progress`, `thinking`, `summary`), `text`, `isError`), `summary`,
+`childSessionID`).
+
+`usage`: the open chat's context gauge and session counters, for the composer's ring.
+`sessionID`, `gauge` (`used`, `max`, `percent`, `isEstimated`; null until the gateway
+reports any use), `usage` (`input`, `output`, `total`, `calls`, `reasoning`, `compressions`,
+`cacheHitPercent`, `tokensPerSecond`, `costUSD`, `model`), `breakdown` (`contextUsed`,
+`contextMax`, `contextPercent`, `isEstimated`, `categories` each `id`, `label`, `tokens`).
+
+`cron`: the list profile's scheduled jobs, as the sidebar's Cron tab shows them
+(`GatewayConnection.cron`). `profile` (whose jobs they are, null until the first read),
+`isLoading`, `error`, `isAvailable`, `jobs` (each `id`, `title`, `name`, `prompt`, `script`,
+`isScriptOnly`, `state` (`effectiveState`), `nextRunAt`/`lastRunAt` (Unix seconds; null
+when not waiting to fire), `lastStatus`, `lastError`, `lastDeliveryError`, `pausedReason`,
+`scheduleDisplay`, `scheduleExpression`, `model`, `provider`, `deliver` (the target ids,
+`local` when it names none), `overdueSince` (Unix seconds; a scheduler that stopped
+ticking), `needsAttention` (the last run failed or wasn't delivered)), `runs` (by job id,
+newest first: each `id`, `title`, `preview`, `startedAt`, `lastActive`, `endedAt`,
+`messageCount`, `isOutputDocument`, `entryID` (what `openCronRun` takes, for a run that is
+a session)), `runErrors` (by job id), `targets` (each `id`, `name`, `homeTargetSet`),
+`triggering` (jobs being run now), `blueprints` (each `key`, `title`, `description`,
+`fields` with `kind` (`text`, `time`, `weekdays`, `enum`), `name`, `label`, `defaultValue`,
+`options`, `isOptional`, `help`, `isDeliver`).
 
 ### Transcript
 

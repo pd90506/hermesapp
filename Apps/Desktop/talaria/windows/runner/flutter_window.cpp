@@ -61,6 +61,23 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (method == "pickFiles") {
           result->Success(Strings(native_files::PickFiles(GetHandle())));
+        } else if (method == "setBandControls") {
+          // [[left, top, right, bottom], ...] in logical pixels.
+          std::vector<RECT> rects;
+          if (const auto* list = std::get_if<flutter::EncodableList>(call.arguments())) {
+            for (const auto& item : *list) {
+              const auto* r = std::get_if<flutter::EncodableList>(&item);
+              if (!r || r->size() != 4) continue;
+              LONG v[4];
+              for (size_t i = 0; i < 4; ++i) {
+                const auto* d = std::get_if<double>(&(*r)[i]);
+                v[i] = d ? static_cast<LONG>(*d) : 0;
+              }
+              rects.push_back(RECT{v[0], v[1], v[2], v[3]});
+            }
+          }
+          native_frame::SetBandControls(std::move(rects));
+          result->Success();
         } else if (method == "pickImage") {
           const auto path = native_files::PickImage(GetHandle());
           if (path.empty()) {

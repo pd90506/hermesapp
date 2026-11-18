@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <optional>
+#include <vector>
 
 // The window as Windows 11 apps that extend into the title bar draw it
 // (WinUI's ExtendsContentIntoTitleBar): Mica behind the whole window, no caption
@@ -36,6 +37,10 @@ std::optional<LRESULT> HandleMessage(HWND window, UINT message, WPARAM wparam,
 // Lets the title band's empty space reach the top-level window: the Flutter view
 // covers the client area and would otherwise take every click.
 void PassTitleBandThrough(HWND flutter_view);
+
+// The app's controls inside the title band past its leading ones (New chat), in
+// logical pixels of the client area: they take clicks rather than move the window.
+void SetBandControls(std::vector<RECT> rects);
 
 }  // namespace native_frame
 

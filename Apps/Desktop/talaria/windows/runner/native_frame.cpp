@@ -18,6 +18,7 @@ namespace {
 constexpr int kMica = 2;
 
 Theme g_theme = Theme::kSystem;
+std::vector<RECT> g_band_controls;
 
 bool SystemUsesDarkMode() {
   DWORD light = 1;
@@ -43,7 +44,14 @@ LRESULT CALLBACK FlutterViewProc(HWND view, UINT message, WPARAM wparam,
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
     ScreenToClient(view, &point);
     const double scale = ScaleOf(view);
-    if (point.y < kTitleBandHeight * scale &&
+    bool on_control = false;
+    for (const RECT& r : g_band_controls) {
+      if (point.x >= r.left * scale && point.x < r.right * scale &&
+          point.y >= r.top * scale && point.y < r.bottom * scale) {
+        on_control = true;
+      }
+    }
+    if (!on_control && point.y < kTitleBandHeight * scale &&
         point.x >= kTitleBandLeadingControls * scale) {
       // The top-level window answers: a caption button, the top resize edge,
       // or the caption (drag, double-click to maximize, the system menu).
@@ -117,6 +125,8 @@ std::optional<LRESULT> HandleMessage(HWND window, UINT message, WPARAM wparam,
   }
   return std::nullopt;
 }
+
+void SetBandControls(std::vector<RECT> rects) { g_band_controls = std::move(rects); }
 
 void PassTitleBandThrough(HWND flutter_view) {
   SetWindowSubclass(flutter_view, FlutterViewProc, 1, 0);

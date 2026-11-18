@@ -35,6 +35,12 @@ class WindowFrame {
   static const _channel = MethodChannel('talaria/window');
 
   static Future<void> setTheme(AppTheme theme) => _channel.invokeMethod('setTheme', theme.name);
+
+  /// The app's controls in the title band (`native_frame.cpp`): they take clicks,
+  /// where the rest of the band moves the window. Logical pixels.
+  static Future<void> setBandControls(List<Rect> rects) => _channel.invokeMethod('setBandControls', [
+        for (final r in rects) [r.left, r.top, r.right, r.bottom],
+      ]);
 }
 
 /// What the clipboard holds (`windows/runner/native_files.cpp`): its formats as

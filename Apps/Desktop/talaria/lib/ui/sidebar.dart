@@ -272,23 +272,6 @@ class SessionPane extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 0, 10),
-          child: Row(children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(bot?.displayName ?? 'Talaria',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: p.text, height: 1.25)),
-                Text(_status(app),
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: p.text2)),
-              ]),
-            ),
-            IconAction(Glyphs.compose,
-                tooltip: 'New chat (Ctrl+N)', onPressed: profile == null ? null : () => app.newChat()),
-          ]),
-        ),
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
             if (bot != null) ...[
@@ -335,7 +318,8 @@ class SessionPane extends StatelessWidget {
     );
   }
 
-  static String _status(AppState app) => switch (app.connection.state) {
+  /// The connection, under the profile's name in the title bar.
+  static String status(AppState app) => switch (app.connection.state) {
         LinkState.connected => app.settings.serverUrl.replaceFirst(RegExp(r'^https?://'), ''),
         LinkState.connecting => 'Connecting…',
         LinkState.reconnecting => 'Reconnecting…',

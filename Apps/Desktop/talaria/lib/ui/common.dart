@@ -1,5 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 
+import '../platform/system.dart';
 import 'theme.dart';
 
 /// The 48 px band Windows 11 apps draw into (WinUI's ExtendsContentIntoTitleBar):
@@ -7,9 +8,15 @@ import 'theme.dart';
 /// space moves the window; Windows draws the caption buttons at its right
 /// (`windows/runner/native_frame.cpp`), so nothing is placed there.
 class WindowTitleBar extends StatelessWidget {
-  const WindowTitleBar({super.key, required this.title, this.leading});
+  const WindowTitleBar({super.key, required this.title, this.leading, this.subtitle, this.trailing});
   final String title;
   final Widget? leading;
+
+  /// Over the sidebar, as the Mac's toolbar there: the profile's name in place of the
+  /// app's icon and name, the connection under it, and New chat at the band's end
+  /// ([trailing], which takes clicks through [BandControl]).
+  final String? subtitle;
+  final Widget? trailing;
 
   static const height = 48.0;
 
@@ -20,17 +27,74 @@ class WindowTitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
+    final subtitle = this.subtitle;
     return SizedBox(
       height: height,
       child: Row(children: [
         const SizedBox(width: 4),
         SizedBox(width: 40, child: leading),
         const SizedBox(width: 8),
-        AppMark(size: 16, color: p.accent, onColor: p.onAccent),
-        const SizedBox(width: 12),
-        Text(title, style: TextStyle(fontSize: 12, color: p.text)),
+        if (subtitle == null) ...[
+          AppMark(size: 16, color: p.accent, onColor: p.onAccent),
+          const SizedBox(width: 12),
+          Text(title, style: TextStyle(fontSize: 12, color: p.text)),
+        ] else
+          Expanded(
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: p.text, height: 1.25)),
+              Text(subtitle,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: p.text2, height: 1.25)),
+            ]),
+          ),
+        if (trailing case final trailing?) ...[BandControl(child: trailing), const SizedBox(width: 8)],
       ]),
     );
+  }
+}
+
+/// A control in the title band past its leading button: it takes clicks there, where
+/// the band's empty space moves the window. Tells the window frame where it is after
+/// each layout (`WindowFrame.setBandControls`).
+class BandControl extends StatefulWidget {
+  const BandControl({super.key, required this.child});
+  final Widget child;
+  @override
+  State<BandControl> createState() => _BandControlState();
+}
+
+class _BandControlState extends State<BandControl> {
+  static final _rects = <_BandControlState, Rect>{};
+  static List<Rect> _sent = const [];
+
+  static void _send() {
+    final rects = _rects.values.toList();
+    if (rects.length == _sent.length && Iterable.generate(rects.length).every((i) => rects[i] == _sent[i])) return;
+    _sent = rects;
+    WindowFrame.setBandControls(rects);
+  }
+
+  void _measure(Duration _) {
+    if (!mounted) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    _rects[this] = box.localToGlobal(Offset.zero) & box.size;
+    _send();
+  }
+
+  @override
+  void dispose() {
+    _rects.remove(this);
+    _send();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback(_measure);
+    return widget.child;
   }
 }
 

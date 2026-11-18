@@ -164,6 +164,12 @@ class _MainWindowState extends State<MainWindow> {
               SizedBox(width: 272, child: SessionPane(app: app)),
             ]),
           ),
+          Expanded(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (_railShown) ProfileRail(app: app) else const SizedBox(width: 8),
+              SizedBox(width: 272, child: SessionPane(app: app)),
+            ]),
+          ),
         ]),
       ),
       Expanded(

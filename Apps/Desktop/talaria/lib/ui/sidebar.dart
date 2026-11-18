@@ -292,7 +292,7 @@ class SessionPane extends StatelessWidget {
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
             if (bot != null) ...[
-              const _Header('Bot Chat'),
+              const _Header('Bot Chat', major: true),
               Padding(
                 padding: const EdgeInsets.only(left: 4),
                 child: ListItem(
@@ -302,13 +302,15 @@ class SessionPane extends StatelessWidget {
                   child: _TwoLines(title: bot.displayName, subtitle: bot.preview ?? 'Say hello'),
                 ),
               ),
+              // A line between the Bot Chat and the sessions (the user, 2026-11-18).
+              Container(height: 1, margin: const EdgeInsets.fromLTRB(16, 10, 8, 0), color: p.divider),
             ],
             // Pinned sessions above the rest, while there are any, as on the Mac.
             if (pinned.isNotEmpty) ...[
-              const _Header('Pinned'),
+              const _Header('Pinned', major: true),
               for (final s in pinned) _SessionRow(app: app, session: s),
             ],
-            const _Header('Sessions'),
+            const _Header('Sessions', major: true),
             if (app.connection.sessionListLoading && sessions.isEmpty)
               const Padding(padding: EdgeInsets.all(16), child: Center(child: ProgressRing()))
             else if (app.connection.sessionListError case final error?)
@@ -494,15 +496,23 @@ class _SessionRowState extends State<_SessionRow> {
   }
 }
 
+/// A section's title. The list's own sections (Bot Chat, Pinned, Sessions) larger and
+/// bold, in the text colour (the user, 2026-11-18); a date group's ("Yesterday") small.
 class _Header extends StatelessWidget {
-  const _Header(this.text);
+  const _Header(this.text, {this.major = false});
   final String text;
+  final bool major;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
-        child: Text(text,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: PaletteScope.of(context).text2)),
-      );
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, major ? 14 : 10, 8, major ? 6 : 4),
+      child: Text(text,
+          style: major
+              ? TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: p.text)
+              : TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: p.text2)),
+    );
+  }
 }
 
 class _TwoLines extends StatelessWidget {

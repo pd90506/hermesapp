@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';
 
@@ -84,20 +87,43 @@ class _ComposerState extends State<Composer> {
   /// The model switch whose confirmation is showing, so it is asked once.
   PendingModelSwitch? _asking;
 
+  /// The draft as last sent to the bridge: a snapshot that differs from it was
+  /// changed there (a slash row accepted, a command's prefill), so the field
+  /// takes it back instead of being cleared.
+  String _sentDraft = '';
+
+  /// Whether the field's own change listener is updating the controller.
+  bool _syncing = false;
+
+  /// The subagents' card is open.
+  bool _subagentsOpen = false;
+
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() => setState(() {}));
-    _focus.addListener(() => setState(() {}));
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+      // Typing reaches the bridge, so the slash list follows it.
+      if (!_syncing) {
+        _sentDraft = _controller.text;
+        widget.app.setDraft(_controller.text);
+      }
+    });
+    _focus.addListener(() {
+      if (mounted) setState(() {});
+    });
     // The chat just opened: the keyboard goes to its composer, as on the Mac. (A
     // TextBox's autofocus loses to the window's own focus node, which has it already.)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focus.requestFocus();
     });
+    // The subagents reconcile while this chat shows, as the Mac's pill does.
+    widget.app.startSubagentsPoll();
   }
 
   @override
   void dispose() {
+    widget.app.stopSubagentsPoll();
     _controller.dispose();
     _focus.dispose();
     super.dispose();
@@ -114,14 +140,26 @@ class _ComposerState extends State<Composer> {
       !_composer.attachments.any((a) => a.isUploading) &&
       widget.app.connection.state == LinkState.connected;
 
+  /// Takes back a draft the bridge changed on its own (a slash row accepted, a
+  /// refused command put back), as the Mac's binding does.
+  void _syncDraft() {
+    final draft = _composer.draft;
+    if (draft == _sentDraft) return;
+    _sentDraft = draft;
+    _syncing = true;
+    _controller.value = TextEditingValue(text: draft, selection: TextSelection.collapsed(offset: draft.length));
+    _syncing = false;
+  }
+
   Future<void> _send() async {
     if (!_canSend) return;
     final text = _controller.text.trim();
     setState(() => _sending = true);
-    final ok = await widget.app.send(text);
+    await widget.app.send(text);
     if (!mounted) return;
+    // The draft clears (or a prefill comes back) in the composer snapshot, which
+    // _syncDraft takes; not here.
     setState(() => _sending = false);
-    if (ok) _controller.clear();
     _focus.requestFocus();
   }
 
@@ -174,15 +212,50 @@ class _ComposerState extends State<Composer> {
     final running = app.chat.isRunning;
     final focused = _focus.hasFocus;
     _askAboutSwitch();
+    _syncDraft();
+    // The keys the slash list takes, as the Mac's composer offers them: arrows move,
+    // Tab and Return accept, Esc closes. The snapshot's own state says whether the
+    // list is open, so the field's handler stays synchronous; the bridge's answer
+    // (a Return the list declines) sends a beat later, through _acceptOrSend.
+    void slashKey(String key) {
+      widget.app.slashKey(key).then((used) {
+        if (mounted) setState(() {});
+      });
+    }
+
+    Future<void> acceptOrSend() async {
+      final used = await widget.app.slashKey('accept');
+      if (!mounted || used) return;
+      await _send();
+    }
+
     // The text, borderless: the card around it is the field (its fill, stroke and focus line).
     final field = Focus(
       onKeyEvent: (node, event) {
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
-        if (event.logicalKey == LogicalKeyboardKey.enter && !HardwareKeyboard.instance.isShiftPressed) {
-          _send();
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.enter && !HardwareKeyboard.instance.isShiftPressed) {
+          if (composer.slashIsOpen) {
+            unawaited(acceptOrSend());
+          } else {
+            _send();
+          }
           return KeyEventResult.handled;
         }
-        if (event.logicalKey == LogicalKeyboardKey.keyV && HardwareKeyboard.instance.isControlPressed) {
+        if (composer.slashIsOpen &&
+            (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.arrowDown)) {
+          slashKey(key == LogicalKeyboardKey.arrowUp ? 'up' : 'down');
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.tab && composer.slashIsOpen) {
+          slashKey('tab');
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.escape && (composer.slashIsOpen || composer.slashNotice != null)) {
+          slashKey('escape');
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.keyV && HardwareKeyboard.instance.isControlPressed) {
           _paste();
           return KeyEventResult.handled;
         }
@@ -234,6 +307,17 @@ class _ComposerState extends State<Composer> {
             ),
             child: Stack(children: [
               Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+                // The slash list, above what is typed: as many rows as it has, then
+                // it scrolls; the picked row in the accent.
+                if (composer.slashIsOpen)
+                  _SlashList(app: widget.app, rows: composer.slashRows, onAccept: _focus.requestFocus)
+                else if (composer.slashNotice case final notice?)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                    child: Text(notice,
+                        maxLines: 2,
+                        style: TextStyle(fontSize: 12, color: p.text2, height: 1.3)),
+                  ),
                 if (composer.hasCards)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
@@ -250,8 +334,9 @@ class _ComposerState extends State<Composer> {
                   child: Row(children: [
                     IconAction(Glyphs.attach, size: 15, tooltip: 'Attach images or files', onPressed: app.pickFiles),
                     const SizedBox(width: 2),
-                    _ModelPicker(app: app),
+                    _ModelPicker(app: app, onOpened: () => app.setModelPickerRequested(false)),
                     if (composer.efforts.isNotEmpty) _EffortPicker(app: app),
+                    if (app.usage.gauge != null || app.usage.usage != null) _ContextRing(app: app),
                     const Spacer(),
                     action,
                   ]),
@@ -276,6 +361,9 @@ class _ComposerState extends State<Composer> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: ChatPane.contentWidth),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+            // The running subagents, centered above the card, as the Mac's pill.
+            if (app.subagents.runs.isNotEmpty)
+              _SubagentsPill(app: app, isOpen: _subagentsOpen, onToggle: () => setState(() => _subagentsOpen = !_subagentsOpen)),
             if (composer.error case final message?)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -329,10 +417,17 @@ class _ComposerAction extends StatelessWidget {
 /// Mac's composer menus: it opens upward from the pill, its left edge on the pill's, and
 /// it slides up into place. A long list stops at [maxMenuHeight] and scrolls.
 class _PickerButton extends StatefulWidget {
-  const _PickerButton({required this.label, required this.tooltip, required this.items});
+  const _PickerButton({required this.label, required this.tooltip, required this.items, this.open, this.controller});
   final String label;
   final String tooltip;
   final List<MenuFlyoutItemBase> items;
+
+  /// Opens the menu, when the caller owns its controller (the model picker, which
+  /// `/model` can open); else this button opens its own.
+  final VoidCallback? open;
+
+  /// The caller's flyout controller; null makes this button own one.
+  final FlyoutController? controller;
 
   static const maxMenuHeight = 360.0;
 
@@ -341,15 +436,20 @@ class _PickerButton extends StatefulWidget {
 }
 
 class _PickerButtonState extends State<_PickerButton> {
-  final _menu = FlyoutController();
+  final _own = FlyoutController();
+  FlyoutController get _menu => widget.controller ?? _own;
 
   @override
   void dispose() {
-    _menu.dispose();
+    _own.dispose();
     super.dispose();
   }
 
   void _open() {
+    if (widget.open case final open?) {
+      open();
+      return;
+    }
     if (_menu.isOpen) return;
     _menu.showFlyout<void>(
       placementMode: FlyoutPlacementMode.topLeft,
@@ -406,12 +506,50 @@ MenuFlyoutItemBase _menuHeader(String title) => MenuFlyoutItemBuilder(
     );
 
 /// The chat's model, by provider, as the Mac's model menu (Desktop's model picker).
-class _ModelPicker extends StatelessWidget {
-  const _ModelPicker({required this.app});
+/// `/model` opens it itself, through [onOpened] clearing the request.
+class _ModelPicker extends StatefulWidget {
+  const _ModelPicker({required this.app, this.onOpened});
   final AppState app;
 
+  /// Called once the menu opens, to clear /model's request.
+  final VoidCallback? onOpened;
+
   @override
-  Widget build(BuildContext context) {
+  State<_ModelPicker> createState() => _ModelPickerState();
+}
+
+class _ModelPickerState extends State<_ModelPicker> {
+  final _menu = FlyoutController();
+
+  @override
+  void dispose() {
+    _menu.dispose();
+    super.dispose();
+  }
+
+  void _open() {
+    if (_menu.isOpen) return;
+    widget.onOpened?.call();
+    _menu.showFlyout<void>(
+      placementMode: FlyoutPlacementMode.topLeft,
+      barrierColor: const Color(0x00000000),
+      additionalOffset: 4,
+      transitionBuilder: (context, animation, placement, flyout) => ClipRect(
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 0.25), end: Offset.zero)
+              .animate(CurvedAnimation(parent: animation, curve: FluentTheme.of(context).animationCurve)),
+          child: FadeTransition(opacity: animation, child: flyout),
+        ),
+      ),
+      builder: (context) => MenuFlyout(
+        constraints: const BoxConstraints(minWidth: 160, maxHeight: 360),
+        items: _items(),
+      ),
+    );
+  }
+
+  List<MenuFlyoutItemBase> _items() {
+    final app = widget.app;
     final composer = app.composer;
     final providers = composer.providers;
     String key(String provider, String model) => '$provider\u0000$model';
@@ -419,28 +557,37 @@ class _ModelPicker extends StatelessWidget {
             ?.expand((p) => p.models.where((m) => m.isCurrent).map((m) => key(p.slug, m.model)))
             .firstOrNull ??
         '';
+    return [
+      if (providers == null)
+        MenuFlyoutItem(text: const Text('Loading models…'), onPressed: null)
+      else if (providers.isEmpty)
+        MenuFlyoutItem(text: const Text('No models available'), onPressed: null)
+      else
+        for (final provider in providers) ...[
+          _menuHeader(provider.name),
+          for (final model in provider.models)
+            RadioMenuFlyoutItem<String>(
+              text: Text(model.label),
+              value: key(provider.slug, model.model),
+              groupValue: current,
+              onChanged: (_) => app.selectModel(provider.slug, model.model),
+            ),
+        ],
+      const MenuFlyoutSeparator(),
+      MenuFlyoutItem(leading: const Icon(Glyphs.refresh), text: const Text('Reload models'), onPressed: app.reloadModels),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.app;
+    final composer = app.composer;
     return _PickerButton(
       label: composer.modelLabel ?? 'Model',
       tooltip: composer.model == null ? 'Model for this chat' : 'Model for this chat: ${composer.model}',
-      items: [
-        if (providers == null)
-          MenuFlyoutItem(text: const Text('Loading models…'), onPressed: null)
-        else if (providers.isEmpty)
-          MenuFlyoutItem(text: const Text('No models available'), onPressed: null)
-        else
-          for (final provider in providers) ...[
-            _menuHeader(provider.name),
-            for (final model in provider.models)
-              RadioMenuFlyoutItem<String>(
-                text: Text(model.label),
-                value: key(provider.slug, model.model),
-                groupValue: current,
-                onChanged: (_) => app.selectModel(provider.slug, model.model),
-              ),
-          ],
-        const MenuFlyoutSeparator(),
-        MenuFlyoutItem(leading: const Icon(Glyphs.refresh), text: const Text('Reload models'), onPressed: app.reloadModels),
-      ],
+      items: _items(),
+      open: _open,
+      controller: _menu,
     );
   }
 }
@@ -535,6 +682,401 @@ class _AttachmentCardView extends StatelessWidget {
             child: SizedBox(width: 14, height: 14, child: ProgressRing(strokeWidth: 2)),
           ),
         if (onRemove != null) IconAction(Glyphs.cancel, size: 10, tooltip: 'Remove', onPressed: onRemove),
+      ]),
+    );
+  }
+}
+
+/// The slash list, as the Mac's `SlashSuggestionList`: as many rows as it has
+/// (about eight) before it scrolls, the picked row in the accent, a click
+/// accepting the row.
+class _SlashList extends StatelessWidget {
+  const _SlashList({required this.app, required this.rows, required this.onAccept});
+  final AppState app;
+  final List<SlashRow> rows;
+  final VoidCallback onAccept;
+
+  static const maxListHeight = 220.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Container(
+      constraints: const BoxConstraints(maxHeight: maxListHeight),
+      margin: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+      decoration: BoxDecoration(
+        color: p.card,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: p.cardStroke),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(6),
+        itemCount: rows.length,
+        itemBuilder: (context, i) {
+          final row = rows[i];
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (row.header case final header?)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 3),
+                child: Text(header,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: p.text3)),
+              ),
+            HoverButton(
+              onPressed: () {
+                app.acceptSlashRow(row.id);
+                onAccept();
+              },
+              builder: (context, states) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: row.isSelected || states.isHovered ? p.subtle : const Color(0x00000000),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  Text(row.display, style: TextStyle(fontSize: 13, color: p.text)),
+                  if (row.meta case final meta? when meta.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(meta,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: p.text3)),
+                    ),
+                  ] else
+                    const Spacer(),
+                ]),
+              ),
+            ),
+          ]);
+        },
+      ),
+    );
+  }
+}
+
+/// How full the chat's context is, as the Mac's `ContextGaugeButton`: a ring
+/// filling with the context used and its percentage, opening what fills it and
+/// the session's counters.
+class _ContextRing extends StatelessWidget {
+  const _ContextRing({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final usage = app.usage;
+    final gauge = usage.gauge;
+    final menu = FlyoutController();
+    final summary = gauge == null
+        ? 'Token use'
+        : 'Context: ${gauge.isEstimated ? '~' : ''}${tokens(gauge.used)} of ${tokens(gauge.max)} tokens (${gauge.percent}%)';
+    return Tooltip(
+      message: summary,
+      child: FlyoutTarget(
+        controller: menu,
+        child: HoverButton(
+          onPressed: () => menu.showFlyout<void>(
+            placementMode: FlyoutPlacementMode.topLeft,
+            barrierColor: const Color(0x00000000),
+            additionalOffset: 4,
+            builder: (context) => FlyoutContent(
+              constraints: const BoxConstraints(minWidth: 280),
+              child: _ContextDetails(usage: usage),
+            ),
+          ),
+          builder: (context, states) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: states.isHovered ? p.subtle : const Color(0x00000000),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CustomPaint(painter: _RingPainter(fraction: gauge?.fraction ?? 0)),
+              ),
+              if (gauge != null) ...[
+                const SizedBox(width: 5),
+                Text('${gauge.isEstimated ? '~' : ''}${gauge.percent}%',
+                    style: TextStyle(fontSize: 12, color: p.text2)),
+              ],
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 950, 12.8K, 1.2M.
+  static String tokens(int count) {
+    if (count < 1000) return '$count';
+    if (count < 1000000) {
+      final value = count / 1000;
+      return '${value >= 100 ? value.round() : (value * 10).round() / 10}K';
+    }
+    final value = count / 1000000;
+    return '${(value * 10).round() / 10}M';
+  }
+}
+
+/// The ring: filling clockwise from the top, orange past 80 %, red past 95 %, as
+/// the context nears the point Hermes compresses it.
+class _RingPainter extends CustomPainter {
+  const _RingPainter({required this.fraction});
+  final double fraction;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final edge = size.width / 2;
+    final center = Offset(edge, edge);
+    final radius = edge - 1.5;
+    final track = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = const Color.fromRGBO(128, 128, 128, 0.4);
+    canvas.drawCircle(center, radius, track);
+    if (fraction > 0) {
+      final color = fraction > 0.95
+          ? const Color(0xFFC42B1C)
+          : fraction > 0.8
+              ? const Color(0xFFF7630C)
+              : const Color(0xFF0078D4);
+      final arc = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..color = color;
+      canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -math.pi / 2, 2 * math.pi * fraction, false, arc);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) => old.fraction != fraction;
+}
+
+/// The gauge's details: the context, what fills it, then the session's counters.
+class _ContextDetails extends StatelessWidget {
+  const _ContextDetails({required this.usage});
+  final UsageSnapshot usage;
+
+  /// Orange past 80 %, red past 95 %, as the context nears its compression.
+  static Color _barColor(double fraction) {
+    if (fraction > 0.95) return const Color(0xFFC42B1C);
+    if (fraction > 0.8) return const Color(0xFFF7630C);
+    return const Color(0xFF0078D4);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final gauge = usage.gauge;
+    final breakdown = usage.breakdown;
+    final counters = usage.usage;
+    // What the categories leave out of the measured occupancy.
+    final unitemized = (breakdown == null || gauge == null || gauge.isEstimated)
+        ? 0
+        : breakdown.contextUsed - breakdown.categories.fold<int>(0, (sum, c) => sum + c.tokens);
+    Widget row(String label, String value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(children: [
+            Expanded(child: Text(label, style: TextStyle(fontSize: 12, color: p.text2))),
+            Text(value, style: TextStyle(fontSize: 12, color: p.text)),
+          ]),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      if (gauge != null) ...[
+        Text('Context', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: Container(
+            height: 4,
+            color: p.subtle2,
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: gauge.fraction,
+              child: Container(color: _barColor(gauge.fraction)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${gauge.isEstimated ? '~' : ''}${_ContextRing.tokens(gauge.used)} of ${_ContextRing.tokens(gauge.max)} tokens (${gauge.percent}%)',
+          style: TextStyle(fontSize: 12, color: p.text),
+        ),
+        if (gauge.isEstimated)
+          Text('Estimated until a reply measures it.', style: TextStyle(fontSize: 11, color: p.text3)),
+      ],
+      if (breakdown != null && breakdown.categories.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        for (final category in breakdown.categories)
+          row(category.label, '~${_ContextRing.tokens(category.tokens)}'),
+        if (unitemized > 0) row('Not itemized', '~${_ContextRing.tokens(unitemized)}'),
+        if (gauge != null && !gauge.isEstimated)
+          Text("Items are estimates. The total is the model's own count.",
+              style: TextStyle(fontSize: 11, color: p.text3)),
+      ],
+      if (counters != null) ...[
+        const SizedBox(height: 10),
+        row('Tokens', '${_ContextRing.tokens(counters.total)} in, ${_ContextRing.tokens(counters.output)} out'),
+        row('Model calls', '${counters.calls}'),
+        if (counters.cacheHitPercent case final hit?) row('Cache hits', '$hit%'),
+        if (counters.tokensPerSecond case final speed?) row('Speed', '${speed.toStringAsFixed(1)} tokens/s'),
+        if (counters.costUSD case final cost?) row('Cost', '\$${cost.toStringAsFixed(3)}'),
+        if (counters.model case final model?) row('Model', model),
+      ],
+    ]);
+  }
+}
+
+/// The running subagents, as the Mac's `SubagentsPill`: a pill above the composer
+/// ("2 subagents", spinning) that opens into a card as wide as it, each child with
+/// its goal, what it did last, a field to steer it and Stop.
+class _SubagentsPill extends StatelessWidget {
+  const _SubagentsPill({required this.app, required this.isOpen, required this.onToggle});
+  final AppState app;
+  final bool isOpen;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final runs = app.subagents.runs;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      if (isOpen)
+        _SubagentsPanel(app: app, runs: runs, onClose: onToggle)
+      else
+        Center(
+          child: HoverButton(
+            onPressed: onToggle,
+            builder: (context, states) => Container(
+              padding: const EdgeInsets.fromLTRB(10, 5, 12, 5),
+              decoration: BoxDecoration(
+                color: states.isHovered ? p.layer : p.card,
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: p.layerStroke),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const SizedBox(width: 13, height: 13, child: ProgressRing(strokeWidth: 2)),
+                const SizedBox(width: 7),
+                Text('${runs.length} subagent${runs.length == 1 ? '' : 's'}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: p.text2)),
+              ]),
+            ),
+          ),
+        ),
+      const SizedBox(height: 8),
+    ]);
+  }
+}
+
+/// The pill's card: every running child, one row each.
+class _SubagentsPanel extends StatelessWidget {
+  const _SubagentsPanel({required this.app, required this.runs, required this.onClose});
+  final AppState app;
+  final List<SubagentRun> runs;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: p.card,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: p.cardStroke),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          Text('${runs.length} subagent${runs.length == 1 ? '' : 's'}',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+          const Spacer(),
+          IconAction(Glyphs.cancel, size: 10, tooltip: 'Close', onPressed: onClose),
+        ]),
+        for (final run in runs) _SubagentRow(app: app, run: run),
+      ]),
+    );
+  }
+}
+
+/// One child: its goal and how long it has run, its newest lines, and Steer/Stop.
+class _SubagentRow extends StatefulWidget {
+  const _SubagentRow({required this.app, required this.run});
+  final AppState app;
+  final SubagentRun run;
+
+  @override
+  State<_SubagentRow> createState() => _SubagentRowState();
+}
+
+class _SubagentRowState extends State<_SubagentRow> {
+  final _steer = TextEditingController();
+
+  @override
+  void dispose() {
+    _steer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final run = widget.run;
+    final age = DateTime.now().difference(run.startedAt ?? DateTime.now());
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text(run.goal,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: p.text)),
+          ),
+          const SizedBox(width: 8),
+          Text(run.status == 'queued' ? 'Queued' : '${age.inSeconds}s',
+              style: TextStyle(fontSize: 11, color: p.text3)),
+        ]),
+        for (final line in run.activity.take(3))
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(line.text,
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: line.isError ? p.critical : p.text3)),
+          ),
+        const SizedBox(height: 5),
+        Row(children: [
+          Expanded(
+            child: SizedBox(
+              height: 28,
+              child: TextBox(
+                controller: _steer,
+                placeholder: 'Steer this subagent…',
+                placeholderStyle: TextStyle(fontSize: 12, color: p.text3),
+                style: TextStyle(fontSize: 12, color: p.text),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                onSubmitted: (text) {
+                  if (text.trim().isNotEmpty) widget.app.steerSubagent(run.id, text);
+                  _steer.clear();
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: 'Stop this subagent',
+            child: SizedBox(
+              width: 28,
+              height: 28,
+              child: Button(
+                onPressed: () => widget.app.stopSubagent(run.id),
+                style: const ButtonStyle(padding: WidgetStatePropertyAll(EdgeInsets.zero)),
+                child: const Icon(Glyphs.stop, size: 11),
+              ),
+            ),
+          ),
+        ]),
       ]),
     );
   }

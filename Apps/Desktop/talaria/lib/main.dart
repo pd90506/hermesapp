@@ -82,7 +82,7 @@ class TalariaApp extends StatelessWidget {
                     fontSize: 14,
                     color: palette.text,
                     height: 1.4),
-                child: _Shortcuts(app: app, child: MainWindow(app: app)),
+                child: MainWindow(app: app),
               ),
             );
           }),
@@ -94,13 +94,22 @@ class TalariaApp extends StatelessWidget {
 
 /// The window's keyboard shortcuts, as Windows apps have them.
 class _Shortcuts extends StatelessWidget {
-  const _Shortcuts({required this.app, required this.child});
+  const _Shortcuts({required this.app, required this.searchFocus, required this.child});
   final AppState app;
+
+  /// The sidebar's search field, as the Mac's toolbar search (⌘F).
+  final FocusNode searchFocus;
   final Widget child;
+
   @override
   Widget build(BuildContext context) => CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.keyN, control: true): app.newChat,
+          const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+            app.showCron(false);
+            app.showSettings(false);
+            searchFocus.requestFocus();
+          },
           const SingleActivator(LogicalKeyboardKey.comma, control: true): () => app.showSettings(true),
           const SingleActivator(LogicalKeyboardKey.escape): () => app.showSettings(false),
         },
@@ -117,6 +126,15 @@ class MainWindow extends StatefulWidget {
 
 class _MainWindowState extends State<MainWindow> {
   bool _railShown = true;
+
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  /// The sidebar's search field, focused by Ctrl+F.
+  final _searchFocus = FocusNode(debugLabel: 'session search');
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +158,10 @@ class _MainWindowState extends State<MainWindow> {
     // As the Mac's split view: the title bar (the rail toggle, the app's icon and name)
     // over the sidebar only, and the chat from the window's top edge, its title in the
     // title bar's band and the caption buttons over its corner.
-    return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return _Shortcuts(
+      app: app,
+      searchFocus: _searchFocus,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SizedBox(
         width: (_railShown ? ProfileRail.width : 8) + 272,
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -161,10 +182,11 @@ class _MainWindowState extends State<MainWindow> {
           Expanded(
             child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               if (_railShown) ProfileRail(app: app) else const SizedBox(width: 8),
-              SizedBox(width: 272, child: SessionPane(app: app)),
+              SizedBox(width: 272, child: SessionPane(app: app, searchFocus: _searchFocus)),
             ]),
           ),
-        ]),
+        ],
+        ),
       ),
       Expanded(
         child: Container(
@@ -189,6 +211,7 @@ class _MainWindowState extends State<MainWindow> {
           ]),
         ),
       ),
-    ]);
+      ]),
+    );
   }
 }

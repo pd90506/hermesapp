@@ -166,3 +166,19 @@ class ListItem extends StatelessWidget {
     );
   }
 }
+
+/// "Now", "5 minutes ago", "Yesterday", or the date: as Windows' own lists say it.
+String relativeTime(DateTime date, {DateTime? now}) {
+  final reference = now ?? DateTime.now();
+  final age = reference.difference(date);
+  if (age.inMinutes < 1) return 'Now';
+  if (age.inMinutes < 60) return '${age.inMinutes} minute${age.inMinutes == 1 ? '' : 's'} ago';
+  if (age.inHours < 24 && date.day == reference.day) {
+    return '${age.inHours} hour${age.inHours == 1 ? '' : 's'} ago';
+  }
+  final yesterday = DateTime(reference.year, reference.month, reference.day - 1);
+  if (!date.isBefore(yesterday)) return 'Yesterday';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final day = '${months[date.month - 1]} ${date.day}';
+  return date.year == reference.year ? day : '$day, ${date.year}';
+}

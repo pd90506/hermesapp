@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../app/app_state.dart';
 import '../app/snapshots.dart';
 import 'common.dart';
+import 'cron.dart';
 import 'theme.dart';
 
 /// The profiles, as the Mac app's rail: a circle each, a rounded square and the accent
@@ -257,65 +258,85 @@ class _ActivityBadgeState extends State<_ActivityBadge> with SingleTickerProvide
 
 /// The selected profile's Bot Chat and sessions, with New chat and the connection's
 /// state, as the Mac's session list.
+/// The profile's sessions or its cron jobs, as the Mac's two sidebar tabs
+/// (`SessionListTabBar`), and the sessions list's search (Ctrl+F), as the Mac's
+/// sidebar search: its results take the list's place while the field has text.
 class SessionPane extends StatelessWidget {
-  const SessionPane({super.key, required this.app});
+  const SessionPane({super.key, required this.app, this.searchFocus});
   final AppState app;
+
+  /// Focused by Ctrl+F, as the Mac's toolbar search (⌘F).
+  final FocusNode? searchFocus;
 
   @override
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
     final profile = app.selectedProfile;
     final bot = app.connection.bots.where((b) => b.name == profile).firstOrNull;
+    final searching = app.searchText.trim().isNotEmpty;
     final sessions = app.connection.sessions.where((s) => s.profile == profile).toList();
     final pinned = sessions.where((s) => s.isPinned).toList();
     final others = sessions.where((s) => !s.isPinned).toList();
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // The Bot Chat pinned above the list, as the Mac's `PinnedBotChat`: it stays put
-        // while the sessions scroll (the user, 2026-11-18).
-        if (bot != null) ...[
-          const _Header('Bot Chat', major: true),
+        _SessionTabs(app: app),
+        if (!app.isCronShown) ...[
           Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: ListItem(
-              selected: app.selectedRow == 'bot:${bot.name}',
-              height: 48,
-              onPressed: () => app.openBotChat(bot.name),
-              child: _TwoLines(title: bot.displayName, subtitle: bot.preview ?? 'Say hello'),
-            ),
+            padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+            child: _SearchField(app: app, focus: searchFocus),
           ),
-          // A line between the Bot Chat and the sessions (the user, 2026-11-18).
-          Container(height: 1, margin: const EdgeInsets.fromLTRB(16, 10, 8, 0), color: p.divider),
         ],
-        Expanded(
-          child: ListView(padding: EdgeInsets.zero, children: [
-            // Pinned sessions above the rest, while there are any, as on the Mac.
-            if (pinned.isNotEmpty) ...[
-              const _Header('Pinned', major: true),
-              for (final s in pinned) _SessionRow(app: app, session: s),
-            ],
-            const _Header('Sessions', major: true),
-            if (app.connection.sessionListLoading && sessions.isEmpty)
-              const Padding(padding: EdgeInsets.all(16), child: Center(child: ProgressRing()))
-            else if (app.connection.sessionListError case final error?)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-                child: Text(error, style: TextStyle(fontSize: 12, color: p.text2)),
-              )
-            else if (sessions.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-                child: Text('No sessions yet', style: TextStyle(fontSize: 12, color: p.text2)),
+        if (app.isCronShown)
+          Expanded(child: CronPane(app: app))
+        else if (searching)
+          Expanded(child: _SearchResults(app: app))
+        else ...[
+          // The Bot Chat pinned above the list, as the Mac's `PinnedBotChat`: it stays put
+          // while the sessions scroll (the user, 2026-11-18).
+          if (bot != null) ...[
+            const _Header('Bot Chat', major: true),
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: ListItem(
+                selected: app.selectedRow == 'bot:${bot.name}',
+                height: 48,
+                onPressed: () => app.openBotChat(bot.name),
+                child: _TwoLines(title: bot.displayName, subtitle: bot.preview ?? 'Say hello'),
               ),
-            // The rest in Desktop's date groups (HermesKit's `sessionDateGroups`): the newest
-            // run under "Sessions", then "Yesterday", "Last week", a month…
-            for (final (i, s) in others.indexed) ...[
-              if (i > 0 && s.group != others[i - 1].group && s.groupTitle != null) _Header(s.groupTitle!),
-              _SessionRow(app: app, session: s),
-            ],
-          ]),
-        ),
+            ),
+            // A line between the Bot Chat and the sessions (the user, 2026-11-18).
+            Container(height: 1, margin: const EdgeInsets.fromLTRB(16, 10, 8, 0), color: p.divider),
+          ],
+          Expanded(
+            child: ListView(padding: EdgeInsets.zero, children: [
+              // Pinned sessions above the rest, while there are any, as on the Mac.
+              if (pinned.isNotEmpty) ...[
+                const _Header('Pinned', major: true),
+                for (final s in pinned) _SessionRow(app: app, session: s),
+              ],
+              const _Header('Sessions', major: true),
+              if (app.connection.sessionListLoading && sessions.isEmpty)
+                const Padding(padding: EdgeInsets.all(16), child: Center(child: ProgressRing()))
+              else if (app.connection.sessionListError case final error?)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                  child: Text(error, style: TextStyle(fontSize: 12, color: p.text2)),
+                )
+              else if (sessions.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                  child: Text('No sessions yet', style: TextStyle(fontSize: 12, color: p.text2)),
+                ),
+              // The rest in Desktop's date groups (HermesKit's `sessionDateGroups`): the newest
+              // run under "Sessions", then "Yesterday", "Last week", a month…
+              for (final (i, s) in others.indexed) ...[
+                if (i > 0 && s.group != others[i - 1].group && s.groupTitle != null) _Header(s.groupTitle!),
+                _SessionRow(app: app, session: s),
+              ],
+            ]),
+          ),
+        ],
       ]),
     );
   }
@@ -484,6 +505,208 @@ class _SessionRowState extends State<_SessionRow> {
 
 /// A section's title. The list's own sections (Bot Chat, Pinned, Sessions) larger and
 /// bold, in the text colour (the user, 2026-11-18); a date group's ("Yesterday") small.
+/// The sidebar's two tabs, Chats and Cron Jobs, as the Mac's `SessionListTabBar`:
+/// small pills of the window's own style, the picked one on the accent.
+class _SessionTabs extends StatelessWidget {
+  const _SessionTabs({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final alerts = app.cron.jobs.where((j) => j.needsAttention).length;
+    Widget tab(String label, IconData icon, bool picked, VoidCallback? onPressed) => Tooltip(
+          message: label,
+          child: HoverButton(
+            onPressed: onPressed,
+            builder: (context, states) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: picked ? p.accent : states.isHovered ? p.subtle : const Color(0x00000000),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 13, color: picked ? Colors.white : p.text2),
+                const SizedBox(width: 6),
+                Text(label, style: TextStyle(fontSize: 12, color: picked ? Colors.white : p.text2)),
+              ]),
+            ),
+          ),
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: Row(children: [
+        tab('Chats', Glyphs.chat, !app.isCronShown, () => app.showCron(false)),
+        const SizedBox(width: 4),
+        Stack(children: [
+          tab('Cron Jobs', Glyphs.clock, app.isCronShown, () => app.showCron(true)),
+          if (alerts > 0)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(width: 7, height: 7, decoration: BoxDecoration(color: p.critical, shape: BoxShape.circle)),
+            ),
+        ]),
+      ]),
+    );
+  }
+}
+
+/// The search field, always present so Ctrl+F finds it, as the Mac's toolbar search.
+class _SearchField extends StatefulWidget {
+  const _SearchField({required this.app, this.focus});
+  final AppState app;
+  final FocusNode? focus;
+
+  @override
+  State<_SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends State<_SearchField> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.app.searchText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Row(children: [
+      Icon(Glyphs.search, size: 14, color: p.text3),
+      const SizedBox(width: 8),
+      Expanded(
+        child: SizedBox(
+          height: 30,
+          child: TextBox(
+            controller: _controller,
+            focusNode: widget.focus,
+            placeholder: 'Search chats',
+            placeholderStyle: TextStyle(fontSize: 12, color: p.text3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            style: TextStyle(fontSize: 12, color: p.text),
+            onSubmitted: null,
+            onChanged: (value) {
+              widget.app.setSearchText(value);
+              setState(() {});
+            },
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// The search's results, in the sessions list's place (the Mac's
+/// `SessionSearchResultsList`): the best match first, each row opening its chat.
+class _SearchResults extends StatelessWidget {
+  const _SearchResults({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = this.app;
+    final search = app.search;
+    final query = app.searchText.trim();
+    return ListView(padding: EdgeInsets.zero, children: [
+      if (!search.isAvailable)
+        _SearchNotice(icon: Glyphs.search, title: 'Search Unavailable',
+            detail: "This server's sign-in can't read the dashboard.")
+      else if (search.error case final error? when search.query == query)
+        _SearchNotice(
+            icon: Glyphs.error, title: 'Search Failed', detail: error,
+            action: 'Try Again', onAction: () => app.setSearchText(app.searchText))
+      else if (search.results.isNotEmpty) ...[
+        _Header(search.results.length == 1 ? '1 chat' : '${search.results.length} chats', major: true),
+        for (final result in search.results) _SearchRow(app: app, result: result),
+      ]
+      else if (search.isSearching || search.query != query)
+        const Padding(padding: EdgeInsets.all(16), child: Center(child: ProgressRing()))
+      else
+        _SearchNotice(
+            icon: Glyphs.search,
+            title: query.isEmpty ? 'Search Chats' : 'No Results for "$query"',
+            detail: query.isEmpty
+                ? 'Find a chat by what was said in it, its title or its id.'
+                : "Try different words, or the chat's title."),
+    ]);
+  }
+}
+
+/// Where the results' empty states show, as the Mac's `ContentUnavailableView`.
+class _SearchNotice extends StatelessWidget {
+  const _SearchNotice({required this.icon, required this.title, required this.detail, this.action, this.onAction});
+  final IconData icon;
+  final String title;
+  final String detail;
+  final String? action;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 22, color: p.text3),
+        const SizedBox(height: 8),
+        Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+        const SizedBox(height: 4),
+        Text(detail, textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: p.text2, height: 1.3)),
+        if (action case final label?)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Button(onPressed: onAction, child: Text(label)),
+          ),
+      ]),
+    );
+  }
+}
+
+/// A search hit: the chat's title, the matched text with the query's words in bold,
+/// and when the chat was last active (the Mac's `SessionSearchRow`).
+class _SearchRow extends StatelessWidget {
+  const _SearchRow({required this.app, required this.result});
+  final AppState app;
+  final SearchResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final selected = app.selectedRow == result.id;
+    return ListItem(
+      selected: selected,
+      height: 56,
+      onPressed: () => app.openSearchResult(result),
+      child: _TwoLines(
+        title: result.title,
+        bold: selected,
+        subtitle: null,
+        trailing: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          for (final segment in result.segments.take(2))
+            Text(
+              segment.text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.3,
+                color: segment.isMatch ? p.text : p.text2,
+                fontWeight: segment.isMatch ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          if (result.date case final date?)
+            Text(relativeTime(date), style: TextStyle(fontSize: 11, color: p.text3)),
+        ]),
+      ),
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   const _Header(this.text, {this.major = false});
   final String text;
@@ -502,8 +725,9 @@ class _Header extends StatelessWidget {
 }
 
 class _TwoLines extends StatelessWidget {
-  const _TwoLines({required this.title, required this.subtitle, this.bold = false, this.trailing});
-  final String title, subtitle;
+  const _TwoLines({required this.title, this.subtitle, this.bold = false, this.trailing});
+  final String title;
+  final String? subtitle;
   final bool bold;
   final Widget? trailing;
   @override
@@ -517,8 +741,8 @@ class _TwoLines extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 14, color: p.text, fontWeight: bold ? FontWeight.w600 : FontWeight.w400, height: 1.3)),
-          if (subtitle.isNotEmpty)
-            Text(subtitle,
+          if ((subtitle ?? '').isNotEmpty)
+            Text(subtitle!,
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: p.text2, height: 1.3)),
         ]),
       ),
@@ -528,18 +752,3 @@ class _TwoLines extends StatelessWidget {
   }
 }
 
-/// "Now", "5 minutes ago", "Yesterday", or the date: as Windows' own lists say it.
-String relativeTime(DateTime date, {DateTime? now}) {
-  final reference = now ?? DateTime.now();
-  final age = reference.difference(date);
-  if (age.inMinutes < 1) return 'Now';
-  if (age.inMinutes < 60) return '${age.inMinutes} minute${age.inMinutes == 1 ? '' : 's'} ago';
-  if (age.inHours < 24 && date.day == reference.day) {
-    return '${age.inHours} hour${age.inHours == 1 ? '' : 's'} ago';
-  }
-  final yesterday = DateTime(reference.year, reference.month, reference.day - 1);
-  if (!date.isBefore(yesterday)) return 'Yesterday';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  final day = '${months[date.month - 1]} ${date.day}';
-  return date.year == reference.year ? day : '$day, ${date.year}';
-}

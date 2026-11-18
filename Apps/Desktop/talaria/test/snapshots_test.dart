@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'package:talaria/app/snapshots.dart';
 import 'package:talaria/platform/cjk_fonts.dart';
-import 'package:talaria/ui/sidebar.dart' show relativeTime;
+import 'package:talaria/ui/common.dart' show relativeTime;
 
 void main() {
   test('a connection snapshot reads as the bridge sends it', () {

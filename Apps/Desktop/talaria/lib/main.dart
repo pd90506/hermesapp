@@ -137,35 +137,51 @@ class _MainWindowState extends State<MainWindow> {
         Expanded(child: SettingsPage(app: app)),
       ]);
     }
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      WindowTitleBar(
-        title: 'Talaria',
-        leading: IconAction(
-          Glyphs.menu,
-          tooltip: _railShown ? 'Hide profiles' : 'Show profiles',
-          onPressed: () => setState(() => _railShown = !_railShown),
-        ),
-      ),
-      if (app.error case final error? when !app.isConnecting)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-          child: InfoBar(title: const Text('Something went wrong'), content: Text(error), severity: InfoBarSeverity.error, onClose: app.dismissError),
-        ),
-      Expanded(
-        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (_railShown) ProfileRail(app: app) else const SizedBox(width: 8),
-          SizedBox(width: 272, child: SessionPane(app: app)),
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: p.layer,
-                borderRadius: const BorderRadius.only(topLeft: Radius.circular(8)),
-                border: Border(top: BorderSide(color: p.layerStroke), left: BorderSide(color: p.layerStroke)),
-              ),
-              child: ChatPane(app: app),
+    // As the Mac's split view: the title bar (the rail toggle, the app's icon and name)
+    // over the sidebar only, and the chat from the window's top edge, its title in the
+    // title bar's band and the caption buttons over its corner.
+    return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SizedBox(
+        width: (_railShown ? ProfileRail.width : 8) + 272,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          WindowTitleBar(
+            title: 'Talaria',
+            leading: IconAction(
+              Glyphs.menu,
+              tooltip: _railShown ? 'Hide profiles' : 'Show profiles',
+              onPressed: () => setState(() => _railShown = !_railShown),
             ),
           ),
+          Expanded(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (_railShown) ProfileRail(app: app) else const SizedBox(width: 8),
+              SizedBox(width: 272, child: SessionPane(app: app)),
+            ]),
+          ),
         ]),
+      ),
+      Expanded(
+        child: Container(
+          decoration: BoxDecoration(
+            color: p.layer,
+            borderRadius: const BorderRadius.only(topLeft: Radius.circular(8)),
+            border: Border(left: BorderSide(color: p.layerStroke)),
+          ),
+          child: Stack(children: [
+            Positioned.fill(child: ChatPane(app: app)),
+            if (app.error case final error? when !app.isConnecting)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: WindowTitleBar.height,
+                child: InfoBar(
+                    title: const Text('Something went wrong'),
+                    content: Text(error),
+                    severity: InfoBarSeverity.error,
+                    onClose: app.dismissError),
+              ),
+          ]),
+        ),
       ),
     ]);
   }

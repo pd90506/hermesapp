@@ -13,6 +13,10 @@ class WindowTitleBar extends StatelessWidget {
 
   static const height = 48.0;
 
+  /// The room the caption buttons (minimize, maximize, close) take at the band's end:
+  /// three of WinUI's 46 px buttons.
+  static const captionButtonsWidth = 138.0;
+
   @override
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);

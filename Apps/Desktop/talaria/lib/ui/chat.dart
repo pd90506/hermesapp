@@ -35,33 +35,17 @@ class ChatPane extends StatelessWidget {
     }
     final title = (chat.title?.isNotEmpty ?? false) ? chat.title! : 'New chat';
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // In the title bar's band, which moves the window (`native_frame.cpp`): the title
+      // only, clear of the caption buttons Windows draws at its end. The chat's commands
+      // are in its row's context menu, as on the Mac.
       Container(
-        height: 56,
-        padding: const EdgeInsets.fromLTRB(24, 0, 12, 0),
-        child: Row(children: [
-          Expanded(
-            child: Text(title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: p.text)),
-          ),
-          DropDownButton(
-            title: const Icon(Glyphs.more, size: 16),
-            trailing: const SizedBox.shrink(),
-            items: [
-              MenuFlyoutItem(
-                leading: const Icon(Glyphs.copy),
-                text: const Text('Copy conversation'),
-                onPressed: () => Clipboard.setData(ClipboardData(text: _plainText(chat))),
-              ),
-              MenuFlyoutItem(
-                leading: const Icon(Glyphs.delete),
-                text: const Text('Delete chat'),
-                onPressed: () => _confirmDelete(context),
-              ),
-            ],
-          ),
-        ]),
+        height: WindowTitleBar.height,
+        padding: const EdgeInsets.fromLTRB(24, 0, WindowTitleBar.captionButtonsWidth + 12, 0),
+        alignment: Alignment.centerLeft,
+        child: Text(title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: p.text)),
       ),
       Expanded(child: _Transcript(chat: chat, app: app)),
       if (chat.lastError case final error?)
@@ -79,25 +63,6 @@ class ChatPane extends StatelessWidget {
     ]);
   }
 
-  Future<void> _confirmDelete(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => ContentDialog(
-        title: const Text('Delete this chat?'),
-        content: const Text('It is deleted on the server, for every app that shows it.'),
-        actions: [
-          Button(child: const Text('Cancel'), onPressed: () => Navigator.pop(context, false)),
-          FilledButton(child: const Text('Delete'), onPressed: () => Navigator.pop(context, true)),
-        ],
-      ),
-    );
-    if (ok == true) await app.deleteChat();
-  }
-
-  static String _plainText(ChatSnapshot chat) => chat.items
-      .where((i) => i.role == Role.user || i.role == Role.assistant)
-      .map((i) => '${i.role == Role.user ? 'You' : 'Hermes'}: ${i.text}')
-      .join('\n\n');
 }
 
 /// The transcript, newest at the bottom; it follows the end while a reply streams.
@@ -692,23 +657,59 @@ class _ComposerAction extends StatelessWidget {
 }
 
 /// The toolbar's pickers: a subtle button with the current value and a chevron, which
-/// opens a menu (WinUI's DropDownButton, without its border, as a command bar's).
-class _PickerButton extends StatelessWidget {
+/// opens a menu (WinUI's MenuFlyout, the button borderless as a command bar's). As the
+/// Mac's composer menus: it opens upward from the pill, its left edge on the pill's, and
+/// it slides up into place. A long list stops at [maxMenuHeight] and scrolls.
+class _PickerButton extends StatefulWidget {
   const _PickerButton({required this.label, required this.tooltip, required this.items});
   final String label;
   final String tooltip;
   final List<MenuFlyoutItemBase> items;
 
+  static const maxMenuHeight = 360.0;
+
+  @override
+  State<_PickerButton> createState() => _PickerButtonState();
+}
+
+class _PickerButtonState extends State<_PickerButton> {
+  final _menu = FlyoutController();
+
+  @override
+  void dispose() {
+    _menu.dispose();
+    super.dispose();
+  }
+
+  void _open() {
+    if (_menu.isOpen) return;
+    _menu.showFlyout<void>(
+      placementMode: FlyoutPlacementMode.topLeft,
+      barrierColor: const Color(0x00000000),
+      additionalOffset: 4,
+      transitionBuilder: (context, animation, placement, flyout) => ClipRect(
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 0.25), end: Offset.zero)
+              .animate(CurvedAnimation(parent: animation, curve: FluentTheme.of(context).animationCurve)),
+          child: FadeTransition(opacity: animation, child: flyout),
+        ),
+      ),
+      builder: (context) => MenuFlyout(
+        constraints: const BoxConstraints(minWidth: 160, maxHeight: _PickerButton.maxMenuHeight),
+        items: widget.items,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = PaletteScope.of(context);
     return Tooltip(
-      message: tooltip,
-      child: DropDownButton(
-        title: Text(label, style: TextStyle(fontSize: 12, color: p.text2)),
-        trailing: Icon(Glyphs.chevronDown, size: 8, color: p.text3),
-        buttonBuilder: (context, onOpen) => HoverButton(
-          onPressed: onOpen,
+      message: widget.tooltip,
+      child: FlyoutTarget(
+        controller: _menu,
+        child: HoverButton(
+          onPressed: _open,
           builder: (context, states) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
@@ -716,13 +717,12 @@ class _PickerButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(label, style: TextStyle(fontSize: 12, color: p.text2)),
+              Text(widget.label, style: TextStyle(fontSize: 12, color: p.text2)),
               const SizedBox(width: 6),
               Icon(Glyphs.chevronDown, size: 8, color: p.text3),
             ]),
           ),
         ),
-        items: items,
       ),
     );
   }

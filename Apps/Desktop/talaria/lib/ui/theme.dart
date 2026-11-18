@@ -51,6 +51,9 @@ class Palette {
         _ => null,
       };
 
+  /// WinUI's `SystemFillColorCritical`: errors, removed diff lines.
+  Color get critical => dark ? const Color(0xFFFF99A4) : const Color(0xFFC42B1C);
+
   /// The user's messages: the accent, faint.
   Color get userBubble => accent.withValues(alpha: dark ? 0.16 : 0.10);
 
@@ -148,4 +151,17 @@ abstract final class Glyphs {
   static const pin = IconData(0xE718, fontFamily: _f);
   static const unpin = IconData(0xE77A, fontFamily: _f);
   static const checkboxChecked = IconData(0xE73A, fontFamily: _f);
+  static const page = IconData(0xE7C3, fontFamily: _f);
+  static const folder = IconData(0xE8B7, fontFamily: _f);
+  static const terminal = IconData(0xE756, fontFamily: _f); // CommandPrompt
+  static const editPage = IconData(0xE70B, fontFamily: _f); // QuickNote
+  static const help = IconData(0xE897, fontFamily: _f);
+  static const clock = IconData(0xE823, fontFamily: _f);
+  static const list = IconData(0xE8FD, fontFamily: _f); // BulletedList
+  static const view = IconData(0xE890, fontFamily: _f);
+  static const think = IconData(0xE9F5, fontFamily: _f); // Processing
+  static const error = IconData(0xE783, fontFamily: _f);
+  static const bell = IconData(0xEA8F, fontFamily: _f); // Ringer
+  static const memory = IconData(0xE7BE, fontFamily: _f); // Education
+  static const branch = IconData(0xE8AB, fontFamily: _f); // Switch
 }

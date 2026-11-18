@@ -107,6 +107,13 @@ class ChatItem {
     this.reasoningMarkdown = const [],
     this.images = const [],
     this.attachments = const [],
+    this.tool,
+    this.outcome,
+    this.isBlank = false,
+    this.hasActionBar = false,
+    this.notice,
+    this.review,
+    this.isCompressionNote = false,
   });
   final String id;
   final Role role;
@@ -126,6 +133,23 @@ class ChatItem {
   final List<SentImage> images;
   final List<String> attachments;
 
+  /// A tool item's call, as HermesKit's `ToolCallView` draws it.
+  final ToolCall? tool;
+
+  /// `interrupted` for a reply cut short.
+  final String? outcome;
+
+  /// A reply with nothing to show yet: the waiting row stands in for it.
+  final bool isBlank;
+
+  /// The reply has the Copy bar under it.
+  final bool hasActionBar;
+
+  /// A background notice Hermes wrote as a user turn; what the review saved.
+  final Note? notice;
+  final Note? review;
+  final bool isCompressionNote;
+
   static ChatItem fromJson(Map<String, Object?> j) => ChatItem(
         id: j['id'] as String? ?? '',
         role: Role.values.asNameMap()[j['role']] ?? Role.system,
@@ -143,7 +167,241 @@ class ChatItem {
                 name: i['name'] as String? ?? '', path: i['path'] as String?, localID: i['localID'] as String?))
             .toList(),
         attachments: ((j['attachments'] as List?) ?? const []).cast<String>(),
+        tool: j['tool'] is Map ? ToolCall.fromJson((j['tool'] as Map).cast()) : null,
+        outcome: j['outcome'] as String?,
+        isBlank: j['isBlank'] as bool? ?? false,
+        hasActionBar: j['hasActionBar'] as bool? ?? false,
+        notice: Note.from(j['notice']),
+        review: Note.from(j['review']),
+        isCompressionNote: j['isCompressionNote'] as bool? ?? false,
       );
+}
+
+class Note {
+  const Note({required this.headline, this.detail = ''});
+  final String headline;
+  final String detail;
+  static Note? from(Object? j) =>
+      j is Map ? Note(headline: j['headline'] as String? ?? '', detail: j['detail'] as String? ?? '') : null;
+}
+
+enum ToolStatus { running, success, error, notice, warning }
+
+/// A tool call as HermesKit's `ToolCallView` draws it (docs/desktop-bridge.md,
+/// "Transcript"): texts clamped, a diff in its display form, output without ANSI codes.
+class ToolCall {
+  const ToolCall({
+    required this.toolName,
+    required this.title,
+    this.status = ToolStatus.success,
+    this.isPending = false,
+    this.isFileEdit = false,
+    this.isExpandable = false,
+    this.opensByDefault = false,
+    this.isHidden = false,
+    this.hasBody = false,
+    this.showsDetail = false,
+    this.rendersDetailAsCode = false,
+    this.detail = '',
+    this.detailLabel = '',
+    this.errorSummary = '',
+    this.detailBody = '',
+    this.countLabel,
+    this.durationLabel,
+    this.inlineDiff = '',
+    this.added = 0,
+    this.removed = 0,
+    this.searchQuery,
+    this.searchHits = const [],
+    this.stdout,
+    this.stderr,
+    this.terminalCommand,
+    this.terminalExitCode,
+  });
+  final String toolName, title;
+  final ToolStatus status;
+  final bool isPending, isFileEdit, isExpandable, opensByDefault, isHidden, hasBody, showsDetail, rendersDetailAsCode;
+  final String detail, detailLabel, errorSummary, detailBody, inlineDiff;
+  final String? countLabel, durationLabel, searchQuery, stdout, stderr, terminalCommand;
+  final int added, removed;
+  final int? terminalExitCode;
+  final List<SearchHit> searchHits;
+
+  static ToolCall fromJson(Map<String, Object?> j) => ToolCall(
+        toolName: j['toolName'] as String? ?? 'tool',
+        title: j['title'] as String? ?? '',
+        status: ToolStatus.values.asNameMap()[j['status']] ?? ToolStatus.success,
+        isPending: j['isPending'] as bool? ?? false,
+        isFileEdit: j['isFileEdit'] as bool? ?? false,
+        isExpandable: j['isExpandable'] as bool? ?? false,
+        opensByDefault: j['opensByDefault'] as bool? ?? false,
+        isHidden: j['isHidden'] as bool? ?? false,
+        hasBody: j['hasBody'] as bool? ?? false,
+        showsDetail: j['showsDetail'] as bool? ?? false,
+        rendersDetailAsCode: j['rendersDetailAsCode'] as bool? ?? false,
+        detail: j['detail'] as String? ?? '',
+        detailLabel: j['detailLabel'] as String? ?? '',
+        errorSummary: j['errorSummary'] as String? ?? '',
+        detailBody: j['detailBody'] as String? ?? '',
+        countLabel: j['countLabel'] as String?,
+        durationLabel: j['durationLabel'] as String?,
+        inlineDiff: j['inlineDiff'] as String? ?? '',
+        added: (j['added'] as num?)?.toInt() ?? 0,
+        removed: (j['removed'] as num?)?.toInt() ?? 0,
+        searchQuery: j['searchQuery'] as String?,
+        searchHits: _list(j['searchHits'])
+            .map((h) => SearchHit(
+                title: h['title'] as String? ?? '',
+                url: h['url'] as String? ?? '',
+                snippet: h['snippet'] as String? ?? ''))
+            .toList(),
+        stdout: j['stdout'] as String?,
+        stderr: j['stderr'] as String?,
+        terminalCommand: j['terminalCommand'] as String?,
+        terminalExitCode: (j['terminalExitCode'] as num?)?.toInt(),
+      );
+}
+
+class SearchHit {
+  const SearchHit({required this.title, required this.url, required this.snippet});
+  final String title, url, snippet;
+}
+
+/// A block of the transcript (HermesKit's `Transcript.blocks`): a message, or a turn's
+/// work before its answer.
+sealed class TranscriptBlock {
+  const TranscriptBlock(this.id);
+  final String id;
+
+  static TranscriptBlock? fromJson(Map<String, Object?> j) {
+    final id = j['id'] as String? ?? '';
+    if (j['kind'] == 'work' && j['work'] is Map) return WorkBlock(id, TurnWork.fromJson((j['work'] as Map).cast()));
+    if (j['item'] case final String item) return ItemBlock(id, item);
+    return null;
+  }
+}
+
+class ItemBlock extends TranscriptBlock {
+  const ItemBlock(super.id, this.item);
+  final String item;
+}
+
+class WorkBlock extends TranscriptBlock {
+  const WorkBlock(super.id, this.work);
+  final TurnWork work;
+}
+
+/// A turn's work (HermesKit's `TurnWork`): "Working… 12s" while live, else [title].
+class TurnWork {
+  const TurnWork({
+    required this.isLive,
+    this.startedAt,
+    this.duration,
+    this.interrupted = false,
+    this.title = '',
+    this.entries = const [],
+  });
+  final bool isLive;
+  final DateTime? startedAt;
+  final Duration? duration;
+  final bool interrupted;
+  final String title;
+  final List<WorkEntry> entries;
+
+  static TurnWork fromJson(Map<String, Object?> j) => TurnWork(
+        isLive: j['isLive'] as bool? ?? false,
+        startedAt: _seconds(j['startedAt']),
+        duration: j['duration'] is num ? Duration(milliseconds: ((j['duration'] as num) * 1000).round()) : null,
+        interrupted: j['interrupted'] as bool? ?? false,
+        title: j['title'] as String? ?? '',
+        entries: _list(j['entries']).map(WorkEntry.fromJson).toList(),
+      );
+}
+
+/// Commentary or a card (an item), or a group of steps.
+class WorkEntry {
+  const WorkEntry({required this.id, this.item, this.group});
+  final String id;
+  final String? item;
+  final StepGroup? group;
+
+  static WorkEntry fromJson(Map<String, Object?> j) {
+    final group = j['group'];
+    return WorkEntry(
+      id: j['id'] as String? ?? '',
+      item: j['item'] as String?,
+      group: group is Map ? StepGroup.fromJson(group.cast()) : null,
+    );
+  }
+}
+
+class StepGroup {
+  const StepGroup(
+      {required this.id, this.isLive = false, this.title = '', this.summary = '', this.iconTool, this.steps = const []});
+  final String id;
+  final bool isLive;
+  final String title, summary;
+  final String? iconTool;
+  final List<WorkStep> steps;
+
+  static StepGroup fromJson(Map<String, Object?> j) => StepGroup(
+        id: j['id'] as String? ?? '',
+        isLive: j['isLive'] as bool? ?? false,
+        title: j['title'] as String? ?? '',
+        summary: j['summary'] as String? ?? '',
+        iconTool: j['iconTool'] as String?,
+        steps: _list(j['steps']).map(WorkStep.fromJson).toList(),
+      );
+}
+
+/// One step: "Bash · git status", "Think · Checking the build".
+class WorkStep {
+  const WorkStep({
+    required this.id,
+    required this.isThink,
+    required this.item,
+    this.isLive = false,
+    this.label = '',
+    this.summary = '',
+    this.toolName,
+    this.failed = false,
+    this.workdir,
+    this.copyText = '',
+  });
+  final String id;
+  final bool isThink;
+  final String item;
+  final bool isLive;
+  final String label, summary;
+  final String? toolName;
+  final bool failed;
+  final String? workdir;
+  final String copyText;
+
+  static WorkStep fromJson(Map<String, Object?> j) => WorkStep(
+        id: j['id'] as String? ?? '',
+        isThink: j['kind'] == 'think',
+        item: j['item'] as String? ?? '',
+        isLive: j['isLive'] as bool? ?? false,
+        label: j['label'] as String? ?? '',
+        summary: j['summary'] as String? ?? '',
+        toolName: j['toolName'] as String?,
+        failed: j['failed'] as bool? ?? false,
+        workdir: j['workdir'] as String?,
+        copyText: j['copyText'] as String? ?? '',
+      );
+}
+
+/// The reply's stand-in while it is awaited: [label] and the time since [since].
+class Waiting {
+  const Waiting({required this.label, this.hint, this.since});
+  final String label;
+  final String? hint;
+  final DateTime? since;
+
+  static Waiting? from(Object? j) => j is Map
+      ? Waiting(label: j['label'] as String? ?? 'Thinking…', hint: j['hint'] as String?, since: _seconds(j['since']))
+      : null;
 }
 
 class SentImage {
@@ -394,6 +652,11 @@ class ChatSnapshot {
     this.isRunning = false,
     this.lastError,
     this.items = const [],
+    this.blocks = const [],
+    this.newestMessageID,
+    this.waiting,
+    this.status,
+    this.canBranch = false,
   });
   final String? sessionID;
   final String? storedSessionID;
@@ -402,6 +665,19 @@ class ChatSnapshot {
   final bool isRunning;
   final String? lastError;
   final List<ChatItem> items;
+
+  /// The transcript's blocks, in order (HermesKit's grouping).
+  final List<TranscriptBlock> blocks;
+
+  /// The last prompt or reply: its action bar shows without hover.
+  final String? newestMessageID;
+  final Waiting? waiting;
+
+  /// The running turn's status line.
+  final String? status;
+
+  /// Branch in New Chat is offered (not in a Bot Chat).
+  final bool canBranch;
 
   bool get isOpen => sessionID != null;
 
@@ -413,6 +689,11 @@ class ChatSnapshot {
         isRunning: j['isRunning'] as bool? ?? false,
         lastError: j['lastError'] as String?,
         items: _list(j['items']).map(ChatItem.fromJson).toList(),
+        blocks: _list(j['blocks']).map(TranscriptBlock.fromJson).whereType<TranscriptBlock>().toList(),
+        newestMessageID: j['newestMessageID'] as String?,
+        waiting: Waiting.from(j['waiting']),
+        status: j['status'] as String?,
+        canBranch: j['canBranch'] as bool? ?? false,
       );
 }
 

@@ -110,6 +110,19 @@ final class Bridge {
             guard let chat else { throw BridgeError("no open chat") }
             show(nil)
             try await connection.delete(chat)
+        case "branch":
+            // Branch in New Chat from a message (the Mac's action bar), which then opens.
+            guard let chat else { throw BridgeError("no open chat") }
+            let item = try transcriptItem(params, in: chat)
+            show(try await connection.branch(chat, at: item))
+        case "messageSource":
+            // What Copy Message copies (`ConversationMarkdown.messageSource`).
+            guard let chat else { throw BridgeError("no open chat") }
+            return .object(["text": .string(ConversationMarkdown.messageSource(for: try transcriptItem(params, in: chat)))])
+        case "conversationSource":
+            // What Copy Conversation copies: the chat as Markdown.
+            guard let chat else { throw BridgeError("no open chat") }
+            return .object(["text": .string(ConversationMarkdown.export(chat.transcript.items))])
         case "reloadModels":
             try await requireComposer().loadOptions()
         case "selectModel":
@@ -167,6 +180,14 @@ final class Bridge {
             throw BridgeError("unknown method \(method)")
         }
         return .null
+    }
+
+    private func transcriptItem(_ params: JSONValue, in chat: ChatSession) throws -> TranscriptItem {
+        let id = try string(params, "item")
+        guard let item = chat.transcript.items.first(where: { $0.id == id }) else {
+            throw BridgeError("no item \(id) in the chat")
+        }
+        return item
     }
 
     private func requireComposer() throws -> ChatComposer {
@@ -287,7 +308,7 @@ final class Bridge {
     private func observeChat(_ generation: Int) {
         guard generation == self.generation, let chat else { return }
         let snapshot = withObservationTracking {
-            ChatSnapshot(chat, markdown: markdown)
+            ChatSnapshot(chat, markdown: markdown, canBranch: !connection.isProtected(chat))
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeChat(generation) }
         }

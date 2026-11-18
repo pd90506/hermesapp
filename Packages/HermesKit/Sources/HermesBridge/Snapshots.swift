@@ -130,6 +130,19 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
         /// from) and the names of its files.
         var images: [Image]?
         var attachments: [String]?
+        /// A tool item's call, as `ToolCallView` draws it.
+        var tool: TranscriptWire.Tool?
+        /// `interrupted` for a reply cut short.
+        var outcome: String?
+        /// A reply with nothing to show yet (`isBlankReply`): the waiting row stands in.
+        var isBlank: Bool?
+        /// The message has the Copy bar under it (`ConversationMarkdown.hasActionBar`).
+        var hasActionBar: Bool?
+        /// A background notice Hermes wrote as a user turn (`headline`, `detail`), and
+        /// what the self-improvement review saved (`headline` is its label).
+        var notice: TranscriptWire.Note?
+        var review: TranscriptWire.Note?
+        var isCompressionNote: Bool?
     }
 
     struct Image: Encodable, Sendable, Equatable {
@@ -146,14 +159,29 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
     var isRunning: Bool
     var lastError: String?
     var items: [Item]
+    /// The transcript's blocks, in order (docs/desktop-bridge.md, "Transcript").
+    var blocks: [TranscriptWire.Block]
+    /// The last prompt or reply: its action bar shows without hover.
+    var newestMessageID: String?
+    var waiting: TranscriptWire.Waiting?
+    /// The running turn's status line, when Hermes gives one.
+    var status: String?
+    /// Branch in New Chat is offered (not in a Bot Chat).
+    var canBranch: Bool
 
-    @MainActor init(_ chat: ChatSession, markdown cache: MarkdownCache = MarkdownCache()) {
+    @MainActor init(_ chat: ChatSession, markdown cache: MarkdownCache = MarkdownCache(), canBranch: Bool = true) {
         sessionID = chat.sessionID
         storedSessionID = chat.storedSessionID
         profile = chat.profile
         title = chat.title
         isRunning = chat.transcript.isRunning
         lastError = chat.transcript.lastError
+        let transcript = chat.transcript
+        blocks = transcript.blocks.map(TranscriptWire.Block.init)
+        newestMessageID = ConversationMarkdown.newestMessageID(in: transcript.items)
+        waiting = transcript.waiting.map(TranscriptWire.Waiting.init)
+        status = transcript.isRunning ? transcript.status : nil
+        self.canBranch = canBranch
         items = chat.transcript.items.map { item in
             let role: String = switch item.role {
             case .user: "user"
@@ -170,6 +198,15 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
                 }
                 if !item.attachments.isEmpty { row.attachments = item.attachments }
             }
+            if item.role == .tool { row.tool = TranscriptWire.Tool(ToolCallView(item)) }
+            row.outcome = item.outcome
+            if item.isBlankReply { row.isBlank = true }
+            if ConversationMarkdown.hasActionBar(item) { row.hasActionBar = true }
+            if let notice = item.backgroundNotice {
+                row.notice = TranscriptWire.Note(headline: notice.headline, detail: notice.detail)
+            }
+            if let note = item.reviewNote { row.review = TranscriptWire.Note(headline: note.label, detail: note.detail) }
+            if item.isCompressionNote { row.isCompressionNote = true }
             if item.role == .assistant {
                 if !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     row.markdown = cache.parts(item.text, streaming: item.isActive)

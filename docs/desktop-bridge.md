@@ -67,6 +67,9 @@ possible later; it would need libdispatch SPI, so it waits until the timer shows
 | `setPins` | `server` (a UUID the app keeps per server), `pins` (as `pinSession` last answered, or none) | Hands the bridge the app's saved pins (`SessionPins`); the app sends it before `connect` |
 | `pinSession` | `id`, `pinned` (default true) | Pins or unpins a listed session; result `{"pins": ...}`, for the app to save |
 | `imageData` | `path`, `profile` | A sent image's bytes from the gateway, for its thumbnail: result `{"data": base64}` |
+| `branch` | `item` (an item id of the open chat) | Branch in New Chat from that message (`GatewayConnection.branch`); the branch opens as the chat |
+| `messageSource` | `item` | What Copy Message copies (`ConversationMarkdown.messageSource`): result `{"text": ...}` |
+| `conversationSource` | — | What Copy Conversation copies, the chat as Markdown (`ConversationMarkdown.export`): result `{"text": ...}` |
 
 ## Events
 
@@ -88,7 +91,13 @@ title ("Yesterday", "Last week", "September", ...). A row moves to its range onc
 (`id`, `role` (`user`, `assistant`, `tool` or `system`), `text`, `reasoning`, `toolName`,
 `detail`, `isActive`, `outgoingStatus`, `timestamp`, for an assistant item `markdown` and
 `reasoningMarkdown` (below), and for a user item `images` (`name`, `path`, and `localID`: the
-composer card it was sent from) and `attachments` (the names of its files)).
+composer card it was sent from) and `attachments` (the names of its files)), and, as the
+Mac lays the transcript out (below): `blocks`, `newestMessageID` (its action bar shows without
+hover), `waiting` (`label`, `hint`, `since` in Unix seconds, while a reply is awaited),
+`status` (the running turn's status line) and `canBranch` (false in a Bot Chat). Items also
+carry, when they apply: `tool` (a tool item's call), `outcome` (`interrupted`), `isBlank` (a
+reply with nothing to show yet), `hasActionBar`, `notice` and `review` (`headline`, `detail`:
+a background notice written as a user turn, what the review saved) and `isCompressionNote`.
 
 `composer`: the open chat's composer (`ChatComposer`), sent as it changes. `sessionID`,
 `model`, `provider`, `modelLabel` (`ModelLabel.displayName`), `providers` (null until the
@@ -97,6 +106,25 @@ catalog loads; each `slug`, `name`, `models` with `model`, `label`, `isCurrent`)
 `effort`, `effortLabel`, `pendingModelSwitch` (`provider`, `model`, `label`, `message`),
 `error`, `attachments` (`id`, `kind` (`image` or `file`), `name`, `detail`, `isUploading`,
 `failure`), `uploadingFiles` (names), `isSubmitting`, `canSubmit`.
+
+### Transcript
+
+`blocks` is HermesKit's grouping (`Transcript.blocks`), in order; the app only lays it out.
+Each block has an `id` and a `kind`: `item` (its `item` is an id in `items`) or `work`, a
+turn's work before its answer (`TurnWork`), whose `work` has `isLive`, `startedAt` (Unix
+seconds), `duration` (seconds, when known), `interrupted`, `title` (the settled line,
+"Completed in 45s") and `entries`. An entry has an `id` and a `kind`: `commentary` or `card`
+(an `item` id), or `group` (`StepGroup`): `isLive`, `title`, `summary`, `iconTool`, and
+`steps`, each `id`, `kind` (`think` or `tool`), `item`, `isLive`, `label` ("Bash"),
+`summary`, `toolName`, `failed`, `workdir` and `copyText`.
+
+A tool item's `tool` is `ToolCallView`: `toolName`, `title`, `status` (`running`, `success`,
+`error`, `notice`, `warning`), `isPending`, `isFileEdit`, `isExpandable`, `opensByDefault`,
+`isHidden`, `hasBody`, `showsDetail`, `rendersDetailAsCode`, `detail`, `detailLabel`,
+`errorSummary`, `detailBody`, `countLabel`, `durationLabel`, `inlineDiff` (in its display
+form) with its `added` and `removed` line counts, `searchQuery`, `searchHits` (`title`, `url`,
+`snippet`), `stdout`, `stderr`, `terminalCommand` and `terminalExitCode`. Texts come clamped
+for display (`ToolCallView.clampForDisplay`) and output without ANSI codes.
 
 ### Markdown
 

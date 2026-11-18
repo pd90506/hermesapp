@@ -4,15 +4,6 @@ import Testing
 
 @testable import HermesBridge
 
-/// Collects what the bridge emits.
-private final class Outbox: Sendable {
-    private let events = Mutex<[String]>([])
-    func append(_ json: String) { events.withLock { $0.append(json) } }
-    var all: [[String: Any]] {
-        events.withLock { $0 }.map { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] ?? [:] }
-    }
-}
-
 @MainActor
 @Suite struct BridgeCommandTests {
     @Test func startsWithADisconnectedSnapshot() {

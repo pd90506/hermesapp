@@ -10,6 +10,10 @@ enum BridgeEvent: Encodable, Sendable {
     case connection(ConnectionSnapshot)
     case chat(ChatSnapshot)
     case composer(ComposerSnapshot)
+    case search(SessionWire.SearchSnapshot)
+    case cron(SessionWire.CronSnapshot)
+    case subagents(SessionWire.SubagentsSnapshot)
+    case usage(SessionWire.UsageSnapshot)
 
     private enum CodingKeys: String, CodingKey { case type, id, result, error }
 
@@ -33,6 +37,18 @@ enum BridgeEvent: Encodable, Sendable {
         case .composer(let snapshot):
             try snapshot.encode(to: encoder)
             try container.encode("composer", forKey: .type)
+        case .search(let snapshot):
+            try snapshot.encode(to: encoder)
+            try container.encode("search", forKey: .type)
+        case .cron(let snapshot):
+            try snapshot.encode(to: encoder)
+            try container.encode("cron", forKey: .type)
+        case .subagents(let snapshot):
+            try snapshot.encode(to: encoder)
+            try container.encode("subagents", forKey: .type)
+        case .usage(let snapshot):
+            try snapshot.encode(to: encoder)
+            try container.encode("usage", forKey: .type)
         }
     }
 
@@ -184,6 +200,9 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
     var waiting: TranscriptWire.Waiting?
     /// The running turn's status line, when Hermes gives one.
     var status: String?
+    /// The blocking requests the agent waits on, newest last, as the Mac's transcript
+    /// shows them under the messages (`RequestCardView`).
+    var pendingRequests: [SessionWire.Request]
     /// Branch in New Chat is offered (not in a Bot Chat).
     var canBranch: Bool
 
@@ -199,6 +218,7 @@ struct ChatSnapshot: Encodable, Sendable, Equatable {
         newestMessageID = ConversationMarkdown.newestMessageID(in: transcript.items)
         waiting = transcript.waiting.map(TranscriptWire.Waiting.init)
         status = transcript.isRunning ? transcript.status : nil
+        pendingRequests = transcript.pendingRequests.map(SessionWire.Request.init)
         self.canBranch = canBranch
         items = chat.transcript.items.map { item in
             let role: String = switch item.role {

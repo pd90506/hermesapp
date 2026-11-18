@@ -41,6 +41,9 @@ struct ComposerSnapshot: Encodable, Sendable, Equatable {
     }
 
     var sessionID: String
+    /// The draft as the composer holds it, kept in step by `setDraft` (and read back
+    /// here after a slash row is accepted or a command's output comes back).
+    var draft: String
     var model: String?
     var provider: String?
     var modelLabel: String?
@@ -57,9 +60,34 @@ struct ComposerSnapshot: Encodable, Sendable, Equatable {
     var uploadingFiles: [String]
     var isSubmitting: Bool
     var canSubmit: Bool
+    /// The slash list (`slashRows`): shown while `slashIsOpen`; `slashNotice` when it
+    /// closed with no matches or the catalog failed to load.
+    var slashIsOpen: Bool
+    var slashRows: [SlashRow]
+    var slashNotice: String?
+    /// `/model` with no argument asked for the model picker; the app opens it and clears
+    /// the request.
+    var isModelPickerRequested: Bool
+
+    /// One row of the slash list, as the Mac's `SlashSuggestionList` shows it.
+    struct SlashRow: Encodable, Sendable, Equatable {
+        var id: String
+        /// The category header shown above this row (the first row of its category).
+        var header: String?
+        /// The command or argument to put in the draft when accepted.
+        var text: String
+        /// The row's label: the command's display name, else its text.
+        var display: String
+        /// A short description, beside the label.
+        var meta: String?
+        /// `command` or `skill`.
+        var kind: String?
+        var isSelected: Bool
+    }
 
     @MainActor init(_ composer: ChatComposer) {
         sessionID = composer.session.sessionID
+        draft = composer.draft
         model = composer.currentModel
         provider = composer.currentProvider
         modelLabel = composer.currentModelLabel
@@ -90,6 +118,15 @@ struct ComposerSnapshot: Encodable, Sendable, Equatable {
         uploadingFiles = composer.uploadingFileNames
         isSubmitting = composer.isSubmitting
         canSubmit = composer.canSubmit
+        slashIsOpen = composer.slashIsOpen
+        slashRows = composer.slashRows.map { row in
+            SlashRow(id: row.id, header: row.header, text: row.suggestion.text,
+                     display: row.suggestion.item.display ?? row.suggestion.item.text,
+                     meta: row.suggestion.item.meta, kind: row.suggestion.item.kind,
+                     isSelected: row.isSelected)
+        }
+        slashNotice = composer.slashNotice
+        isModelPickerRequested = composer.isModelPickerRequested
     }
 }
 

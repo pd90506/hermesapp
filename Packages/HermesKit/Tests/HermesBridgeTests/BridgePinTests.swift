@@ -4,17 +4,6 @@ import Testing
 
 @testable import HermesBridge
 
-/// Collects what the bridge emits.
-private final class Outbox: Sendable {
-    private let events = Mutex<[String]>([])
-    func append(_ json: String) { events.withLock { $0.append(json) } }
-    var last: [String: Any] {
-        events.withLock { $0 }.last.flatMap {
-            (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
-        } ?? [:]
-    }
-}
-
 @MainActor
 @Suite struct BridgePinTests {
     @Test func pinsComeFromTheAppAndNeedAServerID() async {
@@ -41,6 +30,8 @@ private final class Outbox: Sendable {
     @Test func anEmptyListHasNoGroups() {
         let outbox = Outbox()
         _ = Bridge(emit: { outbox.append($0) })
-        #expect((outbox.last["sessions"] as? [Any])?.isEmpty == true)
+        // The connection snapshot (the bridge also sends empty search and cron ones).
+        let connection = outbox.all.first(where: { $0["type"] as? String == "connection" }) ?? [:]
+        #expect((connection["sessions"] as? [Any])?.isEmpty == true)
     }
 }

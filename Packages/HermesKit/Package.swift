@@ -32,7 +32,7 @@ let package = Package(
         // A thin C interface over HermesKit for the Flutter desktop app: JSON commands in,
         // JSON snapshots and replies out. No logic of its own (docs/desktop-bridge.md).
         .target(name: "HermesBridge", dependencies: ["HermesKit"]),
-        .testTarget(name: "HermesBridgeTests", dependencies: ["HermesBridge"]),
+        .testTarget(name: "HermesBridgeTests", dependencies: ["HermesBridge", "HermesKit", "HermesProtocol"]),
         .testTarget(name: "HermesProtocolTests", dependencies: ["HermesProtocol"]),
         .testTarget(name: "HermesKitTests", dependencies: ["HermesKit"]),
         // Opt-in end-to-end tests against real Hermes dashboards. Skipped unless

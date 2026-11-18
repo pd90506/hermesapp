@@ -60,6 +60,11 @@ class _TranscriptState extends State<Transcript> {
         ]);
       }));
     }
+    // The blocking requests, as the Mac's transcript cards under the messages:
+    // the agent waits until each is answered or times out.
+    for (final request in chat.pendingRequests) {
+      rows.add(_RequestCard(app: widget.app, request: request));
+    }
     return _Folds(
       folds: _folds,
       onChanged: () => setState(() {}),
@@ -1336,5 +1341,423 @@ class _FileChip extends StatelessWidget {
         ),
       ]),
     );
+  }
+}
+
+/// Inline card for a blocking server→client request, as the Mac's
+/// `RequestCardView`: an approval's buttons, a clarify's questions one at a
+/// time with their answers sent together, and a sudo/secret's value. The agent
+/// waits until it is answered or times out.
+class _RequestCard extends StatelessWidget {
+  const _RequestCard({required this.app, required this.request});
+  final AppState app;
+  final PendingRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final request = this.request;
+    // A question is no warning: it sits on a plain surface; the other requests
+    // on the caution colour, as the Mac's orange.
+    final isClarify = request.kind == 'clarify';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isClarify ? p.card : p.caution.withValues(alpha: p.dark ? 0.10 : 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isClarify ? p.cardStroke : p.caution.withValues(alpha: 0.35)),
+      ),
+      child: switch (request.kind) {
+        'approval' => _ApprovalCard(app: app, request: request),
+        'clarify' => _ClarifyCard(app: app, request: request),
+        'sudo' => _ValueCard(app: app, request: request, secure: true),
+        'secret' => _ValueCard(app: app, request: request, secure: false),
+        _ => _UnsupportedCard(app: app, request: request),
+      },
+    );
+  }
+}
+
+/// An approval: what Hermes wants to do, and the choices it offers, in order.
+class _ApprovalCard extends StatelessWidget {
+  const _ApprovalCard({required this.app, required this.request});
+  final AppState app;
+  final PendingRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(Glyphs.warning, size: 15, color: p.caution),
+        const SizedBox(width: 8),
+        Text('Approval needed', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: p.text)),
+      ]),
+      if (request.description case final description?) ...[
+        const SizedBox(height: 8),
+        Text(description, style: TextStyle(fontSize: 13, color: p.text, height: 1.35)),
+      ],
+      if (request.command case final command?) ...[
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: p.codeBg,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: p.cardStroke),
+          ),
+          child: Text(command, style: TextStyle(fontSize: 12, color: p.text, fontFamily: 'Consolas')),
+        ),
+      ],
+      const SizedBox(height: 12),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final choice in request.choices)
+          choice.value == 'deny'
+              ? _DenyButton(onPressed: () => app.answerApproval(request.id, 'deny'))
+              : Button(
+                  onPressed: () => app.answerApproval(request.id, choice.value),
+                  child: Text(choice.label),
+                ),
+      ]),
+    ]);
+  }
+}
+
+/// WinUI's destructive button, in the system's critical colour.
+class _DenyButton extends StatelessWidget {
+  const _DenyButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    final red = theme.brightness == Brightness.dark ? const Color(0xFFFF99A4) : const Color(0xFFC42B1C);
+    return Button(
+      onPressed: onPressed,
+      style: ButtonStyle(foregroundColor: WidgetStatePropertyAll(red)),
+      child: const Text('Deny'),
+    );
+  }
+}
+
+/// A clarify: Hermes's questions with their choices laid out as rows to tap, one
+/// question at a time with a strip to switch between them, as the Mac's
+/// `ClarifyCardView`. The answers go out together.
+class _ClarifyCard extends StatefulWidget {
+  const _ClarifyCard({required this.app, required this.request});
+  final AppState app;
+  final PendingRequest request;
+
+  @override
+  State<_ClarifyCard> createState() => _ClarifyCardState();
+}
+
+class _ClarifyCardState extends State<_ClarifyCard> {
+  /// A selection per question: its picked choices and its typed answer.
+  final _selections = <String, (List<String>, String)>{};
+
+  /// The index of the question on show.
+  int _active = 0;
+
+  bool _isPicked(String choice, ClarifyQuestion question) =>
+      _selections[question.qid]?.$1.contains(choice) ?? false;
+
+  void _pick(String choice, ClarifyQuestion question) {
+    setState(() {
+      final current = _selections[question.qid] ?? (const <String>[], '');
+      if (question.multiSelect) {
+        final choices = [...current.$1];
+        choices.contains(choice) ? choices.remove(choice) : choices.add(choice);
+        _selections[question.qid] = (choices, current.$2);
+      } else {
+        _selections[question.qid] = ([choice], current.$2);
+        // A single-select pick moves on to the next unanswered question.
+        final later = question.indexIn(widget.request.questions);
+        for (var i = later + 1; i < widget.request.questions.length; i++) {
+          if (!_isAnswered(widget.request.questions[i])) {
+            _active = i;
+            return;
+          }
+        }
+      }
+    });
+  }
+
+  bool _isAnswered(ClarifyQuestion question) {
+    final selection = _selections[question.qid];
+    if (selection == null) return false;
+    return selection.$1.isNotEmpty || selection.$2.trim().isNotEmpty;
+  }
+
+  int get _answeredCount =>
+      widget.request.questions.where(_isAnswered).length;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final app = widget.app;
+    final request = widget.request;
+    final questions = request.questions;
+    final question = questions.isNotEmpty && _active < questions.length ? questions[_active] : null;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(Glyphs.help, size: 15, color: p.text2),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+              questions.length > 1 ? 'Hermes has ${questions.length} questions' : 'Hermes has a question',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: p.text)),
+        ),
+        if (questions.length > 1)
+          Text('$_answeredCount of ${questions.length} answered',
+              style: TextStyle(fontSize: 12, color: p.text3)),
+      ]),
+      if (questions.length > 1) ...[
+        const SizedBox(height: 8),
+        Row(children: [
+          for (final (i, q) in questions.indexed)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: HoverButton(
+                onPressed: () => setState(() => _active = i),
+                builder: (context, states) => Container(
+                  width: 26,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _active == i ? p.subtle : const Color(0x00000000),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _isAnswered(q) ? '${i + 1} \u2713' : '${i + 1}',
+                    style: TextStyle(fontSize: 12, color: _active == i ? p.text : p.text3),
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      ],
+      if (question != null) ...[
+        const SizedBox(height: 10),
+        if (question.isLocked)
+          Text(question.question, style: TextStyle(fontSize: 13, color: p.text3))
+        else ...[
+          Text(question.question, style: TextStyle(fontSize: 13, color: p.text)),
+          const SizedBox(height: 6),
+          for (final choice in question.choices)
+            _ChoiceRow(
+              label: choice,
+              checked: _isPicked(choice, question),
+              checkbox: question.multiSelect,
+              onTap: () => _pick(choice, question),
+            ),
+          if (!question.multiSelect || question.choices.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: SizedBox(
+                height: 30,
+                child: Builder(builder: (context) {
+                  final controller = _others.putIfAbsent(question.qid, TextEditingController.new);
+                  return TextBox(
+                    controller: controller,
+                    placeholder: question.multiSelect ? 'Other (optional)…' : 'Other…',
+                    placeholderStyle: TextStyle(fontSize: 12, color: p.text3),
+                    style: TextStyle(fontSize: 12, color: p.text),
+                    onChanged: (text) => setState(() {
+                      final current = _selections[question.qid] ?? (const <String>[], '');
+                      _selections[question.qid] = (current.$1, text);
+                      if (!question.multiSelect && text.isNotEmpty) {
+                        _selections[question.qid] = (const <String>[], text);
+                      }
+                    }),
+                  );
+                }),
+              ),
+            ),
+        ],
+      ],
+      const SizedBox(height: 12),
+      Row(children: [
+        FilledButton(
+          onPressed: _answeredCount == 0
+              ? null
+              : () => app.answerClarify(request.id, {
+                    for (final entry in _selections.entries)
+                      entry.key: {
+                        'choices': entry.value.$1,
+                        'other': entry.value.$2,
+                      },
+                  }),
+          child: const Text('Send'),
+        ),
+        const SizedBox(width: 8),
+        Button(onPressed: () => app.answerClarify(request.id), child: const Text('Skip')),
+      ]),
+    ]);
+  }
+
+  /// The typed answer per question, kept while another is on show.
+  final _others = <String, TextEditingController>{};
+
+  @override
+  void dispose() {
+    for (final controller in _others.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+}
+
+extension on ClarifyQuestion {
+  /// This question's place in the card's list.
+  int indexIn(List<ClarifyQuestion> questions) => questions.indexWhere((q) => q.qid == qid);
+}
+
+/// A choice to tap: a checkbox when several can be picked, a radio otherwise.
+class _ChoiceRow extends StatelessWidget {
+  const _ChoiceRow({required this.label, required this.checked, required this.checkbox, required this.onTap});
+  final String label;
+  final bool checked;
+  final bool checkbox;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: HoverButton(
+        onPressed: onTap,
+        builder: (context, states) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: states.isHovered || checked ? p.subtle : const Color(0x00000000),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(children: [
+            if (checkbox)
+              Icon(checked ? Glyphs.checkboxChecked : Glyphs.checkbox, size: 14, color: checked ? p.accent : p.text3)
+            else
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: checked ? p.accent : p.text3, width: 1.5),
+                ),
+                alignment: Alignment.center,
+                child: checked
+                    ? Container(width: 6, height: 6, decoration: BoxDecoration(color: p.accent, shape: BoxShape.circle))
+                    : null,
+              ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: p.text))),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// A sudo or secret request's value: a hidden field, Send and Skip.
+class _ValueCard extends StatefulWidget {
+  const _ValueCard({required this.app, required this.request, required this.secure});
+  final AppState app;
+  final PendingRequest request;
+
+  /// A sudo password hides what is typed; a secret's value shows it.
+  final bool secure;
+
+  @override
+  State<_ValueCard> createState() => _ValueCardState();
+}
+
+class _ValueCardState extends State<_ValueCard> {
+  final _value = TextEditingController();
+
+  @override
+  void dispose() {
+    _value.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    final request = widget.request;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(Glyphs.lock, size: 15, color: p.text2),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(request.headline,
+              maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: p.text)),
+        ),
+      ]),
+      if (widget.secure) ...[
+        if (request.command case final command?) ...[
+          const SizedBox(height: 8),
+          Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: p.codeBg,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: p.cardStroke),
+          ),
+          child: Text(command, style: TextStyle(fontSize: 12, color: p.text, fontFamily: 'Consolas')),
+          ),
+        ],
+      ],
+      if (!widget.secure && request.envVar != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(request.envVar!, style: TextStyle(fontSize: 12, color: p.text3, fontFamily: 'Consolas')),
+        ),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(
+          child: SizedBox(
+            height: 32,
+            child: TextBox(
+              controller: _value,
+              obscureText: widget.secure,
+              placeholder: 'Value',
+              placeholderStyle: TextStyle(fontSize: 12, color: p.text3),
+              style: TextStyle(fontSize: 12, color: p.text),
+              onSubmitted: (text) => widget.app.answerValue(request.id, text),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: _value.text.isEmpty ? null : () => widget.app.answerValue(request.id, _value.text),
+          child: const Text('Send'),
+        ),
+        const SizedBox(width: 8),
+        Button(onPressed: () => widget.app.answerValue(request.id, ''), child: const Text('Skip')),
+      ]),
+    ]);
+  }
+}
+
+/// A request this app cannot show: dismissed so the agent fails fast.
+class _UnsupportedCard extends StatelessWidget {
+  const _UnsupportedCard({required this.app, required this.request});
+  final AppState app;
+  final PendingRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = PaletteScope.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Unsupported request: ${request.method}',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: p.text)),
+      const SizedBox(height: 10),
+      Button(onPressed: () => app.answerValue(request.id, ''), child: const Text('Dismiss')),
+    ]);
   }
 }

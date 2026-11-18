@@ -455,6 +455,11 @@ class ComposerSnapshot {
     this.uploadingFiles = const [],
     this.isSubmitting = false,
     this.canSubmit = false,
+    this.draft = '',
+    this.slashIsOpen = false,
+    this.slashRows = const [],
+    this.slashNotice,
+    this.isModelPickerRequested = false,
   });
   final String? sessionID;
   final String? model;
@@ -472,6 +477,20 @@ class ComposerSnapshot {
   final List<String> uploadingFiles;
   final bool isSubmitting;
   final bool canSubmit;
+
+  /// The draft as the composer holds it: kept in step by setDraft, and read back
+  /// after a slash send (a prefill or a refused command may be back in it).
+  final String draft;
+
+  /// The slash list (HermesKit's): shown while [slashIsOpen]; [slashNotice] when
+  /// it closed with no matches or the catalog failed to load.
+  final bool slashIsOpen;
+  final List<SlashRow> slashRows;
+  final String? slashNotice;
+
+  /// /model with no argument asked for the picker; the app opens its own and
+  /// clears the request.
+  final bool isModelPickerRequested;
 
   bool get hasCards => attachments.isNotEmpty || uploadingFiles.isNotEmpty;
 
@@ -524,8 +543,43 @@ class ComposerSnapshot {
       uploadingFiles: ((j['uploadingFiles'] as List?) ?? const []).cast<String>(),
       isSubmitting: j['isSubmitting'] as bool? ?? false,
       canSubmit: j['canSubmit'] as bool? ?? false,
+      draft: j['draft'] as String? ?? '',
+      slashIsOpen: j['slashIsOpen'] as bool? ?? false,
+      slashRows: _list(j['slashRows'])
+          .map((r) => SlashRow(
+                id: r['id'] as String? ?? '',
+                header: r['header'] as String?,
+                text: r['text'] as String? ?? '',
+                display: r['display'] as String? ?? '',
+                meta: r['meta'] as String?,
+                kind: r['kind'] as String?,
+                isSelected: r['isSelected'] as bool? ?? false,
+              ))
+          .toList(),
+      slashNotice: j['slashNotice'] as String?,
+      isModelPickerRequested: j['isModelPickerRequested'] as bool? ?? false,
     );
   }
+}
+
+/// One row of the slash list, as the composer's snapshot carries it.
+class SlashRow {
+  const SlashRow({
+    required this.id,
+    this.header,
+    required this.text,
+    required this.display,
+    this.meta,
+    this.kind,
+    this.isSelected = false,
+  });
+  final String id;
+  final String? header;
+  final String text;
+  final String display;
+  final String? meta;
+  final String? kind;
+  final bool isSelected;
 }
 
 class ModelProvider {
@@ -683,6 +737,7 @@ class ChatSnapshot {
     this.waiting,
     this.status,
     this.canBranch = false,
+    this.pendingRequests = const [],
   });
   final String? sessionID;
   final String? storedSessionID;
@@ -691,6 +746,10 @@ class ChatSnapshot {
   final bool isRunning;
   final String? lastError;
   final List<ChatItem> items;
+
+  /// The blocking requests the agent waits on, newest last, as the transcript's
+  /// cards (docs/desktop-bridge.md, "Events": chat).
+  final List<PendingRequest> pendingRequests;
 
   /// The transcript's blocks, in order (HermesKit's grouping).
   final List<TranscriptBlock> blocks;
@@ -720,6 +779,7 @@ class ChatSnapshot {
         waiting: Waiting.from(j['waiting']),
         status: j['status'] as String?,
         canBranch: j['canBranch'] as bool? ?? false,
+        pendingRequests: _list(j['pendingRequests']).map(PendingRequest.fromJson).toList(),
       );
 }
 
@@ -727,3 +787,605 @@ Iterable<Map<String, Object?>> _list(Object? v) => (v as List?)?.cast<Map<String
 
 DateTime? _seconds(Object? v) =>
     v is num ? DateTime.fromMillisecondsSinceEpoch((v * 1000).round()) : null;
+
+/// A blocking server→client request, as the transcript's card: approval, clarify,
+/// sudo or secret (docs/desktop-bridge.md, "Events": chat).
+class PendingRequest {
+  const PendingRequest({
+    required this.id,
+    required this.kind,
+    required this.method,
+    required this.headline,
+    this.description,
+    this.command,
+    this.choices = const [],
+    this.questions = const [],
+    this.envVar,
+    this.prompt,
+  });
+  final String id;
+
+  /// `approval`, `clarify`, `sudo`, `secret` or `unsupported`.
+  final String kind;
+  final String method;
+  final String headline;
+  final String? description;
+
+  /// The command an approval asks about, a sudo request's command.
+  final String? command;
+
+  /// An approval's buttons, in order.
+  final List<ApprovalChoice> choices;
+
+  /// A clarify's questions, in order.
+  final List<ClarifyQuestion> questions;
+
+  /// A secret request's variable, and its own prompt line.
+  final String? envVar;
+  final String? prompt;
+
+  static PendingRequest fromJson(Map<String, Object?> j) => PendingRequest(
+        id: j['id'] as String? ?? '',
+        kind: j['kind'] as String? ?? 'unsupported',
+        method: j['method'] as String? ?? '',
+        headline: j['headline'] as String? ?? '',
+        description: j['description'] as String?,
+        command: j['command'] as String?,
+        choices: _list(j['choices'])
+            .map((c) => ApprovalChoice(
+                  value: c['value'] as String? ?? '',
+                  label: c['label'] as String? ?? '',
+                ))
+            .toList(),
+        questions: _list(j['questions'])
+            .map((q) => ClarifyQuestion(
+                  qid: q['qid'] as String? ?? '',
+                  question: q['question'] as String? ?? '',
+                  choices: ((q['choices'] as List?) ?? const []).cast<String>(),
+                  multiSelect: q['multiSelect'] as bool? ?? false,
+                  isLocked: q['isLocked'] as bool? ?? false,
+                ))
+            .toList(),
+        envVar: j['envVar'] as String?,
+        prompt: j['prompt'] as String?,
+      );
+}
+
+class ApprovalChoice {
+  const ApprovalChoice({required this.value, required this.label});
+  final String value;
+  final String label;
+}
+
+class ClarifyQuestion {
+  const ClarifyQuestion({
+    required this.qid,
+    required this.question,
+    this.choices = const [],
+    this.multiSelect = false,
+    this.isLocked = false,
+  });
+  final String qid;
+  final String question;
+
+  /// The choices to offer, as the wire carried them.
+  final List<String> choices;
+
+  /// Offered as checkboxes with an optional typed answer.
+  final bool multiSelect;
+
+  /// An answer was locked via clarify.lock (a replayed request): the question
+  /// shows it and takes no input.
+  final bool isLocked;
+}
+
+/// The session list's search results (docs/desktop-bridge.md: the `search` snapshot).
+class SearchSnapshot {
+  const SearchSnapshot({
+    this.profile,
+    this.query = '',
+    this.results = const [],
+    this.isSearching = false,
+    this.error,
+    this.isAvailable = true,
+  });
+  final String? profile;
+  final String query;
+  final List<SearchResult> results;
+  final bool isSearching;
+  final String? error;
+  final bool isAvailable;
+
+  static SearchSnapshot fromJson(Map<String, Object?> j) => SearchSnapshot(
+        profile: j['profile'] as String?,
+        query: j['query'] as String? ?? '',
+        results: _list(j['results']).map(SearchResult.fromJson).toList(),
+        isSearching: j['isSearching'] as bool? ?? false,
+        error: j['error'] as String?,
+        isAvailable: j['isAvailable'] as bool? ?? true,
+      );
+}
+
+class SearchResult {
+  const SearchResult({
+    required this.id,
+    required this.profile,
+    required this.title,
+    this.preview,
+    this.segments = const [],
+    this.role,
+    this.date,
+    this.messageCount,
+    this.isBotChat = false,
+  });
+
+  /// `profile/storedID`, what openSession takes.
+  final String id;
+  final String profile;
+  final String title;
+  final String? preview;
+  final List<SearchSegment> segments;
+  final String? role;
+  final DateTime? date;
+  final int? messageCount;
+
+  /// The hit's row is the profile's Bot Chat, which opens with openBotChat.
+  final bool isBotChat;
+
+  static SearchResult fromJson(Map<String, Object?> j) => SearchResult(
+        id: j['id'] as String? ?? '',
+        profile: j['profile'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        preview: j['preview'] as String?,
+        segments: _list(j['segments'])
+            .map((s) => SearchSegment(text: s['text'] as String? ?? '', isMatch: s['isMatch'] as bool? ?? false))
+            .toList(),
+        role: j['role'] as String?,
+        date: _seconds(j['date']),
+        messageCount: (j['messageCount'] as num?)?.toInt(),
+        isBotChat: j['isBotChat'] as bool? ?? false,
+      );
+}
+
+class SearchSegment {
+  const SearchSegment({required this.text, required this.isMatch});
+  final String text;
+  final bool isMatch;
+}
+
+/// The chat's running subagents, as the pill above the composer lists them
+/// (docs/desktop-bridge.md: the `subagents` snapshot).
+class SubagentsSnapshot {
+  const SubagentsSnapshot({this.sessionID, this.runs = const []});
+  final String? sessionID;
+  final List<SubagentRun> runs;
+
+  static SubagentsSnapshot fromJson(Map<String, Object?> j) => SubagentsSnapshot(
+        sessionID: j['sessionID'] as String?,
+        runs: _list(j['runs']).map(SubagentRun.fromJson).toList(),
+      );
+}
+
+class SubagentRun {
+  const SubagentRun({
+    required this.id,
+    required this.goal,
+    this.model,
+    this.status = 'running',
+    this.taskIndex = 0,
+    this.taskCount = 1,
+    this.startedAt,
+    this.updatedAt,
+    this.currentTool,
+    this.activity = const [],
+    this.summary,
+  });
+  final String id;
+  final String goal;
+  final String? model;
+
+  /// `queued` or `running`.
+  final String status;
+  final int taskIndex;
+  final int taskCount;
+  final DateTime? startedAt;
+  final DateTime? updatedAt;
+
+  /// The tool it is running, while it runs.
+  final String? currentTool;
+
+  /// The newest lines, oldest first.
+  final List<SubagentActivity> activity;
+  final String? summary;
+
+  static SubagentRun fromJson(Map<String, Object?> j) => SubagentRun(
+        id: j['id'] as String? ?? '',
+        goal: j['goal'] as String? ?? '',
+        model: j['model'] as String?,
+        status: j['status'] as String? ?? 'running',
+        taskIndex: (j['taskIndex'] as num?)?.toInt() ?? 0,
+        taskCount: (j['taskCount'] as num?)?.toInt() ?? 1,
+        startedAt: _seconds(j['startedAt']),
+        updatedAt: _seconds(j['updatedAt']),
+        currentTool: j['currentTool'] as String?,
+        activity: _list(j['activity'])
+            .map((a) => SubagentActivity(
+                  kind: a['kind'] as String? ?? 'progress',
+                  text: a['text'] as String? ?? '',
+                  isError: a['isError'] as bool? ?? false,
+                ))
+            .toList(),
+        summary: j['summary'] as String?,
+      );
+}
+
+class SubagentActivity {
+  const SubagentActivity({required this.kind, required this.text, this.isError = false});
+  final String kind;
+  final String text;
+  final bool isError;
+}
+
+/// The chat's context gauge and session counters, for the composer's ring
+/// (docs/desktop-bridge.md: the `usage` snapshot).
+class UsageSnapshot {
+  const UsageSnapshot({this.sessionID, this.gauge, this.usage, this.breakdown});
+  final String? sessionID;
+  final ContextGauge? gauge;
+  final SessionCounters? usage;
+  final ContextBreakdown? breakdown;
+
+  static UsageSnapshot fromJson(Map<String, Object?> j) => UsageSnapshot(
+        sessionID: j['sessionID'] as String?,
+        gauge: j['gauge'] is Map ? ContextGauge.fromJson(j['gauge'] as Map<String, Object?>) : null,
+        usage: j['usage'] is Map ? SessionCounters.fromJson(j['usage'] as Map<String, Object?>) : null,
+        breakdown:
+            j['breakdown'] is Map ? ContextBreakdown.fromJson(j['breakdown'] as Map<String, Object?>) : null,
+      );
+}
+
+class ContextGauge {
+  const ContextGauge({required this.used, required this.max, required this.percent, this.isEstimated = false});
+  final int used;
+  final int max;
+
+  /// 0…100.
+  final int percent;
+  final bool isEstimated;
+
+  double get fraction => (percent / 100).clamp(0.0, 1.0);
+
+  static ContextGauge fromJson(Map<String, Object?> j) => ContextGauge(
+        used: (j['used'] as num?)?.toInt() ?? 0,
+        max: (j['max'] as num?)?.toInt() ?? 0,
+        percent: (j['percent'] as num?)?.toInt() ?? 0,
+        isEstimated: j['isEstimated'] as bool? ?? false,
+      );
+}
+
+class SessionCounters {
+  const SessionCounters({
+    this.input = 0,
+    this.output = 0,
+    this.total = 0,
+    this.calls = 0,
+    this.reasoning,
+    this.compressions,
+    this.cacheHitPercent,
+    this.tokensPerSecond,
+    this.costUSD,
+    this.model,
+  });
+  final int input;
+  final int output;
+  final int total;
+  final int calls;
+  final int? reasoning;
+  final int? compressions;
+  final int? cacheHitPercent;
+  final double? tokensPerSecond;
+  final double? costUSD;
+  final String? model;
+
+  static SessionCounters fromJson(Map<String, Object?> j) => SessionCounters(
+        input: (j['input'] as num?)?.toInt() ?? 0,
+        output: (j['output'] as num?)?.toInt() ?? 0,
+        total: (j['total'] as num?)?.toInt() ?? 0,
+        calls: (j['calls'] as num?)?.toInt() ?? 0,
+        reasoning: (j['reasoning'] as num?)?.toInt(),
+        compressions: (j['compressions'] as num?)?.toInt(),
+        cacheHitPercent: (j['cacheHitPercent'] as num?)?.toInt(),
+        tokensPerSecond: (j['tokensPerSecond'] as num?)?.toDouble(),
+        costUSD: (j['costUSD'] as num?)?.toDouble(),
+        model: j['model'] as String?,
+      );
+}
+
+class ContextBreakdown {
+  const ContextBreakdown({
+    this.contextUsed = 0,
+    this.contextMax = 0,
+    this.contextPercent = 0,
+    this.isEstimated = true,
+    this.categories = const [],
+  });
+  final int contextUsed;
+  final int contextMax;
+  final int contextPercent;
+  final bool isEstimated;
+  final List<ContextCategory> categories;
+
+  static ContextBreakdown fromJson(Map<String, Object?> j) => ContextBreakdown(
+        contextUsed: (j['contextUsed'] as num?)?.toInt() ?? 0,
+        contextMax: (j['contextMax'] as num?)?.toInt() ?? 0,
+        contextPercent: (j['contextPercent'] as num?)?.toInt() ?? 0,
+        isEstimated: j['isEstimated'] as bool? ?? true,
+        categories: _list(j['categories'])
+            .map((c) => ContextCategory(
+                  id: c['id'] as String? ?? '',
+                  label: c['label'] as String? ?? '',
+                  tokens: (c['tokens'] as num?)?.toInt() ?? 0,
+                ))
+            .toList(),
+      );
+}
+
+class ContextCategory {
+  const ContextCategory({required this.id, required this.label, required this.tokens});
+  final String id;
+  final String label;
+  final int tokens;
+}
+
+/// The list profile's scheduled jobs, as the sidebar's Cron tab shows them
+/// (docs/desktop-bridge.md: the `cron` snapshot).
+class CronSnapshot {
+  const CronSnapshot({
+    this.profile,
+    this.isLoading = false,
+    this.error,
+    this.isAvailable = true,
+    this.jobs = const [],
+    this.runs = const {},
+    this.runErrors = const {},
+    this.targets = const [],
+    this.triggering = const [],
+    this.blueprints = const [],
+  });
+
+  /// The profile whose jobs [jobs] holds; null until the first read comes back.
+  final String? profile;
+  final bool isLoading;
+  final String? error;
+  final bool isAvailable;
+  final List<CronJobEntry> jobs;
+
+  /// Recent runs by job id, newest first, for the jobs whose runs were read.
+  final Map<String, List<CronRunEntry>> runs;
+  final Map<String, String> runErrors;
+  final List<CronTarget> targets;
+
+  /// Jobs being run now from the app.
+  final List<String> triggering;
+
+  /// The ready-made jobs the profile can start from, once read.
+  final List<CronBlueprintEntry> blueprints;
+
+  static CronSnapshot fromJson(Map<String, Object?> j) => CronSnapshot(
+        profile: j['profile'] as String?,
+        isLoading: j['isLoading'] as bool? ?? false,
+        error: j['error'] as String?,
+        isAvailable: j['isAvailable'] as bool? ?? true,
+        jobs: _list(j['jobs']).map(CronJobEntry.fromJson).toList(),
+        runs: {
+          for (final entry in (j['runs'] as Map<String, Object?>? ?? const {}).entries)
+            entry.key: _list(entry.value).map(CronRunEntry.fromJson).toList(),
+        },
+        runErrors: {
+          for (final entry in (j['runErrors'] as Map<String, Object?>? ?? const {}).entries)
+            if (entry.value is String) entry.key: entry.value as String,
+        },
+        targets: _list(j['targets'])
+            .map((t) => CronTarget(
+                  id: t['id'] as String? ?? '',
+                  name: t['name'] as String? ?? '',
+                  homeTargetSet: t['homeTargetSet'] as bool? ?? true,
+                ))
+            .toList(),
+        triggering: ((j['triggering'] as List?) ?? const []).cast<String>(),
+        blueprints: _list(j['blueprints']).map(CronBlueprintEntry.fromJson).toList(),
+      );
+}
+
+class CronJobEntry {
+  const CronJobEntry({
+    required this.id,
+    required this.title,
+    this.name,
+    this.prompt,
+    this.script,
+    this.isScriptOnly = false,
+    this.state = 'scheduled',
+    this.nextRunAt,
+    this.lastRunAt,
+    this.lastStatus,
+    this.lastError,
+    this.lastDeliveryError,
+    this.pausedReason,
+    this.scheduleDisplay,
+    this.scheduleExpression,
+    this.model,
+    this.provider,
+    this.deliver = const [],
+    this.overdueSince,
+    this.needsAttention = false,
+  });
+  final String id;
+
+  /// The name, else the start of the prompt or script, else the id.
+  final String title;
+  final String? name;
+  final String? prompt;
+  final String? script;
+
+  /// A script that runs without an agent: no prompt, no model to pick.
+  final bool isScriptOnly;
+
+  /// The stated state, else one from enabled.
+  final String state;
+  final DateTime? nextRunAt;
+  final DateTime? lastRunAt;
+  final String? lastStatus;
+  final String? lastError;
+  final String? lastDeliveryError;
+  final String? pausedReason;
+
+  /// The human line ("0 9 * * *").
+  final String? scheduleDisplay;
+
+  /// The raw expression, for the editor.
+  final String? scheduleExpression;
+  final String? model;
+  final String? provider;
+
+  /// The targets the job delivers to, `local` when it names none.
+  final List<String> deliver;
+
+  /// When the next run passed more than 15 minutes ago: a scheduler that stopped ticking.
+  final DateTime? overdueSince;
+
+  /// The job's last run failed or wasn't delivered.
+  final bool needsAttention;
+
+  bool get isPaused => state == 'paused';
+
+  static CronJobEntry fromJson(Map<String, Object?> j) => CronJobEntry(
+        id: j['id'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        name: j['name'] as String?,
+        prompt: j['prompt'] as String?,
+        script: j['script'] as String?,
+        isScriptOnly: j['isScriptOnly'] as bool? ?? false,
+        state: j['state'] as String? ?? 'scheduled',
+        nextRunAt: _seconds(j['nextRunAt']),
+        lastRunAt: _seconds(j['lastRunAt']),
+        lastStatus: j['lastStatus'] as String?,
+        lastError: j['lastError'] as String?,
+        lastDeliveryError: j['lastDeliveryError'] as String?,
+        pausedReason: j['pausedReason'] as String?,
+        scheduleDisplay: j['scheduleDisplay'] as String?,
+        scheduleExpression: j['scheduleExpression'] as String?,
+        model: j['model'] as String?,
+        provider: j['provider'] as String?,
+        deliver: ((j['deliver'] as List?) ?? const []).cast<String>(),
+        overdueSince: _seconds(j['overdueSince']),
+        needsAttention: j['needsAttention'] as bool? ?? false,
+      );
+}
+
+class CronRunEntry {
+  const CronRunEntry({
+    required this.id,
+    this.title,
+    this.preview,
+    this.startedAt,
+    this.lastActive,
+    this.endedAt,
+    this.messageCount,
+    this.isOutputDocument = false,
+    this.entryID,
+  });
+  final String id;
+  final String? title;
+
+  /// A script run's output; an agent run's preview is the scheduler's own
+  /// instructions, so the row shows only the time.
+  final String? preview;
+  final DateTime? startedAt;
+  final DateTime? lastActive;
+  final DateTime? endedAt;
+  final int? messageCount;
+
+  /// `cron_output`: the run's output document, not a session.
+  final bool isOutputDocument;
+
+  /// What openCronRun takes, for a run that is a session.
+  final String? entryID;
+
+  static CronRunEntry fromJson(Map<String, Object?> j) => CronRunEntry(
+        id: j['id'] as String? ?? '',
+        title: j['title'] as String?,
+        preview: j['preview'] as String?,
+        startedAt: _seconds(j['startedAt']),
+        lastActive: _seconds(j['lastActive']),
+        endedAt: _seconds(j['endedAt']),
+        messageCount: (j['messageCount'] as num?)?.toInt(),
+        isOutputDocument: j['isOutputDocument'] as bool? ?? false,
+        entryID: j['entryID'] as String?,
+      );
+}
+
+class CronTarget {
+  const CronTarget({required this.id, required this.name, this.homeTargetSet = true});
+  final String id;
+  final String name;
+
+  /// A platform without a cron home channel is listed with false.
+  final bool homeTargetSet;
+}
+
+class CronBlueprintEntry {
+  const CronBlueprintEntry({
+    required this.key,
+    required this.title,
+    this.description = '',
+    this.fields = const [],
+  });
+  final String key;
+  final String title;
+  final String description;
+  final List<CronBlueprintField> fields;
+
+  static CronBlueprintEntry fromJson(Map<String, Object?> j) => CronBlueprintEntry(
+        key: j['key'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        description: j['description'] as String? ?? '',
+        fields: _list(j['fields'])
+            .map((f) => CronBlueprintField(
+                  kind: f['kind'] as String? ?? 'text',
+                  name: f['name'] as String? ?? '',
+                  label: f['label'] as String? ?? '',
+                  defaultValue: f['defaultValue'] as String?,
+                  options: ((f['options'] as List?) ?? const []).cast<String>(),
+                  isOptional: f['isOptional'] as bool? ?? false,
+                  help: f['help'] as String? ?? '',
+                  isDeliver: f['isDeliver'] as bool? ?? false,
+                ))
+            .toList(),
+      );
+}
+
+class CronBlueprintField {
+  const CronBlueprintField({
+    required this.kind,
+    required this.name,
+    required this.label,
+    this.defaultValue,
+    this.options = const [],
+    this.isOptional = false,
+    this.help = '',
+    this.isDeliver = false,
+  });
+
+  /// `text`, `time`, `weekdays` or `enum`; an unknown kind filled in as text.
+  final String kind;
+  final String name;
+  final String label;
+  final String? defaultValue;
+  final List<String> options;
+  final bool isOptional;
+  final String help;
+
+  /// The deliver blank, offered as delivery toggles, not its options.
+  final bool isDeliver;
+}

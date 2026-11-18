@@ -40,6 +40,10 @@ class AppState extends ChangeNotifier {
   ConnectionSnapshot connection = const ConnectionSnapshot();
   ChatSnapshot chat = const ChatSnapshot();
   ComposerSnapshot composer = const ComposerSnapshot();
+  SearchSnapshot search = const SearchSnapshot();
+  SubagentsSnapshot subagents = const SubagentsSnapshot();
+  UsageSnapshot usage = const UsageSnapshot();
+  CronSnapshot cron = const CronSnapshot();
 
   /// Thumbnails of the images attached here, by card id: the composer's cards and,
   /// once sent, the prompt's bubble (`SentImage.localID`).
@@ -61,6 +65,19 @@ class AppState extends ChangeNotifier {
   String? error;
 
   bool isConnecting = false;
+
+  /// The search field's text, untrimmed; the list shows its results while it has
+  /// text. A pause in typing (250 ms, as the Mac's) runs the search.
+  String searchText = '';
+  Timer? _searchPause;
+
+  /// The sidebar's tab: the profile's sessions or its cron jobs.
+  bool isCronShown = false;
+  Timer? _cronPoll;
+
+  /// Reconciles the subagents while a turn runs or a child does, as the Mac's
+  /// pill does (every 5 s, `SubagentsPill`).
+  Timer? _subagentsPoll;
 
   bool get needsServer => !settings.hasServer;
 
@@ -89,6 +106,14 @@ class AppState extends ChangeNotifier {
         _restoreLastSession();
       case 'composer':
         composer = ComposerSnapshot.fromJson(event);
+      case 'search':
+        search = SearchSnapshot.fromJson(event);
+      case 'subagents':
+        subagents = SubagentsSnapshot.fromJson(event);
+      case 'usage':
+        usage = UsageSnapshot.fromJson(event);
+      case 'cron':
+        cron = CronSnapshot.fromJson(event);
       case 'chat':
         final wasRunning = chat.isRunning;
         chat = ChatSnapshot.fromJson(event);
@@ -96,6 +121,18 @@ class AppState extends ChangeNotifier {
         // A turn that started or ended changes the list: a new chat gets its row, a
         // finished one its title and time.
         if (wasRunning != chat.isRunning) unawaited(refreshSessions());
+        // And the context gauge's numbers: a free chat reads them again, as the
+        // Mac's ring does after a turn.
+        if (!chat.isRunning && chat.isOpen) unawaited(refreshUsage());
+        // Whichever way the chat came on screen (a click, New chat, a slash
+        // command's client action), its own numbers and children show now.
+        if (chat.isOpen && _usageSession != chat.sessionID) {
+          _usageSession = chat.sessionID;
+          unawaited(refreshUsage());
+          unawaited(refreshSubagents());
+        }
+        if (!chat.isOpen) _usageSession = null;
+        _syncSelectedRow();
         // Whichever way the chat came on screen (a click, New chat), it shows next time.
         if (chat.storedSessionID case final stored? when chat.profile != null) {
           final id = '${chat.profile}/$stored';
@@ -103,6 +140,25 @@ class AppState extends ChangeNotifier {
         }
     }
     notifyListeners();
+  }
+
+  /// The session whose numbers were read last, so an open chat reads them once.
+  String? _usageSession;
+
+  /// Keeps the sidebar's row in step with the chat on screen: a slash command's
+  /// client action (/new) or another client can have changed what is open.
+  void _syncSelectedRow() {
+    final stored = chat.storedSessionID;
+    if (stored == null || chat.profile == null) {
+      if (selectedRow != null && !selectedRow!.startsWith('bot:')) selectedRow = null;
+      return;
+    }
+    final id = '${chat.profile}/$stored';
+    if (connection.sessions.any((s) => s.id == id)) {
+      selectedRow = id;
+    } else if (selectedRow != null && selectedRow != id && !selectedRow!.startsWith('bot:')) {
+      selectedRow = null;
+    }
   }
 
   /// Once the list has the session shown last, shows it again (at launch only).
@@ -227,8 +283,40 @@ class AppState extends ChangeNotifier {
     if (selectedProfile != null && selectedProfile != profile) _restored = true;
     selectedProfile = profile;
     if (settings.lastProfile != profile) _remember(profile: profile, session: null);
+    if (searchText.isNotEmpty) setSearchText('');
     notifyListeners();
     await _run('selectProfile', {'profile': profile});
+  }
+
+  // --- Search -------------------------------------------------------------------------
+
+  /// The search field's text, untrimmed: a pause in typing runs the search, as
+  /// the Mac's (250 ms, `SessionSearchResultsList`).
+  void setSearchText(String value) {
+    if (searchText == value) return;
+    searchText = value;
+    notifyListeners();
+    _searchPause?.cancel();
+    if (value.trim().isEmpty) {
+      search = const SearchSnapshot();
+      unawaited(_run('searchSessions', {'query': ''}));
+      return;
+    }
+    _searchPause = Timer(const Duration(milliseconds: 250), () {
+      if (value.trim().isNotEmpty) unawaited(_run('searchSessions', {'query': value.trim()}));
+    });
+  }
+
+  /// A result's row, as the list's row opens: the Bot Chat as the Bot Chat.
+  Future<void> openSearchResult(SearchResult result) async {
+    if (result.isBotChat && result.profile == selectedProfile) {
+      await openBotChat(result.profile);
+    } else {
+      selectedRow = result.id;
+      _remember(session: result.id);
+      notifyListeners();
+      await _run('openSession', {'id': result.id});
+    }
   }
 
   Future<void> openBotChat(String profile) async {
@@ -403,6 +491,162 @@ class AppState extends ChangeNotifier {
 
   Future<void> interrupt() => _run('interrupt');
 
+  // --- The draft and its slash list -----------------------------------------------------
+
+  /// Keeps the bridge's draft in step with the composer's text field, so the
+  /// slash list follows it.
+  Future<void> setDraft(String text) => _run('setDraft', {'text': text});
+
+  /// A key the slash list takes; true when the list used it.
+  Future<bool> slashKey(String key) async {
+    try {
+      return await _bridge.call('slashKey', {'key': key}) == true;
+    } on BridgeException {
+      return false;
+    }
+  }
+
+  Future<void> acceptSlashRow(String id) => _run('acceptSlashRow', {'id': id});
+  Future<void> dismissSlashSuggestions() => _run('dismissSlashSuggestions');
+  Future<void> setModelPickerRequested(bool shown) => _run('setModelPickerRequested', {'shown': shown});
+
+  // --- The chat's blocking requests -----------------------------------------------------
+
+  Future<void> answerApproval(String id, String choice, {bool all = false}) =>
+      _run('answerApproval', {'id': id, 'choice': choice, 'all': all});
+
+  /// A clarify's answers from the app's own form, one selection per question;
+  /// a null map skips every question.
+  Future<void> answerClarify(String id, [Map<String, Object?>? selections]) =>
+      _run('answerClarify', selections == null ? {'id': id} : {'id': id, 'selections': selections});
+
+  Future<void> answerValue(String id, String value) => _run('answerValue', {'id': id, 'value': value});
+
+  // --- The subagents --------------------------------------------------------------------
+
+  Future<void> refreshSubagents() => _run('refreshSubagents');
+
+  /// Starts the 5 s reconcile while the chat shows, as the Mac's pill does.
+  void startSubagentsPoll() {
+    _subagentsPoll?.cancel();
+    _subagentsPoll = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!chat.isOpen || (!chat.isRunning && subagents.runs.isEmpty)) return;
+      unawaited(refreshSubagents());
+    });
+  }
+
+  void stopSubagentsPoll() {
+    _subagentsPoll?.cancel();
+    _subagentsPoll = null;
+  }
+
+  Future<void> steerSubagent(String id, String text) => _run('steerSubagent', {'id': id, 'text': text});
+  Future<void> stopSubagent(String id) => _run('stopSubagent', {'id': id});
+
+  // --- The context gauge ----------------------------------------------------------------
+
+  Future<void> refreshUsage() => _run('refreshUsage');
+
+  // --- The profile's cron jobs -----------------------------------------------------------
+
+  /// The sidebar's tab. While the Cron tab shows, its lists refresh every 15 s,
+  /// as the Mac's Cron list does.
+  void showCron(bool shown) {
+    if (isCronShown == shown) return;
+    isCronShown = shown;
+    notifyListeners();
+    _cronPoll?.cancel();
+    _cronPoll = null;
+    if (shown) {
+      unawaited(refreshCronJobs());
+      unawaited(loadCronDeliveryTargets());
+      _cronPoll = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (!isCronShown || connection.state != LinkState.connected) return;
+        unawaited(refreshCronJobs());
+        unawaited(loadCronDeliveryTargets());
+        for (final id in _cronExpanded.toList()) {
+          unawaited(refreshCronRuns(id));
+        }
+      });
+    }
+  }
+
+  /// The job whose runs show under it: one at a time, as in Desktop.
+  final Set<String> _cronExpanded = {};
+
+  void toggleCronRuns(String id) {
+    if (_cronExpanded.contains(id)) {
+      _cronExpanded.remove(id);
+      notifyListeners();
+    } else {
+      if (_cronExpanded.length == 1) _cronExpanded.clear();
+      _cronExpanded.add(id);
+      notifyListeners();
+      unawaited(refreshCronRuns(id));
+    }
+  }
+
+  bool isCronExpanded(String id) => _cronExpanded.contains(id);
+
+  Future<void> refreshCronJobs() => _run('refreshCronJobs');
+  Future<void> refreshCronRuns(String id) => _run('refreshCronRuns', {'id': id});
+  Future<void> loadCronDeliveryTargets() => _run('loadCronDeliveryTargets');
+  Future<void> loadCronBlueprints() => _run('loadCronBlueprints');
+  Future<void> pauseCronJob(String id) => _run('pauseCronJob', {'id': id});
+  Future<void> resumeCronJob(String id) => _run('resumeCronJob', {'id': id});
+  Future<void> triggerCronJob(String id) => _run('triggerCronJob', {'id': id});
+  Future<void> deleteCronJob(String id) => _run('deleteCronJob', {'id': id});
+
+  /// The targets the job toggled, as a comma list.
+  Future<void> setCronDelivery(String id, List<String> deliver) =>
+      _run('setCronDelivery', {'id': id, 'deliver': deliver.join(',')});
+
+  /// A run with a session opens it as a chat of the profile.
+  Future<void> openCronRun(CronRunEntry run) async {
+    if (run.entryID case final id?) {
+      selectedRow = id;
+      notifyListeners();
+      await _run('openCronRun', {'id': run.id});
+    }
+  }
+
+  /// The models a job can pin, for the editor's picker. The display names come
+  /// from the bridge's catalog result, as the composer's labels do.
+  Future<List<ModelProvider>> cronModelCatalog() async {
+    try {
+      final result = await _bridge.call('cronModelCatalog');
+      final providers = ((result as Map?)?['providers'] as List?) ?? const [];
+      return providers
+          .map((p) => ModelProvider(
+                slug: (p as Map)['slug'] as String? ?? '',
+                name: p['name'] as String? ?? '',
+                models: ((p['models'] as List?) ?? const [])
+                    .map((m) => ModelOption(model: m as String, label: _modelLabel(m)))
+                    .toList(),
+              ))
+          .toList();
+    } on BridgeException {
+      return const [];
+    }
+  }
+
+  /// The bridge's composer snapshot holds the display labels; the cron catalog
+  /// holds bare ids. A id in the composer's catalog takes its label.
+  String _modelLabel(String model) {
+    for (final provider in composer.providers ?? const <ModelProvider>[]) {
+      for (final option in provider.models) {
+        if (option.model == model) return option.label;
+      }
+    }
+    return model;
+  }
+
+  Future<void> createCronJob(Map<String, Object?> draft) => _run('createCronJob', {'draft': draft});
+  Future<void> saveCronJob(String id, Map<String, Object?> draft) =>
+      _run('saveCronJob', {'id': id, 'draft': draft});
+  Future<void> instantiateCronBlueprint(String key, Map<String, String> values) =>
+      _run('instantiateCronBlueprint', {'key': key, 'values': values});
+
   // --- The composer: model, effort, attachments ---------------------------------------
 
   Future<void> selectModel(String provider, String model) =>
@@ -554,6 +798,9 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _events.cancel();
+    _searchPause?.cancel();
+    _cronPoll?.cancel();
+    _subagentsPoll?.cancel();
     super.dispose();
   }
 }

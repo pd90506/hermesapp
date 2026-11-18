@@ -272,22 +272,24 @@ class SessionPane extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // The Bot Chat pinned above the list, as the Mac's `PinnedBotChat`: it stays put
+        // while the sessions scroll (the user, 2026-11-18).
+        if (bot != null) ...[
+          const _Header('Bot Chat', major: true),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: ListItem(
+              selected: app.selectedRow == 'bot:${bot.name}',
+              height: 48,
+              onPressed: () => app.openBotChat(bot.name),
+              child: _TwoLines(title: bot.displayName, subtitle: bot.preview ?? 'Say hello'),
+            ),
+          ),
+          // A line between the Bot Chat and the sessions (the user, 2026-11-18).
+          Container(height: 1, margin: const EdgeInsets.fromLTRB(16, 10, 8, 0), color: p.divider),
+        ],
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
-            if (bot != null) ...[
-              const _Header('Bot Chat', major: true),
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: ListItem(
-                  selected: app.selectedRow == 'bot:${bot.name}',
-                  height: 48,
-                  onPressed: () => app.openBotChat(bot.name),
-                  child: _TwoLines(title: bot.displayName, subtitle: bot.preview ?? 'Say hello'),
-                ),
-              ),
-              // A line between the Bot Chat and the sessions (the user, 2026-11-18).
-              Container(height: 1, margin: const EdgeInsets.fromLTRB(16, 10, 8, 0), color: p.divider),
-            ],
             // Pinned sessions above the rest, while there are any, as on the Mac.
             if (pinned.isNotEmpty) ...[
               const _Header('Pinned', major: true),

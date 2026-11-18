@@ -164,4 +164,6 @@ abstract final class Glyphs {
   static const bell = IconData(0xEA8F, fontFamily: _f); // Ringer
   static const memory = IconData(0xE7BE, fontFamily: _f); // Education
   static const branch = IconData(0xE8AB, fontFamily: _f); // Switch
+  static const rename = IconData(0xE8AC, fontFamily: _f);
+  static const archive = IconData(0xE7B8, fontFamily: _f); // Package
 }

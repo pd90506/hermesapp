@@ -170,6 +170,37 @@ final class Bridge {
                            entry, on: pinServer)
             emitConnection()
             return .object(["pins": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(pins))])
+        case "renameSession":
+            // As the Mac's Rename…: a row not open here is opened first (`session.title`
+            // needs a live session), and the user sees the chat they renamed.
+            let entry = try listed(params)
+            let title = try string(params, "title")
+            do {
+                try await connection.rename(entry, to: title)
+            } catch SessionActionError.notOpen {
+                show(try await connection.open(entry))
+                try await connection.rename(entry, to: title)
+            }
+        case "forkSession":
+            show(try await connection.fork(try listed(params)))
+        case "archiveSession":
+            let entry = try listed(params)
+            try await connection.archive(entry)
+            return try unpin(entry)
+        case "deleteSession":
+            let entry = try listed(params)
+            if let chat, chat.storedSessionID == entry.summary.id, chat.profile == entry.profile { show(nil) }
+            try await connection.delete(entry)
+            return try unpin(entry)
+        case "avatar":
+            // A profile's avatar image, for the rail: result `{"data": base64}`, or null.
+            let data = connection.avatars[try string(params, "profile")]
+            return .object(["data": data.map { .string($0.base64EncodedString()) } ?? .null])
+        case "setAvatar":
+            guard let data = Data(base64Encoded: try string(params, "data")) else { throw BridgeError("data is not base64") }
+            try await connection.setAvatar(data, for: try string(params, "profile"))
+        case "removeAvatar":
+            try await connection.removeAvatar(for: try string(params, "profile"))
         case "imageData":
             // A sent image's bytes, for its thumbnail in the transcript (the Mac's
             // `GatewayConnection.imageData`).
@@ -180,6 +211,23 @@ final class Bridge {
             throw BridgeError("unknown method \(method)")
         }
         return .null
+    }
+
+    /// The listed session `params["id"]` names.
+    private func listed(_ params: JSONValue) throws -> HistoryEntry {
+        let id = try string(params, "id")
+        guard let entry = connection.history.first(where: { $0.id == id }) else {
+            throw BridgeError("no session \(id) in the list")
+        }
+        return entry
+    }
+
+    /// An archived or deleted session leaves the pins, as on the Mac: result
+    /// `{"pins": ...}`, for the app to save.
+    private func unpin(_ entry: HistoryEntry) throws -> JSONValue {
+        pins.setPinned(false, entry, on: pinServer)
+        emitConnection()
+        return .object(["pins": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(pins))])
     }
 
     private func transcriptItem(_ params: JSONValue, in chat: ChatSession) throws -> TranscriptItem {

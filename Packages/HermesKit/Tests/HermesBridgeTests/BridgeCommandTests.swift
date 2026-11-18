@@ -45,6 +45,25 @@ private final class Outbox: Sendable {
         #expect(outbox.all.last?["error"] as? String == "no open chat")
     }
 
+    @Test func sessionActionsNeedAListedSession() async {
+        let outbox = Outbox()
+        let bridge = Bridge(emit: { outbox.append($0) })
+        for (n, method) in ["renameSession", "forkSession", "archiveSession", "deleteSession"].enumerated() {
+            await bridge.receive(#"{"id":"s\#(n)","method":"\#(method)","params":{"id":"p/x","title":"T"}}"#)
+            #expect(outbox.all.last?["error"] as? String == "no session p/x in the list")
+        }
+    }
+
+    @Test func aProfileWithoutAnAvatarHasNoImage() async {
+        let outbox = Outbox()
+        let bridge = Bridge(emit: { outbox.append($0) })
+        await bridge.receive(#"{"id":"a1","method":"avatar","params":{"profile":"p"}}"#)
+        #expect(outbox.all.last?["error"] == nil)
+        #expect((outbox.all.last?["result"] as? [String: Any])?["data"] is NSNull)
+        await bridge.receive(#"{"id":"a2","method":"setAvatar","params":{"profile":"p","data":"!"}}"#)
+        #expect(outbox.all.last?["error"] as? String == "data is not base64")
+    }
+
     @Test func aMalformedCommandIsReportedWithoutAnId() async {
         let outbox = Outbox()
         let bridge = Bridge(emit: { outbox.append($0) })

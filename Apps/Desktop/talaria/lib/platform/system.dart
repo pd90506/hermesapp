@@ -55,6 +55,9 @@ class NativeFiles {
   static Future<List<String>> pick() async =>
       ((await _channel.invokeMethod<List<Object?>>('pickFiles')) ?? const []).cast<String>();
 
+  /// The Open dialog for one image (a profile's avatar); null when cancelled.
+  static Future<String?> pickImage() => _channel.invokeMethod<String>('pickImage');
+
   static Future<ClipboardContents> readClipboard() async {
     final map = await _channel.invokeMethod<Map<Object?, Object?>>('readClipboard') ?? const {};
     return ClipboardContents(

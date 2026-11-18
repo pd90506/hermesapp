@@ -105,6 +105,27 @@ std::vector<std::string> PickFiles(HWND owner) {
   return paths;
 }
 
+std::string PickImage(HWND owner) {
+  ComPtr<IFileOpenDialog> dialog;
+  if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+    return {};
+  }
+  FILEOPENDIALOGOPTIONS options = 0;
+  dialog->GetOptions(&options);
+  dialog->SetOptions(options | FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM);
+  const COMDLG_FILTERSPEC types[] = {{L"Images", L"*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp"}};
+  dialog->SetFileTypes(1, types);
+  dialog->SetTitle(L"Change Avatar");
+  if (FAILED(dialog->Show(owner))) return {};  // Cancelled.
+  ComPtr<IShellItem> item;
+  if (FAILED(dialog->GetResult(&item))) return {};
+  PWSTR path = nullptr;
+  if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) return {};
+  std::string result = Utf8FromUtf16(path);
+  CoTaskMemFree(path);
+  return result;
+}
+
 ClipboardContents ReadClipboard(HWND owner) {
   ClipboardContents contents;
   OpenClipboardScope clipboard(owner);

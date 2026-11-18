@@ -67,6 +67,12 @@ possible later; it would need libdispatch SPI, so it waits until the timer shows
 | `setPins` | `server` (a UUID the app keeps per server), `pins` (as `pinSession` last answered, or none) | Hands the bridge the app's saved pins (`SessionPins`); the app sends it before `connect` |
 | `pinSession` | `id`, `pinned` (default true) | Pins or unpins a listed session; result `{"pins": ...}`, for the app to save |
 | `imageData` | `path`, `profile` | A sent image's bytes from the gateway, for its thumbnail: result `{"data": base64}` |
+| `renameSession` | `id`, `title` | Renames a listed session (`GatewayConnection.rename`); one not open here is opened first, as on the Mac |
+| `forkSession` | `id` | Copies a listed session into a new one (`fork`), which opens |
+| `archiveSession` / `deleteSession` | `id` | Archives, or deletes for good, a listed session; it leaves the pins: result `{"pins": ...}`, for the app to save. Deleting the open chat closes it |
+| `avatar` | `profile` | The profile's avatar image, once loaded: result `{"data": base64}`, or `{"data": null}` |
+| `setAvatar` | `profile`, `data` (base64 PNG, JPEG or WebP; the app sends a 256 px square PNG) | Stores it as the profile's avatar (`setAvatar`) |
+| `removeAvatar` | `profile` | Removes the profile's avatar |
 | `branch` | `item` (an item id of the open chat) | Branch in New Chat from that message (`GatewayConnection.branch`); the branch opens as the chat |
 | `messageSource` | `item` | What Copy Message copies (`ConversationMarkdown.messageSource`): result `{"text": ...}` |
 | `conversationSource` | — | What Copy Conversation copies, the chat as Markdown (`ConversationMarkdown.export`): result `{"text": ...}` |
@@ -78,7 +84,9 @@ didn't change.
 
 `connection`: `state` (`disconnected`, `connecting`, `connected`, `reconnecting`, `failed`),
 `detail` (the attempt number or the failure), `bots` (`name`, `displayName`, `preview`,
-`isDefault`), `listProfile`, `sessions` (`id`, `profile`, `storedID`, `title`, `preview`,
+`isDefault`, `hasAvatar`, `avatarColor` (0xRRGGBB, the colour picked in Hermes Desktop),
+`avatarID` (set once the avatar image is loaded, changing with it; `avatar` reads it) and
+`activity` (`idle`, `recent`, `working`, `waitingForYou`)), `listProfile`, `sessions` (`id`, `profile`, `storedID`, `title`, `preview`,
 `startedAt` in Unix seconds, `messageCount`, `isUnread`, `isPinned`, `group`, `groupTitle`),
 `sessionListLoading`, `sessionListError`. Sessions come in the Mac list's order: the pinned
 ones first (`group` `pinned`), then the rest in Desktop's date groups

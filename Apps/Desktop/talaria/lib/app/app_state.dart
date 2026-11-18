@@ -267,6 +267,105 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  // --- A session's actions (the Mac's `SessionActions`) ------------------------------
+
+  /// Renames a session; one not open here is opened first, as on the Mac.
+  Future<void> renameSession(SessionEntry entry, String title) async {
+    await _run('renameSession', {'id': entry.id, 'title': title});
+    if (chat.storedSessionID == entry.storedID) {
+      selectedRow = entry.id;
+      notifyListeners();
+    }
+  }
+
+  /// Copies a session into a new one, which opens ("Title #2").
+  Future<void> forkSession(SessionEntry entry) async {
+    selectedRow = null;
+    notifyListeners();
+    await _run('forkSession', {'id': entry.id});
+  }
+
+  /// Archives a session: it leaves the list and the pins, its messages kept.
+  Future<void> archiveSession(SessionEntry entry) => _changeListed('archiveSession', entry);
+
+  /// Deletes a session and its messages for good; it leaves the pins.
+  Future<void> deleteSession(SessionEntry entry) async {
+    if (entry.storedID != null && chat.storedSessionID == entry.storedID) {
+      chat = const ChatSnapshot();
+      selectedRow = null;
+      notifyListeners();
+    }
+    await _changeListed('deleteSession', entry);
+  }
+
+  Future<void> _changeListed(String method, SessionEntry entry) async {
+    try {
+      _trace('> $method');
+      final result = await _bridge.call(method, {'id': entry.id});
+      settings.pins = ((result as Map?)?['pins'] as Map?)?.cast<String, Object?>();
+      _store.save(settings);
+    } on BridgeException catch (e) {
+      _trace('! $method: ${e.message}');
+      error = e.message;
+      notifyListeners();
+    }
+  }
+
+  // --- Avatars ----------------------------------------------------------------------
+
+  /// A profile's avatar image, read once per image.
+  Future<Uint8List?> avatar(Bot bot) {
+    final id = bot.avatarID;
+    if (id == null) return Future.value(null);
+    return _avatars.putIfAbsent('${bot.name}/$id', () async {
+      try {
+        final result = await _bridge.call('avatar', {'profile': bot.name});
+        final data = (result as Map?)?['data'] as String?;
+        return data == null ? null : base64Decode(data);
+      } on BridgeException {
+        return null;
+      }
+    });
+  }
+
+  final Map<String, Future<Uint8List?>> _avatars = {};
+
+  /// Change Avatar…: an image picked in the Open dialog, cropped to its centre square
+  /// and scaled to 256 px, as the Mac's picker makes it (`AvatarImages.uploadPNG`).
+  Future<void> changeAvatar(Bot bot) async {
+    final path = await NativeFiles.pickImage();
+    if (path == null) return;
+    final png = await _avatarPng(await File(path).readAsBytes());
+    if (png == null) {
+      error = "That file isn't an image this app can read.";
+      notifyListeners();
+      return;
+    }
+    await _run('setAvatar', {'profile': bot.name, 'data': base64Encode(png)});
+  }
+
+  Future<void> removeAvatar(Bot bot) => _run('removeAvatar', {'profile': bot.name});
+
+  /// The side of an uploaded avatar, as Desktop's picker makes it.
+  static const avatarEdge = 256;
+
+  static Future<Uint8List?> _avatarPng(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final image = (await codec.getNextFrame()).image;
+      final side = image.width < image.height ? image.width : image.height;
+      final src = ui.Rect.fromLTWH((image.width - side) / 2, (image.height - side) / 2, side.toDouble(), side.toDouble());
+      final recorder = ui.PictureRecorder();
+      ui.Canvas(recorder).drawImageRect(image, src,
+          ui.Rect.fromLTWH(0, 0, avatarEdge.toDouble(), avatarEdge.toDouble()), ui.Paint()..filterQuality = ui.FilterQuality.high);
+      final scaled = await recorder.endRecording().toImage(avatarEdge, avatarEdge);
+      final data = await scaled.toByteData(format: ui.ImageByteFormat.png);
+      return data?.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Hands the bridge the saved pins and the server's id (made once, on first use).
   Future<void> _sendPins() async {
     if (settings.serverId == null) {

@@ -61,6 +61,13 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (method == "pickFiles") {
           result->Success(Strings(native_files::PickFiles(GetHandle())));
+        } else if (method == "pickImage") {
+          const auto path = native_files::PickImage(GetHandle());
+          if (path.empty()) {
+            result->Success();
+          } else {
+            result->Success(flutter::EncodableValue(path));
+          }
         } else if (method == "readClipboard") {
           const auto contents = native_files::ReadClipboard(GetHandle());
           flutter::EncodableMap map;

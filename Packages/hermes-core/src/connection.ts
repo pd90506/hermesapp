@@ -1,7 +1,8 @@
 import { Bot, historyRows, type ProfileRow, type SessionSummary } from './bots.ts'
-import { GatewayClient, type GatewayClientConfiguration } from './client.ts'
+import { GatewayClient, GatewayClientError, type GatewayClientConfiguration } from './client.ts'
 import type { GatewayConnector } from './connector.ts'
 import { DashboardError } from './dashboard.ts'
+import { dashboardAPIFor, type DashboardAPI } from './dashboard-api.ts'
 import { describeError } from './describe.ts'
 import { Observable } from './observable.ts'
 import { EventType, GatewayMethod } from './protocol/methods.ts'
@@ -133,6 +134,14 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     this.sessionListToken += 1
     this.sessionListLimits.clear()
     this.update({ ...initial })
+  }
+
+  /** The connector's REST routes (settings panes, cron), while one is set; undefined without REST access. */
+  get dashboardAPI(): DashboardAPI | undefined { return dashboardAPIFor(this.connector) }
+
+  /** One call on the live socket (`plugins.manage`); throws `notConnected` without one. */
+  call(method: string, params?: JSONValue): Promise<JSONValue> {
+    return this.client ? this.client.call(method, params) : Promise.reject(new GatewayClientError('notConnected'))
   }
 
   /** Shows `profile`'s sessions, reading them when they are not there yet. */

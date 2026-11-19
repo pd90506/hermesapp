@@ -149,7 +149,10 @@ export class ChatManager extends Observable<ChatsSnapshot> {
   composer(chat: ChatSession): ChatComposer {
     let composer = this.composers.get(chat)
     if (!composer) {
-      composer = new ChatComposer(chat)
+      composer = new ChatComposer(chat, {
+        newChat: async (from) => this.newChat(from.profile ?? 'default'),
+        openStored: async (from, id) => this.openSession(from.profile ?? 'default', { id }),
+      })
       this.composers.set(chat, composer)
     }
     return composer

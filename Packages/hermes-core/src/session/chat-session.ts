@@ -1,4 +1,5 @@
 import { GatewayClientError, type GatewayClient, type GatewayEvent } from '../client.ts'
+import { SessionUsageTracker } from '../composer/context/session-usage.ts'
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import type { JSONValue } from '../protocol/jsonrpc.ts'
@@ -159,6 +160,9 @@ export class ChatSession extends Observable<ChatView> {
 
   private host?: ChatHost
 
+  /** Token use and context, fed by this chat's events (package D's gauge reads it). */
+  readonly usage = new SessionUsageTracker()
+
   constructor(
     snapshot: LiveSessionSnapshot,
     options: { storedSessionID?: string; title?: string; profile?: string; kind?: ChatKind; host?: ChatHost } = {},
@@ -171,6 +175,7 @@ export class ChatSession extends Observable<ChatView> {
     this.storedSessionID = storedKey(snapshot) ?? options.storedSessionID
     this.title = options.title ?? snapshot.info?.title ?? undefined
     this.info = snapshot.info ?? undefined
+    this.usage.takeInfo(snapshot.info?.usage)
     this.transcript = transcript
     if (options.profile !== undefined) this.profile = options.profile
     this.kind = kind
@@ -478,6 +483,7 @@ export class ChatSession extends Observable<ChatView> {
       this.lastSeq = Math.max(this.lastSeq ?? 0, event.seq)
     }
     if (event.type.startsWith('subagent.')) return  // package C/G
+    this.usage.observe(event)
     const kind = eventKind(event)
     if (kind.kind === 'messageDelta' || kind.kind === 'reasoningDelta') {
       if (this.coalescesStreamedText) {
@@ -507,6 +513,7 @@ export class ChatSession extends Observable<ChatView> {
 
   private applyInfo(info: SessionLiveInfo): void {
     this.info = info
+    this.usage.takeInfo(info.usage)
     // A turn that ended without `message.complete` ends here too.
     if (info.running === false && this.transcript.isRunning) {
       this.transcript.serverReportsIdle()
@@ -604,15 +611,16 @@ export class ChatSession extends Observable<ChatView> {
    * `prompt.submit` goes out, `signal` can still cancel the send (the bubble goes and
    * `SendCancelledError` is thrown, so the composer takes the text back). Once it went
    * out it is never cancelled: Hermes may run it. A failure after that keeps the bubble,
-   * marked as not confirmed.
+   * marked as not confirmed. `display` is what the bubble shows instead of `text` (a
+   * skill's invocation, never its expanded body).
    */
-  async send(text: string, signal?: SendSignal): Promise<void> {
+  async send(text: string, signal?: SendSignal, display?: string): Promise<void> {
     const trimmed = text.trim()
     if (trimmed === '') return
     this.hasPrompted = true
     this.lastPromptAt = Date.now()
     let itemID = ''
-    this.change((t) => { itemID = t.appendUserPrompt(trimmed) })
+    this.change((t) => { itemID = t.appendUserPrompt(display?.trim() || trimmed) })
     this.sendingPrompts.add(itemID)
     try {
       await this.performSend(trimmed, itemID, signal)
@@ -680,9 +688,25 @@ export class ChatSession extends Observable<ChatView> {
     if (result?.status !== 'not_interrupted') this.change((t) => t.serverClearedQueue(sentBeforeStop))
   }
 
-  /** Adds a note only this device shows. */
-  appendLocalNote(text: string): void {
-    this.change((t) => t.appendNote(text))
+  /** Adds a note only this device shows (`displayKind`: e.g. `compression`). */
+  appendLocalNote(text: string, displayKind?: string): void {
+    this.change((t) => t.appendNote(text, displayKind))
+  }
+
+  /** Shows a `/btw` question or `/bg` task until its answer arrives (package D's slash commands). */
+  beginSideQuestion(taskID: string, question: string, kind: 'btw' | 'background'): void {
+    this.change((t) => t.beginSideQuestion(taskID, question, kind))
+  }
+
+  /** Takes a live-info update from a call's answer (`session.compress`), as a `session.info` event. */
+  takeInfo(info: SessionLiveInfo): void {
+    this.applyInfo(info)
+  }
+
+  /** Sets the model, provider or effort the chat shows, before `session.info` confirms it (package D). */
+  showInfo(change: Partial<SessionLiveInfo>): void {
+    this.info = { ...this.info, ...change }
+    this.publish()
   }
 
   // MARK: Server requests

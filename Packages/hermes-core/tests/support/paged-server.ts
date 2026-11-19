@@ -72,6 +72,8 @@ export class PagedServer {
   replay: { events: unknown[]; latest_seq: number; truncated?: boolean; epoch?: string } | undefined
   /** Fails these methods with this RPC error. */
   readonly errors = new Map<string, { code: number; message: string }>()
+  /** Answers for methods this server doesn't know (other packages' calls). */
+  readonly handlers = new Map<string, (params: Record<string, unknown>) => unknown>()
 
   constructor(readonly store = new FakeMessageStore()) {}
 
@@ -130,7 +132,8 @@ export class PagedServer {
       this.heldFrames.push(frame)
       return undefined
     }
-    const result = this.result(frame.method, frame.params ?? {})
+    const handler = this.handlers.get(frame.method)
+    const result = handler ? handler(frame.params ?? {}) : this.result(frame.method, frame.params ?? {})
     if (result === undefined) return undefined
     return { jsonrpc: '2.0', id: frame.id, result }
   }

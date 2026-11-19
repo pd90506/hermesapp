@@ -31,6 +31,8 @@ export class ChatComposer extends Observable<ComposerView> {
       if (message === undefined) this.clearError()
       else this.set({ ...this.get(), error: message })
     })
+    // Send's state follows the cards (uploads under way, cards added or removed).
+    this.attachments.subscribe(() => this.set({ ...this.get() }))
   }
 
   get draft(): string {
@@ -117,6 +119,11 @@ export class ChatComposer extends Observable<ComposerView> {
   /** Stops a send that is still waiting to go out; its text comes back. */
   cancelSubmit(): void {
     if (this.sending) this.sending.cancelled = true
+  }
+
+  /** E: shows a failure in the composer (an attachment that could not be read or added). */
+  reportError(message: string): void {
+    this.set({ ...this.get(), error: message })
   }
 
   clearError(): void {

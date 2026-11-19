@@ -126,6 +126,39 @@ export interface TalariaBridge {
     /** Light, dark or the system's look for the whole app (`nativeTheme.themeSource`). */
     setMode(mode: AppearanceMode): void
   }
+  /* E: attachments and files */
+  files: {
+    /** The system's open dialog, any type, several files; empty when cancelled. */
+    pick(): Promise<PickedFile[]>
+    /** A picked file's bytes (only paths `pick` returned). */
+    read(path: string): Promise<Uint8Array>
+    /** The path of a dropped or pasted file, or '' for one that is not on disk. */
+    pathFor(file: File): string
+    /**
+     * Re-encodes an image Chromium cannot decode (HEIC, TIFF) with the OS's decoder;
+     * null when this computer cannot read it.
+     */
+    convertImage(bytes: Uint8Array, options: { maxPixels?: number; format: 'png' | 'jpeg' }): Promise<ConvertedImage | null>
+    /** Streams a dashboard download to the app's cache, once per address; the saved file's path. */
+    download(request: BridgeHttpRequest, name: string): Promise<{ ok: true; path: string } | { ok: false; status: number; body: string }>
+    /** Opens a downloaded file in its default app; false when refused. */
+    open(path: string): Promise<boolean>
+    /** The system's save dialog for a downloaded file; false when cancelled. */
+    saveAs(path: string, name: string): Promise<boolean>
+  }
+}
+
+/* E: attachments and files */
+export interface PickedFile {
+  path: string
+  name: string
+  size: number
+}
+
+export interface ConvertedImage {
+  bytes: Uint8Array
+  width: number
+  height: number
 }
 
 export type AppearanceMode = 'system' | 'light' | 'dark'
@@ -158,6 +191,13 @@ export const IPC = {
   localBackendRunning: 'talaria:local-backend:running',
   linksOpen: 'talaria:links:open',
   themeSetMode: 'talaria:theme:set-mode',
+  /* E: attachments and files */
+  filesPick: 'talaria:files:pick',
+  filesRead: 'talaria:files:read',
+  filesConvertImage: 'talaria:files:convert-image',
+  filesDownload: 'talaria:files:download',
+  filesOpen: 'talaria:files:open',
+  filesSaveAs: 'talaria:files:save-as',
 } as const
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */

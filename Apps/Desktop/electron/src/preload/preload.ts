@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC, frameGeometry, type Appearance, type Platform, type SocketEvent, type TalariaBridge,
 } from '../shared/bridge.ts'
@@ -87,6 +87,21 @@ const bridge: TalariaBridge = {
   },
   theme: {
     setMode: (mode) => ipcRenderer.send(IPC.themeSetMode, mode),
+  },
+  files: {
+    pick: () => ipcRenderer.invoke(IPC.filesPick),
+    read: (path) => ipcRenderer.invoke(IPC.filesRead, path),
+    pathFor: (file) => {
+      try {
+        return webUtils.getPathForFile(file)
+      } catch {
+        return ''
+      }
+    },
+    convertImage: (bytes, options) => ipcRenderer.invoke(IPC.filesConvertImage, bytes, options),
+    download: (request, name) => ipcRenderer.invoke(IPC.filesDownload, request, name),
+    open: (path) => ipcRenderer.invoke(IPC.filesOpen, path),
+    saveAs: (path, name) => ipcRenderer.invoke(IPC.filesSaveAs, path, name),
   },
 }
 

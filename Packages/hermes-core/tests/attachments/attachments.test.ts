@@ -141,6 +141,20 @@ describe('sending with attachments', () => {
     expect([restarted.name('a-2.txt'), restarted.name('b-2.txt'), restarted.name('/abs/b-2.txt')]).toEqual([undefined, 'b.txt', 'b.txt'])
   })
 
+  test('a send with attachments mid-reply goes to Hermes\'s queue, not the app\'s', async () => {
+    const server = new PagedServer(new FakeMessageStore(rows(1, 2)))
+    const { chat, composer } = await openStored(server)
+    composer.setDraft('first')
+    await composer.submit()
+    server.event('message.start', chat.sessionID, 1)
+    await eventually(() => chat.get().isRunning)
+    await composer.attachments.attachFile(new TextEncoder().encode('%PDF'), 'report.pdf', 'application/pdf')
+    composer.setDraft('and this')
+    await composer.submit()
+    expect(composer.queue.held).toHaveLength(0)
+    expect(server.calls('prompt.submit').at(-1)?.text).toBe('@file:attachments/report.pdf\n\nand this')
+  })
+
   test('a picked PNG becomes an image card, not a file', async () => {
     const server = new PagedServer()
     const { composer } = await openStored(server)

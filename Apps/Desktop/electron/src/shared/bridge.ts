@@ -62,6 +62,27 @@ export interface SavedSettings {
   markdownColors?: MarkdownColorsJSON
 }
 
+/* J: notifications */
+/** The chat a notification is about: a click opens it, Approve / Reject answer its request. */
+export interface NotificationTarget {
+  serverID: string
+  profile?: string
+  storedSessionID?: string
+  isBotChat: boolean
+  /** An approval's server request id: the notification has Approve and Reject (macOS). */
+  requestID?: string
+}
+
+export interface SystemNotification {
+  title: string
+  body: string
+  /** Peer alerts with the same tag within a second show once. */
+  tag: string
+  target?: NotificationTarget
+}
+
+export type NotificationAction = 'approve' | 'reject'
+
 /** A key with its modifiers, as a `KeyboardEvent` reports them. */
 export interface Shortcut {
   key: string
@@ -157,6 +178,18 @@ export interface TalariaBridge {
     /** Light, dark or the system's look for the whole app (`nativeTheme.themeSource`). */
     setMode(mode: AppearanceMode): void
   }
+  /* J: notifications */
+  /** The system's notifications (Electron `Notification`, in the main process). */
+  notifications: {
+    /** Shows one; false when the system can't. */
+    show(notification: SystemNotification): Promise<boolean>
+    /** Settings ▸ Notifications' test, past every switch. */
+    test(): Promise<boolean>
+    /** A notification was clicked: the window is in front; open its chat. */
+    onClick(handler: (target: NotificationTarget) => void): () => void
+    /** Approve or Reject was pressed on an approval's notification. */
+    onAction(handler: (target: NotificationTarget, action: NotificationAction) => void): () => void
+  }
   /* E: attachments and files */
   files: {
     /** The system's open dialog, any type, several files; empty when cancelled. */
@@ -192,6 +225,7 @@ export interface ConvertedImage {
   height: number
 }
 
+
 export type AppearanceMode = 'system' | 'light' | 'dark'
 
 export const IPC = {
@@ -224,6 +258,11 @@ export const IPC = {
   localBackendRunning: 'talaria:local-backend:running',
   linksOpen: 'talaria:links:open',
   themeSetMode: 'talaria:theme:set-mode',
+  /* J: notifications */
+  notificationShow: 'talaria:notifications:show',
+  notificationTest: 'talaria:notifications:test',
+  notificationClick: 'talaria:notifications:click',
+  notificationAction: 'talaria:notifications:action',
   /* E: attachments and files */
   filesPick: 'talaria:files:pick',
   filesRead: 'talaria:files:read',

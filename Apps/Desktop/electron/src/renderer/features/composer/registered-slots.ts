@@ -2,3 +2,4 @@
 // package, in package order. Package A fills none.
 // E
 import './attachments/register.ts'
+import './cards/register.ts' // F

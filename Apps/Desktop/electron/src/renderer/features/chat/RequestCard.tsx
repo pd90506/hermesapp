@@ -3,6 +3,7 @@ import {
   describeError, offeredApprovalChoices, requestKind,
   type ApprovalChoice, type ChatSession, type ServerRequest,
 } from '@talaria/hermes-core'
+import { ClarifyCard } from '../composer/cards/ClarifyCard.tsx'
 import styles from './RequestCard.module.css'
 
 const choiceTitles: Record<ApprovalChoice, string> = {
@@ -14,7 +15,7 @@ const choiceTitles: Record<ApprovalChoice, string> = {
 
 /**
  * A card for a request the agent waits on (the Mac's `RequestCardView`): an approval, a
- * sudo password or a secret, on an orange surface. Clarify questions are package F's.
+ * sudo password or a secret, on an orange surface. Clarify questions are package F's card.
  */
 export function RequestCard({ chat, request }: { chat: ChatSession; request: ServerRequest }) {
   const [value, setValue] = useState('')
@@ -24,6 +25,7 @@ export function RequestCard({ chat, request }: { chat: ChatSession; request: Ser
     try { action() } catch (thrown) { setError(describeError(thrown)) }
   }
   const kind = requestKind(request)
+  if (kind.kind === 'clarify') return <ClarifyCard key={request.id} chat={chat} request={request} clarify={kind.clarify} />
   const valueEntry = (
     <form className={styles.entry} onSubmit={(event) => {
       event.preventDefault()

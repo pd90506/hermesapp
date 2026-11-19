@@ -330,6 +330,55 @@
   }
 }
 
+/* J: the pills over the composer (task list, background tasks, subagents) and their
+   cards (the Mac's ChatPillRow, TodoPill, BackgroundProcessesPill, SubagentsPill). */
+:root {
+  --pill-card-radius: 16px;
+  --pill-card-max-height: 360px;
+  --pill-todo-glyph: 20px;
+  --pill-todo-indent: 18px;
+  --pill-todo-line: 1.5px;
+  --pill-row-icon: 16px;
+  --pill-ring-stroke: 2px;
+  --pill-output-lines: 12;
+  --pill-done: var(--success);
+}
+
+/* F: the cards over the composer (held and queued messages, compression) and the clarify
+   card (Apps/Shared/Composer/ComposerView.swift, Apps/Shared/Views/ClarifyCardView.swift). */
+:root {
+  --prompt-card-height: 32px;
+  --prompt-card-action: 22px;
+  --clarify-tab-height: 24px;
+  --clarify-badge: 20px;
+  --clarify-checkbox: 14px;
+}
+
+/* G: message action bars and the prompt rail (Apps/Shared/Views/MessageCopyButton.swift,
+   PromptRail.swift). */
+:root {
+  /* The bar under a message: 26 tall, its icons and time a quiet grey (the user,
+     2026-10-19: lighter than secondary text). */
+  --message-bar-height: 26px;
+  --message-bar-button: 24px;
+  --message-bar-ink: color-mix(in srgb, var(--text) 42%, transparent);
+  --message-bar-reveal: 150ms;
+  /* The rail: 22 wide, 28 from the chat's edge, 24 clear of the top and the composer;
+     ticks at most 14 apart, 10 x 2 (the prompt the chat is at 16 x 2). */
+  --rail-width: 22px;
+  --rail-trailing-inset: 28px;
+  --rail-vertical-inset: 24px;
+  --rail-tick-width: 10px;
+  --rail-tick-current-width: 16px;
+  --rail-tick-height: 2px;
+  --rail-tick: var(--text-tertiary);
+  --rail-tick-current: var(--text);
+  --rail-panel-width: 280px;
+  --rail-panel-max-height: 420px;
+  --rail-panel-radius: 12px;
+  --rail-row-radius: var(--radius-md);
+}
+
 /* E: attachments and media (features/composer/attachments, features/chat/blocks/media).
    Composer pills after Hermes Desktop's (a 32 px thumbnail, the name and a detail line, a
    remove button on hover); transcript image cards one fixed size, as on the Mac (160×120). */

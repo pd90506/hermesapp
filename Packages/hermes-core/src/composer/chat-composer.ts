@@ -5,6 +5,7 @@ import { SendCancelledError, type ChatSession } from '../session/chat-session.ts
 import { AttachmentError } from './attachments/policy.ts'
 import { StrandedImages } from './attachments/stranded.ts'
 import { AttachmentTray } from './attachments/tray.ts'
+import { PromptQueue, compressCommand } from './queue/prompt-queue.ts'
 
 export interface ComposerView {
   draft: string
@@ -24,6 +25,8 @@ export class ChatComposer extends Observable<ComposerView> {
   private sending?: { cancelled: boolean }
   /** E: the images and files attached to this chat's composer. */
   readonly attachments: AttachmentTray
+  /** Messages held while a reply or a compression runs, and `/compress` (package F). */
+  readonly queue: PromptQueue
 
   constructor(readonly session: ChatSession, stranded = new StrandedImages()) {
     super({ draft: '', isSubmitting: false })
@@ -33,6 +36,7 @@ export class ChatComposer extends Observable<ComposerView> {
     })
     // Send's state follows the cards (uploads under way, cards added or removed).
     this.attachments.subscribe(() => this.set({ ...this.get() }))
+    this.queue = new PromptQueue(this, session)
   }
 
   get draft(): string {
@@ -62,6 +66,19 @@ export class ChatComposer extends Observable<ComposerView> {
     }
     if (!this.canSubmit) return
     const text = this.get().draft
+    // Package F: `/compress` runs here until D routes slash commands; text sent while a
+    // reply or a compression runs waits in the app (`PromptQueue`).
+    const compress = compressCommand(text)
+    if (compress) {
+      this.clearDraftAndError()
+      await this.queue.compress(compress.topic)
+      return
+    }
+    if (this.queue.holdsNextSend) {
+      this.queue.hold(text)
+      this.clearDraftAndError()
+      return
+    }
     const signal = { cancelled: false }
     this.sending = signal
     this.set({ draft: '', isSubmitting: true })
@@ -123,6 +140,16 @@ export class ChatComposer extends Observable<ComposerView> {
 
   /** E: shows a failure in the composer (an attachment that could not be read or added). */
   reportError(message: string): void {
+    this.showError(message)
+  }
+
+  private clearDraftAndError(): void {
+    const { error: _, ...rest } = this.get()
+    this.set({ ...rest, draft: '' })
+  }
+
+  /** Shows a composer message (a held message's Cancel or Steer could not run). */
+  showError(message: string): void {
     this.set({ ...this.get(), error: message })
   }
 

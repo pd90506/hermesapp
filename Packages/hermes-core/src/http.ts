@@ -5,7 +5,7 @@
  * browser `Origin` (docs/desktop-electron.md, "Where requests run"). Tests use fakes.
  */
 export interface HttpRequest {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   url: string
   headers?: Record<string, string>
   /** A JSON body, already encoded. */

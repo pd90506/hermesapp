@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   cronJobTitle, cronRunTime, deliveryLabel, deliveryOptionTitle, deliveryOptions, deliveryTargets, effectiveState,
   isInactive, isOutputDocument, isPaused, isRunning, lastRunProblem, overdueSince, toggleDelivery,
@@ -7,7 +7,7 @@ import {
 import { useSnapshot } from '../../app/hooks.ts'
 import { CronIcon } from './CronIcon.tsx'
 import { CronJobEditor, type CronEditorTarget } from './CronJobEditor.tsx'
-import { CronMenu, type CronMenuItem } from './CronMenu.tsx'
+import { useContextMenu, type ContextMenuEntry } from '../../ui/ContextMenu.tsx'
 import { Confirm } from '../settings/providers/controls.tsx'
 import { capitalized, relativeTo, runTime, shortTime } from './format.ts'
 import { useCronBoard } from './board.ts'
@@ -49,7 +49,6 @@ export function CronJobsView({ board, connected, listProfile, onOpenRun, selecte
 }) {
   const cron = useSnapshot(board)
   const [expanded, setExpanded] = useState<string>()
-  const [menu, setMenu] = useState<{ job: CronJob; at: { x: number; y: number } }>()
   const [editing, setEditing] = useState<CronEditorTarget>()
   const [deleting, setDeleting] = useState<CronJob>()
   const [actionError, setActionError] = useState<string>()
@@ -97,36 +96,53 @@ export function CronJobsView({ board, connected, listProfile, onOpenRun, selecte
   const isCurrent = cron.profile !== undefined && cron.profile === listProfile
   const canCreate = connected && cron.isAvailable && isCurrent
 
-  const items = (job: CronJob): CronMenuItem[] => [
-    { kind: 'action', id: 'runNow', label: 'Run Now', disabled: !connected || cron.triggering.includes(job.id), onSelect: () => {
-      setExpanded(job.id)
-      perform(() => board.trigger(job))
-    } },
-    { kind: 'action', id: 'edit', label: 'Edit…', disabled: !connected, onSelect: () => setEditing({ kind: 'edit', job }) },
-    isPaused(job)
-      ? { kind: 'action', id: 'resume', label: 'Resume', disabled: !connected, onSelect: () => perform(() => board.resume(job)) }
-      : { kind: 'action', id: 'pause', label: 'Pause', disabled: !connected, onSelect: () => perform(() => board.pause(job)) },
-    { kind: 'submenu', label: 'Deliver To', disabled: !connected, items: deliveryOptions(cron.targets, job.deliver).map((target) => ({
-      kind: 'toggle' as const,
-      label: deliveryOptionTitle(target),
-      checked: deliveryTargets(job).includes(target.id),
-      onToggle: (on: boolean) => {
-        const deliver = toggleDelivery(job.deliver, target.id, on)
-        if (deliver !== job.deliver) perform(() => board.setDelivery(job, deliver))
-      },
-    })) },
-    { kind: 'divider' },
-    { kind: 'action', id: 'delete', label: 'Delete…', destructive: true, disabled: !connected, onSelect: () => setDeleting(job) },
-  ]
+  /** A job's menu: the Mac's items in its order, each id with what it does. */
+  const menuFor = (job: CronJob): { entries: ContextMenuEntry[]; actions: Map<string, () => void> } => {
+    const actions = new Map<string, () => void>()
+    const item = (id: string, label: string, action: () => void, options: { disabled?: boolean; destructive?: boolean } = {}): ContextMenuEntry => {
+      actions.set(id, action)
+      return { kind: 'item', id, label, ...options }
+    }
+    const entries: ContextMenuEntry[] = [
+      item('runNow', 'Run Now', () => {
+        setExpanded(job.id)
+        perform(() => board.trigger(job))
+      }, { disabled: !connected || cron.triggering.includes(job.id) }),
+      item('edit', 'Edit…', () => setEditing({ kind: 'edit', job }), { disabled: !connected }),
+      isPaused(job)
+        ? item('resume', 'Resume', () => perform(() => board.resume(job)), { disabled: !connected })
+        : item('pause', 'Pause', () => perform(() => board.pause(job)), { disabled: !connected }),
+      { kind: 'submenu', id: 'deliver', label: 'Deliver To', disabled: !connected, entries: deliveryOptions(cron.targets, job.deliver).map((target): ContextMenuEntry => {
+        const checked = deliveryTargets(job).includes(target.id)
+        actions.set(`deliver:${target.id}`, () => {
+          const deliver = toggleDelivery(job.deliver, target.id, !checked)
+          if (deliver !== job.deliver) perform(() => board.setDelivery(job, deliver))
+        })
+        return { kind: 'item', id: `deliver:${target.id}`, label: deliveryOptionTitle(target), checked }
+      }) },
+      { kind: 'separator' },
+      item('delete', 'Delete…', () => setDeleting(job), { destructive: true, disabled: !connected }),
+    ]
+    return { entries, actions }
+  }
+
+  // One menu for the list, opened for one job at a time.
+  const menuJob = useRef<{ job: CronJob; actions: Map<string, () => void> }>(undefined)
+  const menu = useContextMenu(() => {
+    const job = menuJob.current?.job
+    if (!job) return []
+    const built = menuFor(job)
+    menuJob.current = { job, actions: built.actions }
+    return built.entries
+  }, (id) => menuJob.current?.actions.get(id)?.())
 
   const openMenu = (job: CronJob, event: ReactMouseEvent, fromButton: boolean) => {
-    event.preventDefault()
-    event.stopPropagation()
+    menuJob.current = { job, actions: new Map() }
     if (fromButton) {
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-      setMenu({ job, at: { x: rect.left, y: rect.bottom } })
+      event.stopPropagation()
+      menu.openBelow(event.currentTarget as HTMLElement)
     } else {
-      setMenu({ job, at: { x: event.clientX, y: event.clientY } })
+      menu.onContextMenu(event)
     }
   }
 
@@ -136,10 +152,7 @@ export function CronJobsView({ board, connected, listProfile, onOpenRun, selecte
         <h2 className={styles.section}>Cron Jobs</h2>
         {body()}
       </div>
-      {menu && (
-        <CronMenu label={`${cronJobTitle(menu.job)} actions`} items={items(menu.job)} at={menu.at}
-          onClose={() => setMenu(undefined)} />
-      )}
+      {menu.menu}
       {editing && (
         <CronJobEditor target={editing} board={board} onClose={() => setEditing(undefined)} />
       )}
@@ -226,7 +239,7 @@ function JobRow({ job, expanded, running, targets, now, onToggle, onMenu }: {
     <div className={styles.job} role="listitem" data-testid={`cronJob.${job.id}`}
       onContextMenu={(event) => onMenu(event, false)}>
       <button type="button" className={styles.summary} aria-expanded={expanded}
-        title={expanded ? 'Hides its runs' : 'Shows its runs'} onClick={onToggle}>
+        onClick={onToggle}>
         <span className={styles.chevron}><CronIcon name={expanded ? 'chevronDown' : 'chevronRight'} /></span>
         <span className={styles.dot} data-state={dotState(job)} />
         <span className={styles.text}>

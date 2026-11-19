@@ -16,8 +16,8 @@
   padding-bottom: var(--space-4);
 }
 
-/* The list's own sections (Bot Chat, Sessions): bold, in the text colour (the user,
-   2026-11-18). */
+/* The list's own sections (Bot Chat, Pinned, Sessions, the dated ones): bold, in the
+   text colour (the user, 2026-11-18). */
 .section {
   margin: 0;
   padding: var(--space-7) var(--space-4) var(--space-3) var(--space-7);
@@ -29,25 +29,38 @@
 .row {
   position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: var(--session-row-height);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--session-row-height);
   margin: 0 0 var(--space-1) var(--space-2);
-  padding: 0 var(--space-5) 0 calc(var(--space-6) + var(--space-1));
+  padding: var(--space-2) var(--space-2) var(--space-2) calc(var(--space-6) + var(--space-1));
+  box-sizing: border-box;
   border-radius: var(--row-radius);
+  cursor: default;
+  outline: none;
   transition: background-color var(--motion-fast) var(--ease);
 }
 
-.row:hover {
+.bot .row {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  padding-right: var(--space-5);
+}
+
+.row:hover,
+.row:focus-visible,
+.row[data-menu-open] {
   background: var(--fill-hover);
 }
 
-.row[aria-selected='true'] {
+.row[data-selected] {
   background: var(--selection-fill);
   color: var(--selection-text);
 }
 
-.row[aria-selected='true']::before {
+.row[data-selected]::before {
   content: '';
   position: absolute;
   left: 0;
@@ -59,8 +72,26 @@
   background: var(--selection-indicator);
 }
 
+.text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.line .title {
+  flex: 1;
+}
+
 .title,
-.subtitle {
+.subtitle,
+.age {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -70,9 +101,83 @@
   font-size: var(--text-title);
 }
 
-.subtitle {
+.title[data-unread] {
+  font-weight: var(--weight-semibold);
+}
+
+.subtitle,
+.age {
   font-size: var(--text-caption);
   color: var(--text-secondary);
+}
+
+.subtitle[data-waiting] {
+  color: var(--caution);
+}
+
+.bot .subtitle {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.line .age {
+  flex: none;
+}
+
+/* Desktop's session dot (`session-status-dot.tsx`): orange waits for you, the accent
+   runs, an outline still works in the background; the unread dot in the accent. */
+.dot {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--status-dot);
+  height: var(--status-dot);
+  border-radius: 50%;
+}
+
+.dot[data-status='waitingForYou'] {
+  background: var(--caution);
+}
+
+.dot[data-status='working'],
+.dot[data-status='unread'] {
+  background: var(--accent);
+}
+
+.dot[data-status='background'] {
+  border: var(--status-dot-ring) solid var(--text-secondary);
+}
+
+.more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.more {
+  opacity: 0;
+}
+
+/* Only on the row under the pointer, with the focus, or with its menu open (the user,
+   2026-11-19). Hidden by opacity, so the row's layout doesn't move. */
+.row:hover .more,
+.row:focus-within .more,
+.row[data-menu-open] .more {
+  opacity: 1;
+}
+
+.more:hover {
+  background: var(--fill-pressed);
+  color: var(--text);
 }
 
 .rule {
@@ -86,4 +191,21 @@
   padding: var(--space-2) var(--space-4) var(--space-2) var(--space-7);
   font-size: var(--text-caption);
   color: var(--text-secondary);
+}
+
+.note[data-centered] {
+  text-align: center;
+}
+
+.note[data-error] {
+  color: var(--critical);
+}
+
+.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
 }

@@ -83,18 +83,6 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     release Mac's login keychain) and the app's code signature (the same team as the running app).
   - Off in Debug builds and when `HERMES_UPDATE_FEED_URL` or `HERMES_UPDATE_PUBLIC_KEY` is unset.
 
-- **fluent_ui** (https://github.com/bdlukaa/fluent_ui), BSD-3-Clause, pinned to **4.17.0** in
-  `Apps/Desktop/talaria/pubspec.lock`. Pure Dart; it brings `intl`, `scroll_pos`, `recase`,
-  `math_expressions` and Flutter's own `material_ui`.
-  - Used by: the **desktop app only** (`Apps/Desktop/talaria`), for Windows 11's Fluent
-    controls (TextBox, ComboBox, PasswordBox, buttons, InfoBar, ContentDialog, menus).
-  - Chosen with the Windows design the user approved (2026-11-17: "as native to Windows as
-    possible"). The alternative, drawing every control by hand, would drift from Windows.
-  - Flutter plugins with native code (window_manager, flutter_acrylic, system_theme) are not
-    used: building them needs symlinks, i.e. Windows' Developer Mode. The window frame
-    (Mica, the caption buttons) is in the runner (`windows/runner/native_frame.cpp`) and the
-    few Win32 calls (Credential Manager, the accent colour) go through `dart:ffi`.
-
 ## Protocol work
 
 - `docs/protocol.md` is the contract this repo relies on. Every claim cites a Hermes source path;
@@ -218,8 +206,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
 ## Electron desktop app
 
 The desktop app for Windows and macOS is moving to Electron (decided by the user, 2026-11-19;
-the plan is in `docs/desktop-electron.md`). One renderer serves both; the SwiftUI Mac app and
-the Flutter Windows app stay until it catches up.
+the plan is in `docs/desktop-electron.md`). One renderer serves both; the SwiftUI Mac app
+stays until it catches up. The Flutter Windows app was removed (the user, 2026-11-19:
+"Flutter版不需要了，归档删除"); its last state is on the `archive/flutter-desktop` branch.
 
 - **Layout.** `Packages/hermes-core` is the protocol and connection logic in TypeScript (a port
   of `HermesKit`'s, behaviour for behaviour). `Apps/Desktop/electron` is the app: `src/main`
@@ -239,13 +228,12 @@ the Flutter Windows app stay until it catches up.
 - **Check a change** with `pnpm install`, `pnpm typecheck`, `pnpm test` at the repo root, then
   `pnpm desktop:build`. Run it with `pnpm desktop:dev`. On Windows, build the app with
   `scripts/windows/Build-Electron.ps1`.
-- Settings are kept in the app's own data folder, `Talaria Desktop` (beside the Flutter app's
-  `Talaria`), the server's secret encrypted with Electron's `safeStorage` (DPAPI on Windows,
+- Settings are kept in the app's own data folder, `Talaria Desktop`, the server's secret encrypted with Electron's `safeStorage` (DPAPI on Windows,
   the keychain on macOS).
 
 ## Windows host
 
-The Windows PC develops the Windows desktop app (planned: a Flutter UI over `HermesKit`). These
+The Windows PC develops the Windows side of the Electron desktop app and checks `HermesKit`. These
 rules apply only there (decided by the user, 2026-11-16); the Mac and the NUC don't check
 Windows, and CI doesn't run on Windows.
 
@@ -259,8 +247,8 @@ Windows, and CI doesn't run on Windows.
     `vcvars64.bat` run and `SDKROOT` set to the toolchain's `Windows.sdk` before `swift` works.
   - Platform code in the package or its tests uses `#if os(Windows)` / `canImport(WinSDK)`
     beside the Glibc and Darwin branches, never in place of them.
-  - Keep build output out of the repo and out of long paths: MSBuild (used by Flutter) fails
-    on paths over 260 characters.
+  - Keep build output out of long paths: some Windows tools still fail on paths over 260
+    characters.
 - **UI tests run in a headless Hyper-V VM** (decided by the user, 2026-11-16), never on
   the host's screen. The VM is `TalariaTest`, in `C:\VMs\TalariaTest`: Windows 11 Pro, not
   activated, auto-logon as a local test account. Its name and account are in the
@@ -290,26 +278,15 @@ Windows, and CI doesn't run on Windows.
   picks `WinHTTPWebSocketTransport` on Windows and `URLSessionWebSocketTransport` elsewhere.
   WinHTTP comes from the `CWinHTTP` system-library target, a header module of the Windows
   SDK used only on Windows; it is not a third-party dependency.
-- **The desktop app talks to `HermesKit` through `HermesBridge`** (`docs/desktop-bridge.md`):
-  a C interface with JSON commands in and snapshots out, and no logic of its own. Its Dart
-  side, `Apps/Desktop/hermes_bridge`, uses `dart:ffi` only. Dart and Flutter packages need a
-  recorded decision in [Dependencies](#dependencies), like Swift ones.
-  - Check a bridge change with `swift test --filter HermesBridgeTests`, then the live probe
-    against the Hermes in WSL (`bin/live_probe.dart`).
-- **The Windows desktop app** is `Apps/Desktop/talaria` (Flutter, Windows 11's look: Mica,
-  Fluent controls, the caption buttons Windows draws; decided by the user, 2026-11-17).
-  - Build it with `scripts/windows/Build-Desktop.ps1`: HermesBridge.dll, then the Flutter
-    app, then the Swift and VC++ runtime DLLs beside the exe (a clean Windows has neither).
+- **The desktop app** is the Electron app (see "Electron desktop app" above).
+  - Build it with `scripts/windows/Build-Electron.ps1`.
   - **After every merge, reinstall it on the Windows PC** (decided by the user, 2026-11-17):
-    pull `main` in the main checkout and run `scripts/windows/Install-Desktop.ps1` there. It
-    replaces the copy in `%LOCALAPPDATA%\Programs\Talaria` (Start menu: Talaria), keeps the
-    user's settings and sign-in, and deletes every build output it made. Don't start the app.
+    pull `main` in the main checkout, build, and replace the copy in
+    `%LOCALAPPDATA%\Programs\Talaria Desktop` (Start menu: Talaria Desktop), keeping the
+    user's settings and sign-in; delete the build outputs (`dist`, `out`). Don't start the app.
   - Run it and take its screenshots in the VM with `scripts/windows-test-vm/Invoke-AppInVM.ps1`
     (`-Fresh` for the first-run page). The VM has no GPU, so Mica shows as its solid fallback
     there; say so when sending screenshots.
-  - Views only: anything that isn't a view goes in `HermesKit` behind the bridge, as for the
-    Apple apps. Settings are kept in `%APPDATA%\Talaria\settings.json`, the server's secret in
-    Credential Manager (`Talaria:server`).
 
 ## Workflow
 

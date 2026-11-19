@@ -7,8 +7,8 @@ import { loadSecret, loadSettings, saveSecret, saveSettings } from './store.ts'
 import { cjkLanguage } from './cjk.ts'
 import { captionSymbolColor, currentPlatform, windowFrameOptions } from './window-frame.ts'
 
-// Its own data folder: `%APPDATA%\Talaria` is the Flutter app's, with another
-// settings.json, while both are installed.
+// Its own data folder, `Talaria Desktop`: `Talaria` was the (now removed) Flutter app's,
+// with another settings.json, and may still be on a machine.
 app.setPath('userData', join(app.getPath('appData'), 'Talaria Desktop'))
 
 const platform = currentPlatform()

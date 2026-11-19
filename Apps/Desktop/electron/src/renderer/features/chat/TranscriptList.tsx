@@ -54,6 +54,11 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
     scrollPaddingEnd: bottomInset,
     ...(kept ? { initialMeasurementsCache: kept.measurements, initialOffset: kept.offset } : {}),
   })
+  // A row above the screen that changes height moves the rows under it by as much, so
+  // the scroll moves with it, whichever way the user scrolls (the virtualizer skips this
+  // while scrolling up, and an older page is read exactly then).
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
+    item.start < (instance.scrollOffset ?? 0)
   const [awayFromEnd, setAwayFromEnd] = useState(false)
   const [visible, setVisible] = useState<ReadonlySet<string>>(new Set())
 
@@ -75,17 +80,23 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
   const anchor = useRef<{ key: string; delta: number }>(undefined)
   const firstBlock = blocks[0]?.id
   const seenFirst = useRef(firstBlock)
+  const holding = useRef<{ key: string; delta: number }>(undefined)
+  const release = useCallback(() => { holding.current = undefined }, [])
   const restored = useRef(false)
   useLayoutEffect(() => {
     const element = scroller.current
     if (!element) return
     if (firstBlock !== seenFirst.current) {
       seenFirst.current = firstBlock
-      const held = anchor.current
-      if (held && !following.current && restored.current) {
-        const item = virtualizer.measurementsCache.find((candidate) => candidate.key === held.key)
-        if (item) element.scrollTop = item.start - held.delta
-      }
+      if (anchor.current && !following.current && restored.current) holding.current = anchor.current
+    }
+    // Held until the user scrolls again: the new rows (and the header) are measured over
+    // the next frames, and each measurement would otherwise move the message.
+    const held = holding.current
+    if (held) {
+      const item = virtualizer.measurementsCache.find((candidate) => candidate.key === held.key)
+      const top = item ? item.start - held.delta : undefined
+      if (top !== undefined && Math.abs(element.scrollTop - top) > 0.5) element.scrollTop = top
     }
     if (newestPrompt !== seenPrompt.current) {
       seenPrompt.current = newestPrompt
@@ -116,7 +127,7 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
         if (!first && item.index > 0) first = { key: String(item.key), delta: item.start - top }
       }
     }
-    anchor.current = first
+    if (!holding.current) anchor.current = first
     setVisible((old) => sameSet(old, shown) ? old : shown)
     position.current = { offset: top, atEnd: following.current }
   }, [virtualizer, bottomInset])
@@ -156,6 +167,7 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
   return (
     <div className={styles.frame}>
       <div ref={scroller} className={styles.scroller} onScroll={onScroll} data-chat-scroller=""
+        onWheel={release} onTouchStart={release} onKeyDown={release} onPointerDown={release}
         style={bottomInset > 0 ? { maskImage: fade(bottomInset) } : undefined}>
         <div className={styles.content} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => {

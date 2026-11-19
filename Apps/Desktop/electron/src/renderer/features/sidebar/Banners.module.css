@@ -1,0 +1,61 @@
+.card {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  margin: var(--space-3) var(--space-4) 0;
+  border: var(--hairline) solid var(--tab-bar-stroke);
+  border-radius: var(--banner-radius);
+  background: var(--tab-bar-surface);
+  backdrop-filter: blur(var(--space-8));
+  overflow: hidden;
+}
+
+.error,
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-body);
+}
+
+.error {
+  color: var(--critical);
+}
+
+.waiting {
+  border: none;
+  background: transparent;
+  color: var(--caution);
+  font: inherit;
+  text-align: left;
+}
+
+.waiting:hover {
+  background: var(--fill-hover);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.waiting .text {
+  user-select: none;
+}
+
+.dismiss {
+  display: inline-flex;
+  flex: none;
+  padding: var(--space-1);
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.dismiss:hover {
+  background: var(--fill-hover);
+}

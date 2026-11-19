@@ -44,19 +44,6 @@ export interface SavedSettings {
   railShown?: boolean
 }
 
-/** One entry of a context menu (`ui/ContextMenu`): the same items on every platform. */
-export type MenuEntry =
-  | { kind: 'item'; id: string; label: string; disabled?: boolean; destructive?: boolean; checked?: boolean }
-  | { kind: 'submenu'; id: string; label: string; disabled?: boolean; entries: MenuEntry[] }
-  | { kind: 'separator' }
-
-/**
- * What the main process did with a menu: the system's own menu showed and the user
- * picked `id` or nothing (macOS, `Menu.popup`); or `inApp`, the renderer draws the
- * menu itself (Windows: a Fluent flyout, as WinUI's MenuFlyout).
- */
-export type MenuOutcome = { kind: 'chosen'; id: string } | { kind: 'dismissed' } | { kind: 'inApp' }
-
 /** A key with its modifiers, as a `KeyboardEvent` reports them. */
 export interface Shortcut {
   key: string
@@ -116,11 +103,6 @@ export interface TalariaBridge {
   }
   /** The sidebar's shortcuts, in the platform's own keys (set by the preload). */
   shortcuts: SidebarShortcuts
-  /** Context menus (`ui/ContextMenu`, `src/main/ipc/menu.ts`). */
-  menu: {
-    /** Shows `entries` at the window point (`x`, `y`), in CSS pixels. */
-    popup(entries: MenuEntry[], x: number, y: number): Promise<MenuOutcome>
-  }
 }
 
 export const IPC = {
@@ -137,7 +119,6 @@ export const IPC = {
   appearanceGet: 'talaria:appearance:get',
   appearanceChanged: 'talaria:appearance:changed',
   captionColors: 'talaria:caption:colors',
-  menuPopup: 'talaria:menu:popup',
   sidebarLoad: 'talaria:sidebar:load',
   sidebarSave: 'talaria:sidebar:save',
 } as const

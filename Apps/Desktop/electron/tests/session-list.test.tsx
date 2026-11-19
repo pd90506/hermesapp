@@ -108,16 +108,16 @@ describe('SessionList', () => {
   })
 
   it('archives from the row menu over JSON-RPC', async () => {
-    ;(window as unknown as { talaria: unknown }).talaria = { menu: { popup: async () => ({ kind: 'chosen', id: 'archive' }) } }
     const { call } = renderList({ bots: [bot], selectedProfile: 'default', sessions: { default: [{ id: 'a', title: 'Done' }] } })
     await act(async () => { fireEvent.click(screen.getByLabelText('More actions')) })
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' })) })
     expect(call).toHaveBeenCalledWith('session.archive', { session_id: 'a', archived: true, profile: 'default' })
   })
 
   it('asks before deleting', async () => {
-    ;(window as unknown as { talaria: unknown }).talaria = { menu: { popup: async () => ({ kind: 'chosen', id: 'delete' }) } }
     const { call } = renderList({ bots: [bot], selectedProfile: 'default', sessions: { default: [{ id: 'a', title: 'Done' }] } })
     await act(async () => { fireEvent.contextMenu(screen.getByText('Done')) })
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' })) })
     expect(screen.getByText('Delete “Done”?')).toBeTruthy()
     expect(call).not.toHaveBeenCalled()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Delete' })) })

@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { MenuEntry } from '../../shared/bridge.ts'
 import { Icon, type IconName } from './Icon.tsx'
 import styles from './ContextMenu.module.css'
 
 /**
- * A context menu's entries: the same items and order on every platform. The icon shows
- * in the Fluent flyout; the Mac's system menu shows the labels only. `checked` makes an
- * item a toggle (a checkmark in the icon's place); a submenu's items are picked by their
- * own ids.
+ * A context menu's entries: an icon and a label per item. `checked` makes an item a
+ * toggle (a checkmark in the icon's place); a submenu's items are picked by their own ids.
  */
 export type ContextMenuEntry =
   | { kind: 'item'; id: string; label: string; icon?: IconName; disabled?: boolean; destructive?: boolean; checked?: boolean }
@@ -22,63 +19,30 @@ export interface ContextMenuControls {
   openBelow(anchor: HTMLElement): void
   /** Whether the menu is open (the "…" button stays shown while it is). */
   isOpen: boolean
-  /** The in-app flyout, when one shows; render it anywhere. */
+  /** The menu, while it is open; render it anywhere. */
   menu: ReactNode
 }
 
-function nativeEntries(entries: ContextMenuEntry[]): MenuEntry[] {
-  return entries.map((entry): MenuEntry => {
-    switch (entry.kind) {
-      case 'separator': return entry
-      case 'submenu': return {
-        kind: 'submenu', id: entry.id, label: entry.label, entries: nativeEntries(entry.entries),
-        ...(entry.disabled ? { disabled: true } : {}),
-      }
-      case 'item': return {
-        kind: 'item', id: entry.id, label: entry.label,
-        ...(entry.disabled ? { disabled: true } : {}),
-        ...(entry.destructive ? { destructive: true } : {}),
-        ...(entry.checked !== undefined ? { checked: entry.checked } : {}),
-      }
-    }
-  })
-}
-
 /**
- * One context menu (the Mac's `.contextMenu` and its "…" `Menu`): on macOS the system's
- * menu, shown by the main process (`src/main/ipc/menu.ts`); on Windows a Fluent flyout
- * drawn here (WinUI's MenuFlyout: a rounded card, an icon and label per item, a line
- * between groups, submenus to the side). The main process decides which; this file
- * never checks the platform.
+ * One context menu, the same on macOS and Windows (the user, 2026-11-19: one design for
+ * both, not each system's own): a rounded card drawn by the app, an icon and label per
+ * item, a line between groups, submenus to the side.
  *
  * `entries` is read when the menu opens, so it always has the row's current state.
  */
 export function useContextMenu(entries: () => ContextMenuEntry[], onSelect: (id: string) => void): ContextMenuControls {
   const [flyout, setFlyout] = useState<{ entries: ContextMenuEntry[]; x: number; y: number; document: Document }>()
-  const [isOpen, setOpen] = useState(false)
   const latest = useRef({ entries, onSelect })
   latest.current = { entries, onSelect }
 
+  // The settings window is a portal of this renderer (K): the menu opens in the window it was asked from.
   const open = useCallback((x: number, y: number, ownerDocument: Document) => {
     const shown = latest.current.entries()
-    if (shown.length === 0) return
-    setOpen(true)
-    // The settings window is a portal of this renderer (K): one bridge for both.
-    const bridge = window.talaria as Window['talaria'] | undefined
-    const popup = bridge?.menu?.popup(nativeEntries(shown), x, y) ?? Promise.resolve({ kind: 'inApp' as const })
-    void popup.then((outcome) => {
-      if (outcome.kind === 'inApp') {
-        setFlyout({ entries: shown, x, y, document: ownerDocument })
-        return
-      }
-      setOpen(false)
-      if (outcome.kind === 'chosen') latest.current.onSelect(outcome.id)
-    }, () => setOpen(false))
+    if (shown.length > 0) setFlyout({ entries: shown, x, y, document: ownerDocument })
   }, [])
 
   const close = useCallback((chosen?: string) => {
     setFlyout(undefined)
-    setOpen(false)
     if (chosen !== undefined) latest.current.onSelect(chosen)
   }, [])
 
@@ -92,7 +56,7 @@ export function useContextMenu(entries: () => ContextMenuEntry[], onSelect: (id:
       const rect = anchor.getBoundingClientRect()
       open(rect.left, rect.bottom + menuGap, anchor.ownerDocument)
     },
-    isOpen,
+    isOpen: flyout !== undefined,
     menu: flyout
       ? createPortal(
         <div className={styles.backdrop} onMouseDown={(event) => { if (event.target === event.currentTarget) close() }}
@@ -105,7 +69,7 @@ export function useContextMenu(entries: () => ContextMenuEntry[], onSelect: (id:
   }
 }
 
-/** The flyout's distance from a button it opens under (WinUI's 4 px). */
+/** The menu's distance from a button it opens under. */
 const menuGap = 4
 
 /** One card of the flyout; a submenu opens another beside its item. */
@@ -204,7 +168,7 @@ function MenuList({ entries, x, y, document, onChoose, onDismiss, onBack, flipX,
               onMouseEnter={(event) => {
                 clearTimeout(hoverTimer.current)
                 const button = event.currentTarget
-                // WinUI opens a submenu on hover after a beat, and closes another one.
+                // A submenu opens on hover after a beat, and closes another one.
                 hoverTimer.current = setTimeout(() => {
                   if (isSubmenu) openSubmenu(index, button, false)
                   else setSubmenu(undefined)

@@ -1,6 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MenuOutcome } from '../src/shared/bridge.ts'
 import { useContextMenu, type ContextMenuEntry } from '../src/renderer/ui/ContextMenu.tsx'
 
 const entries: ContextMenuEntry[] = [
@@ -15,35 +14,10 @@ function Row({ onSelect }: { onSelect: (id: string) => void }) {
   return <div onContextMenu={menu.onContextMenu}>row{menu.menu}</div>
 }
 
-function withBridge(outcome: MenuOutcome) {
-  const popup = vi.fn(async (..._args: unknown[]) => outcome)
-  ;(window as unknown as { talaria: unknown }).talaria = { menu: { popup } }
-  return popup
-}
-
-afterEach(() => {
-  cleanup()
-  delete (window as unknown as { talaria?: unknown }).talaria
-})
+afterEach(cleanup)
 
 describe('useContextMenu', () => {
-  it('takes the pick of the system menu (macOS)', async () => {
-    const popup = withBridge({ kind: 'chosen', id: 'delete' })
-    const onSelect = vi.fn()
-    render(<Row onSelect={onSelect} />)
-    await act(async () => { fireEvent.contextMenu(screen.getByText('row'), { clientX: 10, clientY: 20 }) })
-    expect(popup).toHaveBeenCalledWith([
-      { kind: 'item', id: 'pin', label: 'Pin' },
-      { kind: 'item', id: 'rename', label: 'Rename…', disabled: true },
-      { kind: 'separator' },
-      { kind: 'item', id: 'delete', label: 'Delete…', destructive: true },
-    ], 10, 20)
-    expect(onSelect).toHaveBeenCalledWith('delete')
-    expect(screen.queryByRole('menu')).toBeNull()
-  })
-
-  it('draws the Fluent flyout when the main process leaves it to the page (Windows)', async () => {
-    withBridge({ kind: 'inApp' })
+  it('draws the menu at the pointer and takes a pick', async () => {
     const onSelect = vi.fn()
     render(<Row onSelect={onSelect} />)
     await act(async () => { fireEvent.contextMenu(screen.getByText('row')) })
@@ -61,7 +35,6 @@ describe('useContextMenu', () => {
   })
 
   it('closes on Escape without a pick', async () => {
-    withBridge({ kind: 'inApp' })
     const onSelect = vi.fn()
     render(<Row onSelect={onSelect} />)
     await act(async () => { fireEvent.contextMenu(screen.getByText('row')) })
@@ -85,23 +58,7 @@ describe('useContextMenu submenus and toggles', () => {
     return <div onContextMenu={menu.onContextMenu}>job{menu.menu}</div>
   }
 
-  it('sends the system menu its submenu and toggles (macOS)', async () => {
-    const popup = withBridge({ kind: 'chosen', id: 'deliver:local' })
-    const onSelect = vi.fn()
-    render(<Job onSelect={onSelect} />)
-    await act(async () => { fireEvent.contextMenu(screen.getByText('job')) })
-    expect(popup.mock.calls[0]![0]).toEqual([
-      { kind: 'item', id: 'run', label: 'Run Now' },
-      { kind: 'submenu', id: 'deliver', label: 'Deliver To', entries: [
-        { kind: 'item', id: 'deliver:bot', label: 'Bot Chat', checked: true },
-        { kind: 'item', id: 'deliver:local', label: 'Local', checked: false },
-      ] },
-    ])
-    expect(onSelect).toHaveBeenCalledWith('deliver:local')
-  })
-
-  it('opens a submenu beside its item with → and picks inside it (Windows)', async () => {
-    withBridge({ kind: 'inApp' })
+  it('opens a submenu beside its item with → and picks inside it', async () => {
     const onSelect = vi.fn()
     render(<Job onSelect={onSelect} />)
     await act(async () => { fireEvent.contextMenu(screen.getByText('job')) })

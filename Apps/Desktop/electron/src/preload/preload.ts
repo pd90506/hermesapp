@@ -64,9 +64,6 @@ const bridge: TalariaBridge = {
     save: (value) => ipcRenderer.invoke(IPC.sidebarSave, value),
   },
   shortcuts: sidebarShortcuts(platform),
-  menu: {
-    popup: (entries, x, y) => ipcRenderer.invoke(IPC.menuPopup, entries, x, y),
-  },
 }
 
 contextBridge.exposeInMainWorld('talaria', bridge)

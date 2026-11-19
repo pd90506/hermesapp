@@ -1,4 +1,4 @@
-/* A full-window catcher: a click outside closes the menu, as WinUI's light dismiss. */
+/* A full-window catcher: a click outside closes the menu, as a menu's light dismiss. */
 .backdrop {
   position: fixed;
   inset: 0;

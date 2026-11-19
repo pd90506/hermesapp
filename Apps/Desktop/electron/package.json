@@ -9,7 +9,7 @@
   "scripts": {
     "build": "vite build && vite build -c vite.main.config.mts && vite build -c vite.preload.config.mts",
     "dev": "node scripts/dev.mjs",
-    "pack": "pnpm run build && electron-builder --dir --publish never",
+    "pack": "pnpm run build && electron-builder --dir --publish never --config electron-builder.config.cjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -31,6 +31,14 @@ Don't edit `ChatView`, `TranscriptList` or `Composer` to place your feature.
 | Composer slots | `registerComposerSlot({ id, area, order, Slot })` in `features/composer/slots.ts` | `features/composer/registered-slots.ts` | `cards` over the composer (F), `attachments` in the card (E), `leading` toolbar start (E), `modelEffort` (D), `trailing` before Send (D). |
 | Composer keys | `registerComposerKeyHandler(handler)` in `features/composer/slots.ts` | `features/composer/registered-slots.ts` (with the package's slots) | Keys the text area offers before its own Return handling, never while an input method composes (D: the slash list's arrows, Tab, Return, Esc). |
 | Chat pills | `registerChatPill({ id, order, Pill })` in `features/chat/overlay.ts` | `features/chat/registered-pills.ts` | The row of the scroll-to-bottom button over the composer (J). The scroll button is at order 100. A pill returns `null` when it has nothing to show. |
+| Chat edge | `registerChatEdge({ id, Edge })` in `features/chat/edge.ts` | `features/chat/registered-edges.ts` | Drawn over the transcript's trailing side room (`--chat-side-room`): the prompt rail (G). Gets the listed blocks, the ids on screen, `atEnd`, `scrollToBlock(id)` and `onUserScroll(listener)`. |
+
+Message actions (G): `features/chat/actions/register.ts` wraps whatever renders `user`,
+`assistant`, `system` and `tool` when `registered-blocks.ts` calls `addMessageActions()`
+(its last line, after every package's registrations): prompts and replies get the action
+bar (Copy, "…" with Branch in New Chat, the time), every row the right-click Copy Message /
+Copy Conversation menu. A package that draws a reply inside its own block (C's `work`
+answer) wraps it in `MessageWithActions` from `features/chat/actions/MessageActions.tsx`.
 
 Components get the `ChatSession` (and, for slots, its `ChatComposer`); read them with
 `useSnapshot`. `ChatComposer` carries D's `models` (model and effort pickers) and `slash`
@@ -44,3 +52,18 @@ Tokens live only in `src/renderer/theme/tokens.css`, one `/* <letter> */` sectio
 package. `tests/stylesheet-scan.test.ts` fails on a raw colour or pixel size in a
 `*.module.css`, and on `platform ===` branching or `navigator.platform` / `userAgent`
 in renderer code; style a platform with `:global([data-platform='windows'])`.
+
+## Messages sent mid-reply, compression, clarify (package F)
+
+- `composer.queue` (`PromptQueue`, `hermes-core/src/composer/queue/`) holds a text message
+  sent while a reply or a compression runs, in the app, until the session is free (PR #145
+  rule). `ChatComposer.submit` asks `queue.holdsNextSend`. **E:** a message with images
+  or files is not held; it goes to Hermes's queue. Add that condition where `submit`
+  checks `holdsNextSend`.
+- `/compress` and `/compact` run through `composer.queue.compress(topic)`, which shows the
+  "Compressing context…" card; `submit` routes them until D's slash commands land.
+  **D:** route them (and a Bot Chat's `/new`, `/reset`, `/clear`) to the same call and drop
+  the `compressCommand` check in `submit`.
+- `ChatSession.steer`, `compress` and `answerClarify` are F's. The clarify card
+  (`features/composer/cards/ClarifyCard.tsx`) shows where the other request cards do, via
+  `RequestCard`.

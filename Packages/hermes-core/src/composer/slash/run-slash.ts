@@ -1,9 +1,7 @@
 import { GatewayClientError } from '../../client.ts'
 import { describeError } from '../../describe.ts'
 import { RPCError, type JSONValue } from '../../protocol/jsonrpc.ts'
-import { compressionDisplayKind } from '../../session/items.ts'
 import type { ChatSession } from '../../session/chat-session.ts'
-import type { SessionLiveInfo } from '../../session/types.ts'
 import { SlashCatalog, parseSlashCommand, slashClientActions } from './slash-commands.ts'
 
 /** What running a slash command did (HermesKit's `SlashOutcome`). */
@@ -27,43 +25,10 @@ export interface SlashCatalogSource {
   load(): Promise<SlashCatalog>
 }
 
-/** Desktop allows 660 s for a manual compression (`SESSION_COMPRESS_TIMEOUT_MS`, `slash.ts:89`). */
-export const compressTimeoutMs = 660_000
-
 const record = (value: unknown): Record<string, JSONValue> | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, JSONValue> : undefined
 const nonEmpty = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() !== '' ? value : undefined
-
-/**
- * Compresses the conversation context (`session.compress`, `/compress`), optionally
- * focused on a topic. Like Desktop (`use-prompt-actions/slash.ts:684-865`) the transcript
- * keeps the earlier messages and gains the summary line.
- */
-export async function compressSession(session: ChatSession, focusTopic?: string): Promise<string> {
-  const client = await session.liveClient()
-  const topic = focusTopic?.trim()
-  const params: Record<string, JSONValue> = { session_id: session.sessionID }
-  if (topic) params.focus_topic = topic
-  const result = record(await client.call('session.compress', params, compressTimeoutMs)) ?? {}
-  const info = record(result.info)
-  if (info) session.takeInfo(info as SessionLiveInfo)
-  const summary = record(result.summary)
-  let message: string
-  if (result.status === 'pending') {
-    message = nonEmpty(result.message) ?? 'compression still running in the background'
-  } else if (result.compressed === false && nonEmpty(result.message)) {
-    message = nonEmpty(result.message)!  // another compression holds the lock (`methods_session.py:2160-2163`)
-  } else if (summary && nonEmpty(summary.headline)) {
-    message = [summary.headline, summary.token_line, summary.note].map(nonEmpty).filter((line) => line !== undefined).join('\n')
-  } else if (typeof result.removed === 'number' && result.removed > 0) {
-    message = `compressed ${result.removed} messages`
-  } else {
-    message = 'nothing to compress'
-  }
-  session.appendLocalNote(message, compressionDisplayKind)
-  return message
-}
 
 function note(session: ChatSession, text: string): SlashOutcome {
   session.appendLocalNote(text)
@@ -90,7 +55,7 @@ export async function runSlash(session: ChatSession, value: string, catalogs: Sl
 
   if (session.kind === 'botChat' && isOne('new', 'reset', 'clear')) {
     session.appendLocalNote('Bot chats are one continuous conversation — compacting instead.')
-    return { kind: 'output', text: await compressSession(session) }
+    return { kind: 'output', text: await session.compress() }
   }
   if (isOne('btw')) {
     if (argument === '') return note(session, 'Usage: /btw <question>')
@@ -106,7 +71,7 @@ export async function runSlash(session: ChatSession, value: string, catalogs: Sl
     session.beginSideQuestion(String(answer?.task_id ?? ''), argument, 'background')
     return { kind: 'handled' }
   }
-  if (isOne('compress', 'compact')) return { kind: 'output', text: await compressSession(session, argument) }
+  if (isOne('compress', 'compact')) return { kind: 'output', text: await session.compress(argument) }
   if (isOne('save')) {
     const client = await session.liveClient()
     const file = nonEmpty(record(await client.call('session.save', { session_id: session.sessionID }))?.file)

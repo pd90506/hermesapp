@@ -20,7 +20,7 @@ const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD',
 export function ContextGaugeButton({ chat, composer }: ComposerSlotProps) {
   const usage = useSnapshot(chat.usage)
   const view = useSnapshot(chat)
-  const { isCompressing } = useSnapshot(composer)
+  const { isCompressing } = useSnapshot(composer.queue)
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLSpanElement>(null)
 

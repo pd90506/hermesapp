@@ -7,6 +7,7 @@ import { ReasoningEffort } from './model/reasoning-effort.ts'
 import { ComposerSlash } from './slash/composer-slash.ts'
 import { isLinkFailure, runSlash, type SlashOutcome } from './slash/run-slash.ts'
 import { isSlashCommand, parseSlashCommand } from './slash/slash-commands.ts'
+import { PromptQueue } from './queue/prompt-queue.ts'
 
 export interface ComposerView {
   draft: string
@@ -14,8 +15,6 @@ export interface ComposerView {
   isSubmitting: boolean
   /** A composer failure; a failed `prompt.submit` shows in the transcript instead. */
   error?: string
-  /** A `/compress` (or a Bot Chat's `/new`) is running; the composer stays usable (package F shows its card). */
-  isCompressing: boolean
 }
 
 /** What the composer's client-side slash actions need from the chat list (`ChatManager`). */
@@ -41,8 +40,12 @@ export class ChatComposer extends Observable<ComposerView> {
   /** The slash-command list (package D). */
   readonly slash: ComposerSlash
 
+  /** Messages held while a reply or a compression runs, and `/compress` (package F). */
+  readonly queue: PromptQueue
+
   constructor(readonly session: ChatSession, private readonly actions?: ComposerActions) {
-    super({ draft: '', isSubmitting: false, isCompressing: false })
+    super({ draft: '', isSubmitting: false })
+    this.queue = new PromptQueue(this, session)
     const errors = { showError: (message: string, cause?: unknown) => this.showError(message, cause), clearError: () => this.clearError() }
     this.models = new ComposerModels(session, errors)
     this.slash = new ComposerSlash(session, this)
@@ -93,6 +96,12 @@ export class ChatComposer extends Observable<ComposerView> {
     }
     this.slash.resetSuppression()
     const text = this.get().draft
+    // Text sent while a reply or a compression runs waits in the app (`PromptQueue`, F).
+    if (this.queue.holdsNextSend) {
+      this.queue.hold(text)
+      this.clearDraftAndError()
+      return
+    }
     const signal = { cancelled: false }
     this.sending = signal
     this.set({ ...this.get(), draft: '', isSubmitting: true })
@@ -117,6 +126,11 @@ export class ChatComposer extends Observable<ComposerView> {
     if (this.sending) this.sending.cancelled = true
   }
 
+  private clearDraftAndError(): void {
+    const { error: _, ...rest } = this.get()
+    this.set({ ...rest, draft: '' })
+  }
+
   clearError(): void {
     this.linkError = undefined
     if (this.get().error === undefined) return
@@ -138,12 +152,17 @@ export class ChatComposer extends Observable<ComposerView> {
     if (this.get().isSubmitting || !isSlashCommand(text)) return undefined
     this.slash.close()
     this.slash.resetSuppression()
-    const compresses = this.compacts(parseSlashCommand(text).name)
-    if (compresses && this.get().isCompressing) {
-      this.set({ ...this.get(), draft: '' })
+    const { name, argument } = parseSlashCommand(text)
+    if (this.compacts(name)) {
+      // F's queue runs it, so its card shows and what is sent meanwhile waits; a second
+      // one while it runs is dropped there.
+      this.clearDraftAndError()
+      const isBotReset = this.session.kind === 'botChat' && !['compress', 'compact'].includes(this.canonical(name))
+      if (isBotReset) this.session.appendLocalNote('Bot chats are one continuous conversation — compacting instead.')
+      await this.queue.compress(isBotReset ? undefined : argument)
       return { kind: 'handled' }
     }
-    this.set({ ...this.get(), draft: '', ...(compresses ? { isCompressing: true } : {}) })
+    this.set({ ...this.get(), draft: '' })
     try {
       const slash = this.slash
       const outcome = await runSlash(this.session, text, {
@@ -163,8 +182,6 @@ export class ChatComposer extends Observable<ComposerView> {
       if (this.get().draft.trim() === '') this.set({ ...this.get(), draft: text })
       this.session.appendLocalNote(`/${parseSlashCommand(text).name}: ${describeError(error)}`)
       return { kind: 'unavailable', reason: describeError(error) }
-    } finally {
-      if (compresses) this.set({ ...this.get(), isCompressing: false })
     }
   }
 
@@ -173,9 +190,13 @@ export class ChatComposer extends Observable<ComposerView> {
    * `/reset` and `/clear`, which compact instead (`plugins/hermes-bots/plugin.tsx:771-797`).
    */
   private compacts(name: string): boolean {
-    const canonical = this.slash.catalog?.canonicalName(name).slice(1) ?? name
+    const canonical = this.canonical(name)
     const names = this.session.kind === 'botChat' ? ['compress', 'compact', 'new', 'reset', 'clear'] : ['compress', 'compact']
     return names.includes(name) || names.includes(canonical)
+  }
+
+  private canonical(name: string): string {
+    return this.slash.catalog?.canonicalName(name).slice(1) ?? name
   }
 
   /**

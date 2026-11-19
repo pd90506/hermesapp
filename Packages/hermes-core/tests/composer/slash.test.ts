@@ -194,13 +194,13 @@ describe('ChatComposer slash commands', () => {
     composer.setDraft('/compress')
     const first = composer.submit()
     expect(await eventually(() => server.heldFrames.length === 1)).toBe(true)
-    expect(composer.get().isCompressing).toBe(true)
+    expect(composer.queue.get().isCompressing).toBe(true)
     composer.setDraft('/compact')
     await composer.submit()
     expect(server.heldFrames.length).toBe(1)
     server.answer(server.heldFrames[0]!, { status: 'compressed', removed: 4, summary: { headline: 'Compressed 10 → 4 messages' } })
     await first
-    expect(composer.get().isCompressing).toBe(false)
+    expect(composer.queue.get().isCompressing).toBe(false)
     expect(composer.session.get().items.at(-1)).toMatchObject({ text: 'Compressed 10 → 4 messages', displayKind: 'compression' })
   })
 

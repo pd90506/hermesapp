@@ -1,6 +1,5 @@
 import type { Bot, SessionSummary } from '@talaria/hermes-core'
 import { useModel, useSnapshot } from '../../app/hooks.ts'
-import { relativeTime } from '../../app/time.ts'
 import styles from './SessionList.module.css'
 
 /**
@@ -42,11 +41,12 @@ function BotChat({ bot }: { bot: Bot }) {
 
 function SessionRow({ session }: { session: SessionSummary }) {
   const title = session.title?.trim() || 'Untitled chat'
-  const started = session.started_at ? new Date(session.started_at * 1000) : undefined
+  // The Mac shows the latest stored message's date, once read (`HistoryRow.date`); that
+  // read comes with chats. `started_at` is not shown: the list is in last-activity order,
+  // so creation times would read out of order.
   return (
     <div className={styles.row} role="listitem" title={title}>
       <span className={styles.title}>{title}</span>
-      {started && <span className={styles.subtitle}>{relativeTime(started)}</span>}
     </div>
   )
 }

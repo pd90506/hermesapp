@@ -4,6 +4,7 @@ import {
 } from '@talaria/hermes-core'
 import type { Appearance, SavedServer, SavedSettings, TalariaBridge } from '../../shared/bridge.ts'
 import { BridgeSocket, bridgeHttp } from './bridge-transport.ts'
+import { AppearanceStore } from '../features/settings/appearance/appearance-store.ts'
 
 export interface AppSnapshot {
   /** Settings are read; until then nothing is drawn. */
@@ -33,6 +34,8 @@ export function credential(server: SavedServer, secret: string): GatewayCredenti
  */
 export class AppModel extends Observable<AppSnapshot> {
   readonly connection: GatewayConnection
+  /** Settings ▸ Appearance: the look, the colour theme and the text sizes. */
+  readonly appearanceSettings: AppearanceStore
 
   constructor(readonly bridge: TalariaBridge) {
     super({ loaded: false, showsConnectPage: false, railShown: true, appearance: { dark: false }, connecting: false })
@@ -41,6 +44,7 @@ export class AppModel extends Observable<AppSnapshot> {
       // so no agent waits on this window (4404 for the window-owned bridges).
       client: { supportedServerRequests: new Set<string>() },
     })
+    this.appearanceSettings = new AppearanceStore(bridge, (change) => this.save(change))
   }
 
   private update(change: Partial<AppSnapshot>): void {
@@ -51,6 +55,7 @@ export class AppModel extends Observable<AppSnapshot> {
   async start(): Promise<void> {
     const [settings, appearance] = await Promise.all([this.bridge.settings.load(), this.bridge.appearance.get()])
     this.bridge.appearance.onChange((next) => this.update({ appearance: next }))
+    this.appearanceSettings.restore(settings)
     this.update({
       loaded: true,
       appearance,

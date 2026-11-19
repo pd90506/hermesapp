@@ -1,0 +1,822 @@
+{
+  "themes": [
+    {
+      "theme": "nous",
+      "accent": {
+        "light": "#0053FD",
+        "dark": "#4A84FE"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#C2D6FA",
+          "dark": "#132344"
+        },
+        "chrome": {
+          "light": "#E2EBFA",
+          "dark": "#0A1326"
+        },
+        "chat": {
+          "light": "#FFFFFF",
+          "dark": "#0D1117"
+        },
+        "composer": {
+          "light": "#FFFFFF",
+          "dark": "#1A1E24"
+        },
+        "selection": {
+          "light": "#C2D6FA",
+          "dark": "#182C56"
+        },
+        "userBubble": {
+          "light": "#DAE7FD",
+          "dark": "#17243A"
+        }
+      },
+      "markdown": {
+        "heading": {
+          "light": "#0B3BA8",
+          "dark": "#8DB2FF"
+        },
+        "bold": {
+          "light": "#1F2328",
+          "dark": "#F0F6FC"
+        },
+        "link": {
+          "light": "#0053FD",
+          "dark": "#4A84FE"
+        },
+        "inlineCode": {
+          "light": "#B42D5B",
+          "dark": "#FF8FB4"
+        },
+        "inlineCodeBackground": {
+          "light": "#B42D5B14",
+          "dark": "#FF8FB41F"
+        },
+        "codeBlockBackground": {
+          "light": "#0053FD0D",
+          "dark": "#4A84FE17"
+        },
+        "quoteBar": {
+          "light": "#0053FDB3",
+          "dark": "#4A84FECC"
+        },
+        "quoteText": {
+          "light": "#57606A",
+          "dark": "#9EA7B3"
+        },
+        "quoteBackground": {
+          "light": "#0053FD0A",
+          "dark": "#4A84FE12"
+        },
+        "tableHeaderBackground": {
+          "light": "#0053FD1A",
+          "dark": "#4A84FE29"
+        },
+        "tableHeaderText": {
+          "light": "#0B3BA8",
+          "dark": "#B5CDFF"
+        },
+        "tableBorder": {
+          "light": "#0053FD33",
+          "dark": "#4A84FE47"
+        },
+        "tableStripe": {
+          "light": "#0053FD08",
+          "dark": "#4A84FE0D"
+        }
+      }
+    },
+    {
+      "theme": "github",
+      "accent": {
+        "light": "#196D31",
+        "dark": "#4F9E5E"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#C8DBD0",
+          "dark": "#14291D"
+        },
+        "chrome": {
+          "light": "#E4EDEA",
+          "dark": "#0A1613"
+        },
+        "chat": {
+          "light": "#FFFFFF",
+          "dark": "#0D1117"
+        },
+        "composer": {
+          "light": "#FFFFFF",
+          "dark": "#1A1E24"
+        },
+        "selection": {
+          "light": "#C8DBD0",
+          "dark": "#193424"
+        },
+        "userBubble": {
+          "light": "#DBE7E2",
+          "dark": "#192A24"
+        }
+      },
+      "markdown": {
+        "heading": {
+          "light": "#1F2328",
+          "dark": "#F0F6FC"
+        },
+        "bold": {
+          "light": "#1F2328",
+          "dark": "#F0F6FC"
+        },
+        "link": {
+          "light": "#0969DA",
+          "dark": "#4493F8"
+        },
+        "inlineCode": {
+          "light": "#1F2328",
+          "dark": "#F0F6FC"
+        },
+        "inlineCodeBackground": {
+          "light": "#818B9833",
+          "dark": "#656C7666"
+        },
+        "codeBlockBackground": {
+          "light": "#818B9817",
+          "dark": "#0104094D"
+        },
+        "quoteBar": {
+          "light": "#D1D9E0",
+          "dark": "#3D444D"
+        },
+        "quoteText": {
+          "light": "#59636E",
+          "dark": "#9198A1"
+        },
+        "quoteBackground": {
+          "light": "#00000000",
+          "dark": "#00000000"
+        },
+        "tableHeaderBackground": {
+          "light": "#818B9817",
+          "dark": "#6E768126"
+        },
+        "tableHeaderText": {
+          "light": "#1F2328",
+          "dark": "#F0F6FC"
+        },
+        "tableBorder": {
+          "light": "#D1D9E0",
+          "dark": "#3D444D"
+        },
+        "tableStripe": {
+          "light": "#818B980F",
+          "dark": "#6E76811A"
+        }
+      }
+    },
+    {
+      "theme": "catppuccin",
+      "accent": {
+        "light": "#6D2EBF",
+        "dark": "#CBA6F7"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#CCC2E5",
+          "dark": "#433A57"
+        },
+        "chrome": {
+          "light": "#DCDAEB",
+          "dark": "#2D293E"
+        },
+        "chat": {
+          "light": "#EFF1F5",
+          "dark": "#1E1E2E"
+        },
+        "composer": {
+          "light": "#F7F8FA",
+          "dark": "#29293A"
+        },
+        "selection": {
+          "light": "#CCC2E5",
+          "dark": "#504567"
+        },
+        "userBubble": {
+          "light": "#DCD7EE",
+          "dark": "#38324B"
+        }
+      },
+      "markdown": {
+        "heading": {
+          "light": "#8839EF",
+          "dark": "#CBA6F7"
+        },
+        "bold": {
+          "light": "#4C4F69",
+          "dark": "#CDD6F4"
+        },
+        "link": {
+          "light": "#1E66F5",
+          "dark": "#89B4FA"
+        },
+        "inlineCode": {
+          "light": "#40A02B",
+          "dark": "#A6E3A1"
+        },
+        "inlineCodeBackground": {
+          "light": "#CCD0DA99",
+          "dark": "#313244CC"
+        },
+        "codeBlockBackground": {
+          "light": "#E6E9EFCC",
+          "dark": "#181825B3"
+        },
+        "quoteBar": {
+          "light": "#7287FD",
+          "dark": "#B4BEFE"
+        },
+        "quoteText": {
+          "light": "#6C6F85",
+          "dark": "#A6ADC8"
+        },
+        "quoteBackground": {
+          "light": "#7287FD0F",
+          "dark": "#B4BEFE0F"
+        },
+        "tableHeaderBackground": {
+          "light": "#8839EF1A",
+          "dark": "#CBA6F726"
+        },
+        "tableHeaderText": {
+          "light": "#8839EF",
+          "dark": "#CBA6F7"
+        },
+        "tableBorder": {
+          "light": "#BCC0CC",
+          "dark": "#45475A"
+        },
+        "tableStripe": {
+          "light": "#E6E9EF99",
+          "dark": "#18182580"
+        }
+      }
+    },
+    {
+      "theme": "everforest",
+      "accent": {
+        "light": "#586B35",
+        "dark": "#A7C080"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#D0D0B3",
+          "dark": "#434E42"
+        },
+        "chrome": {
+          "light": "#E3E1C7",
+          "dark": "#333C38"
+        },
+        "chat": {
+          "light": "#FDF6E3",
+          "dark": "#2D353B"
+        },
+        "composer": {
+          "light": "#FEFBF1",
+          "dark": "#343F44"
+        },
+        "selection": {
+          "light": "#D0D0B3",
+          "dark": "#4D5948"
+        },
+        "userBubble": {
+          "light": "#EDE9D2",
+          "dark": "#434E47"
+        }
+      },
+      "markdown": {
+        "heading": {
+          "light": "#35A77C",
+          "dark": "#A7C080"
+        },
+        "bold": {
+          "light": "#5C6A72",
+          "dark": "#D3C6AA"
+        },
+        "link": {
+          "light": "#3A94C5",
+          "dark": "#7FBBB3"
+        },
+        "inlineCode": {
+          "light": "#E66E1A",
+          "dark": "#E69875"
+        },
+        "inlineCodeBackground": {
+          "light": "#F57D2617",
+          "dark": "#E698751F"
+        },
+        "codeBlockBackground": {
+          "light": "#EFEBD4B3",
+          "dark": "#232A2EB3"
+        },
+        "quoteBar": {
+          "light": "#8DA101",
+          "dark": "#A7C080"
+        },
+        "quoteText": {
+          "light": "#829181",
+          "dark": "#9DA9A0"
+        },
+        "quoteBackground": {
+          "light": "#8DA1010D",
+          "dark": "#A7C08012"
+        },
+        "tableHeaderBackground": {
+          "light": "#8DA1011F",
+          "dark": "#A7C08026"
+        },
+        "tableHeaderText": {
+          "light": "#5C6A72",
+          "dark": "#D3C6AA"
+        },
+        "tableBorder": {
+          "light": "#E0DCC7",
+          "dark": "#4F585E"
+        },
+        "tableStripe": {
+          "light": "#EFEBD480",
+          "dark": "#2E383C80"
+        }
+      }
+    },
+    {
+      "theme": "solarized",
+      "accent": {
+        "light": "#675E34",
+        "dark": "#6EA1C4"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#D2CBB3",
+          "dark": "#1A3E4C"
+        },
+        "chrome": {
+          "light": "#E3DDC8",
+          "dark": "#0D2F39"
+        },
+        "chat": {
+          "light": "#FDF6E3",
+          "dark": "#002B36"
+        },
+        "composer": {
+          "light": "#FEFBF1",
+          "dark": "#073642"
+        },
+        "selection": {
+          "light": "#D2CBB3",
+          "dark": "#224858"
+        },
+        "userBubble": {
+          "light": "#EEE8D5",
+          "dark": "#144050"
+        }
+      },
+      "markdown": {
+        "heading": {
+          "light": "#CB4B16",
+          "dark": "#CB4B16"
+        },
+        "bold": {
+          "light": "#586E75",
+          "dark": "#93A1A1"
+        },
+        "link": {
+          "light": "#268BD2",
+          "dark": "#268BD2"
+        },
+        "inlineCode": {
+          "light": "#D33682",
+          "dark": "#D33682"
+        },
+        "inlineCodeBackground": {
+          "light": "#EEE8D5",
+          "dark": "#073642"
+        },
+        "codeBlockBackground": {
+          "light": "#EEE8D5B3",
+          "dark": "#073642B3"
+        },
+        "quoteBar": {
+          "light": "#2AA198",
+          "dark": "#2AA198"
+        },
+        "quoteText": {
+          "light": "#657B83",
+          "dark": "#93A1A1"
+        },
+        "quoteBackground": {
+          "light": "#2AA1980F",
+          "dark": "#2AA1980F"
+        },
+        "tableHeaderBackground": {
+          "light": "#EEE8D5",
+          "dark": "#073642"
+        },
+        "tableHeaderText": {
+          "light": "#586E75",
+          "dark": "#93A1A1"
+        },
+        "tableBorder": {
+          "light": "#E4DDC8",
+          "dark": "#0B4452"
+        },
+        "tableStripe": {
+          "light": "#EEE8D580",
+          "dark": "#07364280"
+        }
+      }
+    },
+    {
+      "theme": "codex",
+      "accent": {
+        "light": "#0169CC",
+        "dark": "#339CFF"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#D8D8D8",
+          "dark": "#2C2C2C"
+        },
+        "chrome": {
+          "light": "#ECECEC",
+          "dark": "#1D1D1D"
+        },
+        "chat": {
+          "light": "#FFFFFF",
+          "dark": "#232323"
+        },
+        "composer": {
+          "light": "#FFFFFF",
+          "dark": "#2F2F2F"
+        },
+        "selection": {
+          "light": "#D8D8D8",
+          "dark": "#363636"
+        },
+        "userBubble": {
+          "light": "#F2F2F2",
+          "dark": "#363636"
+        }
+      },
+      "markdown": {
+        "heading": {
+          "light": "#0D0D0D",
+          "dark": "#ECECEC"
+        },
+        "bold": {
+          "light": "#0D0D0D",
+          "dark": "#ECECEC"
+        },
+        "link": {
+          "light": "#0169CC",
+          "dark": "#48AAFF"
+        },
+        "inlineCode": {
+          "light": "#0D0D0D",
+          "dark": "#ECECEC"
+        },
+        "inlineCodeBackground": {
+          "light": "#0D0D0D12",
+          "dark": "#FFFFFF1A"
+        },
+        "codeBlockBackground": {
+          "light": "#0D0D0D0A",
+          "dark": "#0000004D"
+        },
+        "quoteBar": {
+          "light": "#0D0D0D26",
+          "dark": "#FFFFFF33"
+        },
+        "quoteText": {
+          "light": "#5D5D5D",
+          "dark": "#B4B4B4"
+        },
+        "quoteBackground": {
+          "light": "#00000000",
+          "dark": "#00000000"
+        },
+        "tableHeaderBackground": {
+          "light": "#0D0D0D0A",
+          "dark": "#FFFFFF0F"
+        },
+        "tableHeaderText": {
+          "light": "#0D0D0D",
+          "dark": "#ECECEC"
+        },
+        "tableBorder": {
+          "light": "#0D0D0D1A",
+          "dark": "#FFFFFF1F"
+        },
+        "tableStripe": {
+          "light": "#00000000",
+          "dark": "#00000000"
+        }
+      }
+    },
+    {
+      "theme": "claudeCode",
+      "accent": {
+        "light": "#C15F3C",
+        "dark": "#D97757"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#E6D1C2",
+          "dark": "#4C332B"
+        },
+        "chrome": {
+          "light": "#ECE3D8",
+          "dark": "#352924"
+        },
+        "chat": {
+          "light": "#FAF9F5",
+          "dark": "#262624"
+        },
+        "composer": {
+          "light": "#FFFFFF",
+          "dark": "#30302E"
+        },
+        "selection": {
+          "light": "#E6D1C2",
+          "dark": "#593A2F"
+        },
+        "userBubble": {
+          "light": "#EDE9DE",
+          "dark": "#3A3936"
+        }
+      },
+      "markdown": {
+        "heading": {
+          "light": "#141413",
+          "dark": "#F5F4EE"
+        },
+        "bold": {
+          "light": "#141413",
+          "dark": "#F5F4EE"
+        },
+        "link": {
+          "light": "#B4532F",
+          "dark": "#E08A6D"
+        },
+        "inlineCode": {
+          "light": "#9C3D1E",
+          "dark": "#EBA58B"
+        },
+        "inlineCodeBackground": {
+          "light": "#C15F3C14",
+          "dark": "#D977571F"
+        },
+        "codeBlockBackground": {
+          "light": "#E8E6DC99",
+          "dark": "#1F1E1DB3"
+        },
+        "quoteBar": {
+          "light": "#D97757",
+          "dark": "#D97757"
+        },
+        "quoteText": {
+          "light": "#73726C",
+          "dark": "#A6A39A"
+        },
+        "quoteBackground": {
+          "light": "#D977570A",
+          "dark": "#D977570F"
+        },
+        "tableHeaderBackground": {
+          "light": "#E8E6DCB3",
+          "dark": "#30302ECC"
+        },
+        "tableHeaderText": {
+          "light": "#141413",
+          "dark": "#F5F4EE"
+        },
+        "tableBorder": {
+          "light": "#DEDCD1",
+          "dark": "#3E3E3A"
+        },
+        "tableStripe": {
+          "light": "#F0EEE680",
+          "dark": "#1F1E1D66"
+        }
+      }
+    },
+    {
+      "theme": "plain",
+      "accent": null,
+      "surfaces": {
+        "frame": {
+          "light": "#F4F4F5",
+          "dark": "#161618"
+        },
+        "chrome": {
+          "light": "#F4F4F5",
+          "dark": "#161618"
+        },
+        "chat": {
+          "light": "#FFFFFF",
+          "dark": "#1E1E20"
+        },
+        "composer": {
+          "light": "#FFFFFF",
+          "dark": "#2A2A2D"
+        },
+        "selection": null,
+        "userBubble": null
+      },
+      "markdown": {
+        "heading": {
+          "light": "#000000D9",
+          "dark": "#FFFFFFD9"
+        },
+        "bold": {
+          "light": "#000000D9",
+          "dark": "#FFFFFFD9"
+        },
+        "link": {
+          "light": "#0068DA",
+          "dark": "#419CFF"
+        },
+        "inlineCode": {
+          "light": "#000000D9",
+          "dark": "#FFFFFFD9"
+        },
+        "inlineCodeBackground": {
+          "light": "#00000026",
+          "dark": "#FFFFFF26"
+        },
+        "codeBlockBackground": {
+          "light": "#0000000A",
+          "dark": "#FFFFFF0A"
+        },
+        "quoteBar": {
+          "light": "#00000042",
+          "dark": "#FFFFFF40"
+        },
+        "quoteText": {
+          "light": "#00000080",
+          "dark": "#FFFFFF8C"
+        },
+        "quoteBackground": {
+          "light": "#00000000",
+          "dark": "#00000000"
+        },
+        "tableHeaderBackground": {
+          "light": "#0000000F",
+          "dark": "#FFFFFF0F"
+        },
+        "tableHeaderText": {
+          "light": "#000000D9",
+          "dark": "#FFFFFFD9"
+        },
+        "tableBorder": {
+          "light": "#0000001A",
+          "dark": "#FFFFFF1A"
+        },
+        "tableStripe": {
+          "light": "#00000000",
+          "dark": "#00000000"
+        }
+      }
+    }
+  ],
+  "tintedPlain": [
+    {
+      "accent": {
+        "light": "#007AFF",
+        "dark": "#0A84FF"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#C1DAF7",
+          "dark": "#13304F"
+        },
+        "chrome": {
+          "light": "#E0EAF6",
+          "dark": "#152334"
+        },
+        "chat": {
+          "light": "#FFFFFF",
+          "dark": "#1E1E20"
+        },
+        "composer": {
+          "light": "#FFFFFF",
+          "dark": "#2A2A2D"
+        },
+        "selection": {
+          "light": "#C1DAF7",
+          "dark": "#133861"
+        },
+        "userBubble": {
+          "light": "#E0EFFF",
+          "dark": "#1A3048"
+        }
+      }
+    },
+    {
+      "accent": {
+        "light": "#C42B1C",
+        "dark": "#FF99A4"
+      },
+      "surfaces": {
+        "frame": {
+          "light": "#EACAC8",
+          "dark": "#4E353A"
+        },
+        "chrome": {
+          "light": "#F0E4E4",
+          "dark": "#322629"
+        },
+        "chat": {
+          "light": "#FFFFFF",
+          "dark": "#1E1E20"
+        },
+        "composer": {
+          "light": "#FFFFFF",
+          "dark": "#2A2A2D"
+        },
+        "selection": {
+          "light": "#EACAC8",
+          "dark": "#5F3F44"
+        },
+        "userBubble": {
+          "light": "#F8E6E4",
+          "dark": "#473438"
+        }
+      }
+    }
+  ],
+  "appearanceSettings": [
+    {
+      "json": {
+        "theme": "dark",
+        "sizes": {
+          "ui": 15,
+          "code": 40,
+          "bogus": 12
+        }
+      },
+      "decoded": {
+        "theme": "dark",
+        "sizes": {
+          "ui": 15
+        }
+      }
+    },
+    {
+      "json": {
+        "theme": "sepia",
+        "sizes": {
+          "content": 9
+        }
+      },
+      "decoded": {
+        "theme": "system",
+        "sizes": {
+          "content": 9
+        }
+      }
+    },
+    {
+      "json": {},
+      "decoded": {
+        "theme": "system",
+        "sizes": {}
+      }
+    }
+  ],
+  "setSize": [
+    {
+      "kind": "ui",
+      "size": 15.4,
+      "platformDefault": 14,
+      "saved": 15
+    },
+    {
+      "kind": "ui",
+      "size": 14,
+      "platformDefault": 14,
+      "saved": null
+    },
+    {
+      "kind": "content",
+      "size": 3,
+      "platformDefault": 14,
+      "saved": 9
+    },
+    {
+      "kind": "code",
+      "size": 99,
+      "platformDefault": 12,
+      "saved": 32
+    }
+  ]
+}

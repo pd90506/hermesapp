@@ -15,3 +15,4 @@ source when adding a shape.
 | `bots.json` | `profiles.list` rows: roster order, display names, Bot Chat ids, activity |
 | `session-list.json` | Which `session.list` rows the session list shows |
 | `server-requests.json` | Which server requests are declined, and with which code |
+| `appearance-themes.json` | Every colour theme's accent, window surfaces and Markdown colours (light and dark), the System theme tinted with a system accent, and how the Appearance settings load and clamp text sizes. Generated from HermesKit (`HERMES_EXPORT_FIXTURES=1 swift test --filter AppearanceFixtureTests`); the desktop app's theme stylesheet is generated from it (`Apps/Desktop/electron/scripts/export-themes.mjs`) |

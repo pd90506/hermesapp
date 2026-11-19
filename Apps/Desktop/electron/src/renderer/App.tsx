@@ -12,9 +12,10 @@ export function App({ model }: { model: AppModel }) {
   const accent = app.appearance.accent
   useEffect(() => {
     // The system accent, as the native controls draw it; the tokens' fallback otherwise.
+    // The System theme's accent; another theme has its own (theme/themes/themes.css).
     const root = document.documentElement
-    if (accent) root.style.setProperty('--accent', accent)
-    else root.style.removeProperty('--accent')
+    if (accent) root.style.setProperty('--system-accent', accent)
+    else root.style.removeProperty('--system-accent')
   }, [accent])
   if (!app.loaded) return null
   return (

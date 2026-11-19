@@ -5,6 +5,7 @@ import { DashboardHttp } from './dashboard-http.ts'
 import { Sockets } from './sockets.ts'
 import { loadSecret, loadSettings, saveSecret, saveSettings } from './store.ts'
 import { cjkLanguage } from './cjk.ts'
+import { registerAppearance } from './ipc/appearance.ts'
 import { captionSymbolColor, currentPlatform, windowFrameOptions } from './window-frame.ts'
 
 // Its own data folder, `Talaria Desktop`: `Talaria` was the (now removed) Flutter app's,
@@ -83,6 +84,7 @@ function createWindow(): void {
 }
 
 function start(): void {
+  registerAppearance()
   ipcMain.handle(IPC.httpSend, (_event, request: BridgeHttpRequest) => http.send(request))
   ipcMain.handle(IPC.httpReset, () => http.reset())
   ipcMain.handle(IPC.socketOpen, (event, url: string) => sockets.connect(event.sender, url))

@@ -1,3 +1,4 @@
+export * from './appearance/index.ts'
 export * from './bots.ts'
 export * from './capabilities/capabilities.ts'
 export * from './client.ts'

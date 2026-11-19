@@ -1,0 +1,89 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding-right: var(--space-4);
+}
+
+.bot {
+  flex: none;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+}
+
+/* The list's own sections (Bot Chat, Sessions): bold, in the text colour (the user,
+   2026-11-18). */
+.section {
+  margin: 0;
+  padding: var(--space-7) var(--space-4) var(--space-3) var(--space-7);
+  font-size: var(--text-section);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+}
+
+.row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: var(--session-row-height);
+  margin: 0 0 var(--space-1) var(--space-2);
+  padding: 0 var(--space-5) 0 calc(var(--space-6) + var(--space-1));
+  border-radius: var(--row-radius);
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.row:hover {
+  background: var(--fill-hover);
+}
+
+.row[aria-selected='true'] {
+  background: var(--selection-fill);
+  color: var(--selection-text);
+}
+
+.row[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--rail-pill-width);
+  height: var(--rail-pill-selected);
+  transform: translateY(-50%);
+  border-radius: var(--rail-pill-width);
+  background: var(--selection-indicator);
+}
+
+.title,
+.subtitle {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.title {
+  font-size: var(--text-title);
+}
+
+.subtitle {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.rule {
+  height: var(--hairline);
+  margin: var(--space-5) var(--space-4) 0 var(--space-7);
+  background: var(--divider);
+}
+
+.note {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-7);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}

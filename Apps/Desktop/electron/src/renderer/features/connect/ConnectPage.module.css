@@ -1,0 +1,109 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+
+.band {
+  flex: none;
+  height: var(--frame-title-band-height);
+  margin-right: var(--frame-caption-width);
+  -webkit-app-region: drag;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: var(--connect-width);
+  max-width: calc(100% - var(--space-10) * 2);
+  margin: var(--space-10) auto;
+  padding: var(--space-9);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  user-select: text;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--line-body);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  color: var(--text-secondary);
+}
+
+.input {
+  height: var(--field-height);
+  padding: 0 var(--space-5);
+  border: var(--hairline) solid var(--field-stroke);
+  border-bottom-color: var(--field-underline);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+  outline: none;
+}
+
+.input:focus {
+  background: var(--field-fill-focused);
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 calc(var(--hairline) * -1) 0 var(--accent);
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--critical-fill);
+  color: var(--critical);
+  line-height: var(--line-body);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.button,
+.primary {
+  height: var(--field-height);
+  padding: 0 var(--space-7);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+}
+
+.button:hover {
+  background: var(--fill-hover);
+}
+
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.primary:disabled {
+  background: var(--fill-pressed);
+  color: var(--text-tertiary);
+}

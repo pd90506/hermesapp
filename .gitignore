@@ -42,3 +42,10 @@ Config/Generated/
 *.p12
 *.mobileprovision
 *.provisionprofile
+
+# --- Electron desktop app (pnpm workspace) ---
+node_modules/
+/Apps/Desktop/electron/out/
+/Apps/Desktop/electron/dist/
+/Apps/Desktop/electron/test-results/
+*.tsbuildinfo

@@ -32,3 +32,22 @@ SOFTWARE.
 ## SwiftMath
 
 See AGENTS.md, "Dependencies" (MIT, used by the app targets).
+
+## Hermes gateway contract types
+
+`Packages/hermes-core/src/protocol/contract.generated.ts` is generated from
+`apps/shared/src/gateway-contract.openrpc.json` in
+[hermes-agent](https://github.com/NousResearch/hermes-agent) (commit `31ce88f`), under the MIT
+license quoted above for the app icon (Copyright (c) 2025 Nous Research).
+
+## deepseek-harness
+
+The Electron app's structure follows patterns from
+[deepseek-harness](https://github.com/deepseek-ai/deepseek-harness): platform differences kept
+in the shell, frame geometry as CSS variables, design tokens with a stylesheet scan. No code,
+fonts or brand assets are copied from it. It is under the MIT license, Copyright (c) 2026
+DeepSeek.
+
+## Electron app dependencies
+
+See AGENTS.md, "Dependencies" (the Electron desktop app's npm packages).

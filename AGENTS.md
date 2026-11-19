@@ -197,6 +197,52 @@ Every third-party dependency, its license, pin and reason. Add a row here before
   `eventually {}` only for main-actor UI state.
 - Don't name a test target or suite after a type it doesn't exercise.
 
+- **The Electron desktop app's npm packages** (`Apps/Desktop/electron`, `Packages/hermes-core`),
+  pinned exactly in their `package.json` files and `pnpm-lock.yaml` (pnpm 10.28.0, Node 22.12
+  or newer). Decided by the user (2026-11-19: "还是得用electron。能借鉴的比较多"), for Windows and
+  macOS together.
+  - Runtime, bundled into the app: **electron** 44.10.2 (MIT), **react** / **react-dom**
+    19.3.0 (MIT), **ws** 8.22.1 (MIT). `ws` was not in the approved plan: the main process
+    opens the gateway WebSocket with it because it sends no `Origin` (the dashboard checks a
+    browser's) and reports a refused upgrade with its HTTP status, which the app shows. Its
+    optional native add-ons stay out.
+  - Build and test only: **vite** 8.3.4, **@vitejs/plugin-react** 6.2.1, **typescript** 6.0.3,
+    **vitest** 4.1.12, **jsdom** 29.1.1, **@testing-library/react** 16.3.3,
+    **electron-builder** 26.18.0, and the `@types` packages (all MIT, Apache-2.0 for
+    TypeScript).
+  - `Packages/hermes-core` has no runtime dependency: no DOM, no Node, so it runs in the
+    renderer, in the main process and in vitest alike.
+  - pnpm runs install scripts only for `electron` (its binary download); see `pnpm` in the root
+    `package.json`.
+
+## Electron desktop app
+
+The desktop app for Windows and macOS is moving to Electron (decided by the user, 2026-11-19;
+the plan is in `docs/desktop-electron.md`). One renderer serves both; the SwiftUI Mac app and
+the Flutter Windows app stay until it catches up.
+
+- **Layout.** `Packages/hermes-core` is the protocol and connection logic in TypeScript (a port
+  of `HermesKit`'s, behaviour for behaviour). `Apps/Desktop/electron` is the app: `src/main`
+  (window, HTTP, WebSockets, settings, secrets), `src/preload` (the `window.talaria` bridge),
+  `src/renderer` (React views only).
+- **Shared fixtures.** `Packages/fixtures/*.json` are read by both `SharedFixtureTests.swift`
+  and `hermes-core`'s vitest suite: a behaviour both ports implement gets a fixture there.
+- **Platform differences live in the main process and in CSS.** The preload sets
+  `<html data-platform>` and the frame's `--frame-*` variables; the renderer never checks the
+  platform in code (`tests/stylesheet-scan.test.ts` fails if it does).
+- **Styles use tokens only.** Raw colours and pixel sizes live in `src/renderer/theme/*.css`;
+  a `*.module.css` that writes one fails the stylesheet scan.
+- **Positions and behaviour follow the Mac app** on both platforms; each platform keeps its
+  own system font, sizes and selection look (`theme/platform.css`).
+- **Network in the main process.** The renderer never fetches: HTTP (Node's fetch, with a
+  cookie jar) and WebSockets (`ws`) go through IPC, so there is no `Origin` and no CORS.
+- **Check a change** with `pnpm install`, `pnpm typecheck`, `pnpm test` at the repo root, then
+  `pnpm desktop:build`. Run it with `pnpm desktop:dev`. On Windows, build the app with
+  `scripts/windows/Build-Electron.ps1`.
+- Settings are kept in the app's own data folder, `Talaria Desktop` (beside the Flutter app's
+  `Talaria`), the server's secret encrypted with Electron's `safeStorage` (DPAPI on Windows,
+  the keychain on macOS).
+
 ## Windows host
 
 The Windows PC develops the Windows desktop app (planned: a Flutter UI over `HermesKit`). These

@@ -1,0 +1,25 @@
+{
+  "normalize": [
+    { "input": "hermes.example.ts.net:9119", "base": "http://hermes.example.ts.net:9119" },
+    { "input": "  https://hermes.example.ts.net/  ", "base": "https://hermes.example.ts.net" },
+    { "input": "https://hermes.example.ts.net/proxy/hermes//?token=abc#top", "base": "https://hermes.example.ts.net/proxy/hermes" },
+    { "input": "ws://127.0.0.1:9119", "base": "http://127.0.0.1:9119" },
+    { "input": "wss://hermes.example.ts.net", "base": "https://hermes.example.ts.net" },
+    { "input": "https://user:secret@hermes.example.ts.net:8443", "base": "https://hermes.example.ts.net:8443" },
+    { "input": "http://[::1]:9119", "base": "http://[::1]:9119" },
+    { "input": "ftp://hermes.example.ts.net", "error": "unsupportedScheme" },
+    { "input": "", "error": "invalidURL" }
+  ],
+  "webSocket": [
+    { "input": "hermes.example.ts.net:9119", "ticket": "Zx_9-aB", "url": "ws://hermes.example.ts.net:9119/api/ws?ticket=Zx_9-aB" },
+    { "input": "https://hermes.example.ts.net/proxy", "ticket": "Zx_9-aB", "url": "wss://hermes.example.ts.net/proxy/api/ws?ticket=Zx_9-aB" }
+  ],
+  "serverName": [
+    { "url": "hermes.example.ts.net:9119", "name": "hermes" },
+    { "url": "https://hermes.example.ts.net/proxy", "name": "hermes" },
+    { "url": "http://192.168.1.20:9119", "name": "192.168.1.20:9119" },
+    { "url": "localhost:9119", "name": "localhost:9119" },
+    { "url": "http://[::1]:9119", "name": "[::1]:9119" },
+    { "url": "", "name": null }
+  ]
+}

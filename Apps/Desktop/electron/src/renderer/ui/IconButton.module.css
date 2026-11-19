@@ -1,0 +1,27 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background-color var(--motion-fast) var(--ease);
+  -webkit-app-region: no-drag;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.button:active:not(:disabled) {
+  background: var(--fill-pressed);
+}
+
+.button:disabled {
+  color: var(--text-tertiary);
+}

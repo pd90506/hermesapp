@@ -1,0 +1,53 @@
+# The Electron desktop app's TypeScript workspace on Linux: type-check, tests and a
+# build of main, preload and renderer. Packing and screenshots happen on Windows and the
+# Mac (AGENTS.md, "Electron desktop app").
+name: desktop-electron
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Apps/Desktop/electron/**"
+      - "Packages/hermes-core/**"
+      - "Packages/fixtures/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/desktop-electron.yml"
+  pull_request:
+    paths:
+      - "Apps/Desktop/electron/**"
+      - "Packages/hermes-core/**"
+      - "Packages/fixtures/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/desktop-electron.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Tests and the Vite build don't run Electron itself.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Type-check
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm desktop:build

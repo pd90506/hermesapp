@@ -1,0 +1,34 @@
+{
+  "name": "talaria-desktop",
+  "productName": "Talaria",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Talaria for Windows and macOS: an Electron client for a self-hosted Hermes Agent.",
+  "license": "MIT",
+  "main": "out/main/main.cjs",
+  "scripts": {
+    "build": "vite build && vite build -c vite.main.config.mts && vite build -c vite.preload.config.mts",
+    "dev": "node scripts/dev.mjs",
+    "pack": "pnpm run build && electron-builder --dir --publish never",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@talaria/hermes-core": "workspace:*",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
+    "@vitejs/plugin-react": "6.2.1",
+    "electron": "44.10.2",
+    "electron-builder": "26.18.0",
+    "jsdom": "29.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vitest": "4.1.12",
+    "ws": "8.22.1"
+  }
+}

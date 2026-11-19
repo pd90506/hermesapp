@@ -1,0 +1,87 @@
+/* The chat in miniature: the theme's chat colour, its bubble and Markdown colours. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-5);
+  flex: 1;
+  padding: var(--space-6);
+  border: var(--hairline) solid var(--divider);
+  border-radius: var(--radius-lg);
+  background: var(--surface-chat);
+  color: var(--text);
+  font-size: var(--text-content);
+  line-height: var(--line-body);
+  user-select: text;
+}
+
+.bubble {
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--user-bubble);
+}
+
+.reply {
+  align-self: stretch;
+}
+
+.heading {
+  margin: 0 0 var(--space-3);
+  color: var(--md-heading);
+  font-size: 1.15em;
+  font-weight: var(--weight-semibold);
+}
+
+.paragraph {
+  margin: 0 0 var(--space-4);
+}
+
+.bold {
+  color: var(--md-bold);
+}
+
+.link {
+  color: var(--md-link);
+}
+
+.inlineCode {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--md-inline-code-bg);
+  color: var(--md-inline-code);
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+}
+
+.quote {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border-left: var(--space-1) solid var(--md-quote-bar);
+  background: var(--md-quote-bg);
+  color: var(--md-quote-text);
+}
+
+.table {
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-5);
+  border: var(--hairline) solid var(--md-table-border);
+  text-align: left;
+}
+
+.table th {
+  background: var(--md-table-header-bg);
+  color: var(--md-table-header-text);
+  font-weight: var(--weight-semibold);
+}
+
+.table tbody tr:nth-child(even) td {
+  background: var(--md-table-stripe);
+}
+
+.table .number {
+  text-align: right;
+}

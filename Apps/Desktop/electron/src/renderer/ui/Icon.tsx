@@ -21,6 +21,16 @@ const icons = {
     glyph: '',
     path: 'M8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8zM6.9 1.5h2.2l.4 1.7 1.3.7 1.7-.6 1.1 1.9-1.3 1.2v1.2l1.3 1.2-1.1 1.9-1.7-.6-1.3.7-.4 1.7H6.9l-.4-1.7-1.3-.7-1.7.6-1.1-1.9 1.3-1.2V7.4L2.4 6.2l1.1-1.9 1.7.6 1.3-.7z',
   },
+  /** Fluent Copy / SF `doc.on.doc`. */
+  copy: {
+    glyph: '\uE8C8',
+    path: 'M5.5 5.5h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM2.5 10.5v-7a1 1 0 0 1 1-1h7',
+  },
+  /** Fluent CheckMark / SF `checkmark`. */
+  check: {
+    glyph: '\uE73E',
+    path: 'M3 8.5l3.2 3.2L13 4.5',
+  },
 } as const
 
 export type IconName = keyof typeof icons

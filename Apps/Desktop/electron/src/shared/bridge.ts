@@ -3,6 +3,8 @@
  * native power the renderer has (`window.talaria`, set up by the preload). Platform
  * differences stay on the main side of it.
  */
+import type { AppearanceSettingsJSON, MarkdownColorsJSON } from '@talaria/hermes-core'
+
 export type Platform = 'windows' | 'mac' | 'linux'
 
 export interface BridgeHttpRequest {
@@ -42,6 +44,10 @@ export interface SavedSettings {
   server?: SavedServer
   /** Whether the profile rail shows (the Mac's `profileRailShown`). */
   railShown?: boolean
+  /** Settings ▸ Appearance: the look and the text sizes (HermesKit's `AppearanceSettings`). */
+  appearance?: AppearanceSettingsJSON
+  /** The colour theme and Markdown colours (HermesKit's `MarkdownColors`; its preset is the theme). */
+  markdownColors?: MarkdownColorsJSON
 }
 
 export interface TalariaBridge {
@@ -72,7 +78,17 @@ export interface TalariaBridge {
     /** Colours the Windows caption buttons to match the page. */
     setCaptionColors(colors: { symbol: string }): void
   }
+  links: {
+    /** Opens a web or mail address in the system's browser or mail app; false when refused. */
+    open(url: string): Promise<boolean>
+  },
+  theme: {
+    /** Light, dark or the system's look for the whole app (`nativeTheme.themeSource`). */
+    setMode(mode: AppearanceMode): void
+  }
 }
+
+export type AppearanceMode = 'system' | 'light' | 'dark'
 
 export const IPC = {
   httpSend: 'talaria:http:send',
@@ -88,6 +104,8 @@ export const IPC = {
   appearanceGet: 'talaria:appearance:get',
   appearanceChanged: 'talaria:appearance:changed',
   captionColors: 'talaria:caption:colors',
+  linksOpen: 'talaria:links:open',
+  themeSetMode: 'talaria:theme:set-mode',
 } as const
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */

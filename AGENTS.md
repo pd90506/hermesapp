@@ -198,6 +198,15 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     **vitest** 4.1.12, **jsdom** 29.1.1, **@testing-library/react** 16.3.3,
     **electron-builder** 26.18.0, and the `@types` packages (all MIT, Apache-2.0 for
     TypeScript).
+  - Markdown in messages (work package B, `features/markdown`), bundled into the renderer:
+    **streamdown** 2.7.0 (Apache-2.0) with **@streamdown/math** 1.0.3 (Apache-2.0),
+    **shiki** 4.5.0 (MIT) and **katex** 0.19.0 (MIT). The same renderer and pins as the
+    official Hermes Desktop (`apps/desktop/package.json`), named in the approved plan.
+    Streamdown re-renders only the block that changed while a reply streams; Shiki runs on
+    its JavaScript regex engine (the page's CSP allows no WebAssembly) and loads itself and
+    each language on first use. Streamdown's Tailwind-styled defaults are all replaced by
+    our own components and CSS Modules; its controls, link-safety dialog and URL hardening
+    are off (links open only through `talaria.links`, checked in the main process).
   - `Packages/hermes-core` has no runtime dependency: no DOM, no Node, so it runs in the
     renderer, in the main process and in vitest alike.
   - pnpm runs install scripts only for `electron` (its binary download); see `pnpm` in the root

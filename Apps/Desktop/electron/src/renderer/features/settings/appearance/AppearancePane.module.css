@@ -1,0 +1,198 @@
+/* The Mac's columns form: labels right-aligned in their own column, controls beside them. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  user-select: none;
+}
+
+.row {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.label {
+  flex: none;
+  width: var(--settings-label-width);
+  min-height: var(--field-height);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.control {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: var(--field-height);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: var(--line-body);
+}
+
+.divider {
+  border: none;
+  border-top: var(--hairline) solid var(--divider);
+  margin: 0;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: var(--space-1);
+  gap: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--fill-pressed);
+}
+
+.segment {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-6);
+  background: transparent;
+}
+
+.segment:hover {
+  background: var(--fill-hover);
+}
+
+.segment[aria-checked='true'] {
+  background: var(--field-fill-focused);
+  box-shadow: 0 0 0 var(--hairline) var(--surface-card-stroke);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.swatch[aria-checked='true'] {
+  color: var(--text);
+}
+
+.ring {
+  display: block;
+  padding: var(--space-1);
+  border: var(--swatch-ring) solid transparent;
+  border-radius: 50%;
+}
+
+.swatch[aria-checked='true'] .ring {
+  border-color: var(--text-tertiary);
+}
+
+.circle {
+  display: block;
+  width: var(--swatch-size);
+  height: var(--swatch-size);
+  border-radius: 50%;
+  background: var(--swatch-color);
+  box-shadow: inset 0 0 0 var(--hairline) var(--swatch-stroke);
+}
+
+.swatchName {
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.sizeLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sizeField {
+  width: var(--size-field-width);
+  height: var(--field-height);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border: var(--hairline) solid var(--field-stroke);
+  border-bottom-color: var(--field-underline);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+  color: var(--text-secondary);
+  outline: none;
+}
+
+.sizeField[data-custom='true'] {
+  color: var(--text);
+}
+
+.sizeField:focus {
+  background: var(--field-fill-focused);
+  border-bottom-color: var(--accent);
+}
+
+.unit {
+  color: var(--text-secondary);
+}
+
+.stepper {
+  display: inline-flex;
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.stepper button {
+  width: var(--field-height);
+  height: var(--field-height);
+  border: none;
+  background: var(--field-fill);
+}
+
+.stepper button + button {
+  border-left: var(--hairline) solid var(--surface-card-stroke);
+}
+
+.stepper button:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.stepper button:disabled {
+  color: var(--text-tertiary);
+}
+
+.button {
+  height: var(--field-height);
+  padding: 0 var(--space-7);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.button:disabled {
+  color: var(--text-tertiary);
+}

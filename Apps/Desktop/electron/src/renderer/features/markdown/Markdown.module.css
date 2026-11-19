@@ -1,0 +1,289 @@
+/* A message's Markdown (Markdown.tsx). Sizes and spacing after the Mac's MarkdownLayout
+   and MarkdownTableGrid; every colour is a --md-* token (theme/tokens.css, B section). */
+
+.root {
+  min-width: 0;
+  font-size: var(--text-content, var(--text-body));
+  line-height: var(--md-line);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
+}
+
+.plain {
+  white-space: pre-wrap;
+}
+
+/* One block gap between blocks: Streamdown's container holds them, as does a quote;
+   list items keep the smaller item gap. */
+.root :where(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table, hr, section) {
+  margin: 0;
+}
+
+.root > div > * + *,
+.quote > * + * {
+  margin-top: var(--md-block-gap);
+}
+
+.root > div > * + :is(.h1, .h2),
+.quote > * + :is(.h1, .h2) {
+  margin-top: calc(var(--md-block-gap) + var(--md-heading-gap-major));
+}
+
+.root > div > * + :is(.h3, .h4),
+.quote > * + :is(.h3, .h4) {
+  margin-top: calc(var(--md-block-gap) + var(--md-heading-gap-minor));
+}
+
+.paragraph {
+  white-space: normal;
+}
+
+.h1,
+.h2,
+.h3,
+.h4 {
+  font-weight: var(--weight-bold);
+  color: var(--md-heading);
+  line-height: var(--line-tight);
+}
+
+.h1 { font-size: var(--md-h1); }
+.h2 { font-size: var(--md-h2); }
+.h3 { font-size: var(--md-h3); }
+.h4 { font-size: var(--md-h4); }
+
+.strong {
+  font-weight: var(--weight-bold);
+  color: var(--md-bold);
+}
+
+/* Lists: the marker in its column (12, or 20 for numbers), then a 6 gap to the text. */
+.list,
+.orderedList {
+  padding-inline-start: calc(var(--md-list-marker-column) + var(--md-list-marker-gap));
+}
+
+.orderedList {
+  padding-inline-start: calc(var(--md-list-ordered-column) + var(--md-list-marker-gap));
+  font-variant-numeric: tabular-nums;
+}
+
+.item + .item,
+.item > * + *,
+.item > :is(.list, .orderedList) {
+  margin-top: var(--md-list-item-gap);
+}
+
+.list > .item::marker {
+  content: '•  ';
+  color: var(--text-secondary);
+}
+
+.list .list > .item::marker {
+  content: '◦  ';
+}
+
+.list .list .list > .item::marker {
+  content: '▪  ';
+}
+
+.item[data-task='open']::marker {
+  content: '☐  ';
+  color: var(--text);
+}
+
+.item[data-task='done']::marker {
+  content: '☑  ';
+  color: var(--text);
+}
+
+.quote {
+  padding-inline-start: calc(var(--md-quote-indent) - var(--md-quote-bar-width));
+  border-inline-start: var(--md-quote-bar-width) solid var(--md-quote-bar);
+  background: var(--md-quote-bg);
+  color: var(--md-quote-text);
+}
+
+.rule {
+  color: var(--text);
+  user-select: none;
+}
+
+.link {
+  color: var(--md-link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.inertLink {
+  color: var(--md-link);
+}
+
+.inlineCode {
+  font-family: var(--font-mono);
+  font-size: 1em;
+  color: var(--md-inline-code);
+  background: var(--md-inline-code-bg);
+  border-radius: var(--md-inline-code-radius);
+  padding: 0 0.15em;
+}
+
+/* Code fences (CodeBlock.tsx). */
+.codeBlock {
+  background: var(--md-code-block-bg);
+  border-radius: var(--md-code-radius);
+  min-width: 0;
+}
+
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--md-code-header-top) var(--md-code-padding) 0;
+}
+
+.codeLanguage {
+  font-family: var(--font-mono);
+  font-size: var(--md-code-label);
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.codeCopy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--md-code-copy-width);
+  height: var(--md-code-copy-height);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: default;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.codeCopy:hover {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.codeCopy:active {
+  background: var(--fill-pressed);
+}
+
+.codeScroll {
+  overflow-x: auto;
+}
+
+.codePre {
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: var(--md-code-header-bottom) var(--md-code-padding) var(--md-code-padding);
+  font-family: var(--font-mono);
+  font-size: var(--text-code, var(--md-code-size));
+  line-height: var(--md-code-line);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.token {
+  color: var(--token-light, currentColor);
+}
+
+@media (prefers-color-scheme: dark) {
+  .token {
+    color: var(--token-dark, currentColor);
+  }
+}
+
+/* Maths (KaTeX): display maths centered, scrolling when wider than the column. */
+.root :global(.katex) {
+  font-size: 1.1em;
+}
+
+.root :global(.katex-display) {
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.root > div > * + :global(.katex-display),
+.quote > * + :global(.katex-display) {
+  margin-top: var(--md-block-gap);
+}
+
+/* Tables. The reach box is the column widened by --md-table-reach on each side; the
+   frame is at least the column's width and at most as wide as its cells need with long
+   ones wrapped (each column's min-content, capped at 10 em), centered in the reach,
+   scrolling once even the reach is too narrow. */
+.tableReach {
+  display: flex;
+  justify-content: safe center;
+  margin-inline: calc(-1 * var(--md-table-reach));
+  overflow-x: auto;
+}
+
+.tableScroll {
+  flex: none;
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--md-table-reach));
+  min-width: min-content;
+  border: var(--hairline) solid var(--md-table-border);
+  border-radius: var(--md-table-radius);
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.headerCell,
+.cell {
+  padding: var(--md-table-cell-padding-y) var(--md-table-cell-padding-x);
+  text-align: start;
+  vertical-align: middle;
+}
+
+.headerCell {
+  background: var(--md-table-header-bg);
+  color: var(--md-table-header-text);
+  font-weight: var(--weight-bold);
+}
+
+.headerCell[data-align='center'],
+.cell[data-align='center'] {
+  text-align: center;
+}
+
+.headerCell[data-align='right'],
+.cell[data-align='right'] {
+  text-align: end;
+}
+
+.row:not(:last-child) > .cell,
+.headerCell {
+  border-bottom: var(--hairline) solid var(--md-table-border);
+}
+
+tbody > .row:nth-child(even) > .cell {
+  background: var(--md-table-stripe);
+}
+
+/* A column never wraps narrower than its widest cell or 10 em, whichever is less. */
+.cellText {
+  min-width: min(var(--md-table-wrap), 100%);
+  min-width: calc-size(max-content, min(size, var(--md-table-wrap)));
+}
+
+.footnotes {
+  font-size: var(--md-h4);
+  color: var(--text-secondary);
+}

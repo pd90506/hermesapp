@@ -57,8 +57,9 @@
   --line-tight: 1.3;
   --line-body: 1.45;
 
-  /* The system accent (set by the app from the OS); this is its fallback. */
-  --accent: #0067c0;
+  /* The system accent (--system-accent, set by the app from the OS; this is its
+     fallback). A colour theme other than System replaces it (themes/themes.css). */
+  --accent: var(--system-accent, #0067c0);
   --on-accent: #ffffff;
 
   color-scheme: light dark;
@@ -156,6 +157,71 @@
     --cron-paused: #ff9f0a;
   }
 }
+
+
+/* B Markdown: message text (features/markdown). Spacing from the Mac's MarkdownLayout
+   (SelectableMarkdownText.swift) and MarkdownTableGrid; heading sizes are the macOS text
+   styles over body (title2 17, title3 15, headline 13, subheadline 11 at body 13). */
+:root {
+  --md-block-gap: 10px;
+  --md-list-item-gap: 6px;
+  --md-heading-gap-major: 6px;
+  --md-heading-gap-minor: 2px;
+  --md-quote-indent: 12px;
+  --md-quote-bar-width: 3px;
+  --md-list-marker-column: 12px;
+  --md-list-ordered-column: 20px;
+  --md-list-marker-gap: 6px;
+  --md-code-padding: 10px;
+  --md-code-header-top: 6px;
+  --md-code-header-bottom: 4px;
+  --md-code-copy-width: 24px;
+  --md-code-copy-height: 20px;
+  --md-code-radius: 8px;
+  --md-inline-code-radius: 4px;
+  --md-table-cell-padding-x: 10px;
+  --md-table-cell-padding-y: 6px;
+  --md-table-radius: 6px;
+  /* A long column wraps down to 10 em before the table reaches past the text's column. */
+  --md-table-wrap: 10em;
+  /* How far a table may reach past each side of the column into the window's spare
+     width; the chat column sets it (the Mac's tableReach), 0 elsewhere. */
+  --md-table-reach: 0px;
+  --md-h1: 1.3077em;
+  --md-h2: 1.1538em;
+  --md-h3: 1em;
+  --md-h4: 0.8462em;
+  --md-code-label: 0.7692em;
+  --md-code-line: 1.4;
+  --md-code-size: 0.9231em;
+  --md-line: 1.35;
+}
+
+/* M */
+/* Appearance (features/settings/appearance): the System theme's user bubble and composer
+   (the Mac's: the accent at 15%, the control background), and the text sizes. A colour
+   theme replaces the colours (themes/themes.css). The sizes are points, unitless; the app
+   sets the user's on <html> (--text-ui, --text-content-size, --text-code-size). The UI
+   size scales every UI text style by the same factor (TextSizes.uiScale), against the
+   system's body size (--text-system-ui, platform.css). */
+:root {
+  --user-bubble: color-mix(in srgb, var(--accent) 15%, transparent);
+  --composer-fill: var(--field-fill);
+  --text-ui: 14;
+  --text-content-size: 14;
+  --text-code-size: 12;
+  --text-system-ui: 14;
+  --ui-scale: calc(var(--text-ui) / var(--text-system-ui));
+  --text-content: calc(var(--text-content-size) * 1px);
+  --text-code: calc(var(--text-code-size) * 1px);
+  /* The Appearance pane's theme swatches (ColorThemePicker). */
+  --swatch-size: 26px;
+  --swatch-ring: 2px;
+  --swatch-stroke: rgb(0 0 0 / 0.12);
+  --size-field-width: 48px;
+  --settings-label-width: 120px;
+}
+
 
 /* L: the Providers and Capabilities settings panes (Apps/Shared/Views/ProvidersView.swift,
    CapabilitiesView.swift). Switch sizes are NSSwitch's (38 x 22 pt) and WinUI ToggleSwitch's

@@ -299,3 +299,43 @@
     --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.3);
   }
 }
+
+/* G: message action bars and the prompt rail (Apps/Shared/Views/MessageCopyButton.swift,
+   PromptRail.swift). */
+:root {
+  /* The bar under a message: 26 tall, its icons and time a quiet grey (the user,
+     2026-10-19: lighter than secondary text). */
+  --message-bar-height: 26px;
+  --message-bar-button: 24px;
+  --message-bar-ink: color-mix(in srgb, var(--text) 42%, transparent);
+  --message-bar-reveal: 150ms;
+  /* The rail: 22 wide, 28 from the chat's edge, 24 clear of the top and the composer;
+     ticks at most 14 apart, 10 x 2 (the prompt the chat is at 16 x 2). */
+  --rail-width: 22px;
+  --rail-trailing-inset: 28px;
+  --rail-vertical-inset: 24px;
+  --rail-tick-width: 10px;
+  --rail-tick-current-width: 16px;
+  --rail-tick-height: 2px;
+  --rail-tick: var(--text-tertiary);
+  --rail-tick-current: var(--text);
+  --rail-panel-width: 280px;
+  --rail-panel-max-height: 420px;
+  --rail-panel-radius: 12px;
+  --rail-row-radius: var(--radius-md);
+  /* H's menu card (PR #168 defines the same; whichever merges later keeps one copy). */
+  --menu-radius: 8px;
+  --menu-padding: 4px;
+  --menu-item-height: 32px;
+  --menu-min-width: 160px;
+  --menu-icon-gap: 12px;
+  --menu-surface: #f9f9f9;
+  --menu-stroke: rgb(0 0 0 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --menu-surface: #2c2c2c;
+    --menu-stroke: rgb(0 0 0 / 0.2);
+  }
+}

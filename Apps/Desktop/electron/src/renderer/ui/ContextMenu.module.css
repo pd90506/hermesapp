@@ -1,0 +1,98 @@
+/* A full-window catcher: a click outside closes the menu, as a menu's light dismiss. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  -webkit-app-region: no-drag;
+}
+
+.menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: var(--menu-min-width);
+  padding: var(--menu-padding);
+  border: var(--hairline) solid var(--menu-stroke);
+  border-radius: var(--menu-radius);
+  background: var(--menu-surface);
+  box-shadow: var(--shadow-flyout);
+  visibility: hidden;
+}
+
+.menu[data-shown] {
+  visibility: visible;
+  animation: open var(--motion) var(--ease);
+}
+
+@keyframes open {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--space-2) * -1));
+  }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--menu-icon-gap);
+  height: var(--menu-item-height);
+  padding: 0 var(--space-6) 0 var(--space-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible {
+  background: var(--fill-hover);
+  outline: none;
+}
+
+.item:active:not(:disabled) {
+  background: var(--fill-pressed);
+}
+
+.item:disabled {
+  color: var(--text-tertiary);
+}
+
+.item[data-destructive]:not(:disabled) {
+  color: var(--critical);
+}
+
+.icon {
+  display: inline-flex;
+  width: var(--icon-size);
+  flex: none;
+}
+
+.label {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.separator {
+  height: var(--hairline);
+  margin: var(--space-1) calc(var(--menu-padding) * -1);
+  background: var(--divider);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu[data-shown] {
+    animation: none;
+  }
+}
+
+.item[data-open] {
+  background: var(--fill-hover);
+}
+
+.chevron {
+  display: inline-flex;
+  margin-left: var(--space-6);
+  color: var(--text-secondary);
+}

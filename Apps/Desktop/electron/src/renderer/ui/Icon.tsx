@@ -80,6 +80,19 @@ const icons = {
     glyph: '\uE73E',
     path: 'M3 8.5l3.2 3.2L13 4.5',
   },
+  /* G: message actions and the shared context menu (H's ui/ContextMenu, PR #168, has the same three). */
+  /** Fluent More / SF `ellipsis`. */
+  more: {
+    glyph: '\u{E712}',
+    path: 'M3 8a.6.6 0 1 0 1.2 0a.6.6 0 1 0-1.2 0zM7.4 8a.6.6 0 1 0 1.2 0a.6.6 0 1 0-1.2 0zM11.8 8a.6.6 0 1 0 1.2 0a.6.6 0 1 0-1.2 0z',
+  },
+  /** Fluent Copy / SF `arrow.triangle.branch`: Branch in New Chat copies the chat up to a message. */
+  fork: {
+    glyph: '\u{E8C8}',
+    path: 'M5 2.5v6.5a3 3 0 0 0 3 3h3M11 2.5v4M9 4.5l2-2 2 2M9.5 10l1.5 2-1.5 2',
+  },
+  /** Fluent ChevronRight / SF `chevron.right`. */
+  chevronRight: { glyph: '\u{E76C}', path: 'M6 3l5 5-5 5' },
 } as const
 
 export type IconName = keyof typeof icons

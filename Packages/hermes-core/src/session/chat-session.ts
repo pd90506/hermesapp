@@ -680,6 +680,16 @@ export class ChatSession extends Observable<ChatView> {
     if (result?.status !== 'not_interrupted') this.change((t) => t.serverClearedQueue(sentBeforeStop))
   }
 
+  /** Where this chat's stored rows are read (package G reads them whole to branch). */
+  get messagesSource(): SessionMessagesSource | undefined {
+    return this.host?.messagesSource
+  }
+
+  /** Shows an action's failure in the chat's error line (package G: a branch refused). */
+  showError(message: string): void {
+    this.change((t) => t.keepError(message))
+  }
+
   /** Adds a note only this device shows. */
   appendLocalNote(text: string): void {
     this.change((t) => t.appendNote(text))

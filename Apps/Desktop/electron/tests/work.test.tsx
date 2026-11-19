@@ -4,6 +4,8 @@ import {
   Observable, blockKind, makeItem, reviewDisplayKind, transcriptBlocks,
   type ChatSession, type JSONValue, type ToolPhase, type TranscriptBlock, type TranscriptItem,
 } from '@talaria/hermes-core'
+import { ModelContext } from '../src/renderer/app/hooks.ts'
+import type { AppModel } from '../src/renderer/app/model.ts'
 import { blockRenderer } from '../src/renderer/features/chat/blocks/registry.ts'
 import '../src/renderer/features/chat/blocks/registered-blocks.ts'
 
@@ -39,13 +41,15 @@ function chat(): ChatSession {
 }
 
 function draw(blocks: readonly TranscriptBlock[], session = chat()) {
+  // The message actions (G) wrap the rows and read the app model.
+  const model = Object.assign(new Observable({}), { connection: {} }) as unknown as AppModel
   return render(
-    <div>
+    <ModelContext.Provider value={model}>
       {blocks.map((block) => {
         const Renderer = blockRenderer(blockKind(block))!
         return <Renderer key={block.id} block={block} chat={session} isNewest={false} />
       })}
-    </div>,
+    </ModelContext.Provider>,
   )
 }
 
@@ -65,8 +69,12 @@ describe('a turn’s work', () => {
     expect(screen.getByText('All good.')).toBeTruthy()
     expect(screen.queryByText('Let me look.')).toBeNull()
 
+    const bars = screen.getAllByRole('button', { name: 'Copy Message' }).length
     fireEvent.click(line)
     expect(screen.getByText('Let me look.')).toBeTruthy()
+    // The commentary inside the work has no action bar; the prompt and the answer keep theirs.
+    expect(bars).toBe(2)
+    expect(screen.getAllByRole('button', { name: 'Copy Message' })).toHaveLength(bars)
     const group = screen.getByRole('button', { name: /Ran commands, read files/ })
     expect(screen.queryByTestId('work-step')).toBeNull()
 

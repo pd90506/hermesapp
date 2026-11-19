@@ -6,6 +6,7 @@ import { AssistantBlock, SystemBlock, ToolBlock, UserBlock } from './MessageBloc
 import { BackgroundNoticeBlock, ReviewNoteBlock } from './work/Notices.tsx'
 import { ToolBlock as ToolCallBlock } from './work/ToolCall.tsx'
 import { TurnWorkBlock } from './work/TurnWork.tsx'
+import { addMessageActions } from '../actions/register.ts'
 
 // A
 registerBlockRenderer('user', UserBlock)
@@ -18,3 +19,6 @@ registerBlockRenderer('work', TurnWorkBlock)
 registerBlockRenderer('tool', ToolCallBlock)
 registerBlockRenderer('backgroundNotice', BackgroundNoticeBlock)
 registerBlockRenderer('review', ReviewNoteBlock)
+
+// G: wraps the renderers registered above (C's too) with the action bars and the copy menu.
+addMessageActions()

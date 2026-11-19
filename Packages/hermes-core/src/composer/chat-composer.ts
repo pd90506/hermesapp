@@ -2,6 +2,7 @@ import { GatewayClientError } from '../client.ts'
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import { SendCancelledError, type ChatSession } from '../session/chat-session.ts'
+import { PromptQueue, compressCommand } from './queue/prompt-queue.ts'
 
 export interface ComposerView {
   draft: string
@@ -19,9 +20,12 @@ export interface ComposerView {
  */
 export class ChatComposer extends Observable<ComposerView> {
   private sending?: { cancelled: boolean }
+  /** Messages held while a reply or a compression runs, and `/compress` (package F). */
+  readonly queue: PromptQueue
 
   constructor(readonly session: ChatSession) {
     super({ draft: '', isSubmitting: false })
+    this.queue = new PromptQueue(this, session)
   }
 
   get draft(): string {
@@ -46,6 +50,19 @@ export class ChatComposer extends Observable<ComposerView> {
   async submit(): Promise<void> {
     if (!this.canSubmit) return
     const text = this.get().draft
+    // Package F: `/compress` runs here until D routes slash commands; text sent while a
+    // reply or a compression runs waits in the app (`PromptQueue`).
+    const compress = compressCommand(text)
+    if (compress) {
+      this.clearDraftAndError()
+      await this.queue.compress(compress.topic)
+      return
+    }
+    if (this.queue.holdsNextSend) {
+      this.queue.hold(text)
+      this.clearDraftAndError()
+      return
+    }
     const signal = { cancelled: false }
     this.sending = signal
     this.set({ draft: '', isSubmitting: true })
@@ -68,6 +85,16 @@ export class ChatComposer extends Observable<ComposerView> {
   /** Stops a send that is still waiting to go out; its text comes back. */
   cancelSubmit(): void {
     if (this.sending) this.sending.cancelled = true
+  }
+
+  private clearDraftAndError(): void {
+    const { error: _, ...rest } = this.get()
+    this.set({ ...rest, draft: '' })
+  }
+
+  /** Shows a composer message (a held message's Cancel or Steer could not run). */
+  showError(message: string): void {
+    this.set({ ...this.get(), error: message })
   }
 
   clearError(): void {

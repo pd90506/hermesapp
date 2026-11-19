@@ -49,7 +49,7 @@
   --motion: 167ms;
   --ease: cubic-bezier(0, 0, 0, 1);
 
-  /* Type. Font families per platform in platform.css; CJK glyphs follow data-cjk. */
+  /* Type. Font families in platform.css; CJK glyphs follow data-cjk. */
   --font-cjk: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC';
   --weight-regular: 400;
   --weight-semibold: 600;
@@ -125,6 +125,29 @@
   }
 }
 
+/* H: sidebar (session rows, menus, tabs, search, banners). */
+:root {
+  /* WinUI's MenuFlyout: 8 px corners, 4 px padding, 32 px items, at least 120 wide. */
+  --menu-radius: 8px;
+  --menu-padding: 4px;
+  --menu-item-height: 32px;
+  --menu-min-width: 160px;
+  --menu-icon-gap: 12px;
+  --menu-surface: #f9f9f9;
+  --menu-stroke: rgb(0 0 0 / 0.06);
+  /* The Mac's tab capsule (SessionListTabBar): 34 tall, 3 inside, 6 above. */
+  --tab-bar-height: 34px;
+  --tab-bar-padding: 3px;
+  --tab-pill-fill: rgb(0 0 0 / 0.08);
+  --tab-bar-surface: rgb(255 255 255 / 0.72);
+  --tab-bar-stroke: rgb(0 0 0 / 0.08);
+  --banner-radius: 14px;
+  --status-dot: 8px;
+  --status-dot-ring: 1.5px;
+  --dialog-width: 360px;
+  --backdrop-dialog: rgb(0 0 0 / 0.3);
+}
+
 /* K: Settings, an overlay card over the window, the same on every platform (after Hermes
    Desktop's OverlayView / OverlaySplitLayout / ListRow, apps/desktop/src/app/overlays). */
 :root {
@@ -168,13 +191,10 @@
   --cron-run-indent: 29px;
   --cron-spinner: 10px;
   --cron-spinner-stroke: 1.5px;
-  --cron-menu-min-width: 200px;
-  --cron-menu-item-height: 28px;
   --cron-editor-width: 540px;
   --cron-control-width: 180px;
   --cron-button-min-width: 96px;
   --line-height-title: calc(var(--text-title) * var(--line-tight));
-  --cron-menu-fill: #f9f9f9;
   --cron-dialog-fill: #f9f9f9;
   --cron-dialog-scrim: rgb(0 0 0 / 0.3);
   /* The Mac row's paused dot is the system orange. */
@@ -183,7 +203,6 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --cron-menu-fill: #2c2c2c;
     --cron-dialog-fill: #202020;
     --cron-dialog-scrim: rgb(0 0 0 / 0.5);
     --cron-paused: #ff9f0a;
@@ -265,6 +284,17 @@
   --spinner-stroke: 2px;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --menu-surface: #2c2c2c;
+    --menu-stroke: rgb(0 0 0 / 0.2);
+    --tab-pill-fill: rgb(255 255 255 / 0.1);
+    --tab-bar-surface: rgb(40 40 40 / 0.72);
+    --tab-bar-stroke: rgb(255 255 255 / 0.08);
+    --backdrop-dialog: rgb(0 0 0 / 0.5);
+  }
+}
+
 /* A: chat core (transcript, composer, request cards). Numbers from the Mac's ChatView,
    ComposerView, PromptRail and ServerRequestCard. Text sizes, the user bubble and the
    composer fill are M's (above); the spinner is L's. */
@@ -330,4 +360,39 @@
     --review-gradient: linear-gradient(to right, #f2c15c, #d07aa4, #b495f5);
     --review-detail: #a993c8;
   }
+}
+
+/* F: the cards over the composer (held and queued messages, compression) and the clarify
+   card (Apps/Shared/Composer/ComposerView.swift, Apps/Shared/Views/ClarifyCardView.swift). */
+:root {
+  --prompt-card-height: 32px;
+  --prompt-card-action: 22px;
+  --clarify-tab-height: 24px;
+  --clarify-badge: 20px;
+  --clarify-checkbox: 14px;
+}
+
+/* G: message action bars and the prompt rail (Apps/Shared/Views/MessageCopyButton.swift,
+   PromptRail.swift). */
+:root {
+  /* The bar under a message: 26 tall, its icons and time a quiet grey (the user,
+     2026-10-19: lighter than secondary text). */
+  --message-bar-height: 26px;
+  --message-bar-button: 24px;
+  --message-bar-ink: color-mix(in srgb, var(--text) 42%, transparent);
+  --message-bar-reveal: 150ms;
+  /* The rail: 22 wide, 28 from the chat's edge, 24 clear of the top and the composer;
+     ticks at most 14 apart, 10 x 2 (the prompt the chat is at 16 x 2). */
+  --rail-width: 22px;
+  --rail-trailing-inset: 28px;
+  --rail-vertical-inset: 24px;
+  --rail-tick-width: 10px;
+  --rail-tick-current-width: 16px;
+  --rail-tick-height: 2px;
+  --rail-tick: var(--text-tertiary);
+  --rail-tick-current: var(--text);
+  --rail-panel-width: 280px;
+  --rail-panel-max-height: 420px;
+  --rail-panel-radius: 12px;
+  --rail-row-radius: var(--radius-md);
 }

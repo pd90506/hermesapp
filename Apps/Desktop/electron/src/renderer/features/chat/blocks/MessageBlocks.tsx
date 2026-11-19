@@ -6,7 +6,7 @@ import { Markdown } from '../../markdown/Markdown.tsx'
 // The renderers package A registers (the Mac's `MessageRow`); replies use B's Markdown.
 // C replaces `tool` and adds `work`, G adds the action bars.
 
-/** The user's prompt as typed, in a bubble at the trailing edge. */
+/** The user's prompt as typed, in a bubble at the trailing edge; its sending state is in G's action bar. */
 export function UserBlock({ block }: BlockProps) {
   if (block.kind !== 'item') return null
   const item = block.item
@@ -20,7 +20,6 @@ export function UserBlock({ block }: BlockProps) {
           </div>
         )}
         {hasText && <div className={styles.bubble}>{item.text}</div>}
-        {item.outgoingStatus && <span className={styles.outgoing}>{item.outgoingStatus}</span>}
       </div>
     </div>
   )

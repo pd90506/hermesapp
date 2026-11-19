@@ -22,6 +22,15 @@ function Invoke-Pnpm {
     if ($LASTEXITCODE -ne 0) { throw "pnpm $($args -join ' ') failed" }
 }
 
+# The workspace's scripts call `pnpm` itself, which isn't on PATH unless corepack's shims
+# are: put them in a temporary folder for this run (`corepack enable` alone writes into
+# Node's install folder, which needs an administrator).
+$shims = Join-Path ([IO.Path]::GetTempPath()) "talaria-pnpm-$PID"
+New-Item -ItemType Directory -Force $shims | Out-Null
+corepack enable pnpm --install-directory $shims
+if ($LASTEXITCODE -ne 0) { throw 'corepack enable failed' }
+$env:PATH = "$shims;$env:PATH"
+
 Push-Location $repo
 try {
     $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
@@ -31,7 +40,10 @@ try {
         Invoke-Pnpm test
     }
     Invoke-Pnpm desktop:pack
-} finally { Pop-Location }
+} finally {
+    Pop-Location
+    Remove-Item $shims -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $exe = Join-Path $repo 'Apps\Desktop\electron\dist\win-unpacked\Talaria.exe'
 if (-not (Test-Path $exe)) { throw "Talaria.exe not found at $exe" }

@@ -73,11 +73,13 @@ function WorkTitle({ work, chat }: { work: TurnWork; chat: ChatSession }) {
     return () => clearInterval(timer)
   }, [work.isLive])
   if (work.isLive) return <span className={styles.workTitle}>{workingTitle(work.startedAt ?? appeared, now)}</span>
-  let seconds = workDuration(work)
+  // A turn this view saw end keeps the time its counter stopped at, so the line doesn't
+  // change when the stored rows' times arrive a moment later; otherwise the rows' times.
   const settledAt = rememberedValue<number>(chat, settledKey)
-  if (seconds === undefined && work.startedAt !== undefined && settledAt !== undefined && settledAt >= work.startedAt) {
-    seconds = (settledAt - work.startedAt) / 1000
-  }
+  const seen = work.startedAt !== undefined && settledAt !== undefined && settledAt >= work.startedAt
+    ? (settledAt - work.startedAt) / 1000
+    : undefined
+  const seconds = seen ?? workDuration(work)
   return <span className={styles.workTitle}>{settledTitle(seconds, work.wasInterrupted)}</span>
 }
 

@@ -40,17 +40,22 @@ function chat(): ChatSession {
   return new Observable({ info: { cwd: '/home/u/repo' } }) as unknown as ChatSession
 }
 
-function draw(blocks: readonly TranscriptBlock[], session = chat()) {
-  // The message actions (G) wrap the rows and read the app model.
-  const model = Object.assign(new Observable({}), { connection: {} }) as unknown as AppModel
-  return render(
+// The message actions (G) wrap the rows and read the app model.
+const model = Object.assign(new Observable({}), { connection: {} }) as unknown as AppModel
+
+function rows(blocks: readonly TranscriptBlock[], session: ChatSession) {
+  return (
     <ModelContext.Provider value={model}>
       {blocks.map((block) => {
         const Renderer = blockRenderer(blockKind(block))!
         return <Renderer key={block.id} block={block} chat={session} isNewest={false} />
       })}
-    </ModelContext.Provider>,
+    </ModelContext.Provider>
   )
+}
+
+function draw(blocks: readonly TranscriptBlock[], session = chat()) {
+  return render(rows(blocks, session))
 }
 
 const turn = [
@@ -97,6 +102,17 @@ describe('a turn’s work', () => {
     expect(line.getAttribute('aria-expanded')).toBe('true')
     // The live group's line is its newest step's.
     expect(screen.getByTestId('step-group').textContent).toContain('Bash·make')
+  })
+
+  it('keeps the time its counter stopped at when the stored times arrive', () => {
+    const session = chat()
+    const start = Date.now() - 12_000
+    const live = [user('u1', 'q', start), tool('t1', 'terminal', { args: { command: 'make' }, phase: 'running' })]
+    const view = draw(transcriptBlocks(live, true), session)
+    const done = [user('u1', 'q', start), tool('t1', 'terminal', { args: { command: 'make' }, result: { output: 'ok', exit_code: 0 } }),
+      reply('a1', 'Built.', { at: start + 45_000 })]
+    view.rerender(rows(transcriptBlocks(done, false), session))
+    expect(screen.getByRole('button', { name: /Completed in 1\ds/ })).toBeTruthy()
   })
 
   it('remembers a fold the user opened when its row is built again', () => {

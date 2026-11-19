@@ -64,6 +64,12 @@ const bridge: TalariaBridge = {
     save: (value) => ipcRenderer.invoke(IPC.sidebarSave, value),
   },
   shortcuts: sidebarShortcuts(platform),
+  links: {
+    open: (url) => ipcRenderer.invoke(IPC.linksOpen, url),
+  },
+  theme: {
+    setMode: (mode) => ipcRenderer.send(IPC.themeSetMode, mode),
+  },
 }
 
 contextBridge.exposeInMainWorld('talaria', bridge)

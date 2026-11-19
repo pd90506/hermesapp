@@ -5,6 +5,7 @@ import {
 import { createSessionSidebar } from '../features/sidebar/sidebar-model.ts'
 import type { Appearance, SavedServer, SavedSettings, TalariaBridge } from '../../shared/bridge.ts'
 import { BridgeSocket, bridgeHttp } from './bridge-transport.ts'
+import { AppearanceStore } from '../features/settings/appearance/appearance-store.ts'
 
 export interface AppSnapshot {
   /** Settings are read; until then nothing is drawn. */
@@ -37,6 +38,8 @@ export class AppModel extends Observable<AppSnapshot> {
   /** Pins, row activity, unread, search, avatars (package H). */
   readonly sidebar: SessionSidebar
   private connector?: DashboardConnector
+  /** Settings ▸ Appearance: the look, the colour theme and the text sizes. */
+  readonly appearanceSettings: AppearanceStore
 
   constructor(readonly bridge: TalariaBridge) {
     super({ loaded: false, showsConnectPage: false, railShown: true, appearance: { dark: false }, connecting: false })
@@ -47,6 +50,7 @@ export class AppModel extends Observable<AppSnapshot> {
     })
     this.sidebar = createSessionSidebar(bridge, this.connection,
       () => ({ connector: this.connector, serverKey: this.get().server?.serverURL }))
+    this.appearanceSettings = new AppearanceStore(bridge, (change) => this.save(change))
   }
 
   private update(change: Partial<AppSnapshot>): void {
@@ -57,6 +61,7 @@ export class AppModel extends Observable<AppSnapshot> {
   async start(): Promise<void> {
     const [settings, appearance] = await Promise.all([this.bridge.settings.load(), this.bridge.appearance.get()])
     this.bridge.appearance.onChange((next) => this.update({ appearance: next }))
+    this.appearanceSettings.restore(settings)
     this.update({
       loaded: true,
       appearance,

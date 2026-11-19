@@ -6,15 +6,17 @@
  * from the main process).
  */
 :root {
-  /* The system's own UI font on each (San Francisco, Segoe UI Variable), at one size. */
+  /* The system's own UI font on each (San Francisco, Segoe UI Variable). */
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', var(--font-cjk), sans-serif;
   --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', var(--font-cjk), sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, var(--font-cjk), monospace;
-  --text-body: 14px;
-  --text-caption: 12px;
-  --text-section: 14px;
-  --text-title: 14px;
-  --text-heading: 20px;
+  /* One type scale, 14 px body, scaled by the UI text size (14 by default, so unscaled). */
+  --text-system-ui: 14;
+  --text-body: round(nearest, calc(14px * var(--ui-scale)), 1px);
+  --text-caption: round(nearest, calc(12px * var(--ui-scale)), 1px);
+  --text-section: round(nearest, calc(14px * var(--ui-scale)), 1px);
+  --text-title: round(nearest, calc(14px * var(--ui-scale)), 1px);
+  --text-heading: round(nearest, calc(20px * var(--ui-scale)), 1px);
   /* A list's selection: a quiet fill, no indicator. */
   --selection-fill: var(--fill-selected);
   --selection-text: var(--text);

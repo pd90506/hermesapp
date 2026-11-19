@@ -65,10 +65,6 @@ const icons = {
   clock: {
     path: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM8 4.5V8l2.5 1.5',
   },
-  /** Fluent CheckMark / SF `checkmark`. */
-  check: {
-    path: 'M3 8.5l3 3 7-7',
-  },
   /** Fluent ChevronRight / SF `chevron.right`. */
   chevronRight: {
     path: 'M6 3l5 5-5 5',
@@ -76,6 +72,14 @@ const icons = {
   /** Fluent Cancel / SF `xmark`. */
   close: {
     path: 'M3.5 3.5l9 9M12.5 3.5l-9 9',
+  },
+  /** Fluent Copy / SF `doc.on.doc`. */
+  copy: {
+    path: 'M5.5 5.5h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM2.5 10.5v-7a1 1 0 0 1 1-1h7',
+  },
+  /** Fluent CheckMark / SF `checkmark`. */
+  check: {
+    path: 'M3 8.5l3.2 3.2L13 4.5',
   },
 } as const
 

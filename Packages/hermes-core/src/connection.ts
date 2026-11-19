@@ -2,6 +2,7 @@ import { Bot, historyRows, type ProfileRow, type SessionSummary } from './bots.t
 import { GatewayClient, GatewayClientError, type GatewayClientConfiguration } from './client.ts'
 import type { GatewayConnector } from './connector.ts'
 import { DashboardError } from './dashboard.ts'
+import { dashboardAPIFor, type DashboardAPI } from './dashboard-api.ts'
 import { describeError } from './describe.ts'
 import { Observable } from './observable.ts'
 import { EventType, GatewayMethod } from './protocol/methods.ts'
@@ -135,10 +136,12 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     this.update({ ...initial })
   }
 
-  /** One call on the connected client; `notConnected` without one. */
-  call(method: string, params: JSONValue = {}): Promise<JSONValue> {
-    if (!this.client) return Promise.reject(new GatewayClientError('notConnected'))
-    return this.client.call(method, params)
+  /** The connector's REST routes (settings panes, cron), while one is set; undefined without REST access. */
+  get dashboardAPI(): DashboardAPI | undefined { return dashboardAPIFor(this.connector) }
+
+  /** One call on the live socket (`plugins.manage`); throws `notConnected` without one. */
+  call(method: string, params?: JSONValue): Promise<JSONValue> {
+    return this.client ? this.client.call(method, params) : Promise.reject(new GatewayClientError('notConnected'))
   }
 
   /**

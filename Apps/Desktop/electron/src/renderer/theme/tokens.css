@@ -353,19 +353,4 @@
   --rail-panel-max-height: 420px;
   --rail-panel-radius: 12px;
   --rail-row-radius: var(--radius-md);
-  /* H's menu card (PR #168 defines the same; whichever merges later keeps one copy). */
-  --menu-radius: 8px;
-  --menu-padding: 4px;
-  --menu-item-height: 32px;
-  --menu-min-width: 160px;
-  --menu-icon-gap: 12px;
-  --menu-surface: #f9f9f9;
-  --menu-stroke: rgb(0 0 0 / 0.06);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --menu-surface: #2c2c2c;
-    --menu-stroke: rgb(0 0 0 / 0.2);
-  }
 }

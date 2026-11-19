@@ -22,7 +22,8 @@ async function writeAtomically(path: string, data: string | Buffer): Promise<voi
 
 export async function loadSettings(): Promise<SavedSettings> {
   try {
-    return JSON.parse(await readFile(settingsFile(), 'utf8')) as SavedSettings
+    // A BOM (Windows PowerShell 5.1 writes one) would make the whole file unreadable.
+    return JSON.parse((await readFile(settingsFile(), 'utf8')).replace(/^\uFEFF/, '')) as SavedSettings
   } catch {
     return {}
   }

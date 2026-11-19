@@ -1,0 +1,4 @@
+/* A pane's padding (the Mac's `.padding(20)` around a columns form). */
+.pane {
+  padding: var(--space-8);
+}

@@ -4,7 +4,11 @@ import type { SocketEvent, TalariaBridge } from '../../shared/bridge.ts'
 /** hermes-core's HTTP, sent by the main process (`window.talaria.http`). */
 export function bridgeHttp(bridge: TalariaBridge): HttpClient {
   return {
-    send: (request) => bridge.http.send(request),
+    send: (request) => bridge.http.send(request).catch((error: unknown) => {
+      // Electron wraps a main-process error as "Error invoking remote method '…': Error: …".
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(message.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, ''))
+    }),
     reset: () => bridge.http.reset(),
   }
 }

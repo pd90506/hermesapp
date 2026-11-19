@@ -1,5 +1,5 @@
 import type { LinkState } from '@talaria/hermes-core'
-import { useModel, useSnapshot } from '../../app/hooks.ts'
+import { useConnectionSnapshot, useModel, useSnapshot } from '../../app/hooks.ts'
 import { IconButton } from '../../ui/IconButton.tsx'
 import { ProfileRail } from './ProfileRail.tsx'
 import { SessionList } from './SessionList.tsx'
@@ -13,7 +13,7 @@ import styles from './Sidebar.module.css'
 export function Sidebar() {
   const model = useModel()
   const app = useSnapshot(model)
-  const connection = useSnapshot(model.connection)
+  const connection = useConnectionSnapshot()
   const bot = connection.bots.find((candidate) => candidate.name === connection.selectedProfile)
   return (
     <aside className={styles.sidebar} data-rail={app.railShown || undefined}>

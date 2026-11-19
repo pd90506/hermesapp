@@ -228,8 +228,18 @@ stays until it catches up. The Flutter Windows app was removed (the user, 2026-1
 - **Check a change** with `pnpm install`, `pnpm typecheck`, `pnpm test` at the repo root, then
   `pnpm desktop:build`. Run it with `pnpm desktop:dev`. On Windows, build the app with
   `scripts/windows/Build-Electron.ps1`.
-- Settings are kept in the app's own data folder, `Talaria Desktop`, the server's secret encrypted with Electron's `safeStorage` (DPAPI on Windows,
-  the keychain on macOS).
+- Settings are kept in the app's own data folder, `Talaria Desktop`, each server's secret encrypted with Electron's `safeStorage` (DPAPI on Windows,
+  the keychain on macOS) in `secrets/<server id>.bin`.
+- **Servers.** `hermes-core`'s `ServerRegistry` holds one `GatewayConnection` per server, as the Mac's
+  `ServerConnection`. `model.connection` is the current server's (the server of the profile picked in
+  the rail); views read it with `useConnection()` / `useConnectionSnapshot()`, which follow a change of
+  server. Something tied to one server (a chat) keeps that server's id and uses `model.serverConnection(id)`.
+- **The Settings window** (`features/settings`) is a native window the renderer opens with
+  `window.open('about:blank', 'talaria-settings')` and fills with a React portal: one renderer, so the
+  panes use the model and the connections directly. The main process gives it its frame and size
+  (`src/main/ipc/settings-window.ts`); ⌘, (app menu) on the Mac, Ctrl+, on Windows. A pane registers
+  itself in `features/settings/registered.ts` (`registerSettingsPane`), in the Mac's order, and uses its
+  elements' `ownerDocument` / `defaultView`, never the global `document` / `window`.
 
 ## Windows host
 

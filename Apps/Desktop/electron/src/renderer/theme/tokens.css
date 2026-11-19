@@ -123,3 +123,34 @@
     --shadow-flyout: 0 8px 16px rgb(0 0 0 / 0.26);
   }
 }
+
+/* K: the Settings window. Mac: a 760 pt pane under a toolbar of icon tabs (MacSettingsView);
+   Windows: WinUI's left navigation beside the same pane, under a 48 px title bar. */
+:root {
+  --settings-pane-width: 760px;
+  --settings-band-height: 48px;
+  --settings-nav-width: 220px;
+  --settings-tab-width: 72px;
+  --settings-tab-height: 52px;
+  --settings-tab-icon: 20px;
+  --settings-nav-item-height: 36px;
+  --settings-label-width: 180px;
+  --settings-detail-label-width: 110px;
+  --settings-list-width: 210px;
+  --settings-list-height: 340px;
+  --settings-detail-min-height: 300px;
+  --settings-field-width: 320px;
+  --settings-switch-width: 40px;
+  --settings-switch-height: 20px;
+  --settings-switch-knob: 12px;
+  --settings-status-dot: 9px;
+  --settings-server-icon: 28px;
+}
+:root[data-platform='mac'] {
+  --settings-band-height: 28px;
+  --settings-field-height: 22px;
+}
+:root[data-platform='windows'],
+:root[data-platform='linux'] {
+  --settings-field-height: 32px;
+}

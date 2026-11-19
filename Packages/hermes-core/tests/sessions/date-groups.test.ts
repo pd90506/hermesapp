@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, test } from 'vitest'
 import { bucketTitle, dateBucket, effectiveTimes, sessionDateGroups, type SessionDateBucket } from '../../src/index.ts'
 
+declare const process: { env: Record<string, string | undefined> }
+
 // After HermesKit's SessionDateGroupsTests: New York time, weeks from Sunday.
 beforeAll(() => { process.env.TZ = 'America/New_York' })
 

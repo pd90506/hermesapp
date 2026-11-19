@@ -62,7 +62,7 @@ function dashboard(state: {
 
 async function settle(sidebar: SessionSidebar, connection: GatewayConnection) {
   await connection.settled()
-  for (let index = 0; index < 20; index++) await new Promise((resolve) => setTimeout(resolve, 0))
+  for (let index = 0; index < 20; index++) await new Promise((resolve) => setTimeout(() => resolve(undefined), 0))
   void sidebar
 }
 
@@ -133,7 +133,7 @@ describe('SessionSidebar', () => {
     sidebar.setPinned(true, 'srv', 'default', 'b')
     await first.connect(server)
     await settle(sidebar, first)
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    await new Promise((resolve) => setTimeout(() => resolve(undefined), 600))
     sidebar.dispose()
 
     const next = new GatewayConnection()

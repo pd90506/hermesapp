@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   Bot, SessionActionError, SessionActions, SessionPins, SessionReadMarks, isReply, searchResults, snippetSegments,
-  sortByListDate, activityCacheKey, avatarColor, avatarDataURL,
+  sortByListDate, activityCacheKey, avatarColor, avatarDataURL, type Call, type JSONValue,
 } from '../../src/index.ts'
 
 describe('pins', () => {
@@ -72,7 +72,7 @@ describe('search', () => {
 describe('row actions', () => {
   const bot = new Bot({ name: 'default', canonical_session: { id: 'bot' } })
   const calls: Array<[string, unknown]> = []
-  const call = async (method: string, params: unknown) => {
+  const call: Call = async (method: string, params: JSONValue) => {
     calls.push([method, params])
     if (method === 'session.branch_stored') return { stored_session_id: 'copy' }
     if (method === 'session.title') return { title: 'New' }

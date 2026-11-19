@@ -144,8 +144,6 @@
   --status-dot: 8px;
   --status-dot-ring: 1.5px;
   --dialog-width: 360px;
-  --scrollbar-thin: 6px;
-  --scrollbar-thumb: rgb(0 0 0 / 0.3);
   --backdrop-dialog: rgb(0 0 0 / 0.3);
 }
 
@@ -156,7 +154,6 @@
     --tab-pill-fill: rgb(255 255 255 / 0.1);
     --tab-bar-surface: rgb(40 40 40 / 0.72);
     --tab-bar-stroke: rgb(255 255 255 / 0.08);
-    --scrollbar-thumb: rgb(255 255 255 / 0.3);
     --backdrop-dialog: rgb(0 0 0 / 0.5);
   }
 }

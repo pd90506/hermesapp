@@ -37,10 +37,6 @@
   overflow-y: auto;
 }
 
-:global([data-platform='windows']) .pane {
-  scrollbar-width: thin;
-}
-
 .section {
   margin: 0;
   padding: var(--space-7) var(--space-4) var(--space-3) var(--space-7);

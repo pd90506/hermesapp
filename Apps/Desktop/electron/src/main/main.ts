@@ -14,9 +14,13 @@ import { captionSymbolColor, currentPlatform, windowFrameOptions } from './windo
 app.setPath('userData', join(app.getPath('appData'), 'Talaria Desktop'))
 
 const platform = currentPlatform()
-// Windows 11's thin overlay scrollbars (Chromium's Fluent scrollbars), not the classic
-// arrowed ones; macOS draws its own overlay scrollbars already.
-if (platform === 'windows') app.commandLine.appendSwitch('enable-features', 'FluentOverlayScrollbar')
+// Windows 11's thin overlay scrollbars, not the arrowed ones. Chromium draws Fluent
+// scrollbars on Windows already; `OverlayScrollbar` makes them overlay ones, and in its
+// default "device" mode follows Windows's own "Always show scrollbars" setting
+// (`ui/native_theme/os_settings_provider_win.cc` reads `DynamicScrollbars`).
+// `FluentOverlayScrollbar` was the older name (Chromium before the rename); an unknown
+// name is ignored. macOS draws its own overlay scrollbars already.
+if (platform === 'windows') app.commandLine.appendSwitch('enable-features', 'OverlayScrollbar,FluentOverlayScrollbar')
 const http = new DashboardHttp()
 const sockets = new Sockets()
 let window: BrowserWindow | undefined

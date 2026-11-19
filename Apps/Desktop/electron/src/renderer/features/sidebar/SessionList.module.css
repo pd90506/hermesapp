@@ -16,11 +16,6 @@
   padding-bottom: var(--space-4);
 }
 
-/* Windows 11's thin scrollbar (PR1 left it unconfirmed with Chromium's flag alone). */
-:global([data-platform='windows']) .list {
-  scrollbar-width: thin;
-}
-
 /* The list's own sections (Bot Chat, Pinned, Sessions, the dated ones): bold, in the
    text colour (the user, 2026-11-18). */
 .section {
@@ -166,6 +161,18 @@
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
+}
+
+.more {
+  opacity: 0;
+}
+
+/* Only on the row under the pointer, with the focus, or with its menu open (the user,
+   2026-11-19). Hidden by opacity, so the row's layout doesn't move. */
+.row:hover .more,
+.row:focus-within .more,
+.row[data-menu-open] .more {
+  opacity: 1;
 }
 
 .more:hover {

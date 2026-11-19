@@ -99,8 +99,13 @@ function MenuList({ entries, x, y, document, onChoose, onDismiss, onBack, flipX,
     const left = x + width <= view.innerWidth ? x : Math.max(0, (flipX ?? x) - width)
     const top = y + height <= view.innerHeight ? y : Math.max(0, view.innerHeight - height)
     setPosition({ left, top, shown: true })
-    if (autoFocus) items(element)[0]?.focus()
-  }, [x, y, flipX, document, autoFocus])
+  }, [x, y, flipX, document])
+
+  // Focused once shown: an element under `visibility: hidden` can't take the focus, and
+  // without it the arrow keys and Escape go nowhere.
+  useEffect(() => {
+    if (position.shown && autoFocus && ref.current) items(ref.current)[0]?.focus()
+  }, [position.shown, autoFocus])
 
   useEffect(() => {
     if (flipX !== undefined) return

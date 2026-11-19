@@ -86,3 +86,13 @@
     animation: none;
   }
 }
+
+.item[data-open] {
+  background: var(--fill-hover);
+}
+
+.chevron {
+  display: inline-flex;
+  margin-left: var(--space-6);
+  color: var(--text-secondary);
+}

@@ -76,6 +76,21 @@ const icons = {
     glyph: '\u{E7BA}',
     path: 'M8 1.5L14.5 13h-13zM8 6v3.5M8 11.5h.01',
   },
+  /** Fluent Clock / SF `clock`. */
+  clock: {
+    glyph: '\u{E823}',
+    path: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM8 4.5V8l2.5 1.5',
+  },
+  /** Fluent CheckMark / SF `checkmark`. */
+  check: {
+    glyph: '\u{E73E}',
+    path: 'M3 8.5l3 3 7-7',
+  },
+  /** Fluent ChevronRight / SF `chevron.right`. */
+  chevronRight: {
+    glyph: '\u{E76C}',
+    path: 'M6 3l5 5-5 5',
+  },
   /** Fluent Cancel / SF `xmark`. */
   close: {
     glyph: '\u{E711}',

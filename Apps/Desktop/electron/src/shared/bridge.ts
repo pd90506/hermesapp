@@ -46,7 +46,8 @@ export interface SavedSettings {
 
 /** One entry of a context menu (`ui/ContextMenu`): the same items on every platform. */
 export type MenuEntry =
-  | { kind: 'item'; id: string; label: string; disabled?: boolean; destructive?: boolean }
+  | { kind: 'item'; id: string; label: string; disabled?: boolean; destructive?: boolean; checked?: boolean }
+  | { kind: 'submenu'; id: string; label: string; disabled?: boolean; entries: MenuEntry[] }
   | { kind: 'separator' }
 
 /**

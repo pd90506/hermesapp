@@ -22,10 +22,19 @@ function popupNative(owner: BrowserWindow, entries: MenuEntry[], x: number, y: n
       settled = true
       resolve(outcome)
     }
-    const template: MenuItemConstructorOptions[] = entries.map((entry) => entry.kind === 'separator'
-      ? { type: 'separator' }
-      : { label: entry.label, enabled: !entry.disabled, click: () => finish({ kind: 'chosen', id: entry.id }) })
-    Menu.buildFromTemplate(template).popup({
+    const build = (list: MenuEntry[]): MenuItemConstructorOptions[] => list.map((entry) => {
+      switch (entry.kind) {
+        case 'separator': return { type: 'separator' }
+        case 'submenu': return { label: entry.label, enabled: !entry.disabled, submenu: build(entry.entries) }
+        case 'item': return {
+          label: entry.label,
+          enabled: !entry.disabled,
+          ...(entry.checked !== undefined ? { type: 'checkbox' as const, checked: entry.checked } : {}),
+          click: () => finish({ kind: 'chosen', id: entry.id }),
+        }
+      }
+    })
+    Menu.buildFromTemplate(build(entries)).popup({
       window: owner,
       x: Math.round(x),
       y: Math.round(y),

@@ -1,0 +1,57 @@
+{
+  "_comment": "Cron job rows as GET /api/cron/jobs lists them (cron/jobs.py::create_job :1893-1930, hermes_cli/web_routers/cron.py:110-152), and what both cores read from them. Times are ms since the epoch.",
+  "now": 1792501200000,
+  "jobs": [
+    {
+      "row": {"id":"a1b2c3d4e5f6","name":"Morning brief","prompt":"Summarize the news","skills":[],"skill":null,
+        "model":null,"provider":null,"base_url":null,"script":null,"no_agent":false,
+        "schedule":{"kind":"cron","expr":"0 9 * * *","display":"0 9 * * *"},"schedule_display":"0 9 * * *",
+        "repeat":{"times":null,"completed":3},"enabled":true,"state":"scheduled","paused_at":null,
+        "paused_reason":null,"created_at":"2026-10-12T08:01:02.345678-04:00",
+        "next_run_at":"2026-10-20T09:00:00-04:00","last_run_at":"2026-10-19T09:00:04.123456-04:00",
+        "last_status":"ok","last_error":null,"last_delivery_error":null,"last_delivery_unverified":null,
+        "last_failure":null,"failure_streak":0,"deliver":"bot-chat,telegram","origin":null,
+        "enabled_toolsets":null,"workdir":null},
+      "expected": {"id":"a1b2c3d4e5f6","title":"Morning brief","scheduleDisplay":"0 9 * * *","scheduleExpression":"0 9 * * *",
+        "state":"scheduled","deliveryTargets":["bot-chat","telegram"],"deliversToBotChat":true,
+        "nextRunAt":1792501200000,"lastRunAt":1792414804000,"isScriptOnly":false,"model":null,"needsAttention":false}
+    },
+    {
+      "row": {"id":"x","name":5,"enabled":"yes","deliver":["local","bot-chat"],"schedule":"every 2h","next_run_at":"soon"},
+      "expected": {"id":"x","title":"x","scheduleDisplay":"every 2h","scheduleExpression":"every 2h","state":"scheduled",
+        "deliveryTargets":["local","bot-chat"],"deliversToBotChat":true,"nextRunAt":null,"lastRunAt":null,
+        "isScriptOnly":false,"model":null,"needsAttention":false}
+    },
+    {
+      "row": {"job_id":"s1","script":"check-disk.sh","no_agent":true,"enabled":false,"deliver":"",
+        "schedule":{"kind":"interval","display":"every 30m"},"last_status":"error","last_error":"exit 1",
+        "model":"claude-haiku-5-5","provider":"anthropic","next_run_at":"2026-10-20T09:00:00Z"},
+      "expected": {"id":"s1","title":"check-disk.sh","scheduleDisplay":"every 30m","scheduleExpression":"every 30m",
+        "state":"disabled","deliveryTargets":["local"],"deliversToBotChat":false,"nextRunAt":1792486800000,
+        "lastRunAt":null,"isScriptOnly":true,"model":"claude-haiku-5-5","needsAttention":true}
+    }
+  ],
+  "schedules": [
+    {"expression":"0 9 * * *","frequency":"daily","hour":9,"minute":0,"back":"0 9 * * *"},
+    {"expression":"30  7 * * 1-5","frequency":"weekdays","hour":7,"minute":30,"back":"30 7 * * 1-5"},
+    {"expression":"15 18 * * 7","frequency":"weekly","hour":18,"minute":15,"weekday":0,"back":"15 18 * * 0"},
+    {"expression":"0 8 12 * *","frequency":"monthly","hour":8,"minute":0,"dayOfMonth":12,"back":"0 8 12 * *"},
+    {"expression":"0 8 31 * *","frequency":"custom","back":"0 8 31 * *"},
+    {"expression":"5 * * * *","frequency":"hourly","minute":5,"back":"5 * * * *"},
+    {"expression":"*/15 * * * *","frequency":"every15Minutes","back":"*/15 * * * *"},
+    {"expression":"every 2h","frequency":"custom","back":"every 2h"},
+    {"expression":"0 9 * 1 *","frequency":"custom","back":"0 9 * 1 *"}
+  ],
+  "toggles": [
+    {"deliver":null,"target":"bot-chat","on":true,"result":"local,bot-chat"},
+    {"deliver":null,"target":"local","on":false,"result":"local"},
+    {"deliver":" bot-chat , telegram,bot-chat ","target":"telegram","on":false,"result":"bot-chat"},
+    {"deliver":"bot-chat,telegram","target":"bot-chat","on":true,"result":"bot-chat,telegram"}
+  ],
+  "runSessionIDs": [
+    {"id":"cron_a1b2c3d4e5f6_20261019_090004","run":true},
+    {"id":"cron_20261019_090004","run":false},
+    {"id":"20261019_090004_abcdef","run":false},
+    {"id":"cron_job_2026101x_090004","run":false}
+  ]
+}

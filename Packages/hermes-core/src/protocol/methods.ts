@@ -5,6 +5,7 @@ export const GatewayMethod = {
   sessionList: 'session.list',
   profilesList: 'profiles.list',
   profilesGetAsset: 'profiles.get_asset',
+  profilesSetAsset: 'profiles.set_asset',
 } as const
 
 export const EventType = {

@@ -1,5 +1,5 @@
 import { Bot, historyRows, type ProfileRow, type SessionSummary } from './bots.ts'
-import { GatewayClient, type GatewayClientConfiguration } from './client.ts'
+import { GatewayClient, GatewayClientError, type GatewayClientConfiguration } from './client.ts'
 import type { GatewayConnector } from './connector.ts'
 import { DashboardError } from './dashboard.ts'
 import { describeError } from './describe.ts'
@@ -133,6 +133,32 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     this.sessionListToken += 1
     this.sessionListLimits.clear()
     this.update({ ...initial })
+  }
+
+  /** One call on the connected client; `notConnected` without one. */
+  call(method: string, params: JSONValue = {}): Promise<JSONValue> {
+    if (!this.client) return Promise.reject(new GatewayClientError('notConnected'))
+    return this.client.call(method, params)
+  }
+
+  /**
+   * Shows lists kept from an earlier launch (`sessions/list-cache.ts`) before the first
+   * connect: nothing once this connection has read a roster of its own.
+   */
+  restoreLists(cache: { profiles: readonly ProfileRow[]; sessions: Record<string, readonly SessionSummary[]>; limits: Record<string, number>; selectedProfile?: string }): void {
+    if (this.client || this.get().bots.length > 0 || cache.profiles.length === 0) return
+    const bots = Bot.roster(cache.profiles)
+    const names = new Set(bots.map((bot) => bot.name))
+    const sessions = Object.fromEntries(Object.entries(cache.sessions).filter(([name]) => names.has(name)))
+    for (const [name, limit] of Object.entries(cache.limits)) if (names.has(name)) this.sessionListLimits.set(name, limit)
+    const selected = cache.selectedProfile && names.has(cache.selectedProfile)
+      ? cache.selectedProfile : (bots.find((bot) => bot.isDefault) ?? bots[0])?.name
+    this.update({ bots, sessions, ...(selected ? { selectedProfile: selected } : {}) })
+  }
+
+  /** The `session.list` limit that settled for `profile`, for the list cache. */
+  sessionListLimit(profile: string): number | undefined {
+    return this.sessionListLimits.get(profile)
   }
 
   /** Shows `profile`'s sessions, reading them when they are not there yet. */

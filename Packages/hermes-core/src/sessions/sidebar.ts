@@ -3,6 +3,7 @@ import type { ConnectionSnapshot, GatewayConnection } from '../connection.ts'
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import { GatewayMethod } from '../protocol/methods.ts'
+import type { ChatSession } from '../session/chat-session.ts'
 import { SessionReadMarks, activityCacheKey, listDate, readRowActivity, sortByListDate, type SessionRowActivity } from './activity.ts'
 import { avatarDataURL, hasAvatar } from './avatar.ts'
 import { sessionDateGroups, type CalendarOptions, type SessionDateGroup } from './date-groups.ts'
@@ -122,6 +123,43 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
     this.connection = options.connection
     this.now = options.now ?? (() => Date.now())
     this.connection.subscribe(() => this.connectionChanged())
+    this.followOpenChat()
+  }
+
+  // MARK: The chat on screen (package A)
+
+  private openChat?: { chat: ChatSession; unsubscribe: () => void }
+
+  /**
+   * The chat on screen is the selected row: it is seen as replies arrive, and its newest
+   * reply is marked read on the server. Follows the connection's chats (`ChatManager`)
+   * and the open chat's view, whose stored id settles after a New chat opens.
+   */
+  private followOpenChat(): void {
+    const chats = (this.connection as Partial<GatewayConnection>).chats
+    if (!chats) return
+    const follow = () => {
+      const chat = chats.get().active
+      if (chat !== this.openChat?.chat) {
+        this.openChat?.unsubscribe()
+        this.openChat = chat ? { chat, unsubscribe: chat.subscribe(() => this.openChatChanged()) } : undefined
+      }
+      this.openChatChanged()
+    }
+    chats.subscribe(follow)
+    follow()
+  }
+
+  private openChatChanged(): void {
+    const view = this.openChat?.chat.get()
+    const profile = view?.profile ?? this.connection.get().selectedProfile
+    const selection: SidebarSelection | undefined = !view || !profile ? undefined
+      : view.kind === 'botChat' ? { kind: 'bot', profile }
+        : view.storedSessionID ? { kind: 'session', profile, id: view.storedSessionID } : undefined
+    const old = this.get().selection
+    const same = old?.kind === selection?.kind && old?.profile === selection?.profile &&
+      (old?.kind !== 'session' || (selection?.kind === 'session' && old.id === selection.id))
+    if (!same) this.select(selection)
   }
 
   private update(change: Partial<SidebarSnapshot>): void {
@@ -259,8 +297,8 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
   }
 
   /**
-   * Selects a row. Until the chat core opens chats (package A), the selected session
-   * counts as on screen: it is seen, and its newest reply is marked read on the server.
+   * Selects a row: the chat on screen (followed from A's chats, and set at once on a
+   * click). It is seen, and its newest reply is marked read on the server.
    */
   select(selection: SidebarSelection | undefined): void {
     const old = this.get().selection

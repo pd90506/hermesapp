@@ -8,7 +8,7 @@ import { useSnapshot } from '../../app/hooks.ts'
 import { CronIcon } from './CronIcon.tsx'
 import { CronJobEditor, type CronEditorTarget } from './CronJobEditor.tsx'
 import { CronMenu, type CronMenuItem } from './CronMenu.tsx'
-import { ConfirmDialog } from './ConfirmDialog.tsx'
+import { Confirm } from '../settings/providers/controls.tsx'
 import { capitalized, relativeTo, runTime, shortTime } from './format.ts'
 import { useCronBoard } from './board.ts'
 import styles from './CronJobsList.module.css'
@@ -143,17 +143,15 @@ export function CronJobsView({ board, connected, listProfile, onOpenRun, selecte
       {editing && (
         <CronJobEditor target={editing} board={board} onClose={() => setEditing(undefined)} />
       )}
-      {deleting && (
-        <ConfirmDialog title={`Delete “${cronJobTitle(deleting)}”?`}
-          message="The job is removed from Hermes and won't run again." confirm="Delete"
-          onCancel={() => setDeleting(undefined)}
-          onConfirm={() => {
-            const job = deleting
-            setDeleting(undefined)
-            if (expanded === job.id) setExpanded(undefined)
-            perform(() => board.delete(job))
-          }} />
-      )}
+      <Confirm open={deleting !== undefined} title={`Delete “${deleting ? cronJobTitle(deleting) : 'this job'}”?`}
+        message="The job is removed from Hermes and won't run again." action="Delete"
+        onClose={() => setDeleting(undefined)}
+        onConfirm={() => {
+          const job = deleting
+          if (!job) return
+          if (expanded === job.id) setExpanded(undefined)
+          perform(() => board.delete(job))
+        }} />
     </section>
   )
 

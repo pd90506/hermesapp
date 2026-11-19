@@ -1,0 +1,349 @@
+/* The settings panes' grouped form (L). Sizes and colours from tokens.css's L section. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHeader {
+  margin: 0 var(--space-5);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--settings-group-radius);
+  background: var(--surface-card);
+  overflow: hidden;
+}
+
+.sectionBody > * + * {
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.sectionFooter {
+  margin: 0 var(--space-5);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  line-height: var(--line-body);
+  user-select: text;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: var(--settings-row-height);
+  padding: var(--space-3) var(--space-5);
+}
+
+.rowLabel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.rowTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.rowDetail {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.rowControl {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Segmented picker: NSSegmentedControl on the Mac, WinUI's SelectorBar look on Windows. */
+.segmented {
+  display: flex;
+  align-self: stretch;
+  padding: var(--space-1);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-md);
+  background: var(--fill-pressed);
+}
+
+.segment,
+.segmentSelected {
+  flex: 1;
+  height: var(--settings-segment-height);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.segment:hover {
+  color: var(--text);
+}
+
+.segmentSelected {
+  background: var(--settings-segment-selected);
+  color: var(--text);
+  box-shadow: var(--settings-segment-shadow);
+}
+
+/* Switch: a checkbox drawn as NSSwitch / ToggleSwitch. */
+.switch {
+  flex: none;
+  position: relative;
+  width: var(--switch-width);
+  height: var(--switch-height);
+  margin: 0;
+  border: var(--hairline) solid var(--switch-off-stroke);
+  border-radius: var(--switch-height);
+  background: var(--switch-off-fill);
+  appearance: none;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: var(--switch-inset);
+  width: var(--switch-knob);
+  height: var(--switch-knob);
+  border-radius: 50%;
+  background: var(--switch-off-knob);
+  transform: translateY(-50%);
+  transition: left var(--motion) var(--ease);
+}
+
+.switch:checked {
+  border-color: transparent;
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  left: calc(100% - var(--switch-knob) - var(--switch-inset));
+  background: var(--switch-on-knob);
+}
+
+.switch:disabled {
+  opacity: 0.45;
+}
+
+.spinner {
+  flex: none;
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  border: var(--spinner-stroke) solid var(--divider);
+  border-top-color: var(--text-secondary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(1turn); }
+}
+
+.button,
+.primary,
+.destructive {
+  height: var(--settings-button-height);
+  padding: 0 var(--space-6);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+  white-space: nowrap;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.destructive {
+  color: var(--critical);
+}
+
+.button:disabled,
+.primary:disabled,
+.destructive:disabled {
+  background: var(--fill-pressed);
+  color: var(--text-tertiary);
+}
+
+.borderless {
+  height: var(--settings-button-height);
+  padding: 0 var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.borderless:hover {
+  text-decoration: underline;
+}
+
+.dialog,
+.dialogWide {
+  width: var(--settings-dialog-width);
+  max-width: calc(100% - var(--space-10));
+  padding: var(--space-9);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-xl);
+  background: var(--settings-dialog-fill);
+  color: var(--text);
+  box-shadow: var(--shadow-flyout);
+}
+
+.dialogWide {
+  width: var(--settings-dialog-wide-width);
+}
+
+.dialog::backdrop,
+.dialogWide::backdrop {
+  background: var(--settings-backdrop);
+}
+
+.dialogTitle {
+  margin: 0 0 var(--space-6);
+  font-family: var(--font-display);
+  font-size: var(--text-dialog-title);
+  font-weight: var(--weight-semibold);
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-9);
+}
+
+.message {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--line-body);
+  user-select: text;
+}
+
+.error {
+  margin: 0;
+  color: var(--critical);
+  font-size: var(--text-caption);
+  line-height: var(--line-body);
+  user-select: text;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fieldLabel {
+  color: var(--text-secondary);
+}
+
+.input {
+  height: var(--field-height);
+  padding: 0 var(--space-5);
+  border: var(--hairline) solid var(--field-stroke);
+  border-bottom-color: var(--field-underline);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+  outline: none;
+}
+
+.input:focus {
+  background: var(--field-fill-focused);
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 calc(var(--hairline) * -1) 0 var(--accent);
+}
+
+.menuAnchor {
+  position: relative;
+}
+
+.moreButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-button-size);
+  height: var(--settings-button-height);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.moreButton svg {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  fill: currentColor;
+}
+
+.moreButton:hover {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: var(--settings-menu-width);
+  padding: var(--space-2);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--settings-dialog-fill);
+  box-shadow: var(--shadow-flyout);
+}
+
+.menuItem,
+.menuItemDestructive {
+  height: var(--settings-button-height);
+  padding: 0 var(--space-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+}
+
+.menuItemDestructive {
+  color: var(--critical);
+}
+
+.menuItem:hover:not(:disabled),
+.menuItemDestructive:hover {
+  background: var(--fill-hover);
+}
+
+.menuItem:disabled {
+  color: var(--text-tertiary);
+}

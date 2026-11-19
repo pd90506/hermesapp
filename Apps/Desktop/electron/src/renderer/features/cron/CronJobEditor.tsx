@@ -8,6 +8,7 @@ import {
   type CronModelCatalog,
 } from '@talaria/hermes-core'
 import { useSnapshot } from '../../app/hooks.ts'
+import { Switch } from '../settings/providers/controls.tsx'
 import styles from './CronJobEditor.module.css'
 
 /** What the job editor is open for. */
@@ -268,8 +269,8 @@ function DeliverySection({ options, selected, onToggle }: {
         {options.map((target) => (
           <label key={target.id} className={styles.row} data-testid={`cronEditorDeliver.${target.id}`}>
             <span className={styles.label}>{deliveryOptionTitle(target)}</span>
-            <input type="checkbox" className={styles.switch} role="switch" checked={selected.includes(target.id)}
-              onChange={(event) => onToggle(target.id, event.target.checked)} />
+            <Switch label={deliveryOptionTitle(target)} checked={selected.includes(target.id)}
+              onChange={(on) => onToggle(target.id, on)} />
           </label>
         ))}
       </fieldset>

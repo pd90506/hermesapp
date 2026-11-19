@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import {
-  CronBoard, DashboardCronSource, cronJobTitle, blueprintInitialValues, cronCreateBody, cronDraftFrom, cronDraftProblem, cronJob,
+  CronBoard, DashboardCronSource, DashboardRequestError, cronJobTitle, blueprintInitialValues, cronCreateBody, cronDraftFrom, cronDraftProblem, cronJob,
   cronListOrder, cronTriggerTimeoutMs, deliveryLabel, deliveryOptions, isOutputDocument, newCronDraft, overdueSince,
   parseBlueprint, parseCronJobs, parseCronRun, parseCronSchedule, parseDeliveryTarget, scheduleSummary, cronDraftUpdates,
-  type CronHTTP, type CronJob, type CronSource, type JSONValue,
+  type CronJob, type DashboardAPI, type CronSource, type JSONValue,
 } from '../../src/index.ts'
 
 describe('jobs', () => {
@@ -107,15 +107,15 @@ describe('schedules and drafts', () => {
 
 const storedJob = { id: 'a1', name: 'Brief', deliver: 'bot-chat,telegram', enabled: true }
 
-class FakeHTTP implements CronHTTP {
+class FakeHTTP implements DashboardAPI {
   readonly requests: Array<{ method: string; path: string; query?: ReadonlyArray<readonly [string, string]>; body?: JSONValue; timeoutMs?: number }> = []
   constructor(private readonly answers: unknown[]) {}
-  async send(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string,
-    options: { query?: ReadonlyArray<readonly [string, string]>; body?: JSONValue; timeoutMs?: number } = {}): Promise<unknown> {
+  async send(method: string, path: string,
+    options: { query?: ReadonlyArray<readonly [string, string]>; body?: JSONValue; timeoutMs?: number } = {}): Promise<JSONValue> {
     this.requests.push({ method, path, ...options })
     const answer = this.answers.shift()
     if (answer instanceof Error) throw answer
-    return answer
+    return answer as JSONValue
   }
 }
 
@@ -164,7 +164,7 @@ class FakeCronSource implements CronSource {
   private change(id: string, profile: string, edit: (job: CronJob) => CronJob): CronJob {
     const list = this.jobs[profile] ?? []
     const index = list.findIndex((job) => job.id === id)
-    if (index < 0) throw Object.assign(new Error('Job not found'), { status: 404 })
+    if (index < 0) throw new DashboardRequestError(404, 'Job not found')
     list[index] = edit(list[index]!)
     return list[index]!
   }
@@ -266,7 +266,7 @@ describe('CronBoard', () => {
 
   test('a one-shot that removed itself re-reads the list', async () => {
     const source = new FakeCronSource({ coder: [cronJob({ id: 'once' })] })
-    source.triggerError = Object.assign(new Error('Job not found'), { status: 404 })
+    source.triggerError = new DashboardRequestError(404, 'Job not found')
     const board = new CronBoard({ listProfile: () => 'coder' })
     board.setSource(source)
     await board.refreshJobs()

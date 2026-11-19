@@ -1,22 +1,9 @@
+import { pathSegment, type DashboardAPI } from '../dashboard-api.ts'
 import type { JSONValue } from '../protocol/jsonrpc.ts'
 import { parseBlueprint, type CronBlueprint } from './blueprint.ts'
 import {
   parseCronJob, parseCronJobs, parseCronRun, parseDeliveryTarget, type CronDeliveryTarget, type CronJob, type CronRun,
 } from './job.ts'
-
-/**
- * The authenticated REST calls the cron routes need: a path on the dashboard, a query, a
- * JSON body, an answer already parsed. The app passes the connection's dashboard API
- * (bearer or cookie sign-in, one re-login on 401, as HermesKit's `authorized`); tests pass
- * a fake. The shape of the connection's `DashboardAPI`, so that one passes as is.
- */
-export interface CronHTTP {
-  send(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, options?: {
-    query?: ReadonlyArray<readonly [string, string]>
-    body?: JSONValue
-    timeoutMs?: number
-  }): Promise<unknown>
-}
 
 /**
  * A profile's scheduled jobs on the gateway's dashboard (`hermes_cli/web_routers/cron.py`;
@@ -44,11 +31,6 @@ export interface CronSource {
 /** Trigger waits for the run: Desktop's day-long timeout (`apps/desktop/src/api/cron.ts:19-23`). */
 export const cronTriggerTimeoutMs = 24 * 60 * 60 * 1000
 
-/** A job id as one path segment. Ids are hex, but names are accepted too (`cron.py:79-97`). */
-export function cronPathSegment(id: string): string {
-  return encodeURIComponent(id)
-}
-
 function jobOf(answer: unknown): CronJob {
   const job = parseCronJob(answer)
   if (!job) throw new Error('The dashboard sent a job this app could not read.')
@@ -60,12 +42,17 @@ function listOf<T>(answer: unknown, key: string, parse: (value: unknown) => T | 
   return Array.isArray(items) ? items.map(parse).filter((item): item is T => item !== undefined) : []
 }
 
-/** `CronSource` over the dashboard's REST routes (HermesKit's `DashboardClient` cron calls). */
+/**
+ * `CronSource` over the dashboard's REST routes (HermesKit's `DashboardClient` cron calls),
+ * with the connection's credential (`GatewayConnection.dashboardAPI`). A refusal is a
+ * `DashboardRequestError` with the dashboard's reason.
+ */
 export class DashboardCronSource implements CronSource {
-  constructor(private readonly http: CronHTTP) {}
+  constructor(private readonly http: DashboardAPI) {}
 
-  private job(path: string): string {
-    return `/api/cron/jobs/${cronPathSegment(path)}`
+  /** A job id as one path segment. Ids are hex, but names are accepted too (`cron.py:79-97`). */
+  private job(id: string): string {
+    return `/api/cron/jobs/${pathSegment(id)}`
   }
 
   /** `GET /api/cron/jobs?profile=` (`cron.py:668-670`). */

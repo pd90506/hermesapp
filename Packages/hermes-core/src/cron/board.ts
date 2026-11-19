@@ -1,3 +1,4 @@
+import { requestStatus } from '../dashboard-api.ts'
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import type { CronBlueprint } from './blueprint.ts'
@@ -156,7 +157,7 @@ export class CronBoard extends Observable<CronSnapshot> {
         await this.change((source, profile) => source.triggerCronJob(job.id, profile))
       } catch (error) {
         // A one-shot can remove itself once it ran (`cron.py:640-650`).
-        if ((error as { status?: unknown }).status === 404) {
+        if (requestStatus(error) === 404) {
           await this.refreshJobs()
           return
         }

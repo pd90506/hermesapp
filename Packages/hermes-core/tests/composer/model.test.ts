@@ -120,3 +120,26 @@ describe('ComposerModels', () => {
     expect(composer.get().error).toBe("Couldn't load models: boom")
   })
 })
+
+describe('the current model row', () => {
+  it('matches a provider by slug, name or alias, as Desktop', async () => {
+    const { PagedServer } = await import('../support/paged-server.ts')
+    const server = new PagedServer()
+    server.handlers.set('model.options', () => ({ providers: [
+      { slug: 'custom:cliproxy', name: 'cliproxy', aliases: ['cliproxy-key'], models: ['claude-sonnet-5-5'] },
+      { slug: 'openrouter', name: 'OpenRouter', models: ['claude-sonnet-5-5'] }] }))
+    server.handlers.set('config.get', () => ({ value: 'medium' }))
+    const connection = await server.connect()
+    const chat = await connection.chats.newChat('coder')
+    const composer = connection.chats.composer(chat)
+    await composer.models.loadOptions()
+    for (const reported of ['custom:cliproxy', 'cliproxy', 'CLIPROXY-KEY']) {
+      chat.showInfo({ model: 'claude-sonnet-5-5', provider: reported })
+      expect(composer.models.isCurrent({ provider: 'custom:cliproxy', model: 'claude-sonnet-5-5' })).toBe(true)
+      expect(composer.models.isCurrent({ provider: 'openrouter', model: 'claude-sonnet-5-5' })).toBe(false)
+    }
+    // A name no row answers to: the model alone decides when only one row lists it.
+    chat.showInfo({ model: 'claude-sonnet-5-5', provider: 'something-else' })
+    expect(composer.models.isCurrent({ provider: 'openrouter', model: 'claude-sonnet-5-5' })).toBe(false)
+  })
+})

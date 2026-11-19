@@ -16,6 +16,8 @@ export interface ModelOptionProvider {
   isCurrent?: boolean
   authenticated?: boolean
   warning?: string
+  /** Other names `session.info` may report this provider by (a saved `custom:<key>`). */
+  aliases?: string[]
   capabilities?: Record<string, ModelCapabilities>
 }
 
@@ -63,6 +65,7 @@ function provider(value: unknown): ModelOptionProvider | undefined {
   if (isCurrent !== undefined) result.isCurrent = isCurrent
   if (authenticated !== undefined) result.authenticated = authenticated
   if (warning !== undefined) result.warning = warning
+  if (Array.isArray(row.aliases)) result.aliases = row.aliases.filter((alias): alias is string => typeof alias === 'string')
   const caps = record(row.capabilities)
   if (caps) {
     const table: Record<string, ModelCapabilities> = {}
@@ -111,13 +114,24 @@ export class ModelCatalog {
 
   /** The catalog row's capabilities for a model; `undefined` when the catalog does not list it. */
   capabilities(model: string, provider?: string): ModelCapabilities | undefined {
-    const wanted = provider?.toLowerCase()
+    const matched = provider !== undefined ? this.providerRow(provider) : undefined
     for (const row of this.providers) {
-      if (wanted !== undefined && row.slug.toLowerCase() !== wanted) continue
+      if (provider !== undefined && matched !== undefined && row !== matched) continue
       const caps = row.capabilities?.[model]
       if (caps) return caps
     }
     return undefined
+  }
+
+  /**
+   * The row a reported provider names: by slug, display name or alias, as Desktop's
+   * `catalogProviderMatches` (`lib/model-options.ts`); `session.info` may report a custom
+   * endpoint by a name the catalog row only carries as an alias.
+   */
+  providerRow(current: string): ModelOptionProvider | undefined {
+    const wanted = current.toLowerCase()
+    return this.providers.find((row) => row.slug.toLowerCase() === wanted || row.name.toLowerCase() === wanted ||
+      (row.aliases ?? []).some((alias) => alias.toLowerCase() === wanted))
   }
 
   /** The provider display name for a slug. */

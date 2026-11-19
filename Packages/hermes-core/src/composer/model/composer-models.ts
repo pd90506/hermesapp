@@ -71,10 +71,20 @@ export class ComposerModels extends Observable<ComposerModelsView> {
     return model === undefined ? undefined : modelDisplayName(model)
   }
 
+  /**
+   * Whether a menu row is the chat's model. The provider is matched as Desktop does (slug,
+   * name or alias); one no row answers to (a name only `session.info` uses) falls back to
+   * the gateway's own pair from `model.options`, and else to the model alone.
+   */
   isCurrent(choice: ModelChoice): boolean {
     if (choice.model !== this.currentModel) return false
     const provider = this.currentProvider
-    return provider === undefined || choice.provider.toLowerCase() === provider.toLowerCase()
+    if (provider === undefined) return true
+    const catalog = this.get().catalog
+    const row = catalog?.providerRow(provider) ?? (catalog?.provider !== undefined ? catalog.providerRow(catalog.provider) : undefined)
+    if (row) return row.slug.toLowerCase() === choice.provider.toLowerCase()
+    return choice.provider.toLowerCase() === provider.toLowerCase() ||
+      !(catalog?.providers.some((entry) => entry.slug.toLowerCase() !== choice.provider.toLowerCase() && entry.models.includes(choice.model)) ?? false)
   }
 
   /** Effort levels for the current model; empty (picker hidden) until the catalog loads, or when the model has no reasoning control. */

@@ -84,12 +84,10 @@ export interface TalariaBridge {
     load(id: string): Promise<{ value: string | null; available: boolean }>
     save(id: string, value: string | null): Promise<void>
   }
-  /** The Settings window (a child of the main window's renderer, `features/settings`). */
+  /** Settings (an overlay in the main window, `features/settings`). */
   settingsWindow: {
-    /** The app menu's Settings… (⌘,): the renderer opens the window. */
+    /** The Mac app menu's Settings… (⌘,) or Ctrl+, elsewhere: the renderer opens Settings. */
     onOpenRequest(handler: () => void): () => void
-    /** Sizes the Settings window's content to the pane shown. */
-    setContentSize(width: number, height: number): void
   }
   /** The browser sign-in's loopback listener (RFC 8252) and the system browser. */
   signIn: {
@@ -134,7 +132,6 @@ export const IPC = {
   secretsLoad: 'talaria:secrets:load',
   secretsSave: 'talaria:secrets:save',
   settingsOpen: 'talaria:settings-window:open',
-  settingsSize: 'talaria:settings-window:size',
   signInListen: 'talaria:sign-in:listen',
   signInCallback: 'talaria:sign-in:callback',
   signInStop: 'talaria:sign-in:stop',
@@ -144,9 +141,6 @@ export const IPC = {
   localBackendStop: 'talaria:local-backend:stop',
   localBackendRunning: 'talaria:local-backend:running',
 } as const
-
-/** The Settings window's `window.open` name: the main process gives it its frame. */
-export const settingsWindowName = 'talaria-settings'
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */
 export interface FrameGeometry {

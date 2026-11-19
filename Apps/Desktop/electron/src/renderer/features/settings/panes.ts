@@ -2,12 +2,11 @@ import type { ReactNode } from 'react'
 import type { IconName } from '../../ui/Icon.tsx'
 
 /**
- * The Settings window's panes (K), in the Mac's order (`MacSettingsView.Pane`). Each work
- * package registers its own pane with one line in `registered.ts`; a pane not registered
- * is left out. A pane is a React component drawn into the Settings window: it shares the
- * main window's state (`useModel`, `useConnection`), but must use its elements'
- * `ownerDocument` / `defaultView`, never the global `document` / `window`, for events and
- * measurements.
+ * The Settings panes (K), listed down the Settings overlay's left side in this order.
+ * Each work package registers its own pane with one line in `registered.ts`; a pane not
+ * registered is left out. A pane is a React component drawn in the main window: it
+ * shares the app's state (`useModel`, `useConnection`). Build it from `ui/Rows.tsx`
+ * (PageHeading, ListRow, ToggleRow…) so every pane looks the same on every platform.
  */
 export type SettingsPaneID = 'servers' | 'providers' | 'capabilities' | 'sessionSources' | 'appearance' | 'notifications'
 
@@ -17,7 +16,7 @@ export const settingsPaneOrder: readonly SettingsPaneID[] = [
 
 export interface SettingsPane {
   id: SettingsPaneID
-  /** The tab's name, which is also the window's title while it shows. */
+  /** The pane's name in the overlay's left list. */
   title: string
   icon: IconName
   render(): ReactNode

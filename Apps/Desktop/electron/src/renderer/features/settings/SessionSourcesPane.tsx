@@ -1,24 +1,20 @@
 import { isSourceHidden, knownSources, setSourceHidden, sourceLabel } from '@talaria/hermes-core'
 import { useModel, useSnapshot } from '../../app/hooks.ts'
-import { Form, Note, Row, Toggle } from './ui/Form.tsx'
-import styles from './Pane.module.css'
+import { Caption, PageHeading, ToggleRow } from './ui/Rows.tsx'
 
-/** Settings ▸ Session Sources, as the Mac's `SessionSourcesSettingsPane`. */
+/** Settings ▸ Session Sources: which sources' sessions the list shows. */
 export function SessionSourcesPane() {
   const model = useModel()
   const { sourceSettings } = useSnapshot(model)
   return (
-    <div className={styles.pane}>
-      <Form>
-        <Row label="Show in session list">
-          {knownSources().map((source) => (
-            <Toggle key={source} label={sourceLabel(source)} detail={source}
-              checked={!isSourceHidden(sourceSettings, source)}
-              onChange={(shown) => model.setSourceSettings(setSourceHidden(sourceSettings, source, !shown))} />
-          ))}
-          <Note>Sessions this app starts are stored as Desktop, as Hermes Desktop’s are. The list shows only Desktop and Terminal (TUI) sessions, as Hermes Desktop’s does; cron runs are under Cron Jobs. Hiding a source only filters the list; nothing is deleted.</Note>
-        </Row>
-      </Form>
+    <div>
+      <PageHeading icon="tray" title="Session Sources" />
+      <Caption>Sessions this app starts are stored as Desktop, as Hermes Desktop’s are. Cron runs are under Cron Jobs. Hiding a source only filters the list; nothing is deleted.</Caption>
+      {knownSources().map((source) => (
+        <ToggleRow key={source} label={sourceLabel(source)} description={`Source “${source}”`}
+          checked={!isSourceHidden(sourceSettings, source)}
+          onChange={(shown) => model.setSourceSettings(setSourceHidden(sourceSettings, source, !shown))} />
+      ))}
     </div>
   )
 }

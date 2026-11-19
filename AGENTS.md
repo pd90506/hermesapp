@@ -234,12 +234,13 @@ stays until it catches up. The Flutter Windows app was removed (the user, 2026-1
   `ServerConnection`. `model.connection` is the current server's (the server of the profile picked in
   the rail); views read it with `useConnection()` / `useConnectionSnapshot()`, which follow a change of
   server. Something tied to one server (a chat) keeps that server's id and uses `model.serverConnection(id)`.
-- **The Settings window** (`features/settings`) is a native window the renderer opens with
-  `window.open('about:blank', 'talaria-settings')` and fills with a React portal: one renderer, so the
-  panes use the model and the connections directly. The main process gives it its frame and size
-  (`src/main/ipc/settings-window.ts`); ⌘, (app menu) on the Mac, Ctrl+, on Windows. A pane registers
-  itself in `features/settings/registered.ts` (`registerSettingsPane`), in the Mac's order, and uses its
-  elements' `ownerDocument` / `defaultView`, never the global `document` / `window`.
+- **One UI on macOS and Windows.** The Electron app looks and behaves the same on both, in an
+  Electron/web style after official Hermes Desktop, not the Mac SwiftUI app's layout (user, 2026-11-19).
+- **Settings** (`features/settings`) is an overlay over the main window, as Hermes Desktop's: panes listed
+  on the left, the one picked beside them, Esc / the close button / a click outside closes it. ⌘, (Mac app
+  menu) or Ctrl+, opens it (`src/main/ipc/settings-window.ts`). A pane registers itself in
+  `features/settings/registered.ts` (`registerSettingsPane`) and is built from `features/settings/ui/Rows.tsx`
+  (PageHeading, ListRow, ToggleRow, Switch, TextField, Select, Button, Pill).
 
 ## Windows host
 

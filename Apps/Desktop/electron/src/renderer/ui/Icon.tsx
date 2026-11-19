@@ -66,6 +66,10 @@ const icons = {
   add: { glyph: '\uE710', path: 'M8 3v10M3 8h10' },
   /** Fluent Remove / SF `minus`. */
   remove: { glyph: '\uE738', path: 'M3 8h10' },
+  /** Fluent ChromeClose / SF `xmark`. */
+  close: { glyph: '\uE8BB', path: 'M4 4l8 8M12 4l-8 8' },
+  /** Fluent ChevronDown / SF `chevron.down`. */
+  chevronDown: { glyph: '\uE70D', path: 'M4 6l4 4 4-4' },
 } as const
 
 export type IconName = keyof typeof icons

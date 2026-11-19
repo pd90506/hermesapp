@@ -1,0 +1,117 @@
+/* Hermes Desktop's OverlayView: below the title band so the window still drags. */
+.backdrop {
+  position: fixed;
+  inset: calc(var(--frame-title-band-height) + var(--settings-inset)) var(--settings-inset) var(--settings-inset);
+  z-index: 50;
+  display: flex;
+}
+
+.backdrop::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--settings-backdrop);
+  z-index: -1;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: var(--hairline) solid var(--settings-card-stroke);
+  border-radius: var(--radius-xl);
+  background: var(--settings-card-fill);
+  box-shadow: var(--settings-card-shadow);
+  outline: none;
+}
+
+.nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: var(--settings-nav-width);
+  padding: var(--space-6) var(--space-4);
+  overflow-y: auto;
+  border-right: var(--hairline) solid var(--settings-card-stroke);
+  background: var(--settings-nav-fill);
+  box-sizing: border-box;
+}
+
+.navTitle {
+  padding: var(--space-2) var(--space-4) var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--settings-nav-item-height);
+  padding: 0 var(--space-4);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.navItem:hover {
+  background: var(--fill-hover);
+  color: inherit;
+}
+
+.navItem[aria-current='page'] {
+  border-color: var(--settings-card-stroke);
+  background: var(--fill-selected);
+  color: inherit;
+  font-weight: var(--weight-semibold);
+}
+
+.navIcon {
+  display: inline-flex;
+  flex: none;
+}
+
+.navLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.content {
+  max-width: var(--settings-content-max-width);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-10) var(--space-10);
+}
+
+.close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--settings-close-size);
+  height: var(--settings-close-size);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.close:hover {
+  background: var(--fill-hover);
+  color: inherit;
+}

@@ -60,7 +60,6 @@ const bridge: TalariaBridge = {
       ipcRenderer.on(IPC.settingsOpen, listener)
       return () => ipcRenderer.removeListener(IPC.settingsOpen, listener)
     },
-    setContentSize: (width, height) => ipcRenderer.send(IPC.settingsSize, width, height),
   },
   signIn: {
     listen: () => ipcRenderer.invoke(IPC.signInListen),

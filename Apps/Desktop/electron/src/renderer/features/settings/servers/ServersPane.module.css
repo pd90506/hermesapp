@@ -1,207 +1,104 @@
-.pane {
-  display: flex;
-  gap: var(--space-7);
-  padding: var(--space-8);
-  height: var(--settings-list-height);
-  min-height: var(--settings-detail-min-height);
-  box-sizing: content-box;
-}
-
-.sidebar {
+.list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  width: var(--settings-list-width);
-  flex: none;
+  gap: var(--space-4);
 }
 
-.list {
-  flex: 1;
-  margin: 0;
-  padding: var(--space-2);
-  list-style: none;
-  overflow-y: auto;
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--radius-md);
-  background: var(--field-fill);
+.card {
+  border: var(--hairline) solid var(--settings-card-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
 }
 
-.row {
+.header {
   display: flex;
   align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-sm);
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-4) var(--space-2);
 }
 
-.row[data-selected] {
-  background: var(--selection-fill);
-}
-
-.rowIcon {
-  display: inline-flex;
-  justify-content: center;
-  width: var(--settings-server-icon);
-  color: var(--accent);
-  --icon-size: var(--settings-tab-icon);
-}
-
-.rowText {
+.summary {
   display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  text-align: left;
+}
+
+.summary:hover {
+  background: var(--fill-hover);
+}
+
+.kindIcon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.names {
+  display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: var(--space-1);
   min-width: 0;
 }
 
-.rowName,
-.rowKind {
+.name {
+  font-weight: var(--weight-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rowKind {
+.address {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-tertiary);
+  transition: transform var(--motion-fast) var(--ease);
+}
+
+.chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.error {
+  margin: 0;
+  padding: 0 var(--space-7) var(--space-5);
+  color: var(--critical);
+  font-size: var(--text-caption);
+  line-height: var(--line-body);
+  user-select: text;
+}
+
+.detail {
+  padding: 0 var(--space-7) var(--space-2);
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.probe {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  user-select: text;
+}
+
+.secondary {
   color: var(--text-secondary);
   font-size: var(--text-caption);
 }
 
-.listButtons {
-  display: flex;
-}
-
-.listButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--settings-field-height);
-  height: var(--settings-field-height);
-  border: var(--hairline) solid var(--surface-card-stroke);
-  background: var(--field-fill);
-}
-
-.listButton:first-child {
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-}
-
-.listButton:last-child {
-  border-left: none;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-
-.listButton:hover:not(:disabled) {
-  background: var(--fill-hover);
-}
-
-.listButton:disabled {
-  color: var(--text-tertiary);
-}
-
-.detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  flex: 1;
-  min-width: 0;
-}
-
-.empty {
-  margin: auto;
-  color: var(--text-secondary);
-}
-
-/* The details in a box, with the segmented control (if any) on its top edge (GroupBox). */
-.box {
-  position: relative;
-  flex: 1;
-  margin-top: var(--space-5);
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--radius-lg);
-  background: var(--surface-card);
-}
-
-.boxControl {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.boxContent {
-  padding: var(--space-10) var(--space-8) var(--space-8);
-  --settings-label-width: var(--settings-detail-label-width);
-}
-
-.actions {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
-}
-
-.spacer {
-  flex: 1;
-}
-
-.error {
-  flex: 1;
-  margin: 0;
-  color: var(--critical);
-  line-height: var(--line-body);
-  user-select: text;
-}
-
-.status,
-.inline {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.dot {
-  width: var(--settings-status-dot);
-  height: var(--settings-status-dot);
-  border-radius: 50%;
-  background: var(--text-tertiary);
-}
-
-.dot[data-tone='success'] { background: var(--success); }
-.dot[data-tone='caution'] { background: var(--caution); }
-.dot[data-tone='critical'] { background: var(--critical); }
-
-.probe,
-.secondary {
-  color: var(--text-secondary);
-  user-select: text;
-}
-
-.signedIn {
-  color: var(--success);
-}
-
-.selectable {
-  user-select: text;
-}
-
-.confirm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-8);
-}
-
-.confirmTitle {
-  margin: 0;
-  font-weight: var(--weight-semibold);
-}
-
-.confirmText {
-  margin: 0;
-  color: var(--text-secondary);
-  line-height: var(--line-body);
-}
-
-.confirmButtons {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-4);
+.section {
+  margin-top: var(--space-7);
 }

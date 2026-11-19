@@ -8,11 +8,14 @@ import { registerSettingsPane, settingsPanes } from '../src/renderer/features/se
 import '../src/renderer/features/settings/registered.ts'
 import { NotificationsPane } from '../src/renderer/features/settings/NotificationsPane.tsx'
 import { SessionSourcesPane } from '../src/renderer/features/settings/SessionSourcesPane.tsx'
+import { SettingsOverlay } from '../src/renderer/features/settings/SettingsOverlay.tsx'
 
 class FakeModel extends Observable<Partial<AppSnapshot>> {
   constructor() {
-    super({ sourceSettings: { hiddenSources: [] }, alertPreferences: defaultAlertPreferences })
+    super({ sourceSettings: { hiddenSources: [] }, alertPreferences: defaultAlertPreferences, settings: { open: true, pane: 'notifications' } })
   }
+  closeSettings() { this.set({ ...this.get(), settings: { ...this.get().settings!, open: false } }) }
+  selectSettingsPane(pane: string) { this.set({ ...this.get(), settings: { ...this.get().settings!, pane } }) }
   setSourceSettings(sourceSettings: SessionSourceSettings) { this.set({ ...this.get(), sourceSettings }) }
   setAlertPreferences(alertPreferences: AlertPreferences) { this.set({ ...this.get(), alertPreferences }) }
 }
@@ -26,7 +29,7 @@ function renderPane(pane: () => ReturnType<typeof createElement>) {
 afterEach(cleanup)
 
 describe('settings panes', () => {
-  it('come in the Mac’s order, whatever order they register in', () => {
+  it('come in a fixed order, whatever order they register in', () => {
     registerSettingsPane({ id: 'appearance', title: 'Appearance', icon: 'palette', render: () => null })
     registerSettingsPane({ id: 'providers', title: 'Providers', icon: 'key', render: () => null })
     expect(settingsPanes().map((pane) => pane.id)).toEqual(['servers', 'providers', 'sessionSources', 'appearance', 'notifications'])
@@ -44,5 +47,15 @@ describe('settings panes', () => {
     expect(isAlertOn(model.get().alertPreferences!, 'turnDone')).toBe(false)
     fireEvent.click(screen.getByLabelText('Enable Notifications'))
     expect((screen.getByLabelText('Approval Needed') as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('the overlay lists the panes, switches between them, and closes on Esc', () => {
+    const model = renderPane(() => <SettingsOverlay />)
+    expect(screen.getByRole('button', { name: 'Notifications' }).getAttribute('aria-current')).toBe('page')
+    fireEvent.click(screen.getByRole('button', { name: 'Session Sources' }))
+    expect(screen.getByLabelText(/Terminal \(TUI\)/)).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(model.get().settings?.open).toBe(false)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

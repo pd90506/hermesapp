@@ -124,33 +124,34 @@
   }
 }
 
-/* K: the Settings window. Mac: a 760 pt pane under a toolbar of icon tabs (MacSettingsView);
-   Windows: WinUI's left navigation beside the same pane, under a 48 px title bar. */
+/* K: Settings, an overlay card over the window, the same on every platform (after Hermes
+   Desktop's OverlayView / OverlaySplitLayout / ListRow, apps/desktop/src/app/overlays). */
 :root {
-  --settings-pane-width: 760px;
-  --settings-band-height: 48px;
-  --settings-nav-width: 220px;
-  --settings-tab-width: 72px;
-  --settings-tab-height: 52px;
-  --settings-tab-icon: 20px;
-  --settings-nav-item-height: 36px;
-  --settings-label-width: 180px;
-  --settings-detail-label-width: 110px;
-  --settings-list-width: 210px;
-  --settings-list-height: 340px;
-  --settings-detail-min-height: 300px;
-  --settings-field-width: 320px;
-  --settings-switch-width: 40px;
+  --settings-inset: 10px;
+  --settings-nav-width: 208px;
+  --settings-nav-item-height: 28px;
+  --settings-content-max-width: 760px;
+  --settings-row-control-min: 240px;
+  --settings-row-control-max: 352px;
+  --settings-field-height: 30px;
+  --settings-switch-width: 36px;
   --settings-switch-height: 20px;
-  --settings-switch-knob: 12px;
-  --settings-status-dot: 9px;
-  --settings-server-icon: 28px;
+  --settings-switch-knob: 14px;
+  --settings-status-dot: 8px;
+  --settings-close-size: 28px;
+  --settings-backdrop: rgb(0 0 0 / 0.22);
+  --settings-card-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
 }
-:root[data-platform='mac'] {
-  --settings-band-height: 28px;
-  --settings-field-height: 22px;
+:root {
+  --settings-card-fill: #fbfbfb;
+  --settings-nav-fill: #f3f3f3;
+  --settings-card-stroke: rgb(0 0 0 / 0.1);
 }
-:root[data-platform='windows'],
-:root[data-platform='linux'] {
-  --settings-field-height: 32px;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --settings-card-fill: #262626;
+    --settings-nav-fill: #202020;
+    --settings-card-stroke: rgb(255 255 255 / 0.1);
+    --settings-backdrop: rgb(0 0 0 / 0.4);
+  }
 }

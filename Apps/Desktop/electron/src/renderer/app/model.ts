@@ -20,7 +20,7 @@ export interface AppSnapshot {
   /** An error from the first-run page's connect. */
   connectError?: string
   connecting: boolean
-  /** The Settings window: whether it is open, and the pane it shows. */
+  /** Settings (the overlay): whether it is open, and the pane it shows. */
   settings: { open: boolean; pane: string }
   /** Settings ▸ Session Sources. */
   sourceSettings: SessionSourceSettings
@@ -152,15 +152,14 @@ export class AppModel extends Observable<AppSnapshot> {
     entry.connection.selectProfile(profile)
   }
 
-  /** Opens the Settings window (or brings it forward), at `pane` when given. */
+  /** Opens Settings, at `pane` when given. */
   openSettings(pane?: string): void {
     const settings = this.get().settings
     this.update({ settings: { open: true, pane: pane ?? settings.pane } })
-    for (const listener of this.focusListeners) listener()
     if (pane && pane !== settings.pane) void this.save({ settingsPane: pane })
   }
 
-  /** Called when the Settings window is closed. */
+  /** Closes Settings. */
   closeSettings(): void {
     this.update({ settings: { ...this.get().settings, open: false } })
   }
@@ -169,13 +168,6 @@ export class AppModel extends Observable<AppSnapshot> {
     if (pane === this.get().settings.pane) return
     this.update({ settings: { ...this.get().settings, pane } })
     void this.save({ settingsPane: pane })
-  }
-
-  /** Each open request: an open window comes forward. */
-  private readonly focusListeners = new Set<() => void>()
-  onSettingsFocus(listener: () => void): () => void {
-    this.focusListeners.add(listener)
-    return () => this.focusListeners.delete(listener)
   }
 
   setSourceSettings(sourceSettings: SessionSourceSettings): void {
@@ -197,7 +189,7 @@ export class AppModel extends Observable<AppSnapshot> {
 
   showConnectPage(shown: boolean): void {
     if (!shown) this.update({ connectError: undefined })
-    // The rail's Settings button opens the Settings window now.
+    // The rail's Settings button opens Settings now.
     if (shown) this.openSettings('servers')
   }
 

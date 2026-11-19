@@ -8,7 +8,7 @@ import { cjkLanguage } from './cjk.ts'
 import { captionSymbolColor, currentPlatform, windowFrameOptions } from './window-frame.ts'
 import { registerLocalBackend } from './ipc/local-backend.ts'
 import { registerServers } from './ipc/servers.ts'
-import { attachSettingsWindow, openSettingsWindow, registerSettingsWindow } from './ipc/settings-window.ts'
+import { attachSettingsShortcut, registerSettingsMenu } from './ipc/settings-window.ts'
 
 // Its own data folder, `Talaria Desktop`: `Talaria` was the (now removed) Flutter app's,
 // with another settings.json, and may still be on a machine.
@@ -75,10 +75,8 @@ function createWindow(): void {
     if (window === created) window = undefined
   })
   // Links open in the browser; the window never navigates away from the app.
-  attachSettingsWindow(platform, created)
+  attachSettingsShortcut(platform, created)
   created.webContents.setWindowOpenHandler((details) => {
-    const settings = openSettingsWindow(platform, created, details)
-    if (settings) return settings
     const url = details.url
     if (/^https?:/i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
@@ -102,7 +100,7 @@ function start(): void {
   ipcMain.handle(IPC.appearanceGet, () => appearance())
   registerServers()
   registerLocalBackend(platform)
-  registerSettingsWindow(platform, () => window)
+  registerSettingsMenu(platform, () => window)
   ipcMain.on(IPC.captionColors, (event, colors: { symbol: string }) => {
     const owner = BrowserWindow.fromWebContents(event.sender)
     if (!owner || platform === 'mac' || !/^#[0-9a-f]{6}$/i.test(colors.symbol)) return

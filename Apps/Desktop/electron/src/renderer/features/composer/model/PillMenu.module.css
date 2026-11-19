@@ -1,0 +1,164 @@
+/* The composer's pills and menus (Desktop's model-pill.tsx PILL: a quiet label in the
+   tertiary text colour, a hover fill; the dropdown `side="top"` with an 8 px offset). */
+.anchor {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: var(--composer-pill-max-width);
+  height: var(--composer-control);
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.pill:hover:not(:disabled),
+.pill[data-open] {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.pill:disabled {
+  opacity: 0.5;
+}
+
+.pillLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chevron {
+  flex: none;
+  width: var(--composer-pill-chevron);
+  height: var(--composer-pill-chevron);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.6;
+}
+
+.menu,
+.menuWide {
+  position: absolute;
+  bottom: calc(100% + var(--space-4));
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: var(--composer-effort-menu-width);
+  max-height: var(--composer-menu-max-height);
+  padding: var(--space-2);
+  border: var(--hairline) solid var(--composer-menu-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--composer-menu-fill);
+  box-shadow: var(--shadow-flyout);
+  color: var(--text);
+  font-size: var(--text-body);
+  text-align: start;
+}
+
+.menuWide {
+  width: var(--composer-menu-width);
+}
+
+.scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.footer {
+  flex: none;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.section + .section {
+  margin-top: var(--space-2);
+}
+
+.sectionTitle {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+}
+
+.item,
+.action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--composer-menu-item-height);
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.item:hover,
+.item:focus-visible,
+.action:hover:not(:disabled),
+.action:focus-visible {
+  outline: none;
+  background: var(--fill-selected);
+}
+
+.action {
+  color: var(--text-secondary);
+}
+
+.action:disabled {
+  opacity: 0.6;
+}
+
+.itemLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check,
+.actionIcon,
+.spinning {
+  flex: none;
+  width: var(--composer-menu-check);
+  height: var(--composer-menu-check);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+.note {
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-secondary);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

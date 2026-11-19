@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { describeError, type ChatComposer, type ChatSession } from '@talaria/hermes-core'
 import { useSnapshot } from '../../app/hooks.ts'
 import { composerKeyAction } from './keys.ts'
-import { composerSlots, type ComposerSlotArea } from './slots.ts'
+import { composerSlots, handleComposerKey, type ComposerSlotArea } from './slots.ts'
 import './registered-slots.ts'
 import styles from './Composer.module.css'
 
@@ -33,6 +33,11 @@ export function Composer({ chat, composer, isConnected }: { chat: ChatSession; c
     chat.interrupt().catch((error: unknown) => setStopError(describeError(error)))
   }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    const composing = event.nativeEvent.isComposing || event.keyCode === 229
+    if (!composing && handleComposerKey(event, { chat, composer })) {
+      event.preventDefault()
+      return
+    }
     const action = composerKeyAction({
       key: event.key, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey, ctrlKey: event.ctrlKey,
       isComposing: event.nativeEvent.isComposing || event.keyCode === 229,

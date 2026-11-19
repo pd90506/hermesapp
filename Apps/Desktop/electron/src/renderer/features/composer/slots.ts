@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react'
+import type { ComponentType, KeyboardEvent } from 'react'
 import type { ChatComposer, ChatSession } from '@talaria/hermes-core'
 
 /**
@@ -37,4 +37,24 @@ export function registerComposerSlot(slot: ComposerSlot): void {
 
 export function composerSlots(area: ComposerSlotArea): ComposerSlot[] {
   return slots.filter((slot) => slot.area === area)
+}
+
+/**
+ * A key the composer's text area offers before its own handling (package D: the slash
+ * list's arrows, Tab, Return and Esc). Return true when the handler took the key; the
+ * composer then calls `preventDefault` and does nothing else with it. Never called while
+ * an input method composes.
+ */
+export type ComposerKeyHandler = (event: KeyboardEvent<HTMLTextAreaElement>, props: ComposerSlotProps) => boolean
+
+const keyHandlers: ComposerKeyHandler[] = []
+
+/** Registers a key handler once, at import time, from a module `registered-slots.ts` imports. */
+export function registerComposerKeyHandler(handler: ComposerKeyHandler): void {
+  if (!keyHandlers.includes(handler)) keyHandlers.push(handler)
+}
+
+/** Offers the key to every registered handler, in registration order; true when one took it. */
+export function handleComposerKey(event: KeyboardEvent<HTMLTextAreaElement>, props: ComposerSlotProps): boolean {
+  return keyHandlers.some((handler) => handler(event, props))
 }

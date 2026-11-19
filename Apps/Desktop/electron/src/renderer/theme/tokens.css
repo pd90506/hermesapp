@@ -336,8 +336,8 @@
 :root {
   --attachment-pill-max: 224px;
   --attachment-thumb: 32px;
-  --attachment-remove: 16px;
-  --attachment-remove-icon: 10px;
+  --attachment-remove: 20px;
+  --attachment-remove-icon: 12px;
   --media-card-width: 160px;
   --media-card-height: 120px;
   --file-chip-max: 280px;

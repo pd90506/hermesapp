@@ -21,8 +21,9 @@ export function storedImages(paths: readonly string[]): TranscriptImage[] {
 }
 
 export function lastPathComponent(path: string): string {
-  const trimmed = path.replace(/\/+$/, '')
-  const index = trimmed.lastIndexOf('/')
+  // A Windows gateway's paths use backslashes (E: `C:\Users\…\images\a.png`).
+  const trimmed = path.replace(/[\\/]+$/, '')
+  const index = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
   return index >= 0 ? trimmed.slice(index + 1) : trimmed
 }
 

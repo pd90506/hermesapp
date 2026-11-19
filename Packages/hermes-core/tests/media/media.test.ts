@@ -177,3 +177,12 @@ describe('delivered files', () => {
       async () => ({ ok: false, status: 404, body: '{"detail":"File not found"}' }))).rejects.toThrow('File not found')
   })
 })
+
+describe('Windows gateway paths', () => {
+  test('a backslash path shows its file name', async () => {
+    const { lastPathComponent, attachmentDisplayName } = await import('../../src/index.ts')
+    expect(lastPathComponent('C:\\Users\\t\\AppData\\Local\\hermes\\images\\upload_1.png')).toBe('upload_1.png')
+    expect(attachmentDisplayName('C:\\a\\notes-3.txt')).toBe('notes-3.txt')
+    expect(lastPathComponent('/h/images/a.png')).toBe('a.png')
+  })
+})

@@ -3,6 +3,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { MessagesBelow, blockKind, type ChatSession, type ChatView, type TranscriptBlock } from '@talaria/hermes-core'
 import { blockRenderer } from './blocks/registry.ts'
 import './blocks/registered-blocks.ts'
+import { chatEdges } from './edge.ts'
+import './registered-edges.ts'
 import { HistoryHeader } from './HistoryHeader.tsx'
 import { keepScroll, keptScroll } from './kept-scroll.ts'
 import { TranscriptFooter } from './TranscriptFooter.tsx'
@@ -83,7 +85,16 @@ export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }
   const firstBlock = blocks[0]?.id
   const seenFirst = useRef(firstBlock)
   const holding = useRef<{ key: string; delta: number }>(undefined)
-  const release = useCallback(() => { holding.current = undefined }, [])
+  // The user scrolling, for the trailing edge (G's prompt rail ends a pick with it).
+  const scrollListeners = useRef(new Set<() => void>()).current
+  const onUserScroll = useCallback((listener: () => void) => {
+    scrollListeners.add(listener)
+    return () => { scrollListeners.delete(listener) }
+  }, [scrollListeners])
+  const release = useCallback(() => {
+    holding.current = undefined
+    for (const listener of scrollListeners) listener()
+  }, [scrollListeners])
   const restored = useRef(false)
   useLayoutEffect(() => {
     const element = scroller.current
@@ -166,6 +177,15 @@ export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }
 
   const messagesBelow = MessagesBelow.count(blocks, visible)
 
+  // A block to the top of the list (G's prompt rail): it stops following the end.
+  const scrollToBlock = useCallback((id: string) => {
+    const index = rows.findIndex((row) => row.key === id)
+    if (index < 0) return
+    holding.current = undefined
+    following.current = false
+    virtualizer.scrollToIndex(index, { align: 'start' })
+  }, [rows, virtualizer])
+
   return (
     <div className={styles.frame}>
       <div ref={scroller} className={styles.scroller} onScroll={onScroll} data-chat-scroller=""
@@ -187,6 +207,10 @@ export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }
           })}
         </div>
       </div>
+      {chatEdges().map(({ id, Edge }) => (
+        <Edge key={id} chat={chat} view={view} blocks={blocks} visible={visible} atEnd={!awayFromEnd}
+          bottomInset={bottomInset} scrollToBlock={scrollToBlock} onUserScroll={onUserScroll} />
+      ))}
       <div className={styles.overlay} style={{ bottom: bottomInset }}>{overlay({ awayFromEnd, messagesBelow, scrollToEnd })}</div>
     </div>
   )

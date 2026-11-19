@@ -1,0 +1,83 @@
+/* The Mac's MessageActionBar (MessageCopyButton.swift): 26 tall under the message, its
+   icons and time a quiet grey; hidden but kept in the layout, faded in on hover. */
+.message {
+  min-width: 0;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--message-bar-height);
+  color: var(--message-bar-ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--message-bar-reveal) var(--ease);
+}
+
+.bar[data-align='trailing'] {
+  justify-content: flex-end;
+}
+
+.bar[data-shown],
+.message:hover > .bar,
+.message:focus-within > .bar,
+.message[data-menu-open] > .bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--message-bar-button);
+  height: var(--message-bar-button);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font-size: var(--text-caption);
+  --icon-size: var(--text-caption);
+}
+
+.button:hover,
+.button[data-open] {
+  background: var(--fill-hover);
+  color: var(--text-secondary);
+}
+
+.button:active {
+  background: var(--fill-pressed);
+}
+
+/* The time's slot: as wide as the time or "Sending…", whichever is wider, so Copy stays
+   put from Sending… to the time. A failure ("Not confirmed · …") widens it. */
+.slot {
+  display: inline-grid;
+  padding: 0 var(--space-2);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.slot > * {
+  grid-area: 1 / 1;
+  justify-self: end;
+}
+
+.reserve {
+  visibility: hidden;
+}
+
+.status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    transition: none;
+  }
+}

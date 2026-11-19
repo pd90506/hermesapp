@@ -58,3 +58,17 @@
   flex: 1;
   min-height: 0;
 }
+
+/* The list's column: the tab's page, then the tab bar at its bottom. */
+.list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}

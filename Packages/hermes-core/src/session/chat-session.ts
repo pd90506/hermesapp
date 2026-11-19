@@ -4,9 +4,10 @@ import { Observable } from '../observable.ts'
 import type { JSONValue } from '../protocol/jsonrpc.ts'
 import { ChatActivity } from './background/chat-activity.ts'
 import type { BackgroundProcess } from './background/background-processes.ts'
+import { compressionMessage, type SessionCompressResult } from '../composer/queue/compression.ts'
 import { blockKind, transcriptBlocks, type TranscriptBlock } from './blocks.ts'
-import { isQueuedPrompt, type TranscriptItem } from './items.ts'
-import { SessionMethod, promptSubmitTimeoutMs } from './methods.ts'
+import { compressionDisplayKind, isQueuedPrompt, type TranscriptItem } from './items.ts'
+import { SessionMethod, promptSubmitTimeoutMs, sessionCompressTimeoutMs } from './methods.ts'
 import { userDisplayText } from './stored-projection.ts'
 import { StreamedTextQueue } from './streamed-text-queue.ts'
 import { Transcript, type HistoryPaging, type Waiting } from './transcript.ts'
@@ -94,6 +95,9 @@ export interface ChatHost {
 export interface SendSignal {
   readonly cancelled: boolean
 }
+
+/** How `ChatSession.steer` delivered the text. */
+export type SteerOutcome = 'steered' | 'sentAsPrompt' | 'ignored'
 
 export class SendCancelledError extends Error {
   constructor() {
@@ -697,6 +701,16 @@ export class ChatSession extends Observable<ChatView> {
     if (result?.status !== 'not_interrupted') this.change((t) => t.serverClearedQueue(sentBeforeStop))
   }
 
+  /** Where this chat's stored rows are read (package G reads them whole to branch). */
+  get messagesSource(): SessionMessagesSource | undefined {
+    return this.host?.messagesSource
+  }
+
+  /** Shows an action's failure in the chat's error line (package G: a branch refused). */
+  showError(message: string): void {
+    this.change((t) => t.keepError(message))
+  }
+
   /** Adds a note only this device shows. */
   appendLocalNote(text: string): void {
     this.change((t) => t.appendNote(text))
@@ -715,6 +729,57 @@ export class ChatSession extends Observable<ChatView> {
   /** Answers a sudo or secret card; an empty value skips it. */
   answerValue(request: ServerRequest, value: string): void {
     this.currentClient().respond(request.id, { result: { value } })
+    this.change((t) => t.removeRequest(request.id))
+  }
+
+  // MARK: Steer, compress, clarify (package F)
+
+  /**
+   * Hands guidance to the running turn (`session.steer`, `methods_session.py:2444-2482`):
+   * the agent sees it with its next tool result, without a new user turn. The chat shows
+   * it as a `steer` prompt until the stored row replaces it. With no turn running the
+   * gateway answers `rejected`, and the text goes as a normal prompt instead.
+   */
+  async steer(text: string): Promise<SteerOutcome> {
+    const trimmed = text.trim()
+    if (trimmed === '') return 'ignored'
+    const client = await this.liveClient()
+    const result = await client.call(SessionMethod.sessionSteer, { session_id: this.sessionID, text: trimmed }) as { status?: string } | null
+    if (result?.status !== 'queued') {
+      await this.send(trimmed)
+      return 'sentAsPrompt'
+    }
+    this.hasPrompted = true
+    let itemID = ''
+    this.change((t) => { itemID = t.appendUserPrompt(trimmed, { displayKind: 'steer' }) })
+    this.promptAnswered(itemID, 'steered')
+    return 'steered'
+  }
+
+  /**
+   * Compresses the conversation's context (`session.compress`, `/compress`), optionally
+   * on a topic. As on Desktop the earlier messages stay and the result line
+   * (`compressionMessage`) is added, centred, as a divider. Returns that line.
+   */
+  async compress(focusTopic?: string): Promise<string> {
+    const client = await this.liveClient()
+    const topic = focusTopic?.trim()
+    const params: Record<string, JSONValue> = { session_id: this.sessionID }
+    if (topic) params.focus_topic = topic
+    const result = await client.call(SessionMethod.sessionCompress, params, sessionCompressTimeoutMs) as SessionCompressResult | null
+    if (result?.info && typeof result.info === 'object') this.applyInfo(result.info as SessionLiveInfo)
+    const message = compressionMessage(result)
+    this.change((t) => t.appendNote(message, compressionDisplayKind))
+    return message
+  }
+
+  /**
+   * Answers a clarify card with every question at once (`{qid: answer}`, `null` = that
+   * question skipped); `null` for the whole map cancels the request (HermesKit's
+   * `answer(_:clarify:)`).
+   */
+  answerClarify(request: ServerRequest, answers: Readonly<Record<string, string | null>> | null): void {
+    this.currentClient().respond(request.id, { result: { answers: answers === null ? null : { ...answers } } })
     this.change((t) => t.removeRequest(request.id))
   }
 

@@ -1,0 +1,319 @@
+/* The Cron Jobs tab: the session list's pane, section title and rows (SessionList.module.css),
+   with the Mac CronJobsList's job and run rows. */
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding-right: var(--space-4);
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+}
+
+.section {
+  margin: 0;
+  padding: var(--space-7) var(--space-4) var(--space-3) var(--space-7);
+  font-size: var(--text-section);
+  font-weight: var(--weight-bold);
+  color: var(--text);
+}
+
+.note,
+.loading {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-7);
+  color: var(--text-secondary);
+}
+
+/* Centred in the column, not at the row's leading edge (the user, 2026-10-27). */
+.loading {
+  text-align: center;
+}
+
+.newJob {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: calc(100% - var(--space-2));
+  height: var(--cron-new-row-height);
+  margin: 0 0 var(--space-1) var(--space-2);
+  padding: 0 var(--space-5);
+  border: none;
+  border-radius: var(--row-radius);
+  background: transparent;
+  color: var(--accent);
+  text-align: left;
+}
+
+.newJob:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.newJob:disabled {
+  color: var(--text-tertiary);
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-7);
+  color: var(--critical);
+  font-size: var(--text-caption);
+  line-height: var(--line-body);
+}
+
+.errorBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.retry {
+  margin-left: var(--space-6);
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+}
+
+.retry:hover {
+  background: var(--fill-hover);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-7);
+}
+
+.caption {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  line-height: var(--line-tight);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A job: the summary takes the clicks that show its runs; the "…" button its menu. */
+.job {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--row-radius);
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.job:hover {
+  background: var(--fill-hover);
+}
+
+.summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  width: var(--cron-chevron-width);
+  height: var(--line-height-title);
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  --icon-size: var(--cron-chevron-width);
+}
+
+.dot {
+  flex: none;
+  width: var(--cron-dot);
+  height: var(--cron-dot);
+  margin-top: calc((var(--line-height-title) - var(--cron-dot)) / 2);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.dot[data-state='paused'] {
+  background: var(--caution);
+}
+
+.dot[data-state='error'] {
+  background: var(--critical);
+}
+
+.dot[data-state='off'] {
+  background: var(--text-tertiary);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-title);
+  line-height: var(--line-height-title);
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.meta[data-overdue] {
+  color: var(--caution);
+}
+
+.details {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.problem {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: var(--text-caption);
+  color: var(--critical);
+}
+
+.more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--cron-more-size);
+  height: var(--cron-more-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.more:hover {
+  background: var(--fill-pressed);
+  color: var(--text);
+}
+
+/* A run: set in under its job's title, past the chevron and the dot. */
+.run,
+.output,
+.runNote {
+  margin: 0 0 var(--space-1) calc(var(--space-2) + var(--cron-run-indent));
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--row-radius);
+  font-size: var(--text-caption);
+}
+
+.run {
+  width: calc(100% - var(--space-2) - var(--cron-run-indent));
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.run:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.run:disabled {
+  color: var(--text);
+}
+
+.run[aria-selected='true'] {
+  background: var(--selection-fill);
+  color: var(--selection-text);
+}
+
+.output {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.outputTime {
+  color: var(--text-secondary);
+}
+
+.outputPreview {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--text-secondary);
+}
+
+.runNote {
+  color: var(--text-secondary);
+}
+
+.runError {
+  color: var(--critical);
+}
+
+/* The small progress ring of the Mac's ProgressView, WinUI's ProgressRing. */
+.spinner {
+  display: inline-block;
+  width: var(--cron-spinner);
+  height: var(--cron-spinner);
+  border: var(--cron-spinner-stroke) solid var(--divider);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}

@@ -1,0 +1,213 @@
+/* The job editor: the Mac's sheet with a grouped form, as a modal dialog (WinUI's
+   ContentDialog on Windows): a card, rows of label and control in groups, the
+   footers under them, Cancel and the default button at the bottom. */
+.dialog {
+  width: var(--cron-editor-width);
+  max-width: calc(100vw - var(--space-10) * 2);
+  max-height: calc(100vh - var(--space-10) * 2);
+  padding: 0;
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-xl);
+  background: var(--cron-dialog-fill);
+  color: var(--text);
+  box-shadow: var(--shadow-flyout);
+}
+
+.dialog::backdrop {
+  background: var(--cron-dialog-scrim);
+}
+
+.confirm {
+  width: var(--cron-confirm-width);
+  padding: var(--space-9);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+}
+
+.heading {
+  margin: 0;
+  padding: var(--space-9) var(--space-9) var(--space-4);
+  font-family: var(--font-display);
+  font-size: var(--text-heading);
+  font-weight: var(--weight-semibold);
+}
+
+.confirm .heading {
+  padding: 0 0 var(--space-4);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-9) var(--space-4);
+}
+
+.groupTitle {
+  margin: var(--space-6) 0 var(--space-3) var(--space-4);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-6);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+}
+
+.groupTitle + .group {
+  margin-top: 0;
+}
+
+.row,
+.stack {
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-3) 0;
+}
+
+.row {
+  align-items: center;
+  min-height: var(--field-height);
+}
+
+.row + .row,
+.stack + .row,
+.row + .stack,
+.group > div + div {
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.stack {
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+}
+
+.control,
+.prompt {
+  height: var(--field-height);
+  padding: 0 var(--space-4);
+  border: var(--hairline) solid var(--field-stroke);
+  border-bottom-color: var(--field-underline);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+  color: var(--text);
+  outline: none;
+}
+
+.control {
+  flex: none;
+  min-width: var(--cron-control-width);
+  max-width: 60%;
+}
+
+.prompt {
+  height: auto;
+  min-height: calc(var(--field-height) * 2);
+  padding: var(--space-3) var(--space-4);
+  resize: vertical;
+  font: inherit;
+  line-height: var(--line-body);
+}
+
+.control:focus,
+.prompt:focus {
+  background: var(--field-fill-focused);
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 calc(var(--hairline) * -1) 0 var(--accent);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.switch {
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.footer,
+.help {
+  margin: var(--space-2) var(--space-4) 0;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  line-height: var(--line-body);
+}
+
+.footer p {
+  margin: 0;
+}
+
+.help {
+  margin: 0 0 var(--space-2);
+}
+
+.error {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--critical-fill);
+  color: var(--critical);
+  line-height: var(--line-body);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--space-9);
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.confirm .actions {
+  padding: var(--space-7) 0 0;
+  border-top: none;
+}
+
+.button,
+.primary,
+.destructive {
+  min-width: var(--cron-button-min-width);
+  height: var(--field-height);
+  padding: 0 var(--space-7);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+  color: var(--text);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.destructive {
+  border-color: transparent;
+  background: var(--critical);
+  color: var(--on-accent);
+}
+
+.primary:disabled,
+.button:disabled {
+  background: var(--fill-pressed);
+  color: var(--text-tertiary);
+}

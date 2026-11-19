@@ -2,17 +2,18 @@
 # never opening it on the host's screen (AGENTS.md, "Windows host").
 #
 #   scripts/windows-test-vm/Invoke-AppInVM.ps1 -OutDir <dir> [-Name shot] [-Fresh]
-#       [-AppDir <Release folder>] [-Settings <json>] [-Secret <text>] [-WaitSeconds 6]
+#       [-AppDir <win-unpacked folder>] [-Settings <json>] [-WaitSeconds 6]
 #       [-Steps <PowerShell>]
 #
-# Copies the built app (scripts/windows/Build-Desktop.ps1) into C:\TalariaTest\app,
+# Copies the built Electron app (scripts/windows/Build-Electron.ps1) into C:\TalariaTest\app,
 # starts it in the test user's desktop session through a scheduled task (PowerShell
 # Direct runs in session 0, which has no desktop), and captures the window from that
 # session with the screen's own pixels (Get-VMScreenshot.ps1's Hyper-V thumbnail is
 # RGB565, good only to see what the VM shows). The app is closed afterwards.
 #
-# -Fresh clears the app's settings and saved secret first (the first-run page).
-# -Settings writes %APPDATA%\Talaria\settings.json, and -Secret the secret, before start.
+# -Fresh clears the app's data folder, settings and saved secret included (the first-run page).
+# -Settings writes %APPDATA%\Talaria Desktop\settings.json before start. The secret is
+# encrypted for the user (safeStorage) and can't be written from outside: sign in with -Steps.
 # -Steps drives the app before the screenshot, in the user's session, with `Click x y`
 # (pixels from the window's top-left), `Write-Text 'text'` (into the focused field),
 # `Key 0x0D` (a key press by virtual-key code) and `Wait seconds`,
@@ -23,14 +24,13 @@ param(
     [string] $AppDir,
     [switch] $Fresh,
     [string] $Settings,
-    [string] $Secret,
     [int] $WaitSeconds = 6,
     [string] $Steps
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path "$PSScriptRoot\..\..").Path
-if (-not $AppDir) { $AppDir = "$repo\Apps\Desktop\talaria\build\windows\x64\runner\Release" }
-if (-not (Test-Path "$AppDir\talaria.exe")) { throw "No talaria.exe in $AppDir; run scripts/windows/Build-Desktop.ps1" }
+if (-not $AppDir) { $AppDir = "$repo\Apps\Desktop\electron\dist\win-unpacked" }
+if (-not (Test-Path "$AppDir\Talaria.exe")) { throw "No Talaria.exe in $AppDir; run scripts/windows/Build-Electron.ps1" }
 $envFile = @("$repo\.env", "$repo\..\..\..\.env") | Where-Object { Test-Path $_ } | Select-Object -First 1
 $kv = @{}
 Get-Content $envFile | Where-Object { $_ -match '^\s*TALARIA_TEST_VM_\w+=' } | ForEach-Object {
@@ -145,35 +145,21 @@ try {
         New-Item -ItemType Directory -Force C:\TalariaTest\shots | Out-Null
     }
     Copy-Item $AppDir -Destination C:\TalariaTest\app -ToSession $s -Recurse
-    Invoke-Command -Session $s -ArgumentList $capture, $user, $Name, $Fresh.IsPresent, $Settings, $Secret, $WaitSeconds, $Steps {
-        param($capture, $user, $name, $fresh, $settings, $secret, $wait, $steps)
+    Invoke-Command -Session $s -ArgumentList $capture, $user, $Name, $Fresh.IsPresent, $Settings, $WaitSeconds, $Steps {
+        param($capture, $user, $name, $fresh, $settings, $wait, $steps)
         $ErrorActionPreference = 'Stop'
         Set-Content C:\TalariaTest\capture.ps1 $capture -Encoding utf8
         Remove-Item C:\TalariaTest\steps.ps1 -ErrorAction SilentlyContinue
         if ($steps) { Set-Content C:\TalariaTest\steps.ps1 $steps -Encoding utf8 }
-        $appData = "$env:APPDATA\Talaria"
-        if ($fresh) {
-            Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
-            cmdkey /delete:Talaria:server 2>$null | Out-Null
-        }
+        # The app's data folder in the test user's profile (src/main/main.ts, userData; this session runs as the test user).
+        $appData = "$env:APPDATA\Talaria Desktop"
+        if ($fresh) { Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue }
         if ($settings) {
             New-Item -ItemType Directory -Force $appData | Out-Null
             Set-Content "$appData\settings.json" $settings -Encoding utf8
         }
         $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive
-        if ($secret) {
-            # Credential Manager is per logon session: write it from the user's session.
-            Set-Content C:\TalariaTest\secret.txt $secret -NoNewline
-            $a = New-ScheduledTaskAction -Execute cmd.exe -Argument '/c for /f "delims=" %s in (C:\TalariaTest\secret.txt) do cmdkey /generic:Talaria:server /user:test /pass:%s'
-            Register-ScheduledTask -TaskName talaria-secret -Action $a -Principal $principal -Force | Out-Null
-            Start-ScheduledTask talaria-secret
-            Start-Sleep 3
-            Unregister-ScheduledTask talaria-secret -Confirm:$false
-            Remove-Item C:\TalariaTest\secret.txt
-        }
-        # TALARIA_LOG: the app sums up every bridge event in shots\app.log.
-        $a = New-ScheduledTaskAction -Execute cmd.exe `
-            -Argument "/c set TALARIA_LOG=C:\TalariaTest\shots\app.log&& C:\TalariaTest\app\talaria.exe"
+        $a = New-ScheduledTaskAction -Execute C:\TalariaTest\app\Talaria.exe
         Register-ScheduledTask -TaskName talaria-app -Action $a -Principal $principal -Force | Out-Null
         Start-ScheduledTask talaria-app
         Start-Sleep $wait
@@ -191,7 +177,6 @@ try {
         if (Test-Path "$out.warn") { Write-Warning (Get-Content "$out.warn" -Raw) }
     }
     Copy-Item "C:\TalariaTest\shots\$Name.png" -Destination $OutDir -FromSession $s -Force
-    Copy-Item "C:\TalariaTest\shots\app.log" -Destination (Join-Path $OutDir "$Name.log") -FromSession $s -Force -ErrorAction SilentlyContinue
     Get-Item (Join-Path $OutDir "$Name.png")
 } finally {
     Remove-PSSession $s

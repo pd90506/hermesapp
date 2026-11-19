@@ -132,4 +132,27 @@ import Testing
         }
         #expect(ServerRequestMethod.mvpSupported == Set(fixture.supported))
     }
+
+    // MARK: servers-auth.json
+
+    struct ServersAuthFixture: Decodable {
+        struct Pair: Decodable { var verifier: String; var challenge: String }
+        struct Ready: Decodable { var output: String; var port: Int? }
+        var pkce: [Pair]
+        var readyPort: [Ready]
+    }
+
+    @Test func pkceChallenges() throws {
+        let fixture = try Self.load("servers-auth.json", as: ServersAuthFixture.self)
+        for item in fixture.pkce {
+            #expect(PKCE(verifier: item.verifier).challenge == item.challenge, "\(item.verifier)")
+        }
+    }
+
+    @Test func localBackendReadyPort() throws {
+        let fixture = try Self.load("servers-auth.json", as: ServersAuthFixture.self)
+        for item in fixture.readyPort {
+            #expect(LocalBackend.readyPort(in: item.output) == item.port, "\(item.output)")
+        }
+    }
 }

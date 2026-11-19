@@ -1,5 +1,5 @@
 import type { Bot, SessionSummary } from '@talaria/hermes-core'
-import { useModel, useSnapshot } from '../../app/hooks.ts'
+import { useConnectionSnapshot } from '../../app/hooks.ts'
 import styles from './SessionList.module.css'
 
 /**
@@ -8,8 +8,7 @@ import styles from './SessionList.module.css'
  * chat, pins, date groups and the row menu come with chats.
  */
 export function SessionList() {
-  const model = useModel()
-  const snapshot = useSnapshot(model.connection)
+  const snapshot = useConnectionSnapshot()
   const bot = snapshot.bots.find((candidate) => candidate.name === snapshot.selectedProfile)
   const sessions = snapshot.selectedProfile ? snapshot.sessions[snapshot.selectedProfile] : undefined
   return (

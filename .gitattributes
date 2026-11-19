@@ -1,0 +1,2 @@
+# Generated files compared byte for byte by tests: LF on every checkout (Windows autocrlf too).
+Apps/Desktop/electron/src/renderer/theme/themes/*.css text eol=lf

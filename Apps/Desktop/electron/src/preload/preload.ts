@@ -50,6 +50,29 @@ const bridge: TalariaBridge = {
     load: () => ipcRenderer.invoke(IPC.secretLoad),
     save: (value) => ipcRenderer.invoke(IPC.secretSave, value),
   },
+  secrets: {
+    load: (id) => ipcRenderer.invoke(IPC.secretsLoad, id),
+    save: (id, value) => ipcRenderer.invoke(IPC.secretsSave, id, value),
+  },
+  settingsWindow: {
+    onOpenRequest(handler) {
+      const listener = () => handler()
+      ipcRenderer.on(IPC.settingsOpen, listener)
+      return () => ipcRenderer.removeListener(IPC.settingsOpen, listener)
+    },
+  },
+  signIn: {
+    listen: () => ipcRenderer.invoke(IPC.signInListen),
+    callback: (id) => ipcRenderer.invoke(IPC.signInCallback, id),
+    stop: (id) => ipcRenderer.invoke(IPC.signInStop, id),
+    openExternal: (url) => ipcRenderer.invoke(IPC.signInOpen, url),
+  },
+  localBackend: {
+    available: () => ipcRenderer.invoke(IPC.localBackendAvailable),
+    start: () => ipcRenderer.invoke(IPC.localBackendStart),
+    stop: () => ipcRenderer.invoke(IPC.localBackendStop),
+    isRunning: () => ipcRenderer.invoke(IPC.localBackendRunning),
+  },
   appearance: {
     get: () => ipcRenderer.invoke(IPC.appearanceGet),
     onChange(handler) {

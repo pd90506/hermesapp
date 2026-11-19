@@ -1,13 +1,8 @@
-/* The Capabilities pane (L): the Mac's layout, a toolbar row, the kind picker, an inset list. */
+/* The Capabilities pane (L), in Settings' row layout: profile and search, the kind tabs, a row per capability. */
 .pane {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  width: var(--settings-pane-width);
-  max-width: 100%;
-  margin: 0 auto;
-  padding: var(--space-8) var(--space-9);
-  box-sizing: border-box;
+  gap: var(--space-2);
 }
 
 .toolbar {
@@ -34,29 +29,24 @@
 
 .search {
   width: var(--settings-search-width);
-  height: var(--settings-button-height);
+  flex: none;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  height: var(--settings-list-height);
-  overflow-y: auto;
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--settings-group-radius);
-  background: var(--surface-card);
-}
-
-/* Alternating rows, as the Mac's inset list. */
-.row:nth-child(even) {
-  background: var(--fill-hover);
 }
 
 .row {
   display: flex;
   align-items: center;
   gap: var(--space-6);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-6) 0;
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.row:first-child {
+  border-top: none;
 }
 
 .text {

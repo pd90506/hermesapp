@@ -5,7 +5,8 @@ import {
   type ConnectionSnapshot, type CustomEndpoint, type GatewayAccess, type Observable, type ProviderAccount,
   type ProviderEnvVar, type ProviderSignIn, type ProvidersSnapshot,
 } from '@talaria/hermes-core'
-import { useModel, useSnapshot } from '../../../app/hooks.ts'
+import { useConnection, useSnapshot } from '../../../app/hooks.ts'
+import { PageHeading } from '../ui/Rows.tsx'
 import { Button, Confirm, Dialog, Field, MoreMenu, Row, Section, Segmented, Spinner, errorClass, inputClass, messageClass } from './controls.tsx'
 import { ProfilePicker, initialProfile } from './ProfileScope.tsx'
 import styles from './ProvidersPane.module.css'
@@ -23,7 +24,7 @@ export type SettingsConnection = Observable<ConnectionSnapshot> & GatewayAccess
 
 /** The Providers settings pane for the app's connection (registered in K's pane table). */
 export function ProvidersSettingsPane() {
-  return <ProvidersPane connection={useModel().connection} />
+  return <ProvidersPane connection={useConnection()} />
 }
 
 /**
@@ -65,6 +66,7 @@ export function ProvidersPane({ connection, board: given }: { connection: Settin
 
   return (
     <div className={styles.pane}>
+      <PageHeading icon="key" title="Providers" />
       <Section footer={error && <p className={errorClass} role="alert">{error}</p>}>
         <ProfilePicker snapshot={snapshot} profile={profile} onChange={setProfile} />
         {shown?.currentModel && (

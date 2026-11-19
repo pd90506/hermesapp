@@ -19,7 +19,7 @@ export function ConnectPage() {
   const app = useSnapshot(model)
   const saved = app.server
   const [serverURL, setServerURL] = useState(saved?.serverURL ?? '')
-  const [authMode, setAuthMode] = useState<SavedServer['authMode']>(saved?.authMode ?? 'password')
+  const [authMode, setAuthMode] = useState<SavedServer['authMode']>(saved?.authMode === 'browser' ? 'password' : saved?.authMode ?? 'password')
   const [provider, setProvider] = useState(saved?.provider || 'basic')
   const [username, setUsername] = useState(saved?.username ?? '')
   const [secret, setSecret] = useState('')

@@ -1,0 +1,46 @@
+{
+  "pkce": [
+    {
+      "verifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      "challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    },
+    {
+      "verifier": "a",
+      "challenge": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs"
+    },
+    {
+      "verifier": "",
+      "challenge": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+    },
+    {
+      "verifier": "The quick brown fox jumps over the lazy dog, then naps for a while in the sun.",
+      "challenge": "whG_YucA3M52ksoOi67w5B_VGFBFc-QRTfQyER6RRro"
+    }
+  ],
+  "readyPort": [
+    {
+      "output": "starting\nHERMES_BACKEND_READY port=53124\n",
+      "port": 53124
+    },
+    {
+      "output": "warn: slowHERMES_DASHBOARD_READY port=9120",
+      "port": null
+    },
+    {
+      "output": "noise HERMES_DASHBOARD_READY port=9120 more",
+      "port": 9120
+    },
+    {
+      "output": "HERMES_BACKEND_READY port=0\nHERMES_BACKEND_READY port=8001",
+      "port": 8001
+    },
+    {
+      "output": "HERMES_BACKEND_READY port=99999",
+      "port": null
+    },
+    {
+      "output": "nothing yet",
+      "port": null
+    }
+  ]
+}

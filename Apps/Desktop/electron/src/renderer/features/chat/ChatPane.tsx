@@ -1,4 +1,4 @@
-import { useModel, useSnapshot } from '../../app/hooks.ts'
+import { useConnectionSnapshot } from '../../app/hooks.ts'
 import styles from './ChatPane.module.css'
 
 /**
@@ -6,8 +6,7 @@ import styles from './ChatPane.module.css'
  * the caption buttons sit over its top right corner. Chats open here in the next change.
  */
 export function ChatPane() {
-  const model = useModel()
-  const connection = useSnapshot(model.connection)
+  const connection = useConnectionSnapshot()
   const message = connection.link.phase === 'failed'
     ? connection.link.message
     : connection.bots.length > 0 ? 'Chats open here in a later version.' : ''

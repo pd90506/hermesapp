@@ -23,11 +23,13 @@ and how to work on it.
   `--frame-caption-width` and `--frame-traffic-lights-width`. Styles key on those;
   `tests/stylesheet-scan.test.ts` fails on a `platform ===` in renderer code.
 - **Components use tokens.** Colours and sizes are written only in `theme/tokens.css`
-  (shared, light and dark) and `theme/platform.css` (per platform). The same test fails on a
-  hex, `rgb()` or pixel size in a `*.module.css`.
-- **Positions and behaviour follow the Mac app** on both platforms; fonts, type sizes and the
-  list selection follow each system (Segoe UI Variable at 14 px with the accent pill on
-  Windows, the system font at 13 pt with the accent fill on macOS).
+  (shared, light and dark), `theme/platform.css` (per platform) and the generated
+  `theme/themes/themes.css` (colour themes). The same test fails on a hex, `rgb()` or pixel
+  size in a `*.module.css`.
+- **Positions and behaviour follow the Mac app** on both platforms; fonts and the list
+  selection follow each system (Segoe UI Variable with the accent pill on Windows, the
+  system font with the accent fill on macOS). Type sizes are the system's body size scaled
+  by the UI text size (14 pt by default, as the Mac app).
 - **The renderer never touches the network.** HTTP and WebSockets run in the main process,
   so no `Origin` or CORS applies; the renderer reaches them through `window.talaria`.
 - **Behaviour comes from `HermesKit`.** When porting, cite the Swift it mirrors, and add a
@@ -41,6 +43,26 @@ and how to work on it.
   the material should show; the chat lies on a layer with a rounded top-left corner.
 - macOS: `hiddenInset` with the traffic lights in the 52 pt band and sidebar vibrancy.
 - The window drags by the title bands (`-webkit-app-region: drag`).
+
+## Themes and Appearance
+
+- **Colours come from HermesKit.** `Packages/fixtures/appearance-themes.json` holds every
+  theme's accent, surfaces and Markdown colours; HermesKit's `AppearanceFixtureTests`
+  checks it (and rewrites it with `HERMES_EXPORT_FIXTURES=1`), and
+  `node Apps/Desktop/electron/scripts/export-themes.mjs` turns it into
+  `theme/themes/themes.css`. Never edit the stylesheet by hand; a test fails when it is stale.
+- `<html data-theme>` is the theme (HermesKit's `ColorTheme` raw value; `plain` is System,
+  which keeps the platform's own surfaces and the system accent, `--system-accent`).
+- Light or dark is `nativeTheme.themeSource` in the main process (`src/main/ipc/appearance.ts`),
+  so prefers-color-scheme, Mica or vibrancy, menus and the caption buttons all follow it.
+- Text sizes: the app sets `--text-ui`, `--text-content-size` and `--text-code-size` (points)
+  on `<html>`; components use `--text-body` and the other UI sizes, `--text-content` for
+  messages and the composer, `--text-code` for code.
+- Markdown colour tokens: `--md-heading`, `--md-bold`, `--md-link`, `--md-inline-code`,
+  `--md-inline-code-bg`, `--md-code-block-bg`, `--md-quote-bar`, `--md-quote-text`,
+  `--md-quote-bg`, `--md-table-header-bg`, `--md-table-header-text`, `--md-table-border`,
+  `--md-table-stripe`. Chat surfaces: `--surface-chat`, `--user-bubble`, `--composer-fill`,
+  `--selection-fill`, `--accent`.
 
 ## Working on it
 

@@ -57,8 +57,9 @@
   --line-tight: 1.3;
   --line-body: 1.45;
 
-  /* The system accent (set by the app from the OS); this is its fallback. */
-  --accent: #0067c0;
+  /* The system accent (--system-accent, set by the app from the OS; this is its
+     fallback). A colour theme other than System replaces it (themes/themes.css). */
+  --accent: var(--system-accent, #0067c0);
   --on-accent: #ffffff;
 
   color-scheme: light dark;
@@ -123,3 +124,29 @@
     --shadow-flyout: 0 8px 16px rgb(0 0 0 / 0.26);
   }
 }
+
+/* M */
+/* Appearance (features/settings/appearance): the System theme's user bubble and composer
+   (the Mac's: the accent at 15%, the control background), and the text sizes. A colour
+   theme replaces the colours (themes/themes.css). The sizes are points, unitless; the app
+   sets the user's on <html> (--text-ui, --text-content-size, --text-code-size). The UI
+   size scales every UI text style by the same factor (TextSizes.uiScale), against the
+   system's body size (--text-system-ui, platform.css). */
+:root {
+  --user-bubble: color-mix(in srgb, var(--accent) 15%, transparent);
+  --composer-fill: var(--field-fill);
+  --text-ui: 14;
+  --text-content-size: 14;
+  --text-code-size: 12;
+  --text-system-ui: 14;
+  --ui-scale: calc(var(--text-ui) / var(--text-system-ui));
+  --text-content: calc(var(--text-content-size) * 1px);
+  --text-code: calc(var(--text-code-size) * 1px);
+  /* The Appearance pane's theme swatches (ColorThemePicker). */
+  --swatch-size: 26px;
+  --swatch-ring: 2px;
+  --swatch-stroke: rgb(0 0 0 / 0.12);
+  --size-field-width: 48px;
+  --settings-label-width: 120px;
+}
+

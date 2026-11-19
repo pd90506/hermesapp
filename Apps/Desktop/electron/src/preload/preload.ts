@@ -82,6 +82,12 @@ const bridge: TalariaBridge = {
     },
     setCaptionColors: (colors) => ipcRenderer.send(IPC.captionColors, colors),
   },
+  links: {
+    open: (url) => ipcRenderer.invoke(IPC.linksOpen, url),
+  },
+  theme: {
+    setMode: (mode) => ipcRenderer.send(IPC.themeSetMode, mode),
+  },
 }
 
 contextBridge.exposeInMainWorld('talaria', bridge)

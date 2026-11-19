@@ -70,6 +70,16 @@ const icons = {
   close: { glyph: '\uE8BB', path: 'M4 4l8 8M12 4l-8 8' },
   /** Fluent ChevronDown / SF `chevron.down`. */
   chevronDown: { glyph: '\uE70D', path: 'M4 6l4 4 4-4' },
+  /** Fluent Copy / SF `doc.on.doc`. */
+  copy: {
+    glyph: '\uE8C8',
+    path: 'M5.5 5.5h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM2.5 10.5v-7a1 1 0 0 1 1-1h7',
+  },
+  /** Fluent CheckMark / SF `checkmark`. */
+  check: {
+    glyph: '\uE73E',
+    path: 'M3 8.5l3.2 3.2L13 4.5',
+  },
 } as const
 
 export type IconName = keyof typeof icons

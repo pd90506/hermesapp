@@ -5,6 +5,7 @@ import {
 } from '@talaria/hermes-core'
 import type { Appearance, SavedServer, SavedSettings, TalariaBridge } from '../../shared/bridge.ts'
 import { BridgeSocket, bridgeHttp } from './bridge-transport.ts'
+import { AppearanceStore } from '../features/settings/appearance/appearance-store.ts'
 
 export interface AppSnapshot {
   /** Settings are read; until then nothing is drawn. */
@@ -38,6 +39,8 @@ export class AppModel extends Observable<AppSnapshot> {
   readonly servers: ServerRegistry
   /** A connection that is never connected, while there is no server. */
   private readonly idle = this.makeConnection()
+  /** Settings ▸ Appearance: the look, the colour theme and the text sizes. */
+  readonly appearanceSettings: AppearanceStore
 
   constructor(readonly bridge: TalariaBridge) {
     super({
@@ -70,6 +73,7 @@ export class AppModel extends Observable<AppSnapshot> {
       localBackend: bridge.localBackend,
     })
     this.servers.subscribe(() => this.followServers())
+    this.appearanceSettings = new AppearanceStore(bridge, (change) => this.save(change))
   }
 
   /** A server's connection. A, chats: keep the server id a chat belongs to and use this. */
@@ -105,6 +109,7 @@ export class AppModel extends Observable<AppSnapshot> {
     const [settings, appearance] = await Promise.all([this.bridge.settings.load(), this.bridge.appearance.get()])
     this.bridge.appearance.onChange((next) => this.update({ appearance: next }))
     this.bridge.settingsWindow.onOpenRequest(() => this.openSettings())
+    this.appearanceSettings.restore(settings)
     const sourceSettings = decodeSourceSettings(settings.sourceSettings)
     this.update({
       appearance,

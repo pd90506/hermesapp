@@ -4,18 +4,20 @@
  * (--frame-*, also from the preload). Positions and behaviour stay the Mac's.
  */
 
-/* Windows 11: Segoe UI Variable, 14 px body (WinUI's BodyTextBlock), Fluent list
+/* Windows 11: Segoe UI Variable, 14 px body (WinUI's BodyTextBlock) scaled by the UI
+   text size (14 by default, so unscaled), Fluent list
    selection (a fill and the accent's pill). */
 :root[data-platform='windows'],
 :root[data-platform='linux'] {
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', var(--font-cjk), system-ui, sans-serif;
   --font-display: 'Segoe UI Variable Display', 'Segoe UI', var(--font-cjk), system-ui, sans-serif;
   --font-mono: 'Cascadia Mono', Consolas, var(--font-cjk);
-  --text-body: 14px;
-  --text-caption: 12px;
-  --text-section: 14px;
-  --text-title: 14px;
-  --text-heading: 20px;
+  --text-system-ui: 14;
+  --text-body: round(nearest, calc(14px * var(--ui-scale)), 1px);
+  --text-caption: round(nearest, calc(12px * var(--ui-scale)), 1px);
+  --text-section: round(nearest, calc(14px * var(--ui-scale)), 1px);
+  --text-title: round(nearest, calc(14px * var(--ui-scale)), 1px);
+  --text-heading: round(nearest, calc(20px * var(--ui-scale)), 1px);
   --selection-fill: var(--fill-selected);
   --selection-text: var(--text);
   --selection-indicator: var(--accent);
@@ -23,17 +25,19 @@
   --icon-font: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
 }
 
-/* macOS: the system font at 13 pt (NSFont.systemFontSize), the source list's rounded
+/* macOS: the system font at 13 pt (NSFont.systemFontSize), scaled by the UI text size
+   (14 pt by default, the Mac app's, so 14/13 of every style), the source list's rounded
    selection in the accent, no indicator. */
 :root[data-platform='mac'] {
   --font-ui: -apple-system, BlinkMacSystemFont, var(--font-cjk), system-ui, sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, var(--font-cjk), system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, var(--font-cjk);
-  --text-body: 13px;
-  --text-caption: 11px;
-  --text-section: 13px;
-  --text-title: 13px;
-  --text-heading: 20px;
+  --text-system-ui: 13;
+  --text-body: round(nearest, calc(13px * var(--ui-scale)), 1px);
+  --text-caption: round(nearest, calc(11px * var(--ui-scale)), 1px);
+  --text-section: round(nearest, calc(13px * var(--ui-scale)), 1px);
+  --text-title: round(nearest, calc(13px * var(--ui-scale)), 1px);
+  --text-heading: round(nearest, calc(20px * var(--ui-scale)), 1px);
   --selection-fill: color-mix(in srgb, var(--accent) 20%, transparent);
   --selection-text: var(--text);
   --selection-indicator: transparent;

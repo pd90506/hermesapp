@@ -32,7 +32,7 @@ describe('settings panes', () => {
   it('come in a fixed order, whatever order they register in', () => {
     registerSettingsPane({ id: 'appearance', title: 'Appearance', icon: 'palette', render: () => null })
     registerSettingsPane({ id: 'providers', title: 'Providers', icon: 'key', render: () => null })
-    expect(settingsPanes().map((pane) => pane.id)).toEqual(['servers', 'providers', 'sessionSources', 'appearance', 'notifications'])
+    expect(settingsPanes().map((pane) => pane.id)).toEqual(['servers', 'providers', 'capabilities', 'sessionSources', 'appearance', 'notifications'])
   })
 
   it('Session Sources hides a source', () => {

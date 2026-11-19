@@ -299,3 +299,17 @@
     --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.3);
   }
 }
+
+/* J: the pills over the composer (task list, background tasks, subagents) and their
+   cards (the Mac's ChatPillRow, TodoPill, BackgroundProcessesPill, SubagentsPill). */
+:root {
+  --pill-card-radius: 16px;
+  --pill-card-max-height: 360px;
+  --pill-todo-glyph: 20px;
+  --pill-todo-indent: 18px;
+  --pill-todo-line: 1.5px;
+  --pill-row-icon: 16px;
+  --pill-ring-stroke: 2px;
+  --pill-output-lines: 12;
+  --pill-done: var(--success);
+}

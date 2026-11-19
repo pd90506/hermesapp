@@ -40,6 +40,14 @@ each package's LICENSE file. `features/markdown/highlight.ts` takes its Shiki th
 comment colour fix from the official Hermes Desktop's `shiki-config.ts` (hermes-agent,
 MIT, see above).
 
+## System notifications (Electron desktop app)
+
+`Apps/Desktop/electron/src/main/ipc/notifications.ts` adapts the official Hermes Desktop's
+`electron/notification-ipc.ts` and `notification-registry.ts` (hermes-agent, commit
+`caafe5389a`, MIT, see above): holding each notification until it is clicked or 10 minutes
+pass, the one-second de-duplication, and flashing the window's taskbar entry until it is
+focused.
+
 ## SwiftMath
 
 See AGENTS.md, "Dependencies" (MIT, used by the app targets).

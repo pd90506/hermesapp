@@ -62,6 +62,27 @@ export interface SavedSettings {
   markdownColors?: MarkdownColorsJSON
 }
 
+/* J: notifications */
+/** The chat a notification is about: a click opens it, Approve / Reject answer its request. */
+export interface NotificationTarget {
+  serverID: string
+  profile?: string
+  storedSessionID?: string
+  isBotChat: boolean
+  /** An approval's server request id: the notification has Approve and Reject (macOS). */
+  requestID?: string
+}
+
+export interface SystemNotification {
+  title: string
+  body: string
+  /** Peer alerts with the same tag within a second show once. */
+  tag: string
+  target?: NotificationTarget
+}
+
+export type NotificationAction = 'approve' | 'reject'
+
 export interface TalariaBridge {
   platform: Platform
   http: {
@@ -126,6 +147,18 @@ export interface TalariaBridge {
     /** Light, dark or the system's look for the whole app (`nativeTheme.themeSource`). */
     setMode(mode: AppearanceMode): void
   }
+  /* J: notifications */
+  /** The system's notifications (Electron `Notification`, in the main process). */
+  notifications: {
+    /** Shows one; false when the system can't. */
+    show(notification: SystemNotification): Promise<boolean>
+    /** Settings ▸ Notifications' test, past every switch. */
+    test(): Promise<boolean>
+    /** A notification was clicked: the window is in front; open its chat. */
+    onClick(handler: (target: NotificationTarget) => void): () => void
+    /** Approve or Reject was pressed on an approval's notification. */
+    onAction(handler: (target: NotificationTarget, action: NotificationAction) => void): () => void
+  }
 }
 
 export type AppearanceMode = 'system' | 'light' | 'dark'
@@ -158,6 +191,11 @@ export const IPC = {
   localBackendRunning: 'talaria:local-backend:running',
   linksOpen: 'talaria:links:open',
   themeSetMode: 'talaria:theme:set-mode',
+  /* J: notifications */
+  notificationShow: 'talaria:notifications:show',
+  notificationTest: 'talaria:notifications:test',
+  notificationClick: 'talaria:notifications:click',
+  notificationAction: 'talaria:notifications:action',
 } as const
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */

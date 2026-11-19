@@ -299,3 +299,13 @@
     --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.3);
   }
 }
+
+/* F: the cards over the composer (held and queued messages, compression) and the clarify
+   card (Apps/Shared/Composer/ComposerView.swift, Apps/Shared/Views/ClarifyCardView.swift). */
+:root {
+  --prompt-card-height: 32px;
+  --prompt-card-action: 22px;
+  --clarify-tab-height: 24px;
+  --clarify-badge: 20px;
+  --clarify-checkbox: 14px;
+}

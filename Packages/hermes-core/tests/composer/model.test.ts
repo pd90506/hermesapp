@@ -31,8 +31,13 @@ describe('ModelCatalog', () => {
     ],
   })
 
-  it('keeps providers with models, in the server order', () => {
+  it('keeps providers with models, sorted so the menu never reshuffles', () => {
     expect(catalog.providers.map((row) => row.slug)).toEqual(['anthropic', 'openrouter'])
+    expect(catalog.providers[0]!.models).toEqual(['claude-haiku-5-5', 'claude-opus-5-5'])
+    const shuffled = new ModelCatalog({ providers: [
+      { slug: 'z', name: 'Zed', models: ['m-10', 'm-2', 'M-1'] }, { slug: 'a', name: 'alpha', models: ['x'] }] })
+    expect(shuffled.providers.map((row) => row.name)).toEqual(['alpha', 'Zed'])
+    expect(shuffled.providers[1]!.models).toEqual(['M-1', 'm-2', 'm-10'])
     expect(catalog.providerName('openrouter')).toBe('openrouter')
     expect(catalog.providerName('ANTHROPIC')).toBe('Anthropic')
     expect(catalog.model).toBe('claude-opus-5-5')

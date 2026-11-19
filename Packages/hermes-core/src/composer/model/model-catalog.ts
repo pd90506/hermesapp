@@ -75,11 +75,16 @@ function provider(value: unknown): ModelOptionProvider | undefined {
   return result
 }
 
+const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
+const byName = (a: string, b: string): number => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0)
+
 /**
  * The model picker's data, built from a `model.options` answer (HermesKit's
- * `ModelCatalog`). Providers that offer at least one model, in the server's order (it
- * already sorts them, `hermes_cli/inventory.py:141-142`); a catalog with no models is
- * nothing to pick (`model-options.ts:131-133`).
+ * `ModelCatalog`): providers that offer at least one model; a catalog with no models is
+ * nothing to pick (`model-options.ts:131-133`). Sorted so the menu never reshuffles:
+ * providers by name, as Desktop (`model-catalog-menu.tsx`, "the backend floats the current
+ * provider first, which would reshuffle on every switch"), and their models by id, since
+ * an endpoint's own model list can come back in a different order each time.
  */
 export class ModelCatalog {
   readonly providers: readonly ModelOptionProvider[]
@@ -90,7 +95,10 @@ export class ModelCatalog {
   constructor(result: JSONValue | ModelOptionProvider[] | null | undefined) {
     const row = record(result)
     const rows = Array.isArray(result) ? result : Array.isArray(row?.providers) ? row.providers : []
-    this.providers = rows.map(provider).filter((entry): entry is ModelOptionProvider => entry !== undefined && entry.models.length > 0)
+    this.providers = rows.map(provider)
+      .filter((entry): entry is ModelOptionProvider => entry !== undefined && entry.models.length > 0)
+      .map((entry) => ({ ...entry, models: [...entry.models].sort(byName) }))
+      .sort((a, b) => byName(a.name, b.name))
     const model = text(row?.model)
     const current = text(row?.provider)
     if (model) this.model = model

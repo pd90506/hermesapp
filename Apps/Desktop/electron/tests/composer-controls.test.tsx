@@ -75,7 +75,7 @@ describe('composer controls', () => {
 
     fireEvent.click(pill)
     const menu = screen.getByRole('menu', { name: 'Model' })
-    expect([...menu.querySelectorAll('[role="group"]')].map((group) => group.getAttribute('aria-label'))).toEqual(['Local', 'Cloud'])
+    expect([...menu.querySelectorAll('[role="group"]')].map((group) => group.getAttribute('aria-label'))).toEqual(['Cloud', 'Local'])
     expect(screen.getByRole('menuitemradio', { name: 'Test Model' }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByRole('menuitem', { name: 'Reload Models' })).toBeTruthy()
 

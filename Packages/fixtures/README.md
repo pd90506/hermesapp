@@ -16,4 +16,5 @@ source when adding a shape.
 | `session-list.json` | Which `session.list` rows the session list shows |
 | `server-requests.json` | Which server requests are declined, and with which code |
 | `servers-auth.json` | The browser sign-in's PKCE challenge, the local backend's ready-port line |
+| `cron-jobs.json` (Swift: `CronFixtureTests.swift`) | Cron job rows: fields read, titles, states, delivery targets and toggles, schedule presets, run session ids |
 | `appearance-themes.json` | Every colour theme's accent, window surfaces and Markdown colours (light and dark), the System theme tinted with a system accent, and how the Appearance settings load and clamp text sizes. Generated from HermesKit (`HERMES_EXPORT_FIXTURES=1 swift test --filter AppearanceFixtureTests`); the desktop app's theme stylesheet is generated from it (`Apps/Desktop/electron/scripts/export-themes.mjs`) |

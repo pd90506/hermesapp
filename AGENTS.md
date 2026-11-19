@@ -193,7 +193,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     19.3.0 (MIT), **ws** 8.22.1 (MIT). `ws` was not in the approved plan: the main process
     opens the gateway WebSocket with it because it sends no `Origin` (the dashboard checks a
     browser's) and reports a refused upgrade with its HTTP status, which the app shows. Its
-    optional native add-ons stay out.
+    optional native add-ons stay out. **@tanstack/react-virtual** 3.14.26 (MIT), for the chat's
+    transcript list (package A, in the approved plan): it builds only the rows near the screen
+    and measures their heights, as the Mac's lazy transcript and Desktop's virtual list do.
   - Build and test only: **vite** 8.3.4, **@vitejs/plugin-react** 6.2.1, **typescript** 6.0.3,
     **vitest** 4.1.12, **jsdom** 29.1.1, **@testing-library/react** 16.3.3,
     **electron-builder** 26.18.0, and the `@types` packages (all MIT, Apache-2.0 for
@@ -237,8 +239,19 @@ stays until it catches up. The Flutter Windows app was removed (the user, 2026-1
 - **Check a change** with `pnpm install`, `pnpm typecheck`, `pnpm test` at the repo root, then
   `pnpm desktop:build`. Run it with `pnpm desktop:dev`. On Windows, build the app with
   `scripts/windows/Build-Electron.ps1`.
-- Settings are kept in the app's own data folder, `Talaria Desktop`, the server's secret encrypted with Electron's `safeStorage` (DPAPI on Windows,
-  the keychain on macOS).
+- Settings are kept in the app's own data folder, `Talaria Desktop`, each server's secret encrypted with Electron's `safeStorage` (DPAPI on Windows,
+  the keychain on macOS) in `secrets/<server id>.bin`.
+- **Servers.** `hermes-core`'s `ServerRegistry` holds one `GatewayConnection` per server, as the Mac's
+  `ServerConnection`. `model.connection` is the current server's (the server of the profile picked in
+  the rail); views read it with `useConnection()` / `useConnectionSnapshot()`, which follow a change of
+  server. Something tied to one server (a chat) keeps that server's id and uses `model.serverConnection(id)`.
+- **One UI on macOS and Windows.** The Electron app looks and behaves the same on both, in an
+  Electron/web style after official Hermes Desktop, not the Mac SwiftUI app's layout (user, 2026-11-19).
+- **Settings** (`features/settings`) is an overlay over the main window, as Hermes Desktop's: panes listed
+  on the left, the one picked beside them, Esc / the close button / a click outside closes it. ⌘, (Mac app
+  menu) or Ctrl+, opens it (`src/main/ipc/settings-window.ts`). A pane registers itself in
+  `features/settings/registered.ts` (`registerSettingsPane`) and is built from `features/settings/ui/Rows.tsx`
+  (PageHeading, ListRow, ToggleRow, Switch, TextField, Select, Button, Pill).
 
 ## Windows host
 

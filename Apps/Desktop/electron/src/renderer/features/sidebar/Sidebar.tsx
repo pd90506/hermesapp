@@ -1,7 +1,7 @@
 import type { LinkState } from '@talaria/hermes-core'
 import { useEffect, useState } from 'react'
 import type { Shortcut } from '../../../shared/bridge.ts'
-import { useModel, useSnapshot } from '../../app/hooks.ts'
+import { useConnectionSnapshot, useModel, useSnapshot } from '../../app/hooks.ts'
 import { IconButton } from '../../ui/IconButton.tsx'
 import { Banners } from './Banners.tsx'
 import { ProfileRail } from './ProfileRail.tsx'
@@ -20,7 +20,7 @@ import styles from './Sidebar.module.css'
 export function Sidebar() {
   const model = useModel()
   const app = useSnapshot(model)
-  const connection = useSnapshot(model.connection)
+  const connection = useConnectionSnapshot()
   const bot = connection.bots.find((candidate) => candidate.name === connection.selectedProfile)
   const tabs = sidebarTabs()
   // Not kept across launches: the app opens on the sessions, as the Mac's.
@@ -64,7 +64,10 @@ export function Sidebar() {
           <span className={styles.status}>{status(connection.link, connection.isTryingNoticeably, app.server?.serverURL)}</span>
         </div>
         {!searchShown && <IconButton icon="search" label={`Search Chats${shortcuts ? ` (${shortcuts.search.label})` : ''}`} onClick={openSearch} />}
-        <IconButton icon="compose" label="New chat" disabled />
+        <IconButton icon="compose" label="New chat" disabled={!connection.selectedProfile || connection.link.phase !== 'connected'}
+          onClick={() => {
+            if (connection.selectedProfile) void model.connection.chats.newChat(connection.selectedProfile).catch(() => {})
+          }} />
       </header>
       <div className={styles.columns}>
         {app.railShown && <ProfileRail />}

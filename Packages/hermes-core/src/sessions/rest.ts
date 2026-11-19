@@ -1,12 +1,13 @@
 import type { DashboardConnector } from '../connector.ts'
 import { DashboardError } from '../dashboard.ts'
+import { DashboardRequestError, requestStatus } from '../dashboard-api.ts'
 import type { HttpRequest } from '../http.ts'
 import { listedSources } from '../bots.ts'
+import type { StoredMessage } from '../session/types.ts'
 
 /**
  * The dashboard REST reads the sidebar needs: row activity, the shared read watermark,
- * search. The sender has the shape of thread L's `DashboardAPI` (`dashboard-api.ts`):
- * once that lands, `connection.dashboardAPI` is passed here instead of `restSender`.
+ * search, over `connection.dashboardAPI` (the desktop adapts it, `sidebar-model.ts`).
  */
 export interface SessionsREST {
   send<T>(method: HttpRequest['method'], path: string,
@@ -52,17 +53,6 @@ export function restSender(connector: DashboardConnector): SessionsREST {
       }
     },
   }
-}
-
-/** One stored row, as `GET /api/sessions/{id}/messages` sends it (only what the sidebar reads). */
-export interface StoredMessage {
-  id?: number | null
-  role: string
-  content?: unknown
-  display_content?: unknown
-  tool_calls?: unknown
-  timestamp?: number | null
-  display_kind?: string | null
 }
 
 export interface MessagesPage {
@@ -133,8 +123,9 @@ export async function markRead(rest: SessionsREST, sessionID: string, profile: s
   try {
     await once()
   } catch (error) {
-    const conflict = error instanceof DashboardError && error.status === 409 &&
-      /revision_conflict|stale_generation/.test(error.reason ?? '')
+    // The refusal as the connector's sender throws it, or as `dashboardAPI` re-throws it.
+    const reason = error instanceof DashboardRequestError ? error.detail : error instanceof DashboardError ? error.reason : undefined
+    const conflict = requestStatus(error) === 409 && /revision_conflict|stale_generation/.test(reason ?? '')
     if (!conflict) throw error
     await once()
   }

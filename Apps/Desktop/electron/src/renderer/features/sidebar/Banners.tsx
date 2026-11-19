@@ -1,5 +1,7 @@
-import { useModel, useSnapshot } from '../../app/hooks.ts'
+import { useConnection } from '../../app/hooks.ts'
 import { Icon } from '../../ui/Icon.tsx'
+import { openBotChat, openSession } from './SessionList.tsx'
+import { useSessionSidebar } from './sidebar-model.ts'
 import styles from './Banners.module.css'
 
 /**
@@ -8,17 +10,18 @@ import styles from './Banners.module.css'
  * asked first (its profile when no chat is known for it).
  */
 export function Banners() {
-  const model = useModel()
-  const sidebar = useSnapshot(model.sidebar)
-  const waiting = model.sidebar.waitingChats()
+  const connection = useConnection()
+  const store = useSessionSidebar()
+  const sidebar = store.get()
+  const waiting = store.waitingChats()
   if (!sidebar.actionError && waiting.length === 0) return null
   const openWaiting = () => {
     const chat = waiting[0]
     if (!chat?.profile) return
-    if (chat.profile !== model.connection.get().selectedProfile) model.connection.selectProfile(chat.profile)
-    model.sidebar.select(chat.isBotChat || !chat.storedSessionID
-      ? { kind: 'bot', profile: chat.profile }
-      : { kind: 'session', profile: chat.profile, id: chat.storedSessionID })
+    if (chat.profile !== connection.get().selectedProfile) connection.selectProfile(chat.profile)
+    const row = chat.storedSessionID ? connection.get().sessions[chat.profile]?.find((each) => each.id === chat.storedSessionID) : undefined
+    if (chat.isBotChat || !row) openBotChat(connection, store, chat.profile)
+    else openSession(connection, store, chat.profile, row)
   }
   return (
     <div className={styles.card}>
@@ -26,7 +29,7 @@ export function Banners() {
         <div className={styles.error} role="alert">
           <span className={styles.text}>{sidebar.actionError}</span>
           <button type="button" className={styles.dismiss} title="Dismiss" aria-label="Dismiss"
-            onClick={() => model.sidebar.dismissActionError()}><Icon name="close" /></button>
+            onClick={() => store.dismissActionError()}><Icon name="close" /></button>
         </div>
       )}
       {waiting.length > 0 && (

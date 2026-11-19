@@ -148,6 +148,38 @@
   --backdrop-dialog: rgb(0 0 0 / 0.3);
 }
 
+/* K: Settings, an overlay card over the window, the same on every platform (after Hermes
+   Desktop's OverlayView / OverlaySplitLayout / ListRow, apps/desktop/src/app/overlays). */
+:root {
+  --settings-inset: 10px;
+  --settings-nav-width: 208px;
+  --settings-nav-item-height: 28px;
+  --settings-content-max-width: 760px;
+  --settings-row-control-min: 240px;
+  --settings-row-control-max: 352px;
+  --settings-field-height: 30px;
+  --settings-switch-width: 36px;
+  --settings-switch-height: 20px;
+  --settings-switch-knob: 14px;
+  --settings-status-dot: 8px;
+  --settings-close-size: 28px;
+  --settings-backdrop: rgb(0 0 0 / 0.22);
+  --settings-card-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+:root {
+  --settings-card-fill: #fbfbfb;
+  --settings-nav-fill: #f3f3f3;
+  --settings-card-stroke: rgb(0 0 0 / 0.1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --settings-card-fill: #262626;
+    --settings-nav-fill: #202020;
+    --settings-card-stroke: rgb(255 255 255 / 0.1);
+    --settings-backdrop: rgb(0 0 0 / 0.4);
+  }
+}
+
 /* I cron: the Cron Jobs tab and its job editor (Apps/Shared/Views/CronJobsView.swift,
    CronJobEditor.swift). */
 :root {
@@ -238,39 +270,18 @@
   --swatch-ring: 2px;
   --swatch-stroke: rgb(0 0 0 / 0.12);
   --size-field-width: 48px;
-  --settings-label-width: 120px;
 }
 
 
-/* L: the Providers and Capabilities settings panes (Apps/Shared/Views/ProvidersView.swift,
-   CapabilitiesView.swift). One switch size on macOS and Windows (the user, 2026-11-19: one design for both); the list height and search width are CapabilitiesView's on the Mac. */
+/* L: the Providers and Capabilities settings panes, drawn as Settings' rows (K's tokens above). */
 :root {
-  --settings-pane-width: 640px;
-  --settings-row-height: 44px;
-  --settings-group-radius: var(--radius-lg);
-  --settings-segment-height: 24px;
-  --settings-button-height: 28px;
   --settings-search-width: 220px;
-  --settings-list-height: 440px;
   --settings-dialog-width: 420px;
   --settings-dialog-wide-width: 480px;
   --settings-menu-width: 160px;
   --settings-code-size: 28px;
-  --text-dialog-title: 17px;
   --spinner-size: 12px;
   --spinner-stroke: 2px;
-  --switch-width: 40px;
-  --switch-height: 20px;
-  --switch-knob: 12px;
-  --switch-inset: 3px;
-  --settings-segment-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
-  --settings-segment-selected: #ffffff;
-  --settings-dialog-fill: #f9f9f9;
-  --settings-backdrop: rgb(0 0 0 / 0.3);
-  --switch-off-fill: transparent;
-  --switch-off-stroke: rgb(0 0 0 / 0.45);
-  --switch-off-knob: rgb(0 0 0 / 0.62);
-  --switch-on-knob: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -281,12 +292,40 @@
     --tab-bar-surface: rgb(40 40 40 / 0.72);
     --tab-bar-stroke: rgb(255 255 255 / 0.08);
     --backdrop-dialog: rgb(0 0 0 / 0.5);
-    --settings-dialog-fill: #2c2c2c;
-    --settings-backdrop: rgb(0 0 0 / 0.5);
-    --settings-segment-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
-    --settings-segment-selected: rgb(255 255 255 / 0.16);
-    --switch-off-stroke: rgb(255 255 255 / 0.55);
-    --switch-off-knob: rgb(255 255 255 / 0.77);
-    --switch-on-knob: #000000;
+  }
+}
+
+/* A: chat core (transcript, composer, request cards). Numbers from the Mac's ChatView,
+   ComposerView, PromptRail and ServerRequestCard. Text sizes, the user bubble and the
+   composer fill are M's (above); the spinner is L's. */
+:root {
+  --chat-content-width: calc(var(--text-content) * 54);
+  --chat-side-room: 50px;
+  --chat-padding: 16px;
+  --chat-row-gap: 12px;
+  --chat-bubble-lead: 40px;
+  --history-header-height: 32px;
+  --request-radius: 14px;
+  --waiting-mark: 8px;
+  --pill-height: 32px;
+  --pill-icon: 12px;
+  --composer-control: 26px;
+  --composer-icon: 14px;
+  --composer-busy-icon: 10px;
+  --composer-text-min: 28px;
+  --composer-text-max: 170px;
+  --glass-blur: blur(24px) saturate(1.6);
+  --weight-medium: 500;
+  --composer-stroke: color-mix(in srgb, var(--text) 15%, transparent);
+  --request-fill: color-mix(in srgb, #ff9500 12%, transparent);
+  --surface-solid: #ffffff;
+  --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --request-fill: color-mix(in srgb, #ff9f0a 12%, transparent);
+    --surface-solid: #000000;
+    --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.3);
   }
 }

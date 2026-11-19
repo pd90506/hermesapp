@@ -16,13 +16,21 @@ export class DashboardHttp {
     const headers: Record<string, string> = { ...request.headers }
     const jar = this.cookies.get(url.host)
     if (jar && jar.size > 0) headers.Cookie = [...jar].map(([name, value]) => `${name}=${value}`).join('; ')
-    const response = await fetch(url, {
-      method: request.method,
-      headers,
-      ...(request.body !== undefined ? { body: request.body } : {}),
-      redirect: 'manual',
-      signal: AbortSignal.timeout(request.timeoutMs ?? 15_000),
-    })
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: request.method,
+        headers,
+        ...(request.body !== undefined ? { body: request.body } : {}),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(request.timeoutMs ?? 15_000),
+      })
+    } catch (error) {
+      // Node's fetch says only "fetch failed"; the reason (refused, no such host, TLS) is its cause.
+      const cause = (error as { cause?: { code?: string; message?: string } }).cause
+      const reason = cause?.code ?? cause?.message
+      throw new Error(reason ? `${url.host}: ${reason}` : String(error instanceof Error ? error.message : error))
+    }
     this.keep(url.host, response.headers.getSetCookie())
     return { status: response.status, body: await response.text() }
   }

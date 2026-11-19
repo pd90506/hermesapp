@@ -1,24 +1,21 @@
-/* The settings panes' grouped form (L). Sizes and colours from tokens.css's L section. */
+/* The Providers and Capabilities panes' form pieces (L), drawn as Settings' rows
+   (ui/Rows.module.css): the same on every platform. */
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  margin-bottom: var(--space-6);
 }
 
 .sectionHeader {
-  margin: 0 var(--space-5);
-  font-size: var(--text-body);
+  margin: var(--space-8) 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
   font-weight: var(--weight-semibold);
-  color: var(--text);
 }
 
 .sectionBody {
   display: flex;
   flex-direction: column;
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--settings-group-radius);
-  background: var(--surface-card);
-  overflow: hidden;
 }
 
 .sectionBody > * + * {
@@ -26,9 +23,9 @@
 }
 
 .sectionFooter {
-  margin: 0 var(--space-5);
+  margin-top: var(--space-2);
   font-size: var(--text-caption);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   line-height: var(--line-body);
   user-select: text;
 }
@@ -37,8 +34,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-6);
-  min-height: var(--settings-row-height);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-6) 0;
 }
 
 .rowLabel {
@@ -51,6 +47,7 @@
 
 .rowTitle {
   display: flex;
+  font-weight: var(--weight-semibold);
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
@@ -70,71 +67,71 @@
   gap: var(--space-4);
 }
 
-/* Segmented picker: NSSegmentedControl on the Mac, WinUI's SelectorBar look on Windows. */
+/* A row of tabs, drawn as Settings' nav items. */
 .segmented {
   display: flex;
-  align-self: stretch;
-  padding: var(--space-1);
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--radius-md);
-  background: var(--fill-pressed);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
 }
 
 .segment,
 .segmentSelected {
-  flex: 1;
-  height: var(--settings-segment-height);
-  border: none;
-  border-radius: var(--radius-sm);
+  height: var(--settings-nav-item-height);
+  padding: 0 var(--space-6);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
 }
 
 .segment:hover {
+  background: var(--fill-hover);
   color: var(--text);
 }
 
 .segmentSelected {
-  background: var(--settings-segment-selected);
+  border-color: var(--settings-card-stroke);
+  background: var(--fill-selected);
   color: var(--text);
-  box-shadow: var(--settings-segment-shadow);
+  font-weight: var(--weight-semibold);
 }
 
-/* Switch: a checkbox drawn as NSSwitch / ToggleSwitch. */
+/* Switch: as ui/Rows.module.css's. */
 .switch {
   flex: none;
   position: relative;
-  width: var(--switch-width);
-  height: var(--switch-height);
+  width: var(--settings-switch-width);
+  height: var(--settings-switch-height);
   margin: 0;
-  border: var(--hairline) solid var(--switch-off-stroke);
-  border-radius: var(--switch-height);
-  background: var(--switch-off-fill);
+  border-radius: var(--settings-switch-height);
+  background: var(--fill-pressed);
+  box-shadow: inset 0 0 0 var(--hairline) var(--divider);
   appearance: none;
-  transition: background-color var(--motion-fast) var(--ease);
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .switch::after {
   content: '';
   position: absolute;
   top: 50%;
-  left: var(--switch-inset);
-  width: var(--switch-knob);
-  height: var(--switch-knob);
+  left: calc((var(--settings-switch-height) - var(--settings-switch-knob)) / 2);
+  width: var(--settings-switch-knob);
+  height: var(--settings-switch-knob);
   border-radius: 50%;
-  background: var(--switch-off-knob);
+  background: var(--settings-card-fill);
+  box-shadow: var(--settings-card-shadow);
   transform: translateY(-50%);
-  transition: left var(--motion) var(--ease);
+  transition: left var(--motion-fast) var(--ease);
 }
 
 .switch:checked {
-  border-color: transparent;
   background: var(--accent);
 }
 
 .switch:checked::after {
-  left: calc(100% - var(--switch-knob) - var(--switch-inset));
-  background: var(--switch-on-knob);
+  left: calc(100% - var(--settings-switch-knob) - (var(--settings-switch-height) - var(--settings-switch-knob)) / 2);
+  background: var(--on-accent);
 }
 
 .switch:disabled {
@@ -158,11 +155,11 @@
 .button,
 .primary,
 .destructive {
-  height: var(--settings-button-height);
+  height: var(--settings-field-height);
   padding: 0 var(--space-6);
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--radius-sm);
-  background: var(--field-fill);
+  border: var(--hairline) solid var(--settings-card-stroke);
+  border-radius: var(--radius-md);
+  background: transparent;
   white-space: nowrap;
 }
 
@@ -181,14 +178,17 @@
 }
 
 .button:disabled,
-.primary:disabled,
 .destructive:disabled {
+  color: var(--text-tertiary);
+}
+
+.primary:disabled {
   background: var(--fill-pressed);
   color: var(--text-tertiary);
 }
 
 .borderless {
-  height: var(--settings-button-height);
+  height: var(--settings-field-height);
   padding: 0 var(--space-2);
   border: none;
   background: transparent;
@@ -205,9 +205,9 @@
   width: var(--settings-dialog-width);
   max-width: calc(100% - var(--space-10));
   padding: var(--space-9);
-  border: var(--hairline) solid var(--surface-card-stroke);
+  border: var(--hairline) solid var(--settings-card-stroke);
   border-radius: var(--radius-xl);
-  background: var(--settings-dialog-fill);
+  background: var(--settings-card-fill);
   color: var(--text);
   box-shadow: var(--shadow-flyout);
 }
@@ -223,8 +223,7 @@
 
 .dialogTitle {
   margin: 0 0 var(--space-6);
-  font-family: var(--font-display);
-  font-size: var(--text-dialog-title);
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
 }
 
@@ -267,19 +266,20 @@
 }
 
 .input {
-  height: var(--field-height);
+  width: 100%;
+  min-width: 0;
+  height: var(--settings-field-height);
   padding: 0 var(--space-5);
-  border: var(--hairline) solid var(--field-stroke);
-  border-bottom-color: var(--field-underline);
-  border-radius: var(--radius-sm);
+  border: var(--hairline) solid var(--settings-card-stroke);
+  border-radius: var(--radius-md);
   background: var(--field-fill);
   outline: none;
+  box-sizing: border-box;
 }
 
 .input:focus {
+  border-color: var(--accent);
   background: var(--field-fill-focused);
-  border-bottom-color: var(--accent);
-  box-shadow: inset 0 calc(var(--hairline) * -1) 0 var(--accent);
 }
 
 .menuAnchor {
@@ -291,7 +291,7 @@
   align-items: center;
   justify-content: center;
   width: var(--icon-button-size);
-  height: var(--settings-button-height);
+  height: var(--settings-field-height);
   padding: 0;
   border: none;
   border-radius: var(--radius-md);
@@ -321,16 +321,16 @@
   padding: var(--space-2);
   border: var(--hairline) solid var(--surface-card-stroke);
   border-radius: var(--radius-lg);
-  background: var(--settings-dialog-fill);
+  background: var(--settings-card-fill);
   box-shadow: var(--shadow-flyout);
 }
 
 .menuItem,
 .menuItemDestructive {
-  height: var(--settings-button-height);
+  height: var(--settings-field-height);
   padding: 0 var(--space-5);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   text-align: left;
 }

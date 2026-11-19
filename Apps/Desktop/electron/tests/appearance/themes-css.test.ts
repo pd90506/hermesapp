@@ -6,7 +6,8 @@ import { exportedStylesheet, stylesheetPath } from '../../scripts/export-themes.
 describe('theme/themes/themes.css', () => {
   it('is what the export script makes of the HermesKit fixture', () => {
     // Out of date: run `node Apps/Desktop/electron/scripts/export-themes.mjs`.
-    expect(readFileSync(stylesheetPath, 'utf8')).toBe(exportedStylesheet())
+    // Line endings aside: Git on Windows may check the file out with CRLF.
+    expect(readFileSync(stylesheetPath, 'utf8').replace(/\r\n/g, '\n')).toBe(exportedStylesheet())
   })
 
   it('gives every colour theme its accent, surfaces and Markdown colours', () => {

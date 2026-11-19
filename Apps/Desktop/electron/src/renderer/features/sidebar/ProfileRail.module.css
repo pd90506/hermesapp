@@ -47,3 +47,11 @@
   justify-content: center;
   padding: var(--space-5) 0;
 }
+
+/* A line between servers' profiles (the Mac's Divider, 28 pt). */
+.divider {
+  width: var(--rail-avatar-size);
+  margin: var(--space-3) auto;
+  border: none;
+  border-top: var(--hairline) solid var(--divider);
+}

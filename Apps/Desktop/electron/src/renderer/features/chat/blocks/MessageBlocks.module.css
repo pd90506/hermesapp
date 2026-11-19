@@ -1,0 +1,88 @@
+/* The Mac's MessageRow (ChatView.swift): a prompt in a bubble at the trailing edge, at
+   least 40 pt from the leading one; replies at full width; lines in the caption style. */
+.userRow {
+  display: flex;
+  justify-content: flex-end;
+  padding-left: var(--chat-bubble-lead);
+}
+
+.userColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.bubble {
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--user-bubble);
+  font-size: var(--text-content);
+  line-height: var(--line-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.attachment {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: var(--hairline) solid var(--divider);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.outgoing {
+  padding-top: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.assistant {
+  min-width: 0;
+}
+
+.system {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.divider {
+  composes: system;
+  text-align: center;
+}
+
+.tool {
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.tool[data-active] .toolName {
+  color: var(--text);
+}
+
+.toolName {
+  flex: none;
+  font-weight: var(--weight-semibold);
+}
+
+.toolDetail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}

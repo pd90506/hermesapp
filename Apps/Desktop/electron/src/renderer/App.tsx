@@ -3,6 +3,7 @@ import { ModelContext, useSnapshot } from './app/hooks.ts'
 import type { AppModel } from './app/model.ts'
 import { ChatPane } from './features/chat/ChatPane.tsx'
 import { ConnectPage } from './features/connect/ConnectPage.tsx'
+import { SettingsOverlay } from './features/settings/SettingsOverlay.tsx'
 import { Sidebar } from './features/sidebar/Sidebar.tsx'
 import styles from './App.module.css'
 
@@ -26,6 +27,7 @@ export function App({ model }: { model: AppModel }) {
           <ChatPane />
         </div>
       )}
+      <SettingsOverlay />
     </ModelContext.Provider>
   )
 }

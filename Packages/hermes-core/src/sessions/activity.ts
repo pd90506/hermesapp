@@ -1,4 +1,5 @@
-import type { SessionsREST, StoredMessage } from './rest.ts'
+import type { StoredMessage } from '../session/types.ts'
+import type { SessionsREST } from './rest.ts'
 import { newestMessage, timelinePage } from './rest.ts'
 
 /**

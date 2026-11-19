@@ -1,18 +1,11 @@
-/* The Providers pane (L): a grouped form, as the Mac's ThemedForm. */
+/* The Providers pane (L), in Settings' row layout (ui/Rows.module.css). */
 .pane {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
-  width: var(--settings-pane-width);
-  max-width: 100%;
-  margin: 0 auto;
-  padding: var(--space-8) var(--space-9);
-  box-sizing: border-box;
 }
 
 .picker {
   min-width: var(--settings-search-width);
-  height: var(--settings-button-height);
 }
 
 .value {
@@ -48,8 +41,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  min-height: var(--settings-row-height);
-  padding: 0 var(--space-5);
+  padding: var(--space-5) var(--space-2);
+  border-radius: var(--radius-md);
   list-style-position: inside;
 }
 
@@ -95,7 +88,7 @@
 .primaryLink {
   display: inline-flex;
   align-items: center;
-  height: var(--settings-button-height);
+  height: var(--settings-field-height);
   margin: 0;
   padding: 0 var(--space-6);
   border-radius: var(--radius-sm);
@@ -107,7 +100,7 @@
 
 .badge {
   padding: 0 var(--space-3);
-  border-radius: var(--settings-button-height);
+  border-radius: var(--settings-field-height);
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
   font-size: var(--text-caption);
@@ -125,9 +118,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: var(--settings-row-height);
-  padding: 0 var(--space-5);
+  padding: var(--space-5) var(--space-2);
   border: none;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--accent);
   text-align: left;

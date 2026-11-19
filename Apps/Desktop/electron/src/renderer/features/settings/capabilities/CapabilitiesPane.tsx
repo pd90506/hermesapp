@@ -3,7 +3,8 @@ import {
   CapabilitiesBoard, capabilityID, capabilityKinds, capabilityNote, capabilityTitles, describeError, filterCapabilities,
   type Capability, type CapabilityKind,
 } from '@talaria/hermes-core'
-import { useModel, useSnapshot } from '../../../app/hooks.ts'
+import { useConnection, useSnapshot } from '../../../app/hooks.ts'
+import { PageHeading } from '../ui/Rows.tsx'
 import { Button, Segmented, Spinner, Switch, errorClass, inputClass } from '../providers/controls.tsx'
 import { ProfilePicker, initialProfile } from '../providers/ProfileScope.tsx'
 import type { SettingsConnection } from '../providers/ProvidersPane.tsx'
@@ -13,7 +14,7 @@ const kinds = capabilityKinds.map((kind) => ({ value: kind, title: capabilityTit
 
 /** The Capabilities settings pane for the app's connection (registered in K's pane table). */
 export function CapabilitiesSettingsPane() {
-  return <CapabilitiesPane connection={useModel().connection} />
+  return <CapabilitiesPane connection={useConnection()} />
 }
 
 /**
@@ -64,6 +65,7 @@ export function CapabilitiesPane({ connection, board: given }: { connection: Set
 
   return (
     <div className={styles.pane}>
+      <PageHeading icon="puzzle" title="Capabilities" />
       <div className={styles.toolbar}>
         <div className={styles.scope}><ProfilePicker snapshot={snapshot} profile={profile} onChange={setProfile} /></div>
         <input className={`${inputClass} ${styles.search}`} type="search" aria-label="Search"

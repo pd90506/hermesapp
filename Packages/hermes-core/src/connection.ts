@@ -1,5 +1,5 @@
 import { Bot, historyRows, type ProfileRow, type SessionSummary } from './bots.ts'
-import { GatewayClient, GatewayClientError, type GatewayClientConfiguration } from './client.ts'
+import { GatewayClient, GatewayClientError, type GatewayClientConfiguration, type GatewayReady } from './client.ts'
 import type { GatewayConnector } from './connector.ts'
 import { DashboardError } from './dashboard.ts'
 import { dashboardAPIFor, type DashboardAPI } from './dashboard-api.ts'
@@ -7,6 +7,9 @@ import { describeError } from './describe.ts'
 import { Observable } from './observable.ts'
 import { EventType, GatewayMethod } from './protocol/methods.ts'
 import type { JSONValue } from './protocol/jsonrpc.ts'
+import { ChatManager } from './session/chats.ts'
+import { messagesSource } from './session/messages-source.ts'
+import { defaultSourceSettings, showsSource, type SessionSourceSettings } from './settings/sources.ts'
 
 export type LinkState =
   | { phase: 'disconnected' }
@@ -71,11 +74,28 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
   private sessionListToken = 0
   /** The `session.list` limit that settled, per profile. */
   private readonly sessionListLimits = new Map<string, number>()
+  /** Settings ▸ Session Sources: which listed sources the lists hide. */
+  private sourceSettings: SessionSourceSettings = defaultSourceSettings
   private readonly options: Required<Omit<GatewayConnectionOptions, 'client' | 'maxReconnectAttempts'>> &
     Pick<GatewayConnectionOptions, 'client' | 'maxReconnectAttempts'>
 
+  /** This server's chats (package A): open, warm, re-bound after a reconnect. */
+  readonly chats: ChatManager
+
   constructor(options: GatewayConnectionOptions = {}) {
     super(initial)
+    const connection = this
+    this.chats = new ChatManager({
+      get client() { return connection.client },
+      get messagesSource() {
+        if (connection.connector?.messagesSource) return connection.connector.messagesSource
+        const api = dashboardAPIFor(connection.connector)
+        return api ? messagesSource(api) : undefined
+      },
+      get generation() { return connection.generation },
+      get bots() { return connection.get().bots },
+      refreshLists: () => this.refreshListsInBackground(),
+    })
     this.options = {
       backoff: options.backoff ?? ((attempt) => exponentialBackoff(attempt)),
       tryingNoticeDelayMs: options.tryingNoticeDelayMs ?? 5000,
@@ -112,7 +132,8 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     this.connector = connector
     this.update({ link: { phase: 'connecting' } })
     try {
-      await this.establish(gen)
+      const ready = await this.establish(gen)
+      await this.chats.restore(ready, this.client, gen)
       if (gen !== this.generation) throw new CancelledError()
       this.update({ link: { phase: 'connected' } })
     } catch (error) {
@@ -133,7 +154,14 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     this.connector = undefined
     this.sessionListToken += 1
     this.sessionListLimits.clear()
+    this.chats.reset()
     this.update({ ...initial })
+  }
+
+  /** Hides the sources Settings ▸ Session Sources hides, and reads the list again. */
+  setSourceSettings(settings: SessionSourceSettings): void {
+    this.sourceSettings = settings
+    void this.refreshSessionList()
   }
 
   /** The connector's REST routes (settings panes, cron), while one is set; undefined without REST access. */
@@ -171,7 +199,7 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     void this.refreshSessionList()
   }
 
-  private async establish(gen: number): Promise<void> {
+  private async establish(gen: number): Promise<GatewayReady> {
     const connector = this.connector
     if (!connector) throw new CancelledError()
     const transport = await connector.makeTransport()
@@ -183,6 +211,7 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     client.subscribe((item) => {
       if (client !== this.client) return
       if (item.kind === 'event' && item.event.type === EventType.sessionsChanged) this.refreshListsInBackground()
+      this.chats.handle(item)
       if (item.kind === 'disconnected' && item.error && this.connector) {
         this.client = undefined
         this.startReconnect()
@@ -190,7 +219,7 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     })
     this.client = client
     try {
-      await client.connect()
+      return await client.connect()
     } catch (error) {
       if (this.client === client) this.client = undefined
       throw error
@@ -217,7 +246,8 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
       await sleep(this.options.backoff(attempt))
       if (gen !== this.generation) return
       try {
-        await this.establish(gen)
+        const ready = await this.establish(gen)
+        await this.chats.restore(ready, this.client, gen)
         if (gen !== this.generation) return
         this.update({ link: { phase: 'connected' } })
         this.refreshListsInBackground()
@@ -306,7 +336,7 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
           this.sessionListLimits.set(profile, limit)
           const bot = this.get().bots.find((candidate) => candidate.name === profile)
           this.update({
-            sessions: { ...this.get().sessions, [profile]: historyRows(rows, bot) },
+            sessions: { ...this.get().sessions, [profile]: historyRows(rows, bot).filter((row) => showsSource(this.sourceSettings, row.source)) },
             sessionListLoading: false,
           })
           return

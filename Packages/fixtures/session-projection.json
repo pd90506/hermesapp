@@ -1,0 +1,261 @@
+{
+  "_comment": "Stored rows of GET /api/sessions/{id}/messages as the chat shows them (HermesKit's StoredMessageProjection, after tui_gateway/session_history.py:285-362). Shapes as hermes_state_messages.py stores them.",
+  "cases": [
+    {
+      "name": "user and assistant rows; display_content wins",
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "hello",
+          "timestamp": 1700000001
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "raw",
+          "display_content": "Hi there",
+          "timestamp": 1700000002
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "hello",
+          "rowID": 1
+        },
+        {
+          "role": "assistant",
+          "text": "Hi there",
+          "rowID": 2
+        }
+      ],
+      "startsSession": false
+    },
+    {
+      "name": "hidden rows and system notices are not shown",
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "note to self",
+          "display_kind": "hidden"
+        },
+        {
+          "id": 2,
+          "role": "user",
+          "content": "[System: the session was resumed]"
+        },
+        {
+          "id": 3,
+          "role": "user",
+          "content": "real question"
+        },
+        {
+          "id": 4,
+          "role": "system",
+          "content": "   "
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "real question",
+          "rowID": 3
+        }
+      ],
+      "startsSession": false
+    },
+    {
+      "name": "the opening prompt shows even when hidden",
+      "startsSession": true,
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "opening prompt",
+          "display_kind": "hidden"
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "answer"
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "opening prompt",
+          "rowID": 1
+        },
+        {
+          "role": "assistant",
+          "text": "answer",
+          "rowID": 2
+        }
+      ]
+    },
+    {
+      "name": "a tool round: the call names the tool row",
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "list files"
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call-A",
+              "type": "function",
+              "function": {
+                "name": "terminal",
+                "arguments": "{\"command\":\"ls -la\\nwc -l\"}"
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "role": "tool",
+          "content": "a.txt",
+          "tool_call_id": "call-A"
+        },
+        {
+          "id": 4,
+          "role": "assistant",
+          "content": "One file."
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "list files",
+          "rowID": 1
+        },
+        {
+          "role": "tool",
+          "text": "",
+          "toolName": "terminal",
+          "detail": "ls -la",
+          "rowID": 3
+        },
+        {
+          "role": "assistant",
+          "text": "One file.",
+          "rowID": 4
+        }
+      ],
+      "startsSession": false
+    },
+    {
+      "name": "reasoning alone keeps an assistant row",
+      "rows": [
+        {
+          "id": 1,
+          "role": "assistant",
+          "content": "",
+          "reasoning": "thinking it over"
+        }
+      ],
+      "expected": [
+        {
+          "role": "assistant",
+          "text": "",
+          "reasoning": "thinking it over",
+          "rowID": 1
+        }
+      ],
+      "startsSession": false
+    },
+    {
+      "name": "file references become attachments; image lines become images",
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "@file:/home/u/docs/report.pdf\n@folder:/home/u/src\n\nSummarise these"
+        },
+        {
+          "id": 2,
+          "role": "user",
+          "content": "Look\n@image:/home/u/.hermes/images/shot.png"
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "Summarise these",
+          "attachments": [
+            "report.pdf",
+            "src"
+          ],
+          "rowID": 1
+        },
+        {
+          "role": "user",
+          "text": "Look",
+          "images": [
+            "/home/u/.hermes/images/shot.png"
+          ],
+          "rowID": 2
+        }
+      ],
+      "startsSession": false
+    },
+    {
+      "name": "a skill turn shows as typed",
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "[IMPORTANT: The user has invoked the \"review\" skill. The full skill content is loaded below.]\n\n...skill body...\n\nThe user has provided the following instruction alongside the skill invocation: check the diff\n\n[Runtime note: x]"
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "/review check the diff",
+          "rowID": 1
+        }
+      ],
+      "startsSession": false
+    },
+    {
+      "name": "text parts are joined; image parts show as a placeholder",
+      "rows": [
+        {
+          "id": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "x"
+              }
+            },
+            {
+              "type": "text",
+              "text": "second"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "role": "assistant",
+          "text": "first\n[image]\nsecond",
+          "rowID": 1
+        }
+      ],
+      "startsSession": false
+    }
+  ]
+}

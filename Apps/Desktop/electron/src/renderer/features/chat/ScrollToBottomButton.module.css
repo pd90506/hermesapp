@@ -1,0 +1,43 @@
+/* 32 pt high, 12 pt sides, 12 pt medium text, in the composer's glass. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--pill-height);
+  padding: 0 var(--space-6);
+  border: var(--hairline) solid var(--composer-stroke);
+  border-radius: var(--pill-height);
+  background: var(--composer-fill);
+  backdrop-filter: var(--glass-blur);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  box-shadow: var(--shadow-glass);
+  animation: pill-in var(--motion) var(--ease);
+}
+
+.pill:hover {
+  color: var(--text);
+}
+
+.arrow {
+  width: var(--pill-icon);
+  height: var(--pill-icon);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.title {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pill-in {
+  from { opacity: 0; transform: translateY(var(--space-3)) scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill { animation: none; }
+}

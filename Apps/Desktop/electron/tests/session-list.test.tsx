@@ -1,9 +1,11 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Bot, Observable, SessionSidebar, type ConnectionSnapshot, type GatewayConnection, type LiveChatStatus } from '@talaria/hermes-core'
+import { Bot, Observable, type ConnectionSnapshot, type GatewayConnection, type LiveChatStatus } from '@talaria/hermes-core'
 import { ModelContext } from '../src/renderer/app/hooks.ts'
 import type { AppModel, AppSnapshot } from '../src/renderer/app/model.ts'
 import { SessionList, rowMenu } from '../src/renderer/features/sidebar/SessionList.tsx'
+import { resetSidebarFile, sessionSidebar } from '../src/renderer/features/sidebar/sidebar-model.ts'
+import type { TalariaBridge } from '../src/shared/bridge.ts'
 
 class Store<T> extends Observable<T> {
   put(value: T): void { this.set(value) }
@@ -17,21 +19,23 @@ function renderList(snapshot: Partial<ConnectionSnapshot>) {
     ...snapshot,
   })
   const call = vi.fn(async () => ({}))
-  Object.assign(connection, { call, restoreLists: () => {}, sessionListLimit: () => undefined, refreshListsInBackground: () => {} })
-  const sidebar = new SessionSidebar({
-    connection: connection as unknown as GatewayConnection, rest: () => undefined, serverKey: () => 'srv', refreshIntervalMs: 0,
+  const openSession = vi.fn(async () => {})
+  Object.assign(connection, {
+    call, restoreLists: () => {}, sessionListLimit: () => undefined, refreshListsInBackground: () => {},
+    // The chats (A): none on screen.
+    chats: Object.assign(new Store({ otherRequests: [], unsent: {} }), { openSession, openBotChat: vi.fn(async () => {}) }),
   })
-  const app = new Store<AppSnapshot>({
-    loaded: true, showsConnectPage: false, railShown: true, appearance: { dark: false }, connecting: false,
-    server: { serverURL: 'srv', authMode: 'password', provider: 'basic', username: 'u' },
-  })
-  const model = Object.assign(app, { connection, sidebar }) as unknown as AppModel
+  const bridge = { sidebar: { load: async () => ({}), save: async () => {} } } as unknown as TalariaBridge
+  const app = new Store<Partial<AppSnapshot>>({ loaded: true, railShown: true, currentServerID: 'srv' })
+  const model = Object.assign(app, { connection, bridge }) as unknown as AppModel
+  const sidebar = sessionSidebar(bridge, connection as unknown as GatewayConnection, 'srv')
   render(<ModelContext.Provider value={model}><SessionList /></ModelContext.Provider>)
-  return { connection, sidebar, call }
+  return { connection, sidebar, call, openSession }
 }
 
 afterEach(() => {
   cleanup()
+  resetSidebarFile()
   delete (window as unknown as { talaria?: unknown }).talaria
 })
 
@@ -86,7 +90,7 @@ describe('SessionList', () => {
   })
 
   it('marks unread rows and shows a live chat\'s status in their place', () => {
-    const { sidebar } = renderList({
+    const { sidebar, openSession } = renderList({
       bots: [bot], selectedProfile: 'default', sessions: { default: [{ id: 'a', title: 'Answered' }, { id: 'b', title: 'Asking' }] },
     })
     const live: LiveChatStatus = {
@@ -102,8 +106,9 @@ describe('SessionList', () => {
     })
     expect(screen.getByLabelText('Unread')).toBeTruthy()
     expect(screen.getByText('Waiting for your answer')).toBeTruthy()
-    // Selecting it makes it seen.
+    // Opening it makes it seen.
     fireEvent.click(screen.getByText('Answered'))
+    expect(openSession).toHaveBeenCalledWith('default', { id: 'a', title: 'Answered' })
     expect(screen.queryByLabelText('Unread')).toBeNull()
   })
 

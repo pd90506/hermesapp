@@ -1,69 +1,25 @@
-/* The Mac's columns form: labels right-aligned in their own column, controls beside them. */
+/* Settings' rows (ui/Rows.tsx) with the pane's own controls in them. */
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: var(--space-8);
-  user-select: none;
 }
 
-.row {
-  display: flex;
-  gap: var(--space-4);
-  align-items: flex-start;
-}
-
-.label {
-  flex: none;
-  width: var(--settings-label-width);
-  min-height: var(--field-height);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  text-align: right;
-}
-
-.control {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  min-height: var(--field-height);
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.note {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-caption);
-  line-height: var(--line-body);
-}
-
-.divider {
-  border: none;
-  border-top: var(--hairline) solid var(--divider);
-  margin: 0;
+.preview {
+  margin-top: var(--space-5);
 }
 
 .segmented {
   display: inline-flex;
-  padding: var(--space-1);
-  gap: var(--space-1);
-  border-radius: var(--radius-md);
-  background: var(--fill-pressed);
+  gap: var(--space-2);
 }
 
 .segment {
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-6);
+  height: var(--settings-nav-item-height);
+  padding: 0 var(--space-6);
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
+  color: var(--text-secondary);
 }
 
 .segment:hover {
@@ -71,14 +27,17 @@
 }
 
 .segment[aria-checked='true'] {
-  background: var(--field-fill-focused);
-  box-shadow: 0 0 0 var(--hairline) var(--surface-card-stroke);
+  border-color: var(--settings-card-stroke);
+  background: var(--fill-selected);
+  color: var(--text);
+  font-weight: var(--weight-semibold);
 }
 
 .swatches {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-6);
+  margin-top: var(--space-5);
 }
 
 .swatch {
@@ -129,14 +88,13 @@
 
 .sizeField {
   width: var(--size-field-width);
-  height: var(--field-height);
+  height: var(--settings-field-height);
   box-sizing: border-box;
   padding: 0 var(--space-3);
   text-align: right;
   font-variant-numeric: tabular-nums;
-  border: var(--hairline) solid var(--field-stroke);
-  border-bottom-color: var(--field-underline);
-  border-radius: var(--radius-sm);
+  border: var(--hairline) solid var(--settings-card-stroke);
+  border-radius: var(--radius-md);
   background: var(--field-fill);
   color: var(--text-secondary);
   outline: none;
@@ -148,7 +106,7 @@
 
 .sizeField:focus {
   background: var(--field-fill-focused);
-  border-bottom-color: var(--accent);
+  border-color: var(--accent);
 }
 
 .unit {
@@ -157,20 +115,15 @@
 
 .stepper {
   display: inline-flex;
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  gap: var(--space-2);
 }
 
 .stepper button {
-  width: var(--field-height);
-  height: var(--field-height);
-  border: none;
-  background: var(--field-fill);
-}
-
-.stepper button + button {
-  border-left: var(--hairline) solid var(--surface-card-stroke);
+  width: var(--settings-field-height);
+  height: var(--settings-field-height);
+  border: var(--hairline) solid var(--settings-card-stroke);
+  border-radius: var(--radius-md);
+  background: transparent;
 }
 
 .stepper button:hover:not(:disabled) {
@@ -178,21 +131,5 @@
 }
 
 .stepper button:disabled {
-  color: var(--text-tertiary);
-}
-
-.button {
-  height: var(--field-height);
-  padding: 0 var(--space-7);
-  border: var(--hairline) solid var(--surface-card-stroke);
-  border-radius: var(--radius-sm);
-  background: var(--field-fill);
-}
-
-.button:hover:not(:disabled) {
-  background: var(--fill-hover);
-}
-
-.button:disabled {
   color: var(--text-tertiary);
 }

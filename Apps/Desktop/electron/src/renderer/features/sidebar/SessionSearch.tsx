@@ -1,8 +1,10 @@
 import { hitDate, snippetSegments, type SessionSearchResult } from '@talaria/hermes-core'
 import { useEffect, useRef } from 'react'
-import { useModel, useSnapshot } from '../../app/hooks.ts'
+import { useConnection } from '../../app/hooks.ts'
 import { Icon } from '../../ui/Icon.tsx'
 import { rowAge, useMinuteClock } from './age.ts'
+import { openBotChat, openSession, useActiveChat } from './SessionList.tsx'
+import { useSessionSidebar } from './sidebar-model.ts'
 import styles from './SessionSearch.module.css'
 
 /** The search field over the list (the Mac's toolbar search field): focused when it opens; Escape on an empty field closes it. */
@@ -34,18 +36,19 @@ export function SearchField({ text, onChange, onClose, focusToken }: {
  * per pause in typing (250 ms, Desktop waits 200).
  */
 export function SessionSearchResults({ text }: { text: string }) {
-  const model = useModel()
-  const connection = useSnapshot(model.connection)
-  const sidebar = useSnapshot(model.sidebar)
+  const live = useConnection()
+  const connection = live.get()
+  const store = useSessionSidebar()
+  const sidebar = store.get()
+  const active = useActiveChat(live)
   const now = useMinuteClock()
   const query = text.trim()
   const profile = connection.selectedProfile
   useEffect(() => {
-    const timer = setTimeout(() => void model.sidebar.search(query), query ? 250 : 0)
+    const timer = setTimeout(() => void store.search(query), query ? 250 : 0)
     return () => clearTimeout(timer)
-  }, [model.sidebar, query, profile, connection.link.phase])
+  }, [store, query, profile, connection.link.phase])
   const search = sidebar.search
-  const selection = sidebar.selection
 
   let placeholder: { title: string; detail?: string; retry?: boolean } | undefined
   if (!search.available) placeholder = { title: 'Search Unavailable', detail: 'This server’s sign-in can’t read the dashboard.' }
@@ -63,10 +66,9 @@ export function SessionSearchResults({ text }: { text: string }) {
           <h2 className={styles.section}>{search.results.length === 1 ? '1 chat' : `${search.results.length} chats`}</h2>
           {search.results.map((result) => profile && (
             <SearchRow key={result.row.id} result={result} now={now}
-              selected={result.isBotChat ? selection?.kind === 'bot' && selection.profile === profile
-                : selection?.kind === 'session' && selection.profile === profile && selection.id === result.row.id}
-              onSelect={() => model.sidebar.select(result.isBotChat ? { kind: 'bot', profile }
-                : { kind: 'session', profile, id: result.row.id })} />
+              selected={result.isBotChat ? active?.kind === 'bot' && active.profile === profile
+                : active?.kind === 'session' && active.id === result.row.id}
+              onSelect={() => result.isBotChat ? openBotChat(live, store, profile) : openSession(live, store, profile, result.row)} />
           ))}
         </div>
       )}
@@ -74,7 +76,7 @@ export function SessionSearchResults({ text }: { text: string }) {
         <div className={styles.placeholder}>
           <p className={styles.placeholderTitle}>{placeholder.title}</p>
           {placeholder.detail && <p className={styles.placeholderDetail}>{placeholder.detail}</p>}
-          {placeholder.retry && <button type="button" className={styles.retry} onClick={() => void model.sidebar.search(query)}>Try Again</button>}
+          {placeholder.retry && <button type="button" className={styles.retry} onClick={() => void store.search(query)}>Try Again</button>}
         </div>
       )}
     </section>

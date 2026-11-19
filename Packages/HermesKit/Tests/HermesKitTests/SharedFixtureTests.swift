@@ -132,4 +132,66 @@ import Testing
         }
         #expect(ServerRequestMethod.mvpSupported == Set(fixture.supported))
     }
+
+    // MARK: session-projection.json
+
+    struct ProjectionFixture: Decodable {
+        struct Shown: Decodable, Equatable {
+            var role: String
+            var text: String
+            var reasoning: String?
+            var toolName: String?
+            var detail: String?
+            var attachments: [String]?
+            var images: [String]?
+            var rowID: Int?
+        }
+        struct Case: Decodable {
+            var name: String
+            var startsSession: Bool
+            var rows: [StoredMessage]
+            var expected: [Shown]
+        }
+        var cases: [Case]
+    }
+
+    /// The rows `ChatSession` shows for a stored page (`StoredMessageProjection.items`).
+    @Test func storedRowsAsChatRows() throws {
+        let fixture = try Self.load("session-projection.json", as: ProjectionFixture.self)
+        for item in fixture.cases {
+            var calls: StoredMessageProjection.ToolCalls = [:]
+            let shown = StoredMessageProjection.items(from: item.rows, toolCalls: &calls, startsSession: item.startsSession)
+                .map { row in
+                    ProjectionFixture.Shown(
+                        role: "\(row.role)", text: row.text, reasoning: row.reasoning.isEmpty ? nil : row.reasoning,
+                        toolName: row.toolName, detail: row.detail,
+                        attachments: row.attachments.isEmpty ? nil : row.attachments,
+                        images: row.images.isEmpty ? nil : row.images.compactMap(\.path), rowID: row.rowID)
+                }
+            #expect(shown == item.expected, "\(item.name)")
+        }
+    }
+
+    // MARK: servers-auth.json
+
+    struct ServersAuthFixture: Decodable {
+        struct Pair: Decodable { var verifier: String; var challenge: String }
+        struct Ready: Decodable { var output: String; var port: Int? }
+        var pkce: [Pair]
+        var readyPort: [Ready]
+    }
+
+    @Test func pkceChallenges() throws {
+        let fixture = try Self.load("servers-auth.json", as: ServersAuthFixture.self)
+        for item in fixture.pkce {
+            #expect(PKCE(verifier: item.verifier).challenge == item.challenge, "\(item.verifier)")
+        }
+    }
+
+    @Test func localBackendReadyPort() throws {
+        let fixture = try Self.load("servers-auth.json", as: ServersAuthFixture.self)
+        for item in fixture.readyPort {
+            #expect(LocalBackend.readyPort(in: item.output) == item.port, "\(item.output)")
+        }
+    }
 }

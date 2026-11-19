@@ -6,10 +6,11 @@ import { useEffect, useState } from 'react'
 import { useModel, useSnapshot } from '../../../app/hooks.ts'
 import type { AppearanceStore } from './appearance-store.ts'
 import { ThemePreview } from './ThemePreview.tsx'
+import { Button, ListRow, PageHeading } from '../ui/Rows.tsx'
 import styles from './AppearancePane.module.css'
 
 /**
- * Settings ▸ Appearance, as the Mac's `AppearanceSettingsPane`: light, dark or the
+ * Settings ▸ Appearance (the Mac's `AppearanceSettingsPane`, in Settings' rows): light, dark or the
  * system's look, the colour theme, the UI, content and code text sizes, a preview of
  * them all, and Restore Defaults (the look and the sizes; the theme stays).
  */
@@ -23,7 +24,8 @@ export function AppearanceForm({ store }: { store: AppearanceStore }) {
   const { settings, colors } = useSnapshot(store)
   return (
     <div className={styles.form} data-testid="appearancePane">
-      <Row label="Appearance:">
+      <PageHeading icon="palette" title="Appearance" />
+      <ListRow title="Appearance" description="Light, dark, or follow the system." action={
         <div className={styles.segmented} role="radiogroup" aria-label="Appearance">
           {appearanceModes.map((mode) => (
             <button
@@ -38,46 +40,27 @@ export function AppearanceForm({ store }: { store: AppearanceStore }) {
             </button>
           ))}
         </div>
-      </Row>
+      } />
 
-      <Row label="Theme:">
-        <div className={styles.stack}>
+      <ListRow title="Theme"
+        description="Hermes Desktop's themes, with Codex and Claude Code. They color the window, the sidebar and the chat, the accent colors buttons and marks, and replies take the theme's Markdown colors."
+        below={
           <div className={styles.swatches} role="radiogroup" aria-label="Theme">
             {colorThemes.map((theme) => (
               <Swatch key={theme} theme={theme} selected={colors.preset === theme} onPick={() => store.setTheme(theme)} />
             ))}
           </div>
-          <p className={styles.note}>
-            Hermes Desktop's themes, with Codex and Claude Code. They color the window, the sidebar and the chat, the
-            accent colors buttons and marks, and replies take the theme's Markdown colors.
-          </p>
-        </div>
-      </Row>
+        } />
 
-      <hr className={styles.divider} />
+      <SizeRow store={store} kind="ui" label="UI text" note="The sidebar, lists, tool calls and settings." />
+      <SizeRow store={store} kind="content" label="Content text" note="Messages and the composer." />
+      <SizeRow store={store} kind="code" label="Code text" note="Code blocks in replies." />
 
-      <SizeRow store={store} kind="ui" label="UI text:" note="The sidebar, lists, tool calls and settings." />
-      <SizeRow store={store} kind="content" label="Content text:" note="Messages and the composer." />
-      <SizeRow store={store} kind="code" label="Code text:" note="Code blocks in replies." />
+      <ListRow title="Preview" below={<div className={styles.preview}><ThemePreview /></div>} />
 
-      <Row label="Preview:">
-        <ThemePreview />
-      </Row>
-
-      <Row label="">
-        <button type="button" className={styles.button} disabled={settings.isDefault} onClick={() => store.restoreDefaults()}>
-          Restore Defaults
-        </button>
-      </Row>
-    </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className={styles.row}>
-      <div className={styles.label}>{label}</div>
-      <div className={styles.control}>{children}</div>
+      <ListRow title="Restore defaults" description="The look and the text sizes; the theme stays." action={
+        <Button disabled={settings.isDefault} onClick={() => store.restoreDefaults()}>Restore Defaults</Button>
+      } />
     </div>
   )
 }
@@ -116,13 +99,12 @@ function SizeRow({ store, kind, label, note }: { store: AppearanceStore; kind: T
     else store.setSize(kind, value)
   }
   return (
-    <Row label={label}>
-      <div className={styles.stack}>
+    <ListRow title={label} description={note} action={
         <div className={styles.sizeLine}>
           <input
             className={styles.sizeField}
             data-custom={settings.isCustom(kind)}
-            aria-label={label.replace(':', '')}
+            aria-label={label}
             inputMode="numeric"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -135,14 +117,12 @@ function SizeRow({ store, kind, label, note }: { store: AppearanceStore; kind: T
           />
           <span className={styles.unit}>pt</span>
           <span className={styles.stepper}>
-            <button type="button" aria-label={`Smaller ${label.replace(':', '')}`} disabled={size <= textSizeRange.lower}
+            <button type="button" aria-label={`Smaller ${label}`} disabled={size <= textSizeRange.lower}
               onClick={() => store.setSize(kind, size - 1)}>−</button>
-            <button type="button" aria-label={`Larger ${label.replace(':', '')}`} disabled={size >= textSizeRange.upper}
+            <button type="button" aria-label={`Larger ${label}`} disabled={size >= textSizeRange.upper}
               onClick={() => store.setSize(kind, size + 1)}>+</button>
           </span>
         </div>
-        <p className={styles.note}>{note}</p>
-      </div>
-    </Row>
+      } />
   )
 }

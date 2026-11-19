@@ -41,6 +41,7 @@
 }
 
 .scroll {
+  outline: none;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -135,9 +136,46 @@
   font-family: var(--font-mono);
 }
 
+/* A toggle switch, as the Mac form's Toggle and WinUI's ToggleSwitch. */
 .switch {
   flex: none;
-  accent-color: var(--accent);
+  position: relative;
+  width: var(--cron-switch-width);
+  height: var(--cron-switch-height);
+  margin: 0;
+  border: var(--hairline) solid var(--field-underline);
+  border-radius: var(--cron-switch-height);
+  background: var(--field-fill);
+  appearance: none;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: var(--space-1);
+  width: var(--cron-switch-knob);
+  height: var(--cron-switch-knob);
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transform: translateY(-50%);
+  transition: left var(--motion-fast) var(--ease);
+}
+
+.switch:checked {
+  border-color: transparent;
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  left: calc(100% - var(--cron-switch-knob) - var(--space-1));
+  background: var(--on-accent);
+}
+
+.switch:focus-visible {
+  outline: var(--hairline) solid var(--accent);
+  outline-offset: var(--space-1);
 }
 
 .footer,

@@ -142,9 +142,14 @@
   --cron-control-width: 180px;
   --cron-button-min-width: 96px;
   --line-height-title: calc(var(--text-title) * var(--line-tight));
+  --cron-switch-width: 40px;
+  --cron-switch-height: 20px;
+  --cron-switch-knob: 12px;
   --cron-menu-fill: #f9f9f9;
   --cron-dialog-fill: #f9f9f9;
   --cron-dialog-scrim: rgb(0 0 0 / 0.3);
+  /* The Mac row's paused dot is the system orange. */
+  --cron-paused: #f7630c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -152,5 +157,6 @@
     --cron-menu-fill: #2c2c2c;
     --cron-dialog-fill: #202020;
     --cron-dialog-scrim: rgb(0 0 0 / 0.5);
+    --cron-paused: #ff9f0a;
   }
 }

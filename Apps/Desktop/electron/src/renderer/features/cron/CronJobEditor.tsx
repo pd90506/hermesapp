@@ -142,7 +142,7 @@ function JobFields({ draft, onChange, catalog, deliveryOptionsFor }: {
       <fieldset className={styles.group}>
         <label className={styles.row}>
           <span className={styles.label}>Name</span>
-          <input className={styles.control} value={draft.name} placeholder="Optional" data-testid="cronEditorName"
+          <input className={styles.control} value={draft.name} placeholder="Optional" data-testid="cronEditorName" autoFocus
             onChange={(event) => onChange({ ...draft, name: event.target.value })} />
         </label>
         <label className={styles.stack}>

@@ -152,7 +152,7 @@
 }
 
 .dot[data-state='paused'] {
-  background: var(--caution);
+  background: var(--cron-paused);
 }
 
 .dot[data-state='error'] {

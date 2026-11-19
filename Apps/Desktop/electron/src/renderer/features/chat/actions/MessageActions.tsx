@@ -65,6 +65,8 @@ export function MessageWithActions({ item, chat, isNewest, align, children }: {
   const branch = useBranch(item, chat)
   const [menuOpen, setMenuOpen] = useState(false)
   const onMenuOpen = useCallback((open: boolean) => setMenuOpen(open), [])
+  // TODO(C/G merge): also no bar inside a turn's opened work: `&& !useIsInTurnWork()`
+  // (C's blocks/work/remembered.ts, PR #181), as the Mac's `isInTurnWork`.
   const hasBar = item.role === 'user' || ConversationMarkdown.hasActionBar(item)
   return (
     <div className={styles.message} data-menu-open={menuOpen || undefined} onContextMenu={onContextMenu}>

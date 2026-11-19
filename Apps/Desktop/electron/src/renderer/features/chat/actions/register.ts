@@ -15,4 +15,7 @@ export function addMessageActions(): void {
   wrap('assistant', (inner) => withMessageActions(inner, 'leading'))
   wrap('system', withCopyMenu)
   wrap('tool', withCopyMenu)
+  // C's rows (registered only once C is in): a background notice and the review's line.
+  wrap('backgroundNotice', withCopyMenu)
+  wrap('review', withCopyMenu)
 }

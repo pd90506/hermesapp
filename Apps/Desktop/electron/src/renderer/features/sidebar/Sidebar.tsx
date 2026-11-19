@@ -24,7 +24,10 @@ export function Sidebar() {
           <span className={styles.name}>{bot?.displayName ?? 'Talaria'}</span>
           <span className={styles.status}>{status(connection.link, connection.isTryingNoticeably, app.server?.serverURL)}</span>
         </div>
-        <IconButton icon="compose" label="New chat" disabled />
+        <IconButton icon="compose" label="New chat" disabled={!connection.selectedProfile || connection.link.phase !== 'connected'}
+          onClick={() => {
+            if (connection.selectedProfile) void model.connection.chats.newChat(connection.selectedProfile).catch(() => {})
+          }} />
       </header>
       <div className={styles.columns}>
         {app.railShown && <ProfileRail />}

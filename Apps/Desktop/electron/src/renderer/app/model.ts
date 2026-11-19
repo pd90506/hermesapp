@@ -37,9 +37,9 @@ export class AppModel extends Observable<AppSnapshot> {
   constructor(readonly bridge: TalariaBridge) {
     super({ loaded: false, showsConnectPage: false, railShown: true, appearance: { dark: false }, connecting: false })
     this.connection = new GatewayConnection({
-      // No approval or clarify cards yet: every server request is declined at once,
-      // so no agent waits on this window (4404 for the window-owned bridges).
-      client: { supportedServerRequests: new Set<string>() },
+      // Approval, sudo and secret get cards in the chat; any other request (clarify
+      // until its card lands) is declined at once, so no agent waits on this window.
+      client: { supportedServerRequests: new Set(['approval', 'sudo', 'secret']) },
     })
   }
 

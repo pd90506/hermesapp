@@ -16,7 +16,7 @@ export class StreamedTextQueue {
   }
 
   private queued: GatewayEvent[] = []
-  private timer?: unknown
+  private timer?: ReturnType<typeof setTimeout>
   private batchStart = 0
 
   constructor(private readonly show: (events: GatewayEvent[]) => void, private readonly now: () => number = Date.now) {}

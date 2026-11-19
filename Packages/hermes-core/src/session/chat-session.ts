@@ -149,7 +149,7 @@ export class ChatSession extends Observable<ChatView> {
   private rereadRunning = false
   private rereadFailures = 0
   private rereadIsRetry = false
-  private rereadRetryTimer?: unknown
+  private rereadRetryTimer?: ReturnType<typeof setTimeout>
   /** Delays before trying a failed re-read again, in ms. */
   rereadRetryDelays: number[] = [2000, 8000, 30_000]
   private readonly dispatchedPrompts = new Set<string>()

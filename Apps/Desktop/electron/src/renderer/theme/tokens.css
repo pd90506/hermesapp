@@ -123,3 +123,48 @@
     --shadow-flyout: 0 8px 16px rgb(0 0 0 / 0.26);
   }
 }
+
+/* A: chat core (transcript, composer, request cards). Mac numbers from ChatView.swift,
+   ComposerView.swift, PromptRail.swift and ServerRequestCard.swift. The four
+   placeholders at the end are M's (themes); whoever merges second drops the duplicate. */
+:root {
+  --chat-content-width: calc(var(--text-content) * 54);
+  --chat-side-room: 50px;
+  --chat-padding: 16px;
+  --chat-row-gap: 12px;
+  --chat-bubble-lead: 40px;
+  --history-header-height: 32px;
+  --request-radius: 14px;
+  --waiting-mark: 8px;
+  --spinner-size: 16px;
+  --spinner-stroke: 2px;
+  --pill-height: 32px;
+  --pill-icon: 12px;
+  --composer-control: 26px;
+  --composer-icon: 14px;
+  --composer-busy-icon: 10px;
+  --composer-text-min: 28px;
+  --composer-text-max: 170px;
+  --glass-blur: blur(24px) saturate(1.6);
+  --weight-medium: 500;
+
+  --text-content-size: 14;
+  --text-content: calc(var(--text-content-size) * 1px);
+  --text-code-size: 12;
+  --text-code: calc(var(--text-code-size) * 1px);
+  --user-bubble: color-mix(in srgb, var(--accent) 15%, transparent);
+  --composer-fill: var(--field-fill);
+
+  --composer-stroke: color-mix(in srgb, var(--text) 15%, transparent);
+  --request-fill: color-mix(in srgb, #ff9500 12%, transparent);
+  --surface-solid: #ffffff;
+  --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --request-fill: color-mix(in srgb, #ff9f0a 12%, transparent);
+    --surface-solid: #000000;
+    --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.3);
+  }
+}

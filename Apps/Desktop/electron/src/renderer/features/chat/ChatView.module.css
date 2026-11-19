@@ -1,0 +1,25 @@
+.chat {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The composer over the transcript's end (the Mac's `composerRow`): as wide as the
+   messages' text, 10 pt above and below. The messages fade out from its top to the card's
+   middle (TranscriptList's mask), so the window's own surface shows through as on the Mac. */
+.composerRow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-5) calc(var(--chat-padding) + var(--chat-side-room));
+  pointer-events: none;
+}
+
+.composerColumn {
+  max-width: calc(var(--chat-content-width) - 2 * var(--chat-padding));
+  margin: 0 auto;
+  pointer-events: auto;
+}

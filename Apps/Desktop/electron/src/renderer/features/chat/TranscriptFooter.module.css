@@ -1,0 +1,63 @@
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--chat-row-gap);
+}
+
+.footer:empty {
+  display: none;
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-content);
+}
+
+/* An 8 pt square, 2 pt corners, breathing between full and 30 % over 0.9 s. */
+.pulse {
+  flex: none;
+  width: var(--waiting-mark);
+  height: var(--waiting-mark);
+  border-radius: var(--space-1);
+  background: var(--text-secondary);
+  animation: breathe 0.9s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+@keyframes breathe {
+  from { opacity: 1; }
+  to { opacity: 0.3; }
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.status {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-content);
+  color: var(--critical);
+  white-space: pre-wrap;
+}

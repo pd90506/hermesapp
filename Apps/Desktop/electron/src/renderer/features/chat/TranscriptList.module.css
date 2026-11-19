@@ -1,0 +1,61 @@
+/* The Mac's chat column: at most the content width (54 em of the content text), the
+   prompt rail's room clear of each side, 16 pt padding, 12 pt between rows. */
+.frame {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.scroller {
+  flex: 1;
+  overflow-y: auto;
+  overflow-anchor: none;
+  contain: strict;
+}
+
+.content {
+  position: relative;
+  width: 100%;
+}
+
+.row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 var(--chat-side-room);
+}
+
+.column {
+  box-sizing: border-box;
+  max-width: var(--chat-content-width);
+  margin: 0 auto;
+  padding: calc(var(--chat-row-gap) / 2) var(--chat-padding);
+}
+
+.row[data-kind='header'] .column {
+  padding-top: var(--chat-padding);
+}
+
+.row[data-kind='footer'] .column {
+  padding-bottom: var(--chat-padding);
+}
+
+/* The row of pills: 16 pt above the composer's card (6 here, the composer row's 10). The
+   list sets its bottom to the composer row's top. */
+.overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin-bottom: var(--space-3);
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  pointer-events: none;
+}
+
+.overlay > * {
+  pointer-events: auto;
+}

@@ -1,8 +1,11 @@
 import { BrowserWindow, app, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { copyFile, mkdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
+import { promisify } from 'node:util'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { IPC, type BridgeHttpRequest, type ConvertedImage, type PickedFile } from '../../shared/bridge.ts'
@@ -50,9 +53,11 @@ export function registerFiles(http: DashboardHttp, window: () => BrowserWindow |
     return new Uint8Array(await readFile(path))
   })
 
-  ipcMain.handle(IPC.filesConvertImage, (_event, bytes: unknown, options: { maxPixels?: number; format?: string }): ConvertedImage | null => {
+  ipcMain.handle(IPC.filesConvertImage, async (_event, bytes: unknown, options: { maxPixels?: number; format?: string }): Promise<ConvertedImage | null> => {
     if (!(bytes instanceof Uint8Array)) return null
     let image = nativeImage.createFromBuffer(Buffer.from(bytes))
+    // nativeImage reads only PNG and JPEG from memory; on macOS `sips` (ImageIO) reads HEIC and TIFF.
+    if (image.isEmpty() && process.platform === 'darwin') image = await decodeWithSips(bytes)
     if (image.isEmpty()) return null
     const size = image.getSize()
     const longest = Math.max(size.width, size.height)
@@ -115,6 +120,24 @@ export function registerFiles(http: DashboardHttp, window: () => BrowserWindow |
     await copyFile(path, result.filePath)
     return true
   })
+}
+
+const run = promisify(execFile)
+
+/** HEIC, TIFF and the rest ImageIO reads, as PNG, through a temp folder removed at once. */
+async function decodeWithSips(bytes: Uint8Array): Promise<Electron.NativeImage> {
+  const folder = await mkdtemp(join(tmpdir(), 'talaria-convert-'))
+  try {
+    const input = join(folder, 'in')
+    const output = join(folder, 'out.png')
+    await writeFile(input, bytes)
+    await run('/usr/bin/sips', ['-s', 'format', 'png', input, '--out', output], { timeout: 60_000 })
+    return nativeImage.createFromBuffer(await readFile(output))
+  } catch {
+    return nativeImage.createEmpty()
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
 }
 
 /** A file name with no folders in it, safe on Windows and macOS. */

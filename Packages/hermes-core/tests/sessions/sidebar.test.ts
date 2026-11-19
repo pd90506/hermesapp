@@ -135,6 +135,31 @@ describe('SessionSidebar', () => {
     sidebar.dispose()
   })
 
+  test('deleting the chat on screen stops and closes its runtime first, then forgets it', async () => {
+    const { connector: server } = connector({ 'session.delete': {}, 'session.interrupt': {}, 'session.close': { closed: true } })
+    const connection = new GatewayConnection()
+    const chat = new Store({ kind: 'session', profile: 'default', storedSessionID: 'a', sessionID: 'rt1', isRunning: true, isRuntimeGone: false })
+    const forgotten: unknown[] = []
+    const chats = new Store<{ active?: typeof chat }>({ active: chat })
+    Object.assign(chats, {
+      restore: async () => {}, handle: () => {}, reset: () => {}, warm: [],
+      get active() { return chats.get().active },
+      forget: (which: unknown) => { forgotten.push(which); chats.put({}) },
+    })
+    Object.assign(connection, { chats })
+    const sidebar = new SessionSidebar({ connection, rest: () => undefined, serverKey: () => 'srv', refreshIntervalMs: 0 })
+    await connection.connect(server)
+    await settle(sidebar, connection)
+    const calls: string[] = []
+    const call = connection.call.bind(connection)
+    Object.assign(connection, { call: (method: string, params: never) => { calls.push(method); return call(method, params) } })
+    await sidebar.delete('default', connection.get().sessions.default![0]!)
+    expect(calls.slice(0, 3)).toEqual(['session.interrupt', 'session.close', 'session.delete'])
+    expect(forgotten).toEqual([chat])
+    expect(sidebar.get().actionError).toBeUndefined()
+    sidebar.dispose()
+  })
+
   test('search answers listed sources only, as list rows', async () => {
     const { connector: server } = connector()
     const api = dashboard({ newest: {} })

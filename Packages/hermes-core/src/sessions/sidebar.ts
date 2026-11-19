@@ -7,7 +7,7 @@ import type { ChatSession } from '../session/chat-session.ts'
 import { SessionReadMarks, activityCacheKey, listDate, readRowActivity, sortByListDate, type SessionRowActivity } from './activity.ts'
 import { avatarDataURL, hasAvatar } from './avatar.ts'
 import { sessionDateGroups, type CalendarOptions, type SessionDateGroup } from './date-groups.ts'
-import { SessionActionError, SessionActions } from './manage.ts'
+import { SessionActionError, SessionActions, isProtected } from './manage.ts'
 import { SessionPins } from './pins.ts'
 import { markRead, readWatermarks, type SessionsREST } from './rest.ts'
 import { searchResults, searchSessions, type SessionSearchResult } from './search.ts'
@@ -366,9 +366,36 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
   }
 
   async delete(profile: string, row: SessionSummary): Promise<void> {
-    if (await this.act(async () => { await SessionActions.delete(this.call, row, profile, this.bot(profile)); return true })) {
+    if (await this.act(async () => {
+      if (!isProtected(row, this.bot(profile))) await this.closeOpenChats(profile, row)
+      await SessionActions.delete(this.call, row, profile, this.bot(profile))
+      return true
+    })) {
       if (this.isOnScreen(profile, row.id)) this.update({ selection: { kind: 'bot', profile } })
       this.connection.refreshListsInBackground()
+    }
+  }
+
+  /**
+   * Closes this connection's chats showing the row, on screen or warm (HermesKit's
+   * `deleteStored`): a live session refuses deletion (4023), so its turn is stopped and
+   * its runtime closed first, and the chat forgotten.
+   */
+  private async closeOpenChats(profile: string, row: SessionSummary): Promise<void> {
+    const chats = (this.connection as Partial<GatewayConnection>).chats
+    if (!chats) return
+    const ids = new Set([row.id, ...(row.resolved_id ? [row.resolved_id] : [])])
+    const showing = [...new Set([...(chats.active ? [chats.active] : []), ...chats.warm])].filter((chat) => {
+      const view = chat.get()
+      return (view.profile ?? profile) === profile && view.storedSessionID !== undefined && ids.has(view.storedSessionID)
+    })
+    for (const chat of showing) {
+      const view = chat.get()
+      if (!view.isRuntimeGone) {
+        if (view.isRunning) await this.call('session.interrupt', { session_id: view.sessionID }).catch(() => {})
+        await this.call('session.close', { session_id: view.sessionID }).catch(() => {})
+      }
+      chats.forget(chat)
     }
   }
 

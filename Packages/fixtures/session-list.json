@@ -1,0 +1,17 @@
+{
+  "comment": "session.list rows as _session_row_summary sends them (tui_gateway/methods_session.py:118-126), listed for the bot whose canonical_session is given.",
+  "canonical_session": { "id": "bot-root", "resolved_id": "bot-tip", "root_title": "Bot Chat", "title": "Bot Chat" },
+  "rows": [
+    { "id": "s1", "title": "Plan the trip", "preview": "", "started_at": 1700000400, "message_count": 6, "source": "desktop" },
+    { "id": "s2", "title": "From the terminal", "preview": "", "started_at": 1700000300, "message_count": 2, "source": " TUI " },
+    { "id": "s3", "title": "Nightly report", "preview": "", "started_at": 1700000200, "message_count": 3, "source": "cron" },
+    { "id": "s4", "title": "Telegram chat", "preview": "", "started_at": 1700000100, "message_count": 3, "source": "telegram" },
+    { "id": "s5", "title": "No source", "preview": "", "started_at": 1700000050, "message_count": 1 },
+    { "id": "bot-tip", "title": "Bot Chat #3", "preview": "", "started_at": 1700000040, "message_count": 9, "source": "desktop" },
+    { "id": "s6", "resolved_id": "bot-tip", "title": "Old compression", "preview": "", "started_at": 1700000030, "message_count": 9, "source": "desktop" },
+    { "id": "s7", "title": " Bot Chat ", "preview": "", "started_at": 1700000020, "message_count": 1, "source": "desktop" },
+    { "id": "s8", "title": "Renamed root", "root_title": "Bot Chat", "preview": "", "started_at": 1700000010, "message_count": 1, "source": "desktop" },
+    { "id": "s9", "title": "", "preview": "", "started_at": 1700000005, "message_count": 0, "source": "" }
+  ],
+  "listed": ["s1", "s2", "s5", "s9"]
+}

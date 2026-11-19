@@ -1,0 +1,43 @@
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-chat);
+  border-left: var(--hairline) solid var(--surface-chat-stroke);
+}
+
+/* Windows: the chat lies on the layer over Mica, its top left corner rounded as
+   WinUI's NavigationView content. */
+:global([data-platform='windows']) .pane {
+  border-top-left-radius: var(--radius-lg);
+  border-top: var(--hairline) solid var(--surface-chat-stroke);
+  margin-top: var(--frame-title-band-height);
+}
+
+:global([data-platform='windows']) .band {
+  display: none;
+}
+
+/* The window moves by the band over the chat too, clear of the caption buttons. */
+.band {
+  flex: none;
+  height: var(--frame-title-band-height);
+  margin-right: var(--frame-caption-width);
+  -webkit-app-region: drag;
+}
+
+.empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-9);
+}
+
+.message {
+  margin: 0;
+  max-width: var(--connect-width);
+  text-align: center;
+  color: var(--text-secondary);
+}

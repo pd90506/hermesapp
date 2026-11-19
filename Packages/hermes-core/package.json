@@ -1,0 +1,20 @@
+{
+  "name": "@talaria/hermes-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The desktop app's client core for the Hermes gateway: protocol, connection, sign-in, profiles and sessions. No DOM, no Node.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen:contract": "node scripts/gen-contract.mjs"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "4.1.12"
+  }
+}

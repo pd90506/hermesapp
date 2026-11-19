@@ -1,0 +1,125 @@
+/*
+ * Design tokens: the only place raw values live. Components (*.module.css) use these
+ * variables only; tests/stylesheet-scan.test.ts fails on a colour or a pixel size
+ * written into a component (after deepseek-harness's ui-theme spec).
+ *
+ * Layers: geometry and type (shared, then per platform in platform.css), then colours
+ * (light, dark). The numbers come from the Mac app (Apps/Shared/Views, Apps/macOS)
+ * unless a comment says otherwise; positions and behaviour match it on every platform.
+ */
+:root {
+  /* Spacing scale. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 16px;
+  --space-8: 20px;
+  --space-9: 24px;
+  --space-10: 32px;
+  --hairline: 1px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* Sidebar (MacSidebar.swift): the rail beside the session list, 260 wide by default, 220 to 360. */
+  --rail-width: 54px;
+  --rail-avatar-size: 36px;
+  --rail-item-height: 44px;
+  --rail-pill-width: 3px;
+  --rail-pill-selected: 18px;
+  --rail-pill-hover: 8px;
+  --list-width: 260px;
+  --list-min-width: 220px;
+  --list-max-width: 360px;
+  --session-row-height: 48px;
+  --rail-settings-size: 34px;
+  --badge-size: 12px;
+  --unread-dot: 8px;
+  --icon-button-size: 32px;
+  --icon-size: 16px;
+  --field-height: 32px;
+  --connect-width: 420px;
+
+  --motion-fast: 120ms;
+  --motion: 167ms;
+  --ease: cubic-bezier(0, 0, 0, 1);
+
+  /* Type. Font families per platform in platform.css; CJK glyphs follow data-cjk. */
+  --font-cjk: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC';
+  --weight-regular: 400;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --line-tight: 1.3;
+  --line-body: 1.45;
+
+  /* The system accent (set by the app from the OS); this is its fallback. */
+  --accent: #0067c0;
+  --on-accent: #ffffff;
+
+  color-scheme: light dark;
+}
+
+/* CJK glyph sets, by the first Chinese, Japanese or Korean language in the system's
+   language list (Simplified Chinese when there is none), so Han characters take their
+   Chinese forms on an English system (the user, 2026-11-17). Fonts the OS ships only. */
+:root[data-cjk='zh-Hans'] { --font-cjk: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB'; }
+:root[data-cjk='zh-Hant'] { --font-cjk: 'Microsoft JhengHei UI', 'Microsoft JhengHei', 'PingFang TC', 'PingFang HK'; }
+:root[data-cjk='ja'] { --font-cjk: 'Yu Gothic UI', 'Meiryo UI', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN'; }
+:root[data-cjk='ko'] { --font-cjk: 'Malgun Gothic', 'Apple SD Gothic Neo'; }
+
+/* Light. */
+:root {
+  --text: rgb(0 0 0 / 0.894);
+  --text-secondary: rgb(0 0 0 / 0.62);
+  --text-tertiary: rgb(0 0 0 / 0.45);
+  --divider: rgb(0 0 0 / 0.08);
+  --fill-hover: rgb(0 0 0 / 0.04);
+  --fill-pressed: rgb(0 0 0 / 0.06);
+  --fill-selected: rgb(0 0 0 / 0.06);
+  --surface-chat: rgb(255 255 255 / 0.6);
+  --surface-chat-stroke: rgb(0 0 0 / 0.06);
+  --surface-card: rgb(255 255 255 / 0.8);
+  --surface-card-stroke: rgb(0 0 0 / 0.06);
+  --field-fill: rgb(255 255 255 / 0.7);
+  --field-fill-focused: #ffffff;
+  --field-stroke: rgb(0 0 0 / 0.06);
+  --field-underline: rgb(0 0 0 / 0.45);
+  --critical: #c42b1c;
+  --critical-fill: #fde7e9;
+  --caution: #9d5d00;
+  --success: #0f7b0f;
+  --working: #0a84ff;
+  --avatar-text: #ffffff;
+  --shadow-flyout: 0 8px 16px rgb(0 0 0 / 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #ffffff;
+    --text-secondary: rgb(255 255 255 / 0.77);
+    --text-tertiary: rgb(255 255 255 / 0.53);
+    --divider: rgb(255 255 255 / 0.08);
+    --fill-hover: rgb(255 255 255 / 0.06);
+    --fill-pressed: rgb(255 255 255 / 0.04);
+    --fill-selected: rgb(255 255 255 / 0.08);
+    --surface-chat: rgb(58 58 58 / 0.3);
+    --surface-chat-stroke: rgb(0 0 0 / 0.1);
+    --surface-card: rgb(255 255 255 / 0.05);
+    --surface-card-stroke: rgb(0 0 0 / 0.1);
+    --field-fill: rgb(255 255 255 / 0.06);
+    --field-fill-focused: #1f1f1f;
+    --field-stroke: rgb(255 255 255 / 0.07);
+    --field-underline: rgb(255 255 255 / 0.55);
+    --critical: #ff99a4;
+    --critical-fill: #442726;
+    --caution: #fce100;
+    --success: #6ccb5f;
+    --working: #409cff;
+    --shadow-flyout: 0 8px 16px rgb(0 0 0 / 0.26);
+  }
+}

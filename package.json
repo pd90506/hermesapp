@@ -1,0 +1,25 @@
+{
+  "name": "talaria-workspace",
+  "private": true,
+  "description": "pnpm workspace for the Electron desktop app and its TypeScript core (see docs/desktop-electron.md).",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "desktop:dev": "pnpm --filter talaria-desktop run dev",
+    "desktop:build": "pnpm --filter talaria-desktop run build",
+    "desktop:pack": "pnpm --filter talaria-desktop run pack"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ],
+    "ignoredBuiltDependencies": [
+      "electron-winstaller"
+    ]
+  }
+}

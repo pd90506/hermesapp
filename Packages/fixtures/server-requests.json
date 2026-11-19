@@ -1,0 +1,13 @@
+{
+  "comment": "Server requests a client without cards for them declines: 4404 for window-owned bridges (tui_gateway/server_requests.py:22-28,100), -32601 for the rest.",
+  "declined": [
+    { "method": "preview.read", "code": 4404 },
+    { "method": "preview.act", "code": 4404 },
+    { "method": "terminal.read", "code": 4404 },
+    { "method": "window.read", "code": 4404 },
+    { "method": "tour", "code": 4404 },
+    { "method": "display.install.sudo", "code": -32601 },
+    { "method": "something.new", "code": -32601 }
+  ],
+  "supported": ["approval", "clarify", "sudo", "secret"]
+}

@@ -1,0 +1,40 @@
+{
+  "comment": "profiles.list rows as tui_gateway/methods_profiles.py:290-297 builds them; canonical_session as _canonical_session_row (:188-193). now is Unix seconds.",
+  "now": 1700000600,
+  "profiles": [
+    {
+      "name": "writer", "path": "/srv/hermes/profiles/writer", "is_default": false, "model": "test-model",
+      "provider": "test-provider", "description": "", "display_name": "", "skill_count": 3, "previous_names": [],
+      "role": null, "last_session": null, "worker_session": { "id": "w1", "source": "kanban", "title": "Draft", "last_active": 1700000500 },
+      "canonical_session": null, "ui_meta_revisions": {}, "has_avatar": false
+    },
+    {
+      "name": "default", "path": "/srv/hermes", "is_default": true, "model": "test-model", "provider": "test-provider",
+      "description": "", "display_name": "", "skill_count": 3, "previous_names": [], "role": null, "last_session": null,
+      "worker_session": null,
+      "canonical_session": { "id": "bot-root", "resolved_id": "bot-tip", "root_title": "Bot Chat", "title": "Bot Chat",
+        "preview": "  Morning!  ", "started_at": 1700000000, "last_active": 1700000550, "message_count": 4, "live_message_count": 4 },
+      "ui_meta_revisions": {}, "has_avatar": true
+    },
+    {
+      "name": "research_team--b", "path": "/srv/hermes/profiles/research_team--b", "is_default": false, "model": "test-model",
+      "provider": "test-provider", "description": "", "display_name": "", "skill_count": 3, "previous_names": [],
+      "role": null, "last_session": null, "worker_session": null, "canonical_session": null, "ui_meta_revisions": {},
+      "has_avatar": false
+    },
+    {
+      "name": "ops", "path": "/srv/hermes/profiles/ops", "is_default": false, "model": "test-model", "provider": "test-provider",
+      "description": "", "display_name": " Ops Desk ", "skill_count": 3, "previous_names": [], "role": null,
+      "last_session": null, "worker_session": null,
+      "canonical_session": { "id": "ops-chat", "resolved_id": "ops-chat", "root_title": "Bot Chat", "title": "Bot Chat",
+        "preview": "", "started_at": 1700000000, "last_active": 1699990000, "message_count": 2, "live_message_count": 2 },
+      "ui_meta": { "hermes-bots": { "title": "Night Shift" } }, "ui_meta_revisions": {}, "has_avatar": false
+    }
+  ],
+  "expected": [
+    { "name": "default", "displayName": "Hermes", "preview": "Morning!", "chatStoredIDs": ["bot-root", "bot-tip"], "activity": "recent" },
+    { "name": "writer", "displayName": "Writer", "preview": null, "chatStoredIDs": [], "activity": "working" },
+    { "name": "research_team--b", "displayName": "Research Team B", "preview": null, "chatStoredIDs": [], "activity": "idle" },
+    { "name": "ops", "displayName": "Night Shift", "preview": null, "chatStoredIDs": ["ops-chat"], "activity": "idle" }
+  ]
+}

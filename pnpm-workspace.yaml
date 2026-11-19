@@ -1,0 +1,5 @@
+# The desktop app (Electron, Windows and macOS) and its TypeScript core.
+# The Swift package and the Apple apps are not part of it.
+packages:
+  - Packages/hermes-core
+  - Apps/Desktop/electron

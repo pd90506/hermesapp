@@ -43,14 +43,14 @@ function ImagePill({ image, uploading, failure, onRemove }: {
   return (
     <>
       <Pill label={image.filename} detail={failure ?? imageDetail(image)} thumbnail={url} uploading={uploading}
-        failed={failure !== undefined} title={failure ?? image.source ?? image.filename} onOpen={() => setViewing(true)} onRemove={onRemove} />
+        failed={failure !== undefined} title={failure ?? image.source} onOpen={() => setViewing(true)} onRemove={onRemove} />
       {viewing && <ImageViewer connection={connection} name={image.filename} preview={url} localURL={url} onClose={() => setViewing(false)} />}
     </>
   )
 }
 
 function FilePill({ file, onRemove }: { file: ComposerFile; onRemove: () => void }) {
-  return <Pill label={file.name} detail={formatBytes(file.byteCount)} icon={fileIcons[fileKind(file.name)]} title={file.path ?? file.name} onRemove={onRemove} />
+  return <Pill label={file.name} detail={formatBytes(file.byteCount)} icon={fileIcons[fileKind(file.name)]} title={file.path} onRemove={onRemove} />
 }
 
 function Pill({ label, detail, thumbnail, icon, uploading = false, failed = false, title, onOpen, onRemove }: {
@@ -67,7 +67,7 @@ function Pill({ label, detail, thumbnail, icon, uploading = false, failed = fals
   return (
     <div className={styles.pillWrap}>
       <button type="button" className={styles.pill} data-failed={failed || undefined} aria-busy={uploading || undefined}
-        aria-label={onOpen ? `Preview ${label}` : label} title={title ?? label} disabled={!onOpen || uploading} onClick={onOpen}>
+        aria-label={onOpen ? `Preview ${label}` : label} title={title !== label ? title : undefined} disabled={!onOpen || uploading} onClick={onOpen}>
         <span className={styles.thumb}>
           {thumbnail ? <img className={styles.thumbImage} src={thumbnail} alt="" draggable={false} /> : <Glyph path={icon ?? fileIcons.other} />}
           {uploading && <span className={styles.thumbOverlay}><span className={styles.spinner} aria-hidden="true" /></span>}

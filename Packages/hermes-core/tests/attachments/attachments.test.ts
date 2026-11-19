@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  ClipboardPolicy, FileAttachmentPolicy, ImageAttachmentPolicy, StrandedImages, attachmentID, base64, fileRefPath, formatBytes,
+  ClipboardPolicy, FileAttachmentPolicy, ImageAttachmentPolicy, OriginalFileNames, StrandedImages, attachmentDisplayName, attachmentID, base64, fileRefPath, formatBytes,
   type ChatSession, type ComposerImage,
 } from '../../src/index.ts'
 import { PagedServer, eventually, rows, FakeMessageStore } from '../support/paged-server.ts'
@@ -52,8 +52,8 @@ describe('policies', () => {
   })
 
   test('a file reference keeps its path', () => {
-    expect(fileRefPath({ id: '1', name: 'a b.pdf', byteCount: 1, refText: '@file:`attachments/a b.pdf`' })).toBe('attachments/a b.pdf')
-    expect(fileRefPath({ id: '2', name: 'c.csv', byteCount: 1, refText: '@file:/srv/c.csv' })).toBe('/srv/c.csv')
+    expect(fileRefPath({ id: '1', name: 'a b.pdf', storedName: 'a b.pdf', byteCount: 1, refText: '@file:`attachments/a b.pdf`' })).toBe('attachments/a b.pdf')
+    expect(fileRefPath({ id: '2', name: 'c.csv', storedName: 'c.csv', byteCount: 1, refText: '@file:/srv/c.csv' })).toBe('/srv/c.csv')
   })
 
   test('base64 matches the standard alphabet', () => {
@@ -112,6 +112,33 @@ describe('sending with attachments', () => {
     const bubble = chat.get().items.findLast((item) => item.role === 'user')
     expect(bubble?.attachments).toEqual(['report.pdf'])
     expect(bubble?.text).toBe('summarize this')
+  })
+
+  test('a renamed file still shows the name the user gave it', async () => {
+    const server = new PagedServer(new FakeMessageStore(rows(1, 2)))
+    const { chat, composer } = await openStored(server)
+    const bytes = new TextEncoder().encode('hi')
+    await composer.attachments.attachFile(bytes, 'notes.txt', 'text/plain')
+    await composer.attachments.attachFile(bytes, 'notes.txt', 'text/plain')
+    expect(composer.attachments.get().files.map((file) => [file.name, file.storedName])).toEqual([['notes.txt', 'notes.txt'], ['notes.txt', 'notes-2.txt']])
+    await composer.submit()
+    expect(server.calls('prompt.submit').at(-1)?.text).toBe('@file:attachments/notes.txt\n@file:attachments/notes-2.txt')
+    expect(chat.get().items.findLast((item) => item.role === 'user')?.attachments).toEqual(['notes.txt', 'notes.txt'])
+    // A stored row, after the bubble is replaced or the app restarts.
+    expect(attachmentDisplayName('attachments/notes-2.txt')).toBe('notes.txt')
+    expect(attachmentDisplayName('attachments/unknown-2.txt')).toBe('unknown-2.txt')
+  })
+
+  test('the names survive a restart and keep the newest', () => {
+    let saved: string | null = null
+    const storage = { load: () => saved, save: (value: string) => { saved = value } }
+    const names = new OriginalFileNames(2)
+    names.use(storage)
+    names.remember(['a-2.txt'], 'a.txt')
+    names.remember(['b-2.txt', '/abs/b-2.txt'], 'b.txt')
+    const restarted = new OriginalFileNames(2)
+    restarted.use(storage)
+    expect([restarted.name('a-2.txt'), restarted.name('b-2.txt'), restarted.name('/abs/b-2.txt')]).toEqual([undefined, 'b.txt', 'b.txt'])
   })
 
   test('a picked PNG becomes an image card, not a file', async () => {

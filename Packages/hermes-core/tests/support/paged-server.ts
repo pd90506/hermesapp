@@ -72,6 +72,7 @@ export class PagedServer {
   replay: { events: unknown[]; latest_seq: number; truncated?: boolean; epoch?: string } | undefined
   /** E: each runtime session's image queue (`image.attach_bytes`). */
   readonly queuedImages = new Map<string, string[]>()
+  readonly stagedFiles = new Set<string>()
   /** Fails these methods with this RPC error. */
   readonly errors = new Map<string, { code: number; message: string }>()
 
@@ -215,9 +216,15 @@ export class PagedServer {
         this.queuedImages.set(sid, queued.filter((path) => path !== params.path))
         return { detached, count: this.queuedImages.get(sid)!.length }
       }
-      case 'file.attach':
-        return { attached: true, name: params.name, path: `/home/h/.hermes/attachments/${String(params.name)}`,
-          ref_text: `@file:attachments/${String(params.name)}`, uploaded: true }
+      case 'file.attach': {
+        // Like the gateway: a taken name gets a number (`notes.txt` → `notes-2.txt`).
+        const asked = String(params.name)
+        let name = asked
+        for (let n = 2; this.stagedFiles.has(name); n += 1) name = asked.replace(/(\.[^.]*)?$/, (ext) => `-${n}${ext}`)
+        this.stagedFiles.add(name)
+        return { attached: true, name, path: `/home/h/.hermes/attachments/${name}`,
+          ref_text: `@file:attachments/${name}`, uploaded: true }
+      }
       default:
         return undefined
     }

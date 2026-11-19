@@ -1,4 +1,5 @@
 import type { JSONValue } from '../protocol/jsonrpc.ts'
+import { originalFileNames } from '../media/file-names.ts'
 
 /** An image in a user message (HermesKit's `TranscriptImage`). */
 export interface TranscriptImage {
@@ -210,6 +211,8 @@ function attachmentReference(line: string): string | undefined {
 
 /** What a bubble shows for a reference: its file name. */
 export function attachmentDisplayName(ref: string): string {
+  const original = originalFileNames.name(ref)
+  if (original) return original
   const name = lastPathComponent(ref)
   return name === '' ? ref : name
 }

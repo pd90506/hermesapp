@@ -5,6 +5,7 @@ import { splitLeadingAttachmentRefs, type TranscriptImage } from '../../session/
 import type { ChatSession } from '../../session/chat-session.ts'
 import { AttachmentError, FileAttachmentPolicy, ImageAttachmentPolicy, formatBytes } from './policy.ts'
 import { detachImage, StrandedImages, type StrandedImage } from './stranded.ts'
+import { originalFileNames } from '../../media/file-names.ts'
 
 /**
  * An image waiting in the composer (HermesKit's `ComposerAttachment`), already in a
@@ -37,8 +38,10 @@ export function imageDetail(image: ComposerImage): string {
  */
 export interface ComposerFile {
   readonly id: string
-  /** The name the gateway stored it under. */
+  /** The name the user gave it (shown everywhere). */
   readonly name: string
+  /** The name the gateway stored it under, which differs when that name was taken. */
+  readonly storedName: string
   readonly byteCount: number
   /** `@file:<ref_path>`, quoted when needed. */
   readonly refText: string
@@ -197,10 +200,12 @@ export class AttachmentTray extends Observable<AttachmentsView> {
       throw AttachmentError.attachmentFailed(filename, describeError(error))
     }
     if (!result?.attached || !result.ref_text) throw AttachmentError.attachmentFailed(filename, 'the gateway did not stage it')
-    return {
-      id: attachmentID(), name: result.name || filename, byteCount: bytes.byteLength, refText: result.ref_text,
+    const file: ComposerFile = {
+      id: attachmentID(), name: filename, storedName: result.name || filename, byteCount: bytes.byteLength, refText: result.ref_text,
       ...(result.path ? { path: result.path } : {}),
     }
+    originalFileNames.remember([fileRefPath(file), result.path], filename)
+    return file
   }
 
   /**

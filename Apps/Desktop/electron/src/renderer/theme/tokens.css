@@ -264,3 +264,38 @@
   --spinner-size: 12px;
   --spinner-stroke: 2px;
 }
+
+/* A: chat core (transcript, composer, request cards). Numbers from the Mac's ChatView,
+   ComposerView, PromptRail and ServerRequestCard. Text sizes, the user bubble and the
+   composer fill are M's (above); the spinner is L's. */
+:root {
+  --chat-content-width: calc(var(--text-content) * 54);
+  --chat-side-room: 50px;
+  --chat-padding: 16px;
+  --chat-row-gap: 12px;
+  --chat-bubble-lead: 40px;
+  --history-header-height: 32px;
+  --request-radius: 14px;
+  --waiting-mark: 8px;
+  --pill-height: 32px;
+  --pill-icon: 12px;
+  --composer-control: 26px;
+  --composer-icon: 14px;
+  --composer-busy-icon: 10px;
+  --composer-text-min: 28px;
+  --composer-text-max: 170px;
+  --glass-blur: blur(24px) saturate(1.6);
+  --weight-medium: 500;
+  --composer-stroke: color-mix(in srgb, var(--text) 15%, transparent);
+  --request-fill: color-mix(in srgb, #ff9500 12%, transparent);
+  --surface-solid: #ffffff;
+  --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --request-fill: color-mix(in srgb, #ff9f0a 12%, transparent);
+    --surface-solid: #000000;
+    --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.3);
+  }
+}

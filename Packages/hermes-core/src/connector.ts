@@ -1,6 +1,7 @@
 import { DashboardClient, DashboardError } from './dashboard.ts'
 import type { GatewayEndpoint } from './endpoint.ts'
 import type { HttpClient, MessageTransport } from './http.ts'
+import type { SessionMessagesSource } from './session/types.ts'
 import type { NativeTokenSession } from './servers/native-tokens.ts'
 
 /**
@@ -27,6 +28,8 @@ export type GatewayCredential =
 /** Produces a fresh, authenticated transport for each connection attempt. */
 export interface GatewayConnector {
   makeTransport(): Promise<MessageTransport>
+  /** Stored transcripts, when not read over the dashboard's REST routes (tests). */
+  readonly messagesSource?: SessionMessagesSource
 }
 
 /** `GatewayConnector` for the dashboard's `/api/ws` (HermesKit's `DashboardConnector`). */

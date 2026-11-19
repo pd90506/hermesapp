@@ -14,6 +14,8 @@ function renderList(snapshot: Partial<ConnectionSnapshot>) {
     link: { phase: 'connected' }, isTryingNoticeably: false, bots: [], sessions: {}, sessionListLoading: false,
     ...snapshot,
   })
+  // The chats: none on screen.
+  Object.assign(connection, { chats: new Store({ otherRequests: [], unsent: {} }) })
   const model = Object.assign(new Store({}), { connection }) as unknown as AppModel
   render(<ModelContext.Provider value={model}><SessionList /></ModelContext.Provider>)
   return connection

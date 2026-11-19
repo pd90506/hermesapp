@@ -193,7 +193,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     19.3.0 (MIT), **ws** 8.22.1 (MIT). `ws` was not in the approved plan: the main process
     opens the gateway WebSocket with it because it sends no `Origin` (the dashboard checks a
     browser's) and reports a refused upgrade with its HTTP status, which the app shows. Its
-    optional native add-ons stay out.
+    optional native add-ons stay out. **@tanstack/react-virtual** 3.14.26 (MIT), for the chat's
+    transcript list (package A, in the approved plan): it builds only the rows near the screen
+    and measures their heights, as the Mac's lazy transcript and Desktop's virtual list do.
   - Build and test only: **vite** 8.3.4, **@vitejs/plugin-react** 6.2.1, **typescript** 6.0.3,
     **vitest** 4.1.12, **jsdom** 29.1.1, **@testing-library/react** 16.3.3,
     **electron-builder** 26.18.0, and the `@types` packages (all MIT, Apache-2.0 for

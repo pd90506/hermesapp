@@ -1,0 +1,98 @@
+/* The Mac's RequestCardView: 16 pt padding, 14 pt corners, orange at 12 %. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-7);
+  border-radius: var(--request-radius);
+  background: var(--request-fill);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-content);
+  font-weight: var(--weight-semibold);
+}
+
+.text {
+  margin: 0;
+  line-height: var(--line-body);
+}
+
+.command {
+  margin: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--fill-selected);
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.envVar {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.actions,
+.entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: var(--field-height);
+  padding: 0 var(--space-5);
+  border: var(--hairline) solid var(--field-stroke);
+  border-bottom-color: var(--field-underline);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+  outline: none;
+}
+
+.input:focus {
+  background: var(--field-fill-focused);
+  border-bottom-color: var(--accent);
+}
+
+.button,
+.primary,
+.destructive {
+  height: var(--field-height);
+  padding: 0 var(--space-6);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-sm);
+  background: var(--field-fill);
+}
+
+.button:hover,
+.destructive:hover {
+  background: var(--fill-hover);
+}
+
+.destructive {
+  color: var(--critical);
+}
+
+.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.primary:disabled {
+  background: var(--fill-pressed);
+  color: var(--text-tertiary);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--critical);
+}

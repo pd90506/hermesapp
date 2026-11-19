@@ -313,8 +313,9 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
     this.update({ actionError: undefined })
   }
 
-  /** Renames a chat open here; `runtimeID` from the chat core. */
-  async rename(profile: string, row: SessionSummary, title: string, runtimeID?: string): Promise<void> {
+  /** Renames a chat open here (its runtime id from the chat core); a closed one says to open it. */
+  async rename(profile: string, row: SessionSummary, title: string): Promise<void> {
+    const runtimeID = this.live.runtimeID?.(profile, row.id)
     const renamed = await this.act(() => SessionActions.rename(this.call, row, this.bot(profile), title, runtimeID))
     if (renamed !== undefined) this.connection.refreshListsInBackground()
   }

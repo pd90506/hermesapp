@@ -41,6 +41,8 @@ export interface LiveChatStatus {
   waitingChats(): WaitingChat[]
   /** When the user last sent from here in that chat (epoch ms): it counts before the next read. */
   lastPromptAt?(profile: string, storedID: string): number | undefined
+  /** The runtime id of the row's chat when it is open here: only an open chat can be renamed (`session.title`). */
+  runtimeID?(profile: string, storedID: string): string | undefined
   /** Called on any change. */
   subscribe(listener: () => void): () => void
 }

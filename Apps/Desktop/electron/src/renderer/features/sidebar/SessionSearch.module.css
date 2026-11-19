@@ -1,0 +1,128 @@
+.field {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--field-height);
+  margin: var(--space-2) var(--space-4) var(--space-2) var(--space-4);
+  padding: 0 var(--space-5);
+  border: var(--hairline) solid var(--field-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--field-fill);
+  color: var(--text-secondary);
+}
+
+.field:focus-within {
+  border-bottom-color: var(--accent);
+  background: var(--field-fill-focused);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding-right: var(--space-4);
+  overflow-y: auto;
+}
+
+:global([data-platform='windows']) .pane {
+  scrollbar-width: thin;
+}
+
+.section {
+  margin: 0;
+  padding: var(--space-7) var(--space-4) var(--space-3) var(--space-7);
+  font-size: var(--text-section);
+  font-weight: var(--weight-bold);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--space-1) var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-3) calc(var(--space-6) + var(--space-1));
+  border-radius: var(--row-radius);
+  outline: none;
+  cursor: default;
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--fill-hover);
+}
+
+.row[data-selected] {
+  background: var(--selection-fill);
+}
+
+.title,
+.age {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.title {
+  font-size: var(--text-title);
+}
+
+.snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.snippet b {
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.age {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto var(--space-7);
+  text-align: center;
+}
+
+.placeholderTitle {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: var(--weight-semibold);
+}
+
+.placeholderDetail {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.retry {
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-6);
+  border: var(--hairline) solid var(--field-stroke);
+  border-radius: var(--radius-md);
+  background: var(--field-fill);
+  color: var(--text);
+  font: inherit;
+}

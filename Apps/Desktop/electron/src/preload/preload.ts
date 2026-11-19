@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
-  IPC, frameGeometry, type Appearance, type Platform, type SocketEvent, type TalariaBridge,
+  IPC, frameGeometry, sidebarShortcuts, type Appearance, type Platform, type SocketEvent, type TalariaBridge,
 } from '../shared/bridge.ts'
 
 const platform: Platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
@@ -59,6 +59,11 @@ const bridge: TalariaBridge = {
     },
     setCaptionColors: (colors) => ipcRenderer.send(IPC.captionColors, colors),
   },
+  sidebar: {
+    load: () => ipcRenderer.invoke(IPC.sidebarLoad),
+    save: (value) => ipcRenderer.invoke(IPC.sidebarSave, value),
+  },
+  shortcuts: sidebarShortcuts(platform),
   menu: {
     popup: (entries, x, y) => ipcRenderer.invoke(IPC.menuPopup, entries, x, y),
   },

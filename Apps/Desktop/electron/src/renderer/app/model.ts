@@ -1,7 +1,8 @@
 import {
   DashboardConnector, GatewayConnection, GatewayEndpoint, Observable, describeError,
-  type GatewayCredential,
+  type GatewayCredential, type SessionSidebar,
 } from '@talaria/hermes-core'
+import { createSessionSidebar } from '../features/sidebar/sidebar-model.ts'
 import type { Appearance, SavedServer, SavedSettings, TalariaBridge } from '../../shared/bridge.ts'
 import { BridgeSocket, bridgeHttp } from './bridge-transport.ts'
 
@@ -33,6 +34,9 @@ export function credential(server: SavedServer, secret: string): GatewayCredenti
  */
 export class AppModel extends Observable<AppSnapshot> {
   readonly connection: GatewayConnection
+  /** Pins, row activity, unread, search, avatars (package H). */
+  readonly sidebar: SessionSidebar
+  private connector?: DashboardConnector
 
   constructor(readonly bridge: TalariaBridge) {
     super({ loaded: false, showsConnectPage: false, railShown: true, appearance: { dark: false }, connecting: false })
@@ -41,6 +45,8 @@ export class AppModel extends Observable<AppSnapshot> {
       // so no agent waits on this window (4404 for the window-owned bridges).
       client: { supportedServerRequests: new Set<string>() },
     })
+    this.sidebar = createSessionSidebar(bridge, this.connection,
+      () => ({ connector: this.connector, serverKey: this.get().server?.serverURL }))
   }
 
   private update(change: Partial<AppSnapshot>): void {
@@ -58,6 +64,7 @@ export class AppModel extends Observable<AppSnapshot> {
       showsConnectPage: !settings.server,
       ...(settings.server ? { server: settings.server } : {}),
     })
+    await this.sidebar.load()
     if (!settings.server) return
     const secret = await this.bridge.secret.load()
     if (secret.value === null) {
@@ -90,12 +97,16 @@ export class AppModel extends Observable<AppSnapshot> {
     const endpoint = new GatewayEndpoint(server.serverURL)
     const connector = new DashboardConnector(endpoint, credential(server, secret), bridgeHttp(this.bridge),
       (url) => new BridgeSocket(this.bridge, url))
+    this.connector = connector
     await this.connection.connect(connector)
   }
 
   /** Disconnects and forgets the server and its secret. */
   async forgetServer(): Promise<void> {
+    const forgotten = this.get().server?.serverURL
     await this.connection.disconnect()
+    this.connector = undefined
+    if (forgotten) this.sidebar.forgetServer(forgotten)
     await this.bridge.secret.save(null)
     await this.bridge.http.reset()
     const { server: _, ...rest } = await this.bridge.settings.load()

@@ -1,4 +1,6 @@
 import type { MessageTransport } from './http.ts'
+import { SessionMethod } from './session/methods.ts'
+import type { LiveSessionSnapshot, OpenRequestEntry, ServerRequest } from './session/types.ts'
 import type { GatewayMethodName, GatewayParams, GatewayResult } from './protocol/contract.generated.ts'
 import {
   RPCError, decodeMessage, encodeRequest, encodeResponse,
@@ -28,15 +30,27 @@ export interface GatewayReady {
   skin?: JSONValue
 }
 
-export interface ServerRequest {
-  id: string
-  method: string
-  params: JSONValue
+/** `session.events.since`'s answer (`methods_session.py:2603-2617`). */
+export interface SessionEventsSince {
+  events?: GatewayEvent[]
+  latest_seq?: number
+  truncated?: boolean
+  count?: number
+  epoch?: string
+  open_requests?: OpenRequestEntry[]
+}
+
+export interface ReattachResult {
+  /** `session.activate`'s snapshot, messages omitted. */
+  snapshot: LiveSessionSnapshot
+  replay: SessionEventsSince
+  /** The replay was delivered; false: nothing was, resume the session instead. */
+  isComplete: boolean
 }
 
 export type ClientErrorKind =
   | 'notConnected' | 'alreadyConnected' | 'connectionClosed' | 'readyTimeout'
-  | 'heartbeatTimeout' | 'timeout'
+  | 'heartbeatTimeout' | 'timeout' | 'replayInProgress'
 
 export class GatewayClientError extends Error {
   constructor(readonly kind: ClientErrorKind, detail?: string) {
@@ -96,6 +110,8 @@ export class GatewayClient {
   private readonly pending = new Map<string, Pending>()
   private readonly subscribers = new Set<(item: Inbound) => void>()
   private readonly openServerRequests = new Set<string>()
+  /** Live events held back per session while `reattach` replays what was missed. */
+  private readonly replayBuffers = new Map<string, GatewayEvent[]>()
   private readyWaiter?: { resolve(ready: GatewayReady): void; reject(error: Error): void }
   private nextRequest = 0
   private heartbeatNumber = 0
@@ -214,6 +230,7 @@ export class GatewayClient {
     this.readyWaiter?.reject(error ?? closed)
     this.readyWaiter = undefined
     this.openServerRequests.clear()
+    this.replayBuffers.clear()
     this.finishSubscribers(error)
     await this.transport.close().catch(() => {})
   }
@@ -257,9 +274,7 @@ export class GatewayClient {
       return
     }
     if (this.configuration.supportedServerRequests.has(method)) {
-      if (this.openServerRequests.has(String(id))) return
-      this.openServerRequests.add(String(id))
-      this.broadcast({ kind: 'serverRequest', request: { id: String(id), method, params: params ?? {} } })
+      this.deliver({ id: String(id), method, params: params ?? {} })
     } else {
       this.write(encodeResponse(id, { error: declineServerRequest(method) }))
     }
@@ -272,6 +287,16 @@ export class GatewayClient {
       this.readyWaiter?.resolve(this.ready)
       this.readyWaiter = undefined
     }
+    const held = event.session_id ? this.replayBuffers.get(event.session_id) : undefined
+    if (held) {
+      held.push(event)
+      return
+    }
+    this.publish(event)
+  }
+
+  /** Delivers an event unless its `seq` was already seen. */
+  private publish(event: GatewayEvent): void {
     const sid = event.session_id
     if (sid && typeof event.seq === 'number') {
       const last = this.lastSeq.get(sid)
@@ -282,6 +307,67 @@ export class GatewayClient {
       this.openServerRequests.delete(event.payload.id)
     }
     this.broadcast({ kind: 'event', event })
+  }
+
+  private deliver(request: ServerRequest): void {
+    if (this.openServerRequests.has(request.id)) return
+    this.openServerRequests.add(request.id)
+    this.broadcast({ kind: 'serverRequest', request })
+  }
+
+  /**
+   * Re-delivers unanswered requests that `session.resume`, `session.activate` or
+   * `session.events.since` listed as `open_requests`; ones already delivered on this
+   * connection are skipped.
+   */
+  redeliver(entries: readonly OpenRequestEntry[]): void {
+    for (const entry of entries) {
+      if (!this.configuration.supportedServerRequests.has(entry.method)) continue
+      this.deliver({ id: entry.id, method: entry.method, params: entry.params ?? {}, replayed: true })
+    }
+  }
+
+  /**
+   * Re-attaches a session that was live on an earlier connection to the same backend,
+   * then replays what was missed (HermesKit's `reattach`, docs/protocol.md §7):
+   * 1. live events of the session are held back from now on;
+   * 2. `session.activate` binds delivery to this socket and cancels the orphan reap
+   *    (`session.events.since` alone does neither, and answers an unknown session with an
+   *    empty success; activate fails with 4001/4007, which the caller takes as "resume");
+   * 3. `session.events.since` brings the events after `lastSeen`, delivered before the
+   *    held-back ones and deduplicated by `seq`.
+   * Incomplete (truncated, another epoch, the server behind the watermark): nothing is
+   * delivered, and the caller resumes the session instead.
+   */
+  async reattach(sessionID: string, lastSeen: number): Promise<ReattachResult> {
+    if (this.replayBuffers.has(sessionID)) throw new GatewayClientError('replayInProgress')
+    this.lastSeq.set(sessionID, Math.max(this.lastSeq.get(sessionID) ?? 0, lastSeen))
+    this.replayBuffers.set(sessionID, [])
+    let snapshot: LiveSessionSnapshot
+    let replay: SessionEventsSince
+    try {
+      snapshot = await this.call(SessionMethod.sessionActivate, { session_id: sessionID, omit_messages: true }) as
+        unknown as LiveSessionSnapshot
+      replay = await this.call(SessionMethod.sessionEventsSince, { session_id: sessionID, last_seen: lastSeen }) as
+        unknown as SessionEventsSince
+    } catch (error) {
+      this.replayBuffers.delete(sessionID)
+      this.lastSeq.delete(sessionID)
+      throw error
+    }
+    const isComplete = replay.truncated !== true && replay.epoch === this.ready?.replay_epoch &&
+      (replay.latest_seq ?? 0) >= lastSeen
+    if (isComplete) {
+      for (const event of replay.events ?? []) this.publish(event)
+      const held = this.replayBuffers.get(sessionID) ?? []
+      this.replayBuffers.delete(sessionID)
+      for (const event of held) this.publish(event)
+      this.redeliver(replay.open_requests ?? [])
+    } else {
+      this.replayBuffers.delete(sessionID)
+      this.lastSeq.delete(sessionID)
+    }
+    return { snapshot, replay, isComplete }
   }
 
   private broadcast(item: Inbound): void {

@@ -15,3 +15,4 @@ source when adding a shape.
 | `bots.json` | `profiles.list` rows: roster order, display names, Bot Chat ids, activity |
 | `session-list.json` | Which `session.list` rows the session list shows |
 | `server-requests.json` | Which server requests are declined, and with which code |
+| `session-projection.json` | Stored transcript rows as chat rows: hidden rows, tool calls, attachments, skill turns |

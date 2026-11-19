@@ -3,9 +3,10 @@ import bots from '../../fixtures/bots.json' with { type: 'json' }
 import endpoint from '../../fixtures/endpoint.json' with { type: 'json' }
 import serverRequests from '../../fixtures/server-requests.json' with { type: 'json' }
 import sessionList from '../../fixtures/session-list.json' with { type: 'json' }
+import sessionProjection from '../../fixtures/session-projection.json' with { type: 'json' }
 import {
-  Bot, EndpointError, GatewayEndpoint, ServerRequestMethod, declineServerRequest, defaultServerName, historyRows,
-  type ProfileRow, type SessionSummary,
+  Bot, EndpointError, GatewayEndpoint, ServerRequestMethod, declineServerRequest, defaultServerName, historyRows, storedItems,
+  type ProfileRow, type SessionSummary, type StoredMessage,
 } from '../src/index.ts'
 
 // The same cases as HermesKit's SharedFixtureTests.swift (Packages/fixtures/README.md).
@@ -60,5 +61,21 @@ describe('server-requests.json', () => {
 
   test('supported requests', () => {
     expect([...ServerRequestMethod.mvpSupported].sort()).toEqual([...serverRequests.supported].sort())
+  })
+})
+
+describe('session-projection.json', () => {
+  test.each(sessionProjection.cases)('$name', (item) => {
+    const shown = storedItems(item.rows as StoredMessage[], new Map(), item.startsSession).map((row) => ({
+      role: row.role,
+      text: row.text,
+      ...(row.reasoning ? { reasoning: row.reasoning } : {}),
+      ...(row.toolName ? { toolName: row.toolName } : {}),
+      ...(row.detail !== undefined ? { detail: row.detail } : {}),
+      ...(row.attachments.length > 0 ? { attachments: row.attachments } : {}),
+      ...(row.images.length > 0 ? { images: row.images.map((image) => image.path) } : {}),
+      ...(row.rowID !== undefined ? { rowID: row.rowID } : {}),
+    }))
+    expect(shown).toEqual(item.expected)
   })
 })

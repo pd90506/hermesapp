@@ -59,6 +59,9 @@ const bridge: TalariaBridge = {
     },
     setCaptionColors: (colors) => ipcRenderer.send(IPC.captionColors, colors),
   },
+  menu: {
+    popup: (entries, x, y) => ipcRenderer.invoke(IPC.menuPopup, entries, x, y),
+  },
 }
 
 contextBridge.exposeInMainWorld('talaria', bridge)

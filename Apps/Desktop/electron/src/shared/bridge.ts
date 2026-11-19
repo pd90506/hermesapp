@@ -6,7 +6,7 @@
 export type Platform = 'windows' | 'mac' | 'linux'
 
 export interface BridgeHttpRequest {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   url: string
   headers?: Record<string, string>
   body?: string
@@ -44,6 +44,18 @@ export interface SavedSettings {
   railShown?: boolean
 }
 
+/** One entry of a context menu (`ui/ContextMenu`): the same items on every platform. */
+export type MenuEntry =
+  | { kind: 'item'; id: string; label: string; disabled?: boolean; destructive?: boolean }
+  | { kind: 'separator' }
+
+/**
+ * What the main process did with a menu: the system's own menu showed and the user
+ * picked `id` or nothing (macOS, `Menu.popup`); or `inApp`, the renderer draws the
+ * menu itself (Windows: a Fluent flyout, as WinUI's MenuFlyout).
+ */
+export type MenuOutcome = { kind: 'chosen'; id: string } | { kind: 'dismissed' } | { kind: 'inApp' }
+
 export interface TalariaBridge {
   platform: Platform
   http: {
@@ -72,6 +84,11 @@ export interface TalariaBridge {
     /** Colours the Windows caption buttons to match the page. */
     setCaptionColors(colors: { symbol: string }): void
   }
+  /** Context menus (`ui/ContextMenu`, `src/main/ipc/menu.ts`). */
+  menu: {
+    /** Shows `entries` at the window point (`x`, `y`), in CSS pixels. */
+    popup(entries: MenuEntry[], x: number, y: number): Promise<MenuOutcome>
+  }
 }
 
 export const IPC = {
@@ -88,6 +105,7 @@ export const IPC = {
   appearanceGet: 'talaria:appearance:get',
   appearanceChanged: 'talaria:appearance:changed',
   captionColors: 'talaria:caption:colors',
+  menuPopup: 'talaria:menu:popup',
 } as const
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */

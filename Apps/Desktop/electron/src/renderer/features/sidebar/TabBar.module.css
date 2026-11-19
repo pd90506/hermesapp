@@ -1,0 +1,68 @@
+.bar {
+  display: flex;
+  flex: none;
+  height: var(--tab-bar-height);
+  margin: var(--space-3) var(--space-4) var(--space-4);
+  padding: var(--tab-bar-padding);
+  border: var(--hairline) solid var(--tab-bar-stroke);
+  border-radius: var(--tab-bar-height);
+  background: var(--tab-bar-surface);
+  backdrop-filter: blur(var(--space-8));
+}
+
+.tab {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--tab-bar-height);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-body);
+  transition: background-color var(--motion) var(--ease), color var(--motion) var(--ease);
+}
+
+.tab:hover:not([aria-selected='true']) {
+  background: var(--fill-hover);
+}
+
+.tab[aria-selected='true'] {
+  background: var(--tab-pill-fill);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.alert {
+  position: absolute;
+  top: calc(var(--space-1) * -1);
+  right: calc(var(--space-2) * -1);
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: 50%;
+  background: var(--critical);
+}
+
+/* The semibold title's width, reserved under the regular one. */
+.title {
+  display: inline-grid;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.title::after {
+  content: attr(data-title);
+  height: 0;
+  visibility: hidden;
+  font-weight: var(--weight-semibold);
+}

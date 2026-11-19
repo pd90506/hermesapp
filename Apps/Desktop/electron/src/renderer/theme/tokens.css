@@ -123,3 +123,40 @@
     --shadow-flyout: 0 8px 16px rgb(0 0 0 / 0.26);
   }
 }
+
+/* H: sidebar (session rows, menus, tabs, search, banners). */
+:root {
+  /* WinUI's MenuFlyout: 8 px corners, 4 px padding, 32 px items, at least 120 wide. */
+  --menu-radius: 8px;
+  --menu-padding: 4px;
+  --menu-item-height: 32px;
+  --menu-min-width: 160px;
+  --menu-icon-gap: 12px;
+  --menu-surface: #f9f9f9;
+  --menu-stroke: rgb(0 0 0 / 0.06);
+  /* The Mac's tab capsule (SessionListTabBar): 34 tall, 3 inside, 6 above. */
+  --tab-bar-height: 34px;
+  --tab-bar-padding: 3px;
+  --tab-pill-fill: rgb(0 0 0 / 0.08);
+  --tab-bar-surface: rgb(255 255 255 / 0.72);
+  --tab-bar-stroke: rgb(0 0 0 / 0.08);
+  --banner-radius: 14px;
+  --status-dot: 8px;
+  --status-dot-ring: 1.5px;
+  --dialog-width: 360px;
+  --scrollbar-thin: 6px;
+  --scrollbar-thumb: rgb(0 0 0 / 0.3);
+  --backdrop-dialog: rgb(0 0 0 / 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --menu-surface: #2c2c2c;
+    --menu-stroke: rgb(0 0 0 / 0.2);
+    --tab-pill-fill: rgb(255 255 255 / 0.1);
+    --tab-bar-surface: rgb(40 40 40 / 0.72);
+    --tab-bar-stroke: rgb(255 255 255 / 0.08);
+    --scrollbar-thumb: rgb(255 255 255 / 0.3);
+    --backdrop-dialog: rgb(0 0 0 / 0.5);
+  }
+}

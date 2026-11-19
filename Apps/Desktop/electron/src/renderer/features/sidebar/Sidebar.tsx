@@ -2,7 +2,10 @@ import type { LinkState } from '@talaria/hermes-core'
 import { useModel, useSnapshot } from '../../app/hooks.ts'
 import { IconButton } from '../../ui/IconButton.tsx'
 import { ProfileRail } from './ProfileRail.tsx'
-import { SessionList } from './SessionList.tsx'
+import { useState } from 'react'
+import './registered-tabs.ts'
+import { TabBar } from './TabBar.tsx'
+import { sidebarTabs } from './tabs.ts'
 import styles from './Sidebar.module.css'
 
 /**
@@ -15,6 +18,10 @@ export function Sidebar() {
   const app = useSnapshot(model)
   const connection = useSnapshot(model.connection)
   const bot = connection.bots.find((candidate) => candidate.name === connection.selectedProfile)
+  const tabs = sidebarTabs()
+  // Not kept across launches: the app opens on the sessions, as the Mac's.
+  const [tabID, setTabID] = useState(tabs[0]?.id ?? '')
+  const tab = tabs.find((candidate) => candidate.id === tabID) ?? tabs[0]
   return (
     <aside className={styles.sidebar} data-rail={app.railShown || undefined}>
       <header className={styles.band}>
@@ -28,7 +35,10 @@ export function Sidebar() {
       </header>
       <div className={styles.columns}>
         {app.railShown && <ProfileRail />}
-        <SessionList />
+        <div className={styles.list}>
+          <div className={styles.page}>{tab && <tab.Page />}</div>
+          {tabs.length > 1 && <TabBar tabs={tabs} selected={tab?.id ?? ''} onSelect={setTabID} />}
+        </div>
       </div>
     </aside>
   )

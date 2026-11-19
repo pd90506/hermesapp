@@ -8,7 +8,7 @@ module.exports = {
   files: ['out/**', 'package.json'],
   npmRebuild: false,
   asar: true,
-  // The Flutter app's icon (Apps/Desktop/talaria/windows/runner/resources/app_icon.ico).
+  // Both from the Mac app's icon (Apps/Shared/AppIcon.icon) by scripts/make-icons.py.
   win: { target: ['dir'], icon: 'resources/icon.ico' },
-  mac: { target: ['dir'], category: 'public.app-category.productivity' },
+  mac: { target: ['dir'], icon: 'resources/icon.png', category: 'public.app-category.productivity' },
 }

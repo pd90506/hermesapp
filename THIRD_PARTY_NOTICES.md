@@ -3,7 +3,9 @@
 ## Hermes Desktop app icon
 
 `Apps/Shared/AppIcon.icon` is adapted from `apps/desktop/assets/icon.icon` in
-[hermes-agent](https://github.com/NousResearch/hermes-agent) (commit `c0ef5af520`), under its MIT license. Changed: the dark-mode art and fill are used in every appearance.
+[hermes-agent](https://github.com/NousResearch/hermes-agent) (commit `c0ef5af520`), under its MIT license. Changed: the dark-mode art and fill are used in every appearance. The Electron app's
+`Apps/Desktop/electron/resources/icon.ico` and `icon.png` are rendered from the same art
+(`scripts/make-icons.py`).
 
 ```
 MIT License

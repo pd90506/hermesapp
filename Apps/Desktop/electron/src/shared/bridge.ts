@@ -8,7 +8,7 @@ import type { AppearanceSettingsJSON, MarkdownColorsJSON } from '@talaria/hermes
 export type Platform = 'windows' | 'mac' | 'linux'
 
 export interface BridgeHttpRequest {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   url: string
   headers?: Record<string, string>
   body?: string
@@ -60,6 +60,30 @@ export interface SavedSettings {
   appearance?: AppearanceSettingsJSON
   /** The colour theme and Markdown colours (HermesKit's `MarkdownColors`; its preset is the theme). */
   markdownColors?: MarkdownColorsJSON
+}
+
+/** A key with its modifiers, as a `KeyboardEvent` reports them. */
+export interface Shortcut {
+  key: string
+  ctrl?: boolean
+  meta?: boolean
+  alt?: boolean
+  shift?: boolean
+  /** As a menu or tooltip writes it: "⌘F", "Ctrl+F". */
+  label: string
+}
+
+export interface SidebarShortcuts {
+  /** Search Chats: ⌘F on macOS, Ctrl+F on Windows. */
+  search: Shortcut
+  /** Hide or show the profiles: ⌃⌘S on macOS (the system's sidebar key), Ctrl+Alt+S on Windows. */
+  toggleProfiles: Shortcut
+}
+
+export function sidebarShortcuts(platform: Platform): SidebarShortcuts {
+  return platform === 'mac'
+    ? { search: { key: 'f', meta: true, label: '⌘F' }, toggleProfiles: { key: 's', ctrl: true, meta: true, label: '⌃⌘S' } }
+    : { search: { key: 'f', ctrl: true, label: 'Ctrl+F' }, toggleProfiles: { key: 's', ctrl: true, alt: true, label: 'Ctrl+Alt+S' } }
 }
 
 export interface TalariaBridge {
@@ -118,6 +142,13 @@ export interface TalariaBridge {
     /** Colours the Windows caption buttons to match the page. */
     setCaptionColors(colors: { symbol: string }): void
   }
+  /** What the sidebar keeps across launches: pins, read marks, the lists as read last (`src/main/ipc/sidebar.ts`). */
+  sidebar: {
+    load(): Promise<unknown>
+    save(value: unknown): Promise<void>
+  }
+  /** The sidebar's shortcuts, in the platform's own keys (set by the preload). */
+  shortcuts: SidebarShortcuts
   links: {
     /** Opens a web or mail address in the system's browser or mail app; false when refused. */
     open(url: string): Promise<boolean>
@@ -177,6 +208,8 @@ export const IPC = {
   appearanceGet: 'talaria:appearance:get',
   appearanceChanged: 'talaria:appearance:changed',
   captionColors: 'talaria:caption:colors',
+  sidebarLoad: 'talaria:sidebar:load',
+  sidebarSave: 'talaria:sidebar:save',
   /* K: settings and servers */
   secretsLoad: 'talaria:secrets:load',
   secretsSave: 'talaria:secrets:save',

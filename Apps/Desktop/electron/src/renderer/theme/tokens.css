@@ -49,7 +49,7 @@
   --motion: 167ms;
   --ease: cubic-bezier(0, 0, 0, 1);
 
-  /* Type. Font families per platform in platform.css; CJK glyphs follow data-cjk. */
+  /* Type. Font families in platform.css; CJK glyphs follow data-cjk. */
   --font-cjk: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC';
   --weight-regular: 400;
   --weight-semibold: 600;
@@ -125,6 +125,29 @@
   }
 }
 
+/* H: sidebar (session rows, menus, tabs, search, banners). */
+:root {
+  /* WinUI's MenuFlyout: 8 px corners, 4 px padding, 32 px items, at least 120 wide. */
+  --menu-radius: 8px;
+  --menu-padding: 4px;
+  --menu-item-height: 32px;
+  --menu-min-width: 160px;
+  --menu-icon-gap: 12px;
+  --menu-surface: #f9f9f9;
+  --menu-stroke: rgb(0 0 0 / 0.06);
+  /* The Mac's tab capsule (SessionListTabBar): 34 tall, 3 inside, 6 above. */
+  --tab-bar-height: 34px;
+  --tab-bar-padding: 3px;
+  --tab-pill-fill: rgb(0 0 0 / 0.08);
+  --tab-bar-surface: rgb(255 255 255 / 0.72);
+  --tab-bar-stroke: rgb(0 0 0 / 0.08);
+  --banner-radius: 14px;
+  --status-dot: 8px;
+  --status-dot-ring: 1.5px;
+  --dialog-width: 360px;
+  --backdrop-dialog: rgb(0 0 0 / 0.3);
+}
+
 /* K: Settings, an overlay card over the window, the same on every platform (after Hermes
    Desktop's OverlayView / OverlaySplitLayout / ListRow, apps/desktop/src/app/overlays). */
 :root {
@@ -168,13 +191,10 @@
   --cron-run-indent: 29px;
   --cron-spinner: 10px;
   --cron-spinner-stroke: 1.5px;
-  --cron-menu-min-width: 200px;
-  --cron-menu-item-height: 28px;
   --cron-editor-width: 540px;
   --cron-control-width: 180px;
   --cron-button-min-width: 96px;
   --line-height-title: calc(var(--text-title) * var(--line-tight));
-  --cron-menu-fill: #f9f9f9;
   --cron-dialog-fill: #f9f9f9;
   --cron-dialog-scrim: rgb(0 0 0 / 0.3);
   /* The Mac row's paused dot is the system orange. */
@@ -183,7 +203,6 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --cron-menu-fill: #2c2c2c;
     --cron-dialog-fill: #202020;
     --cron-dialog-scrim: rgb(0 0 0 / 0.5);
     --cron-paused: #ff9f0a;
@@ -263,6 +282,17 @@
   --settings-code-size: 28px;
   --spinner-size: 12px;
   --spinner-stroke: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --menu-surface: #2c2c2c;
+    --menu-stroke: rgb(0 0 0 / 0.2);
+    --tab-pill-fill: rgb(255 255 255 / 0.1);
+    --tab-bar-surface: rgb(40 40 40 / 0.72);
+    --tab-bar-stroke: rgb(255 255 255 / 0.08);
+    --backdrop-dialog: rgb(0 0 0 / 0.5);
+  }
 }
 
 /* A: chat core (transcript, composer, request cards). Numbers from the Mac's ChatView,

@@ -5,6 +5,7 @@ import { DashboardHttp } from './dashboard-http.ts'
 import { Sockets } from './sockets.ts'
 import { loadSecret, loadSettings, saveSecret, saveSettings } from './store.ts'
 import { cjkLanguage } from './cjk.ts'
+import { registerLinks } from './ipc/links.ts'
 import { captionSymbolColor, currentPlatform, windowFrameOptions } from './window-frame.ts'
 
 // Its own data folder, `Talaria Desktop`: `Talaria` was the (now removed) Flutter app's,
@@ -93,6 +94,7 @@ function start(): void {
   ipcMain.handle(IPC.secretLoad, () => loadSecret())
   ipcMain.handle(IPC.secretSave, (_event, value: string | null) => saveSecret(value))
   ipcMain.handle(IPC.appearanceGet, () => appearance())
+  registerLinks()
   ipcMain.on(IPC.captionColors, (event, colors: { symbol: string }) => {
     const owner = BrowserWindow.fromWebContents(event.sender)
     if (!owner || platform === 'mac' || !/^#[0-9a-f]{6}$/i.test(colors.symbol)) return

@@ -72,6 +72,10 @@ export interface TalariaBridge {
     /** Colours the Windows caption buttons to match the page. */
     setCaptionColors(colors: { symbol: string }): void
   }
+  links: {
+    /** Opens a web or mail address in the system's browser or mail app; false when refused. */
+    open(url: string): Promise<boolean>
+  }
 }
 
 export const IPC = {
@@ -88,6 +92,7 @@ export const IPC = {
   appearanceGet: 'talaria:appearance:get',
   appearanceChanged: 'talaria:appearance:changed',
   captionColors: 'talaria:caption:colors',
+  linksOpen: 'talaria:links:open',
 } as const
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */

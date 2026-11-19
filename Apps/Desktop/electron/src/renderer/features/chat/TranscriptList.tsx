@@ -50,8 +50,6 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
     getItemKey: (index) => rows[index]!.key,
     estimateSize: (index) => estimate(rows[index]!),
     overscan: 6,
-    // Keeps the rows on screen in place when an older page lands above them.
-    anchorTo: 'end',
     paddingEnd: bottomInset,
     scrollPaddingEnd: bottomInset,
     ...(kept ? { initialMeasurementsCache: kept.measurements, initialOffset: kept.offset } : {}),
@@ -71,10 +69,24 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
   // A new prompt at the end (sent from here or elsewhere) brings the list back to the end.
   const newestPrompt = [...blocks].reverse().find((block) => block.kind === 'item' && block.item.role === 'user')?.id
   const seenPrompt = useRef(newestPrompt)
+  // The first message on screen and how far below the top it sits, so an older page
+  // landing above leaves it where it was (the header's key never changes, so the
+  // virtualizer's own anchor would hold the header instead).
+  const anchor = useRef<{ key: string; delta: number }>(undefined)
+  const firstBlock = blocks[0]?.id
+  const seenFirst = useRef(firstBlock)
   const restored = useRef(false)
   useLayoutEffect(() => {
     const element = scroller.current
     if (!element) return
+    if (firstBlock !== seenFirst.current) {
+      seenFirst.current = firstBlock
+      const held = anchor.current
+      if (held && !following.current && restored.current) {
+        const item = virtualizer.measurementsCache.find((candidate) => candidate.key === held.key)
+        if (item) element.scrollTop = item.start - held.delta
+      }
+    }
     if (newestPrompt !== seenPrompt.current) {
       seenPrompt.current = newestPrompt
       if (restored.current) following.current = true
@@ -97,9 +109,14 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
     setAwayFromEnd(distance > awayFromEndDistance)
     const shownBottom = bottom - bottomInset
     const shown = new Set<string>()
+    let first: { key: string; delta: number } | undefined
     for (const item of virtualizer.getVirtualItems()) {
-      if (item.end > top && item.start < shownBottom) shown.add(String(item.key))
+      if (item.end > top && item.start < shownBottom) {
+        shown.add(String(item.key))
+        if (!first && item.index > 0) first = { key: String(item.key), delta: item.start - top }
+      }
     }
+    anchor.current = first
     setVisible((old) => sameSet(old, shown) ? old : shown)
     position.current = { offset: top, atEnd: following.current }
   }, [virtualizer, bottomInset])

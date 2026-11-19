@@ -194,4 +194,97 @@ import Testing
             #expect(LocalBackend.readyPort(in: item.output) == item.port, "\(item.output)")
         }
     }
+    // MARK: turn-work.json
+
+    struct TurnWorkFixture: Decodable {
+        struct Block: Decodable, Equatable {
+            struct Work: Decodable, Equatable {
+                struct Entry: Decodable, Equatable {
+                    var commentary: String?
+                    var card: String?
+                    var group: String?
+                    var steps: [String]?
+                }
+                var title: String
+                var entries: [Entry]
+            }
+            var role: String?
+            var text: String?
+            var work: Work?
+        }
+        struct Turn: Decodable {
+            var name: String
+            var rows: [StoredMessage]
+            var expected: [Block]
+        }
+        struct ToolCall: Decodable {
+            struct Expected: Decodable {
+                var title: String
+                var status: String
+                var countLabel: String?
+            }
+            var name: String
+            var args: JSONValue?
+            var result: JSONValue?
+            var phase: String
+            var expected: Expected
+        }
+        var turns: [Turn]
+        var toolCalls: [ToolCall]
+    }
+
+    /// A turn's work as the chat folds it (`TranscriptGrouping`, `TurnWork`).
+    @Test func turnWorkFolds() throws {
+        let fixture = try Self.load("turn-work.json", as: TurnWorkFixture.self)
+        for turn in fixture.turns {
+            var calls: StoredMessageProjection.ToolCalls = [:]
+            let items = StoredMessageProjection.items(from: turn.rows, toolCalls: &calls)
+            let blocks = TranscriptGrouping.blocks(items, isRunning: false).map { block -> TurnWorkFixture.Block in
+                switch block {
+                case .item(let item):
+                    return TurnWorkFixture.Block(role: "\(item.role)", text: item.text, work: nil)
+                case .work(let work):
+                    let entries = work.entries.map { entry -> TurnWorkFixture.Block.Work.Entry in
+                        switch entry {
+                        case .commentary(let item):
+                            return .init(commentary: item.text, card: nil, group: nil, steps: nil)
+                        case .card(let item):
+                            return .init(commentary: nil, card: item.toolName, group: nil, steps: nil)
+                        case .group(let group):
+                            return .init(commentary: nil, card: nil, group: group.title,
+                                         steps: group.steps.map { "\($0.kind) · \($0.summary)" })
+                        }
+                    }
+                    let title = TurnWork.settledTitle(duration: work.duration, interrupted: work.wasInterrupted)
+                    return TurnWorkFixture.Block(role: nil, text: nil, work: .init(title: title, entries: entries))
+                }
+            }
+            #expect(blocks == turn.expected, "\(turn.name)")
+        }
+    }
+
+    /// Each tool call's title, status and count (`ToolCallView`).
+    @Test func toolCallViews() throws {
+        let fixture = try Self.load("turn-work.json", as: TurnWorkFixture.self)
+        for call in fixture.toolCalls {
+            let phase: ToolActivity.Phase = call.phase == "running" ? .running : call.phase == "failed" ? .failed : .complete
+            var item = TranscriptItem(id: "t", role: .tool, text: "", isActive: phase == .running)
+            item.toolName = call.name
+            var tool = ToolActivity(toolID: "t", name: call.name, phase: phase)
+            tool.args = call.args
+            tool.result = call.result
+            item.tool = tool
+            let view = ToolCallView(item)
+            let status: String = switch view.status {
+            case .running: "running"
+            case .success: "success"
+            case .error: "error"
+            case .notice: "notice"
+            case .warning: "warning"
+            }
+            #expect(view.title == call.expected.title, "\(call.name)")
+            #expect(status == call.expected.status, "\(call.name): \(view.title)")
+            #expect(view.countLabel == call.expected.countLabel, "\(call.name): \(view.title)")
+        }
+    }
 }

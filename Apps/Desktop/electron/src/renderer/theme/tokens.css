@@ -299,3 +299,35 @@
     --shadow-glass: 0 4px 16px rgb(0 0 0 / 0.3);
   }
 }
+
+/* C: a turn's work, reasoning and tool calls (features/chat/blocks/work). Sizes from the
+   Mac's TurnWorkView, WorkStepCard and ToolTextBox (MessageRowContent.swift); the lines
+   are the callout style (12 pt at a 13 pt body). */
+:root {
+  --work-text: round(nearest, calc(var(--text-body) * 12 / 13), 1px);
+  --work-label: round(nearest, calc(var(--text-caption) * 10 / 11), 1px);
+  --work-icon: 14px;
+  --work-chevron: 10px;
+  --work-indent: 20px;
+  --work-spinner: 11px;
+  --work-spinner-stroke: 1.5px;
+  --work-status-dot: 7px;
+  --work-focus-ring: 2px;
+  --work-box-line: 1.4em;
+  --work-box-padding-y: 4px;
+  --work-card-fill: color-mix(in srgb, var(--text) 3%, transparent);
+  --work-card-stroke: var(--divider);
+  --work-box-fill: color-mix(in srgb, var(--text) 4%, transparent);
+  /* The review line's gold-to-purple (Desktop's .tool-memory-legendary-*). */
+  --review-gradient: linear-gradient(to right, #d8a32e, #b0638a, #9a6ee0);
+  --review-icon: #b87a5a;
+  --review-glow: rgb(146 84 222 / 0.38);
+  --review-detail: #8a6fae;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --review-gradient: linear-gradient(to right, #f2c15c, #d07aa4, #b495f5);
+    --review-detail: #a993c8;
+  }
+}

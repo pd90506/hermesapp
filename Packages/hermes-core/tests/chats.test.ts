@@ -239,7 +239,8 @@ describe('the list', () => {
     const items = ['user', 'assistant', 'tool', 'assistant', 'user'].map((role, index) =>
       ({ id: `i${index}`, role, text: 'x', reasoning: '', images: [], attachments: [], attachmentPaths: [], isActive: false, isInterim: false })) as never
     const blocks = transcriptBlocks(items)
-    expect(MessagesBelow.count(blocks, new Set(['i0']))).toBe(3)
+    // The turn's commentary and tool call fold into its work, which with the answer is one reply (C).
+    expect(MessagesBelow.count(blocks, new Set(['i0']))).toBe(2)
     expect(MessagesBelow.title(3)).toBe('3 messages')
     expect(MessagesBelow.title(0)).toBe('Scroll to bottom')
     expect(PaintBudget.firstPaintStart(blocks)).toBe(0)

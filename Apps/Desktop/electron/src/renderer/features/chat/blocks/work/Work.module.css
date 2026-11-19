@@ -1,0 +1,499 @@
+/* A turn's work, its groups, steps and step cards, tool rows and notice lines (package C;
+   the Mac's TurnWorkView, StepGroupView, WorkStepView, WorkStepCard, ToolMessageContent,
+   BackgroundNoticeRow, ReviewNoteRow in MessageRowContent.swift). The same on every platform. */
+
+/* The line every fold opens with: the whole line is the button. */
+.fold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--work-text);
+  line-height: var(--line-tight);
+  color: var(--text-secondary);
+  text-align: start;
+  cursor: pointer;
+}
+
+.fold:disabled {
+  cursor: default;
+}
+
+.fold:focus-visible {
+  outline: var(--work-focus-ring) solid var(--accent);
+  outline-offset: var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.chevron {
+  flex: none;
+  width: var(--work-chevron);
+  height: var(--work-chevron);
+  fill: none;
+  stroke: var(--text-tertiary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A turn's groups and steps read as plain lines: their chevron shows under the pointer. */
+.fold[data-chevron='onHover'] .chevron {
+  opacity: 0;
+}
+
+.fold[data-chevron='onHover']:is(:hover, :focus-visible) .chevron,
+.fold[data-chevron='onHover'][aria-expanded='true']:hover .chevron {
+  opacity: 1;
+}
+
+.glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--work-icon);
+  height: var(--work-icon);
+}
+
+.icon {
+  width: var(--work-icon);
+  height: var(--work-icon);
+  fill: none;
+  stroke: var(--text-tertiary);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon[data-tone='critical'] { stroke: var(--critical); }
+.icon[data-tone='caution'] { stroke: var(--caution); }
+.icon[data-tone='review'] {
+  stroke: var(--review-icon);
+  filter: drop-shadow(0 0 var(--space-1) var(--review-glow));
+}
+
+.spinner {
+  box-sizing: border-box;
+  width: var(--work-spinner);
+  height: var(--work-spinner);
+  border: var(--work-spinner-stroke) solid var(--divider);
+  border-top-color: var(--text-secondary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title[data-tone='pending'] { color: var(--text-tertiary); }
+.title[data-tone='critical'] { color: var(--critical); }
+.title[data-tone='caution'] { color: var(--caution); }
+
+.meta {
+  flex: none;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.added,
+.removed {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.added { color: var(--success); }
+.removed { color: var(--critical); }
+
+/* Layer 1: "Completed in 45s", a rule, then (open) the turn's commentary and groups. */
+.work {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.workLine {
+  width: auto;
+  align-self: flex-start;
+}
+
+.workTitle {
+  font-variant-numeric: tabular-nums;
+}
+
+.rule {
+  height: var(--hairline);
+  background: var(--divider);
+}
+
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Layer 2: a group of steps, its steps indented under its icon. */
+.group,
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.groupTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-inline-start: var(--work-indent);
+}
+
+.stepKind {
+  flex: none;
+  white-space: nowrap;
+}
+
+.stepKind[data-tone='critical'] { color: var(--critical); }
+
+.dot,
+.stepSummary {
+  color: var(--text-tertiary);
+}
+
+.dot { flex: none; }
+
+.stepSummary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Layer 3: an opened step's card. */
+.card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hairline) solid var(--work-card-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--work-card-fill);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.cardStatus {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--work-icon);
+  height: calc(var(--text-caption) * var(--line-tight));
+}
+
+.statusDot {
+  width: var(--work-status-dot);
+  height: var(--work-status-dot);
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.statusDot[data-tone='success'] { background: var(--success); }
+.statusDot[data-tone='critical'] { background: var(--critical); }
+.statusDot[data-tone='caution'] { background: var(--caution); }
+
+.cardHeading {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardLabel {
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+}
+
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-caption);
+  line-height: var(--line-tight);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cardTitle {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.commandHeading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cardCommand {
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-caption);
+  line-height: var(--line-body);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.cardBody {
+  padding: var(--space-4);
+  border-top: var(--hairline) solid var(--work-card-stroke);
+}
+
+.copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  cursor: pointer;
+  --icon-size: var(--work-icon);
+}
+
+.copy:hover { background: var(--fill-hover); }
+.copy:active { background: var(--fill-pressed); }
+
+/* The reasoning, as it reads once shown: smaller than the reply, in the secondary colour. */
+.reasoning :global([data-markdown]) {
+  font-size: var(--work-text);
+  color: var(--text-secondary);
+}
+
+/* A tool call on its own row: opened, a bordered card around its line and body. */
+.toolCall {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.toolCall[data-open] {
+  border-color: var(--work-card-stroke);
+}
+
+.toolCall[data-open] .toolCallLine {
+  padding: var(--space-3) var(--space-4);
+}
+
+.toolCallBody {
+  padding: var(--space-3);
+  border-top: var(--hairline) solid var(--work-card-stroke);
+}
+
+/* What an opened call shows. */
+.callBody,
+.section,
+.hits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.section { gap: var(--space-2); }
+
+.sectionLabel {
+  font-size: var(--work-label);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.errorSummary {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--critical);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.commandLine {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border: var(--hairline) solid var(--work-card-stroke);
+  border-radius: var(--radius-sm);
+  background: var(--work-box-fill);
+}
+
+.command {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.prompt { color: var(--accent); }
+
+.exitCode {
+  flex: none;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--fill-selected);
+  font-family: var(--font-mono), monospace;
+  font-size: var(--work-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--caution);
+}
+
+.exitCode[data-ok] { color: var(--success); }
+
+.hitQuery {
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.hitQueryLabel { color: var(--text-tertiary); }
+
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.hitTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--md-link, var(--accent));
+  text-decoration: none;
+}
+
+a.hitTitle:hover { text-decoration: underline; }
+
+.hitSnippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: var(--work-label);
+  color: var(--text-tertiary);
+}
+
+/* A block of a call's text; past its lines it scrolls inside itself. */
+.textBox {
+  padding: var(--work-box-padding-y) var(--space-3);
+  font-size: var(--text-caption);
+  line-height: var(--work-box-line);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.textBox[data-kind='code'],
+.textBox[data-kind='diff'] {
+  font-family: var(--font-mono), monospace;
+}
+
+.textBox[data-muted] { color: var(--text-tertiary); }
+.textBox[data-scrolls] { overflow-y: auto; }
+
+.textBox [data-line='added'] { color: var(--success); }
+.textBox [data-line='removed'] { color: var(--critical); }
+
+/* A background notice: a bell and its headline, opening to the command and output. */
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.noticeBody {
+  margin-inline-start: var(--work-indent);
+  border-radius: var(--radius-md);
+  background: var(--work-box-fill);
+}
+
+/* The self-improvement review: a glowing brain, the label in a gold-to-purple gradient,
+   the detail in purple, one line until opened. */
+.review {
+  min-width: 0;
+}
+
+.reviewFold:disabled {
+  user-select: text;
+}
+
+.reviewLabel {
+  flex: none;
+  font-weight: var(--weight-semibold);
+  background: var(--review-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.reviewDetail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--review-detail);
+}
+
+.reviewDetail[data-open] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.reviewFold[aria-expanded='true'] {
+  align-items: flex-start;
+}

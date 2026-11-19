@@ -1,17 +1,26 @@
-import { isBlankReply, isQueuedPrompt, type TranscriptItem } from './items.ts'
+import { isBlankReply, type TranscriptItem } from './items.ts'
+import { backgroundNotice, reviewNote } from './work/notices.ts'
+import { groupTurns, type TurnWork } from './work/turn-work.ts'
 
 /**
  * What the chat lists, one row each (HermesKit's `TranscriptBlock`): a message, or a
- * turn's work folded into one block. Package A lists every row as an `item` block;
- * package C replaces `transcriptBlocks` with the turn grouping and registers `work`.
+ * turn's work before its answer folded into one block (package C, `TurnWork`).
  */
 export type TranscriptBlock =
   | { kind: 'item'; id: string; item: TranscriptItem }
-  | { kind: 'work'; id: string; items: readonly TranscriptItem[]; answer?: TranscriptItem }
+  | { kind: 'work'; id: string; items: readonly TranscriptItem[]; work: TurnWork }
 
-/** The renderer key of a block (`features/chat/blocks/registry.ts`). */
+/**
+ * The renderer key of a block (`features/chat/blocks/registry.ts`): a row's role, else
+ * `work`; a user row Hermes wrote for finished background work is `backgroundNotice`, a
+ * system row of the self-improvement review is `review` (package C).
+ */
 export function blockKind(block: TranscriptBlock): string {
-  return block.kind === 'item' ? block.item.role : block.kind
+  if (block.kind === 'work') return 'work'
+  const item = block.item
+  if (item.role === 'user' && backgroundNotice(item)) return 'backgroundNotice'
+  if (item.role === 'system' && reviewNote(item)) return 'review'
+  return item.role
 }
 
 /** The rows a block holds. */
@@ -20,16 +29,23 @@ export function blockItems(block: TranscriptBlock): readonly TranscriptItem[] {
 }
 
 /**
- * The transcript's rows as blocks. A prompt waiting in Hermes's queue is not listed:
- * it waits above the composer (`Transcript.queuedPrompts`).
+ * The transcript's rows as blocks (HermesKit's `TranscriptGrouping.blocks`): each turn's
+ * work before its answer is one `work` block. A prompt waiting in Hermes's queue is not
+ * listed: it waits above the composer (`Transcript.queuedPrompts`).
  */
-export function transcriptBlocks(items: readonly TranscriptItem[], _isRunning = false): TranscriptBlock[] {
-  const blocks: TranscriptBlock[] = []
-  for (const item of items) {
-    if (isQueuedPrompt(item)) continue
-    blocks.push({ kind: 'item', id: item.id, item })
-  }
-  return blocks
+export function transcriptBlocks(items: readonly TranscriptItem[], isRunning = false): TranscriptBlock[] {
+  return groupTurns(items, isRunning).map((block): TranscriptBlock => block.kind === 'item'
+    ? { kind: 'item', id: block.item.id, item: block.item }
+    : { kind: 'work', id: block.work.id, items: block.work.items, work: block.work })
+}
+
+/**
+ * The id of the block that draws the row `itemID`, or undefined when none holds it. A
+ * work block is named after its first row and an older page can hold earlier rows of
+ * the same turn, so a place is kept by a row's id (`TranscriptGrouping.blockID`).
+ */
+export function blockIDContaining(itemID: string, blocks: readonly TranscriptBlock[]): string | undefined {
+  return blocks.find((block) => blockItems(block).some((item) => item.id === itemID))?.id
 }
 
 /**

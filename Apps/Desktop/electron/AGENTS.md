@@ -32,7 +32,17 @@ Don't edit `ChatView`, `TranscriptList` or `Composer` to place your feature.
 | Chat pills | `registerChatPill({ id, order, Pill })` in `features/chat/overlay.ts` | `features/chat/registered-pills.ts` | The row of the scroll-to-bottom button over the composer (J). The scroll button is at order 100. A pill returns `null` when it has nothing to show. |
 
 Components get the `ChatSession` (and, for slots, its `ChatComposer`); read them with
-`useSnapshot`. Which blocks the list shows at all is `isListed` in `TranscriptList.tsx`
+`useSnapshot`.
+
+**A turn's work (C).** `transcriptBlocks` folds each turn's work before its answer into one
+`work` block (`hermes-core/src/session/work/`: `TurnWork`, `ToolCallView`, `ToolCallSummary`);
+`features/chat/blocks/work/` draws it in the three layers of PR #59 and registers `work`,
+`tool`, `backgroundNotice` (a user row Hermes wrote for finished background work) and
+`review` (the self-improvement review's line). A turn's commentary is drawn by the
+`assistant` renderer inside the opened work: an action bar there reads
+`useIsInTurnWork()` (`blocks/work/remembered.ts`) and stays hidden, as on the Mac. A fold's
+open state is kept per chat with `useRemembered(chat, key, initial)`, so it survives the
+virtual list building its row again. Which blocks the list shows at all is `isListed` in `TranscriptList.tsx`
 (grouping into `work` blocks is `transcriptBlocks` in hermes-core, C's to change).
 
 ## Styles

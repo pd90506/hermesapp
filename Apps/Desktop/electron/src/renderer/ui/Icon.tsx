@@ -24,7 +24,7 @@ const icons = {
   /** Fluent More / SF `ellipsis`. */
   more: {
     glyph: '\u{E712}',
-    path: 'M3.5 8h.01M8 8h.01M12.5 8h.01',
+    path: 'M3 8a.6.6 0 1 0 1.2 0a.6.6 0 1 0-1.2 0zM7.4 8a.6.6 0 1 0 1.2 0a.6.6 0 1 0-1.2 0zM11.8 8a.6.6 0 1 0 1.2 0a.6.6 0 1 0-1.2 0z',
   },
   /** Fluent Search / SF `magnifyingglass`. */
   search: {

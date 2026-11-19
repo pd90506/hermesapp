@@ -78,6 +78,10 @@ export interface TalariaBridge {
     /** Colours the Windows caption buttons to match the page. */
     setCaptionColors(colors: { symbol: string }): void
   }
+  links: {
+    /** Opens a web or mail address in the system's browser or mail app; false when refused. */
+    open(url: string): Promise<boolean>
+  },
   theme: {
     /** Light, dark or the system's look for the whole app (`nativeTheme.themeSource`). */
     setMode(mode: AppearanceMode): void
@@ -100,6 +104,7 @@ export const IPC = {
   appearanceGet: 'talaria:appearance:get',
   appearanceChanged: 'talaria:appearance:changed',
   captionColors: 'talaria:caption:colors',
+  linksOpen: 'talaria:links:open',
   themeSetMode: 'talaria:theme:set-mode',
 } as const
 

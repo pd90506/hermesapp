@@ -125,6 +125,44 @@
   }
 }
 
+/* B Markdown: message text (features/markdown). Spacing from the Mac's MarkdownLayout
+   (SelectableMarkdownText.swift) and MarkdownTableGrid; heading sizes are the macOS text
+   styles over body (title2 17, title3 15, headline 13, subheadline 11 at body 13). */
+:root {
+  --md-block-gap: 10px;
+  --md-list-item-gap: 6px;
+  --md-heading-gap-major: 6px;
+  --md-heading-gap-minor: 2px;
+  --md-quote-indent: 12px;
+  --md-quote-bar-width: 3px;
+  --md-list-marker-column: 12px;
+  --md-list-ordered-column: 20px;
+  --md-list-marker-gap: 6px;
+  --md-code-padding: 10px;
+  --md-code-header-top: 6px;
+  --md-code-header-bottom: 4px;
+  --md-code-copy-width: 24px;
+  --md-code-copy-height: 20px;
+  --md-code-radius: 8px;
+  --md-inline-code-radius: 4px;
+  --md-table-cell-padding-x: 10px;
+  --md-table-cell-padding-y: 6px;
+  --md-table-radius: 6px;
+  /* A long column wraps down to 10 em before the table reaches past the text's column. */
+  --md-table-wrap: 10em;
+  /* How far a table may reach past each side of the column into the window's spare
+     width; the chat column sets it (the Mac's tableReach), 0 elsewhere. */
+  --md-table-reach: 0px;
+  --md-h1: 1.3077em;
+  --md-h2: 1.1538em;
+  --md-h3: 1em;
+  --md-h4: 0.8462em;
+  --md-code-label: 0.7692em;
+  --md-code-line: 1.4;
+  --md-code-size: 0.9231em;
+  --md-line: 1.35;
+}
+
 /* M */
 /* Appearance (features/settings/appearance): the System theme's user bubble and composer
    (the Mac's: the accent at 15%, the control background), and the text sizes. A colour

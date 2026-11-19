@@ -4,7 +4,7 @@ import {
   arrayValue, isRecord, jsonEqual, length, nonEmpty, numberValue, parseJSON, prefix, sortedJSON, stringValue, trimmed,
   trimSpaces, type JSONRecord,
 } from './json.ts'
-import { basename, fileEditTools, hostname, ToolCallSummary } from './tool-call-summary.ts'
+import { basename, fileEditTools, hostname, toolCallOf, ToolCallSummary } from './tool-call-summary.ts'
 import { capitalize, firstString, numberText, ToolResultText, unwrapPayload } from './tool-result-text.ts'
 
 export type ToolCallStatus =
@@ -64,9 +64,10 @@ interface Part {
 /** The view of a tool row. */
 export function toolCallView(item: TranscriptItem): ToolCallView {
   const tool = item.tool
-  const name = item.toolName ?? tool?.name ?? 'tool'
+  const call = toolCallOf(item)
+  const name = call.name
   // Before its arguments arrive, a call is known by the gateway's preview of them.
-  let args = tool?.args
+  let args = call.args
   const context = tool?.context ?? item.detail
   if (Object.keys(record(args)).length === 0 && context !== undefined && context !== '') args = { context }
   return buildToolCallView({

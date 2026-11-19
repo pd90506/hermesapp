@@ -66,18 +66,46 @@ function category(name: string): Category {
 
 /** The tool a row calls. */
 export function toolNameOf(tool: TranscriptItem): string {
-  return tool.toolName ?? tool.tool?.name ?? 'tool'
+  return toolCallOf(tool).name
+}
+
+/** The name of Hermes's bridge to deferred tools (`tools/tool_search_catalog.py`, `TOOL_CALL_NAME`). */
+export const toolCallBridge = 'tool_call'
+
+/**
+ * The call a row stands for. A reloaded transcript keeps the model's own call, so a
+ * deferred tool reached through the `tool_call` bridge is stored under the bridge's name
+ * with `{name, arguments}` (or `{calls: [...]}`) as its arguments; one inner call stands
+ * for itself, as Desktop reads it (`toolPreviewTarget`, `connector-tool.tsx`). A bridge
+ * running several calls stays the bridge.
+ */
+export function unbridgedCall(name: string, args: JSONValue | undefined): { name: string; args: JSONValue | undefined } {
+  if (name !== toolCallBridge) return { name, args }
+  const record = typeof args === 'string' ? parseJSON(args) : args
+  if (!isRecord(record)) return { name, args }
+  const calls = Array.isArray(record.calls) ? record.calls : [record]
+  if (calls.length !== 1) return { name, args }
+  const call = typeof calls[0] === 'string' ? parseJSON(calls[0]) : calls[0]
+  const inner = isRecord(call) ? stringValue(call.name)?.trim() : undefined
+  if (!inner || !isRecord(call)) return { name, args }
+  const innerArgs = typeof call.arguments === 'string' ? parseJSON(call.arguments) : call.arguments
+  return { name: inner, args: innerArgs ?? {} }
+}
+
+/** A row's tool name and arguments, through the `tool_call` bridge. */
+export function toolCallOf(tool: TranscriptItem): { name: string; args: JSONValue | undefined } {
+  return unbridgedCall(tool.toolName ?? tool.tool?.name ?? 'tool', tool.tool?.args)
 }
 
 /** A row for a file edit (`edit_file`, `patch`, `write_file`). */
-export const isFileEdit = (item: TranscriptItem): boolean => item.role === 'tool' && fileEditTools.has(item.toolName ?? item.tool?.name ?? '')
+export const isFileEdit = (item: TranscriptItem): boolean => item.role === 'tool' && fileEditTools.has(toolNameOf(item))
 
 /** A call Desktop draws as its own card (`isCardTool`, `lib/tool-render-class.ts`). */
-export const isCardTool = (item: TranscriptItem): boolean => item.role === 'tool' && cardTools.has(item.toolName ?? item.tool?.name ?? '')
+export const isCardTool = (item: TranscriptItem): boolean => item.role === 'tool' && cardTools.has(toolNameOf(item))
 
 /** The call's arguments as an object; a JSON-encoded string is decoded. */
 export function toolArgs(tool: TranscriptItem): JSONRecord {
-  const args = tool.tool?.args
+  const args = toolCallOf(tool).args
   if (isRecord(args)) return args
   if (typeof args === 'string') {
     const parsed = parseJSON(args)

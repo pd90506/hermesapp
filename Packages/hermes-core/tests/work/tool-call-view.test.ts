@@ -25,6 +25,17 @@ function call(name: string, options: { args?: JSONValue; result?: JSONValue; pha
 const path = '/home/u/papers/2026-wiechman-institutional-system-robustness.md'
 
 describe('tool calls', () => {
+  test('a deferred tool reached through the tool_call bridge is known by its own name', () => {
+    const bridged = call('tool_call', { args: { name: 'read_file', arguments: JSON.stringify({ path: 'a/notes.md' }) }, result: { content: '1|# Notes' } })
+    const view = toolCallView(bridged)
+    expect(view.toolName).toBe('read_file')
+    expect(view.title).toBe('Read notes.md')
+    const batch = call('tool_call', { args: { calls: [{ name: 'web_search', arguments: { query: 'tea' } }] }, result: { results: [] } })
+    expect(toolCallView(batch).toolName).toBe('web_search')
+    const several = call('tool_call', { args: { calls: [{ name: 'a', arguments: {} }, { name: 'b', arguments: {} }] }, result: {} })
+    expect(toolCallView(several).toolName).toBe('tool_call')
+  })
+
   test('a read names its file and lines and opens to them', () => {
     const content = '237|To address the limitations\n238|Institutional costs, flexibility, and\n259|end'
     const view = toolCallView(call('read_file', { args: { path, offset: 237, limit: 23 }, result: { content, total_lines: 400 } }))
@@ -172,6 +183,9 @@ describe('background notices', () => {
     expect(heartbeat!.headline.startsWith('Background process proc_1 heartbeat #2')).toBe(true)
     expect(parseBackgroundNotice('[ASYNC DELEGATION COMPLETE — d_9]\nA background subagent you dispatched earlier has finished.')!.headline)
       .toBe('[ASYNC DELEGATION COMPLETE — d_9]')
+    const batch = parseBackgroundNotice('[ASYNC DELEGATION BATCH COMPLETE — 2 tasks]\nA background fan-out of 2 subagent(s) you dispatched earlier has finished.\n\nTask 1: done')!
+    expect(batch.headline).toBe('[ASYNC DELEGATION BATCH COMPLETE — 2 tasks]')
+    expect(batch.detail).toContain('Task 1: done')
     expect(parseBackgroundNotice('A background subagent you dispatched earlier has finished. Result: ok')).toBeDefined()
   })
 

@@ -79,7 +79,7 @@ export function Composer({ chat, composer, isConnected }: { chat: ChatSession; c
               <>
                 {(composer.canSubmit || view.isSubmitting) && (view.isSubmitting
                   ? <CancelSend quiet onClick={() => composer.cancelSubmit()} />
-                  : <CircleButton quiet label="Send" title="Send now; Hermes handles it after the current reply" disabled={!composer.canSubmit} onClick={submit} icon="send" />)}
+                  : <CircleButton quiet label="Send" title="Queue it to send after the current reply. Above the message box you can steer it in now or cancel it." disabled={!composer.canSubmit} onClick={submit} icon="send" />)}
                 <CircleButton label="Stop" title="Stop the reply" disabled={!isConnected} onClick={stop} icon="stop" />
               </>
             ) : view.isSubmitting ? (

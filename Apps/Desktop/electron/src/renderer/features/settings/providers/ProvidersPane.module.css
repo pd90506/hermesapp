@@ -1,0 +1,170 @@
+/* The Providers pane (L), in Settings' row layout (ui/Rows.module.css). */
+.pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.picker {
+  min-width: var(--settings-search-width);
+}
+
+.value {
+  color: var(--text-secondary);
+  user-select: text;
+}
+
+.placeholder {
+  color: var(--text-secondary);
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-9);
+}
+
+.connected {
+  color: var(--success);
+}
+
+.searchRow {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) var(--space-5);
+}
+
+.group {
+  display: block;
+}
+
+.groupSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-2);
+  border-radius: var(--radius-md);
+  list-style-position: inside;
+}
+
+.groupSummary:hover {
+  background: var(--fill-hover);
+}
+
+.groupName {
+  flex: 1;
+}
+
+.check {
+  color: var(--success);
+  font-weight: var(--weight-bold);
+}
+
+.groupBody {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 var(--space-4) var(--space-7);
+}
+
+.groupDescription {
+  margin: 0 var(--space-5) var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  line-height: var(--line-body);
+  user-select: text;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.link,
+.primaryLink {
+  align-self: flex-start;
+  margin: var(--space-2) var(--space-5);
+  font-size: var(--text-caption);
+  color: var(--accent);
+}
+
+.primaryLink {
+  display: inline-flex;
+  align-items: center;
+  height: var(--settings-field-height);
+  margin: 0;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-body);
+  text-decoration: none;
+}
+
+.badge {
+  padding: 0 var(--space-3);
+  border-radius: var(--settings-field-height);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+}
+
+.oneLine {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--accent);
+  text-align: left;
+}
+
+.addRow:hover {
+  background: var(--fill-hover);
+}
+
+.signIn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-7);
+  text-align: center;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--settings-code-size);
+  font-weight: var(--weight-semibold);
+  user-select: text;
+}
+
+.signInActions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.approved {
+  margin: 0;
+  color: var(--success);
+  font-size: var(--text-dialog-title);
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}

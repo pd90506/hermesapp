@@ -1,14 +1,15 @@
 import { Bot, historyRows, type ProfileRow, type SessionSummary } from './bots.ts'
-import { GatewayClient, type GatewayClientConfiguration, type GatewayReady } from './client.ts'
+import { GatewayClient, GatewayClientError, type GatewayClientConfiguration, type GatewayReady } from './client.ts'
 import type { GatewayConnector } from './connector.ts'
 import { DashboardError } from './dashboard.ts'
-import { dashboardAPIFor } from './dashboard-api.ts'
+import { dashboardAPIFor, type DashboardAPI } from './dashboard-api.ts'
 import { describeError } from './describe.ts'
 import { Observable } from './observable.ts'
 import { EventType, GatewayMethod } from './protocol/methods.ts'
 import type { JSONValue } from './protocol/jsonrpc.ts'
 import { ChatManager } from './session/chats.ts'
 import { messagesSource } from './session/messages-source.ts'
+import { defaultSourceSettings, showsSource, type SessionSourceSettings } from './settings/sources.ts'
 
 export type LinkState =
   | { phase: 'disconnected' }
@@ -73,6 +74,8 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
   private sessionListToken = 0
   /** The `session.list` limit that settled, per profile. */
   private readonly sessionListLimits = new Map<string, number>()
+  /** Settings ▸ Session Sources: which listed sources the lists hide. */
+  private sourceSettings: SessionSourceSettings = defaultSourceSettings
   private readonly options: Required<Omit<GatewayConnectionOptions, 'client' | 'maxReconnectAttempts'>> &
     Pick<GatewayConnectionOptions, 'client' | 'maxReconnectAttempts'>
 
@@ -153,6 +156,20 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     this.sessionListLimits.clear()
     this.chats.reset()
     this.update({ ...initial })
+  }
+
+  /** Hides the sources Settings ▸ Session Sources hides, and reads the list again. */
+  setSourceSettings(settings: SessionSourceSettings): void {
+    this.sourceSettings = settings
+    void this.refreshSessionList()
+  }
+
+  /** The connector's REST routes (settings panes, cron), while one is set; undefined without REST access. */
+  get dashboardAPI(): DashboardAPI | undefined { return dashboardAPIFor(this.connector) }
+
+  /** One call on the live socket (`plugins.manage`); throws `notConnected` without one. */
+  call(method: string, params?: JSONValue): Promise<JSONValue> {
+    return this.client ? this.client.call(method, params) : Promise.reject(new GatewayClientError('notConnected'))
   }
 
   /** Shows `profile`'s sessions, reading them when they are not there yet. */
@@ -299,7 +316,7 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
           this.sessionListLimits.set(profile, limit)
           const bot = this.get().bots.find((candidate) => candidate.name === profile)
           this.update({
-            sessions: { ...this.get().sessions, [profile]: historyRows(rows, bot) },
+            sessions: { ...this.get().sessions, [profile]: historyRows(rows, bot).filter((row) => showsSource(this.sourceSettings, row.source)) },
             sessionListLoading: false,
           })
           return

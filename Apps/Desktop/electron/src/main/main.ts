@@ -5,7 +5,12 @@ import { DashboardHttp } from './dashboard-http.ts'
 import { Sockets } from './sockets.ts'
 import { loadSecret, loadSettings, saveSecret, saveSettings } from './store.ts'
 import { cjkLanguage } from './cjk.ts'
+import { registerLinks } from './ipc/links.ts'
+import { registerAppearance } from './ipc/appearance.ts'
 import { captionSymbolColor, currentPlatform, windowFrameOptions } from './window-frame.ts'
+import { registerLocalBackend } from './ipc/local-backend.ts'
+import { registerServers } from './ipc/servers.ts'
+import { attachSettingsShortcut, registerSettingsMenu } from './ipc/settings-window.ts'
 
 // Its own data folder, `Talaria Desktop`: `Talaria` was the (now removed) Flutter app's,
 // with another settings.json, and may still be on a machine.
@@ -72,7 +77,9 @@ function createWindow(): void {
     if (window === created) window = undefined
   })
   // Links open in the browser; the window never navigates away from the app.
-  created.webContents.setWindowOpenHandler(({ url }) => {
+  attachSettingsShortcut(platform, created)
+  created.webContents.setWindowOpenHandler((details) => {
+    const url = details.url
     if (/^https?:/i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -83,6 +90,7 @@ function createWindow(): void {
 }
 
 function start(): void {
+  registerAppearance()
   ipcMain.handle(IPC.httpSend, (_event, request: BridgeHttpRequest) => http.send(request))
   ipcMain.handle(IPC.httpReset, () => http.reset())
   ipcMain.handle(IPC.socketOpen, (event, url: string) => sockets.connect(event.sender, url))
@@ -93,6 +101,10 @@ function start(): void {
   ipcMain.handle(IPC.secretLoad, () => loadSecret())
   ipcMain.handle(IPC.secretSave, (_event, value: string | null) => saveSecret(value))
   ipcMain.handle(IPC.appearanceGet, () => appearance())
+  registerServers()
+  registerLocalBackend(platform)
+  registerSettingsMenu(platform, () => window)
+  registerLinks()
   ipcMain.on(IPC.captionColors, (event, colors: { symbol: string }) => {
     const owner = BrowserWindow.fromWebContents(event.sender)
     if (!owner || platform === 'mac' || !/^#[0-9a-f]{6}$/i.test(colors.symbol)) return

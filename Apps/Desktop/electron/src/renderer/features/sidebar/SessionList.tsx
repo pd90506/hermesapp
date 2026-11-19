@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Bot, SessionSummary } from '@talaria/hermes-core'
-import { useConnection, useModel, useSnapshot } from '../../app/hooks.ts'
+import { useConnection, useConnectionSnapshot, useSnapshot } from '../../app/hooks.ts'
 import styles from './SessionList.module.css'
 
 const noSubscription = () => () => {}
@@ -11,8 +11,7 @@ const noSubscription = () => () => {}
  * opens the chat; pins, date groups and the row menu come later.
  */
 export function SessionList() {
-  const model = useModel()
-  const snapshot = useSnapshot(model.connection)
+  const snapshot = useConnectionSnapshot()
   const bot = snapshot.bots.find((candidate) => candidate.name === snapshot.selectedProfile)
   const sessions = snapshot.selectedProfile ? snapshot.sessions[snapshot.selectedProfile] : undefined
   return (

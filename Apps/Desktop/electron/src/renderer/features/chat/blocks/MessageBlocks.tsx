@@ -1,9 +1,10 @@
 import { isCompressionNote } from '@talaria/hermes-core'
 import type { BlockProps } from './registry.ts'
 import styles from './MessageBlocks.module.css'
+import { Markdown } from '../../markdown/Markdown.tsx'
 
-// The plain renderers package A registers (the Mac's `MessageRow`). B replaces
-// `assistant` with Markdown, C replaces `tool` and adds `work`, G adds the action bars.
+// The renderers package A registers (the Mac's `MessageRow`); replies use B's Markdown.
+// C replaces `tool` and adds `work`, G adds the action bars.
 
 /** The user's prompt as typed, in a bubble at the trailing edge. */
 export function UserBlock({ block }: BlockProps) {
@@ -25,10 +26,10 @@ export function UserBlock({ block }: BlockProps) {
   )
 }
 
-/** A reply, as plain text until package B's Markdown; its reasoning is package C's fold. */
+/** A reply in Markdown (package B); its reasoning is package C's fold. */
 export function AssistantBlock({ block }: BlockProps) {
   if (block.kind !== 'item' || block.item.text.trim() === '') return null
-  return <div className={styles.assistant}>{block.item.text}</div>
+  return <div className={styles.assistant}><Markdown text={block.item.text} streaming={block.item.isActive} /></div>
 }
 
 /** A line from the app or the gateway; a compression's result centred, as a divider. */

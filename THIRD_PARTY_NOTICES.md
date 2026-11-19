@@ -31,6 +31,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Markdown renderer (Electron desktop app)
+
+The renderer bundles **streamdown** and **@streamdown/math** (Apache-2.0, Copyright
+Vercel, Inc.), **shiki** (MIT, Copyright Pine Wu and Anthony Fu) and **KaTeX** with its
+fonts (MIT, Copyright Khan Academy and other contributors); the full license texts are in
+each package's LICENSE file. `features/markdown/highlight.ts` takes its Shiki themes and the light
+comment colour fix from the official Hermes Desktop's `shiki-config.ts` (hermes-agent,
+MIT, see above).
+
 ## SwiftMath
 
 See AGENTS.md, "Dependencies" (MIT, used by the app targets).

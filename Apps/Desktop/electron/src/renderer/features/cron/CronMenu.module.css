@@ -1,0 +1,72 @@
+/* A flyout as WinUI's MenuFlyout and the Mac's menu: a card with the flyout shadow. */
+.menu {
+  position: fixed;
+  z-index: 10;
+  min-width: var(--cron-menu-min-width);
+  padding: var(--space-2);
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--cron-menu-fill);
+  box-shadow: var(--shadow-flyout);
+  -webkit-app-region: no-drag;
+}
+
+.nested {
+  position: absolute;
+  top: calc(var(--space-2) * -1);
+  left: 100%;
+}
+
+.submenu {
+  position: relative;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--cron-menu-item-height);
+  padding: 0 var(--space-4) 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible,
+.item[aria-expanded='true'] {
+  background: var(--fill-hover);
+  outline: none;
+}
+
+.item:disabled {
+  color: var(--text-tertiary);
+}
+
+.item[data-destructive] {
+  color: var(--critical);
+}
+
+.check {
+  flex: none;
+  width: var(--icon-size);
+  text-align: center;
+}
+
+.label {
+  flex: 1;
+}
+
+.arrow {
+  color: var(--text-secondary);
+}
+
+.divider {
+  height: var(--hairline);
+  margin: var(--space-2) var(--space-4);
+  background: var(--divider);
+}

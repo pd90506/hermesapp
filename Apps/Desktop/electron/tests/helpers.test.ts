@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { cjkLanguage } from '../src/main/cjk.ts'
 import { relativeTime } from '../src/renderer/app/time.ts'
-import { credential } from '../src/renderer/app/model.ts'
+import { serverCredential } from '@talaria/hermes-core'
 import { avatarPalette, fallbackColor, initials } from '../src/renderer/features/sidebar/avatar.ts'
 import { status } from '../src/renderer/features/sidebar/Sidebar.tsx'
 
@@ -68,15 +68,15 @@ describe('status', () => {
   })
 })
 
-describe('credential', () => {
-  const server = { serverURL: 'https://h', authMode: 'password', provider: '', username: 'me' } as const
+describe('serverCredential', () => {
+  const server = { id: 'a', name: '', serverURL: 'https://h', authMode: 'password', provider: '', username: 'me' } as const
 
   it('signs in with a password through the basic provider by default', () => {
-    expect(credential(server, 'pw')).toEqual({ kind: 'password', provider: 'basic', username: 'me', password: 'pw' })
+    expect(serverCredential(server, 'pw')).toEqual({ kind: 'password', provider: 'basic', username: 'me', password: 'pw' })
   })
 
   it('passes tokens through', () => {
-    expect(credential({ ...server, authMode: 'accessToken' }, 't')).toEqual({ kind: 'bearer', accessToken: 't' })
-    expect(credential({ ...server, authMode: 'sessionToken' }, 's')).toEqual({ kind: 'sessionToken', token: 's' })
+    expect(serverCredential({ ...server, authMode: 'accessToken' }, 't')).toEqual({ kind: 'bearer', accessToken: 't' })
+    expect(serverCredential({ ...server, authMode: 'sessionToken' }, 's')).toEqual({ kind: 'sessionToken', token: 's' })
   })
 })

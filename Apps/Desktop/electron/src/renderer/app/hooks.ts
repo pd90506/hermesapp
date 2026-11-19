@@ -1,5 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import type { GatewayConnection, Observable } from '@talaria/hermes-core'
+import type { ConnectionSnapshot, GatewayConnection, Observable, ServersSnapshot } from '@talaria/hermes-core'
 import type { AppModel } from './model.ts'
 
 export const ModelContext = createContext<AppModel | null>(null)
@@ -15,11 +15,24 @@ export function useSnapshot<T>(observable: Observable<T>): T {
 }
 
 /**
- * The connection the window shows (one server's): its chats, lists and link. New code
- * reads it here, so it follows the server the window switches to.
+ * The current server's connection (the server of the profile picked in the rail), and
+ * a re-render whenever it changes: another server picked, or its snapshot (K). Use this
+ * rather than `useSnapshot(model.connection)`, which misses a change of server.
  */
 export function useConnection(): GatewayConnection {
   const model = useModel()
   useSnapshot(model)
-  return model.connection
+  const connection = model.connection
+  useSnapshot(connection)
+  return connection
+}
+
+/** The current server's connection snapshot (see `useConnection`). */
+export function useConnectionSnapshot(): ConnectionSnapshot {
+  return useConnection().get()
+}
+
+/** The servers and their states (`ServerRegistry`). */
+export function useServers(): ServersSnapshot {
+  return useSnapshot(useModel().servers)
 }

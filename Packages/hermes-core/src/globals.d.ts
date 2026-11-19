@@ -25,3 +25,9 @@ declare class URL {
   hash: string
   readonly searchParams: URLSearchParams
 }
+
+declare class TextEncoder {
+  encode(input: string): Uint8Array
+}
+
+declare var crypto: { getRandomValues<T extends Uint8Array>(array: T): T }

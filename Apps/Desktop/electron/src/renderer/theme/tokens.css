@@ -57,8 +57,9 @@
   --line-tight: 1.3;
   --line-body: 1.45;
 
-  /* The system accent (set by the app from the OS); this is its fallback. */
-  --accent: #0067c0;
+  /* The system accent (--system-accent, set by the app from the OS; this is its
+     fallback). A colour theme other than System replaces it (themes/themes.css). */
+  --accent: var(--system-accent, #0067c0);
   --on-accent: #ffffff;
 
   color-scheme: light dark;
@@ -124,9 +125,149 @@
   }
 }
 
-/* A: chat core (transcript, composer, request cards). Mac numbers from ChatView.swift,
-   ComposerView.swift, PromptRail.swift and ServerRequestCard.swift. The four
-   placeholders at the end are M's (themes); whoever merges second drops the duplicate. */
+/* K: Settings, an overlay card over the window, the same on every platform (after Hermes
+   Desktop's OverlayView / OverlaySplitLayout / ListRow, apps/desktop/src/app/overlays). */
+:root {
+  --settings-inset: 10px;
+  --settings-nav-width: 208px;
+  --settings-nav-item-height: 28px;
+  --settings-content-max-width: 760px;
+  --settings-row-control-min: 240px;
+  --settings-row-control-max: 352px;
+  --settings-field-height: 30px;
+  --settings-switch-width: 36px;
+  --settings-switch-height: 20px;
+  --settings-switch-knob: 14px;
+  --settings-status-dot: 8px;
+  --settings-close-size: 28px;
+  --settings-backdrop: rgb(0 0 0 / 0.22);
+  --settings-card-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+:root {
+  --settings-card-fill: #fbfbfb;
+  --settings-nav-fill: #f3f3f3;
+  --settings-card-stroke: rgb(0 0 0 / 0.1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --settings-card-fill: #262626;
+    --settings-nav-fill: #202020;
+    --settings-card-stroke: rgb(255 255 255 / 0.1);
+    --settings-backdrop: rgb(0 0 0 / 0.4);
+  }
+}
+
+/* I cron: the Cron Jobs tab and its job editor (Apps/Shared/Views/CronJobsView.swift,
+   CronJobEditor.swift). */
+:root {
+  --cron-dot: 7px;
+  --cron-chevron-width: 10px;
+  --cron-more-size: 24px;
+  --cron-new-row-height: 32px;
+  /* A run's row starts under its job's title, past the chevron and the dot. */
+  --cron-run-indent: 29px;
+  --cron-spinner: 10px;
+  --cron-spinner-stroke: 1.5px;
+  --cron-menu-min-width: 200px;
+  --cron-menu-item-height: 28px;
+  --cron-editor-width: 540px;
+  --cron-control-width: 180px;
+  --cron-button-min-width: 96px;
+  --line-height-title: calc(var(--text-title) * var(--line-tight));
+  --cron-menu-fill: #f9f9f9;
+  --cron-dialog-fill: #f9f9f9;
+  --cron-dialog-scrim: rgb(0 0 0 / 0.3);
+  /* The Mac row's paused dot is the system orange. */
+  --cron-paused: #f7630c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cron-menu-fill: #2c2c2c;
+    --cron-dialog-fill: #202020;
+    --cron-dialog-scrim: rgb(0 0 0 / 0.5);
+    --cron-paused: #ff9f0a;
+  }
+}
+
+
+/* B Markdown: message text (features/markdown). Spacing from the Mac's MarkdownLayout
+   (SelectableMarkdownText.swift) and MarkdownTableGrid; heading sizes are the macOS text
+   styles over body (title2 17, title3 15, headline 13, subheadline 11 at body 13). */
+:root {
+  --md-block-gap: 10px;
+  --md-list-item-gap: 6px;
+  --md-heading-gap-major: 6px;
+  --md-heading-gap-minor: 2px;
+  --md-quote-indent: 12px;
+  --md-quote-bar-width: 3px;
+  --md-list-marker-column: 12px;
+  --md-list-ordered-column: 20px;
+  --md-list-marker-gap: 6px;
+  --md-code-padding: 10px;
+  --md-code-header-top: 6px;
+  --md-code-header-bottom: 4px;
+  --md-code-copy-width: 24px;
+  --md-code-copy-height: 20px;
+  --md-code-radius: 8px;
+  --md-inline-code-radius: 4px;
+  --md-table-cell-padding-x: 10px;
+  --md-table-cell-padding-y: 6px;
+  --md-table-radius: 6px;
+  /* A long column wraps down to 10 em before the table reaches past the text's column. */
+  --md-table-wrap: 10em;
+  /* How far a table may reach past each side of the column into the window's spare
+     width; the chat column sets it (the Mac's tableReach), 0 elsewhere. */
+  --md-table-reach: 0px;
+  --md-h1: 1.3077em;
+  --md-h2: 1.1538em;
+  --md-h3: 1em;
+  --md-h4: 0.8462em;
+  --md-code-label: 0.7692em;
+  --md-code-line: 1.4;
+  --md-code-size: 0.9231em;
+  --md-line: 1.35;
+}
+
+/* M */
+/* Appearance (features/settings/appearance): the System theme's user bubble and composer
+   (the Mac's: the accent at 15%, the control background), and the text sizes. A colour
+   theme replaces the colours (themes/themes.css). The sizes are points, unitless; the app
+   sets the user's on <html> (--text-ui, --text-content-size, --text-code-size). The UI
+   size scales every UI text style by the same factor (TextSizes.uiScale), against the
+   system's body size (--text-system-ui, platform.css). */
+:root {
+  --user-bubble: color-mix(in srgb, var(--accent) 15%, transparent);
+  --composer-fill: var(--field-fill);
+  --text-ui: 14;
+  --text-content-size: 14;
+  --text-code-size: 12;
+  --text-system-ui: 14;
+  --ui-scale: calc(var(--text-ui) / var(--text-system-ui));
+  --text-content: calc(var(--text-content-size) * 1px);
+  --text-code: calc(var(--text-code-size) * 1px);
+  /* The Appearance pane's theme swatches (ColorThemePicker). */
+  --swatch-size: 26px;
+  --swatch-ring: 2px;
+  --swatch-stroke: rgb(0 0 0 / 0.12);
+  --size-field-width: 48px;
+}
+
+
+/* L: the Providers and Capabilities settings panes, drawn as Settings' rows (K's tokens above). */
+:root {
+  --settings-search-width: 220px;
+  --settings-dialog-width: 420px;
+  --settings-dialog-wide-width: 480px;
+  --settings-menu-width: 160px;
+  --settings-code-size: 28px;
+  --spinner-size: 12px;
+  --spinner-stroke: 2px;
+}
+
+/* A: chat core (transcript, composer, request cards). Numbers from the Mac's ChatView,
+   ComposerView, PromptRail and ServerRequestCard. Text sizes, the user bubble and the
+   composer fill are M's (above); the spinner is L's. */
 :root {
   --chat-content-width: calc(var(--text-content) * 54);
   --chat-side-room: 50px;
@@ -136,8 +277,6 @@
   --history-header-height: 32px;
   --request-radius: 14px;
   --waiting-mark: 8px;
-  --spinner-size: 16px;
-  --spinner-stroke: 2px;
   --pill-height: 32px;
   --pill-icon: 12px;
   --composer-control: 26px;
@@ -147,14 +286,6 @@
   --composer-text-max: 170px;
   --glass-blur: blur(24px) saturate(1.6);
   --weight-medium: 500;
-
-  --text-content-size: 14;
-  --text-content: calc(var(--text-content-size) * 1px);
-  --text-code-size: 12;
-  --text-code: calc(var(--text-code-size) * 1px);
-  --user-bubble: color-mix(in srgb, var(--accent) 15%, transparent);
-  --composer-fill: var(--field-fill);
-
   --composer-stroke: color-mix(in srgb, var(--text) 15%, transparent);
   --request-fill: color-mix(in srgb, #ff9500 12%, transparent);
   --surface-solid: #ffffff;

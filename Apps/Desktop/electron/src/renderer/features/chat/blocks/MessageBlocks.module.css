@@ -47,11 +47,7 @@
 }
 
 .assistant {
-  font-size: var(--text-content);
-  line-height: var(--line-body);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  user-select: text;
+  min-width: 0;
 }
 
 .system {

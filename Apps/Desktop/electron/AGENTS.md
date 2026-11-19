@@ -27,7 +27,7 @@ Don't edit `ChatView`, `TranscriptList` or `Composer` to place your feature.
 
 | Point | Register with | Import line goes in | Used for |
 | --- | --- | --- | --- |
-| Transcript blocks | `registerBlockRenderer(kind, Component)` in `features/chat/blocks/registry.ts` | `features/chat/blocks/registered-blocks.ts` | How a block draws. `kind` is `blockKind(block)`: `user`, `assistant`, `system` or `tool` for one row, `work` for a group (C). The last registration of a kind wins, so B replaces `assistant` with Markdown. |
+| Transcript blocks | `registerBlockRenderer(kind, Component)` in `features/chat/blocks/registry.ts` | `features/chat/blocks/registered-blocks.ts` | How a block draws. `kind` is `blockKind(block)`: `user`, `assistant`, `system` or `tool` for one row, `work` for a group (C). The last registration of a kind wins, so a package can replace a renderer (C does `tool`). |
 | Composer slots | `registerComposerSlot({ id, area, order, Slot })` in `features/composer/slots.ts` | `features/composer/registered-slots.ts` | `cards` over the composer (F), `attachments` in the card (E), `leading` toolbar start (E), `modelEffort` (D), `trailing` before Send (D). |
 | Chat pills | `registerChatPill({ id, order, Pill })` in `features/chat/overlay.ts` | `features/chat/registered-pills.ts` | The row of the scroll-to-bottom button over the composer (J). The scroll button is at order 100. A pill returns `null` when it has nothing to show. |
 

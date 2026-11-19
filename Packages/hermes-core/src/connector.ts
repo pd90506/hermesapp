@@ -2,11 +2,11 @@ import { DashboardClient, DashboardError } from './dashboard.ts'
 import type { GatewayEndpoint } from './endpoint.ts'
 import type { HttpClient, MessageTransport } from './http.ts'
 import type { SessionMessagesSource } from './session/types.ts'
+import type { NativeTokenSession } from './servers/native-tokens.ts'
 
 /**
  * How the app authenticates to the dashboard WebSocket
  * (`hermes_cli/web_server_chat.py::_ws_auth_reason`; HermesKit's `GatewayCredential`).
- * A browser sign-in (native PKCE) comes in a later change.
  */
 export type GatewayCredential =
   /** A password provider (e.g. `basic`): cookie sign-in, then a ticket per connect. */
@@ -19,6 +19,11 @@ export type GatewayCredential =
    * `bearer`.
    */
   | { kind: 'sessionToken'; token: string }
+  /**
+   * A browser sign-in's token pair (`servers/native-tokens.ts`): a ticket minted with its
+   * access token, refreshed at most once per connect.
+   */
+  | { kind: 'native'; session: NativeTokenSession }
 
 /** Produces a fresh, authenticated transport for each connection attempt. */
 export interface GatewayConnector {
@@ -52,6 +57,19 @@ export class DashboardConnector implements GatewayConnector {
         return this.endpoint.webSocketURL([['token', credential.token]])
       case 'bearer': {
         const ticket = await this.dashboard.mintWebSocketTicket(credential.accessToken)
+        return this.endpoint.webSocketURL([['ticket', ticket.ticket]])
+      }
+      case 'native': {
+        // At most one refresh: before the mint when the token is known to be expired,
+        // else after the server rejects it (`middleware.py:65-79,163-175`); a second 401 is final.
+        const { token, refreshed } = await credential.session.accessToken(this.dashboard)
+        let ticket
+        try {
+          ticket = await this.dashboard.mintWebSocketTicket(token)
+        } catch (error) {
+          if (refreshed || !(error instanceof DashboardError && error.kind === 'unauthenticated')) throw error
+          ticket = await this.dashboard.mintWebSocketTicket(await credential.session.refresh(token, this.dashboard))
+        }
         return this.endpoint.webSocketURL([['ticket', ticket.ticket]])
       }
       case 'password': {

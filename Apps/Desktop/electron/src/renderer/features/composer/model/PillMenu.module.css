@@ -60,9 +60,9 @@
   flex-direction: column;
   width: var(--composer-effort-menu-width);
   max-height: var(--composer-menu-max-height);
-  padding: var(--space-2);
+  padding: var(--composer-menu-padding);
   border: var(--hairline) solid var(--composer-menu-stroke);
-  border-radius: var(--radius-lg);
+  border-radius: var(--composer-menu-radius);
   background: var(--composer-menu-fill);
   box-shadow: var(--shadow-flyout);
   color: var(--text);

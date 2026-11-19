@@ -18,7 +18,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   border: var(--hairline) solid var(--composer-menu-stroke);
-  border-radius: var(--radius-lg);
+  border-radius: var(--composer-menu-radius);
   background: var(--composer-menu-fill);
   box-shadow: var(--shadow-flyout);
   color: var(--text);

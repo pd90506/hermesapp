@@ -108,8 +108,8 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
   private lastBots?: ConnectionSnapshot['bots']
   private lastPhase?: string
   private searchToken = 0
-  private refreshTimer?: unknown
-  private saveTimer?: unknown
+  private refreshTimer?: ReturnType<typeof setInterval>
+  private saveTimer?: ReturnType<typeof setTimeout>
   private kept: Kept = {}
   private loaded = false
 

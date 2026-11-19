@@ -2,6 +2,8 @@ import { GatewayClientError, type GatewayClient, type GatewayEvent } from '../cl
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import type { JSONValue } from '../protocol/jsonrpc.ts'
+import { ChatActivity } from './background/chat-activity.ts'
+import type { BackgroundProcess } from './background/background-processes.ts'
 import { compressionMessage, type SessionCompressResult } from '../composer/queue/compression.ts'
 import { blockKind, transcriptBlocks, type TranscriptBlock } from './blocks.ts'
 import { compressionDisplayKind, isQueuedPrompt, type TranscriptItem } from './items.ts'
@@ -85,6 +87,8 @@ export interface ChatHost {
   track(chat: ChatSession): void
   /** Gives text only a vanished bubble held back to the chat's composer. */
   restoreText(chat: ChatSession, text: string): void
+  /** J: a background process of the chat finished (a notification). */
+  backgroundFinished?(chat: ChatSession, process: BackgroundProcess): void
 }
 
 /** Cancels a send while it still waits to go out (`ChatComposer.cancelSubmit`). */
@@ -163,6 +167,9 @@ export class ChatSession extends Observable<ChatView> {
 
   private host?: ChatHost
 
+  /** J: its subagents and background processes (`ChatActivity`). */
+  readonly activity: ChatActivity
+
   constructor(
     snapshot: LiveSessionSnapshot,
     options: { storedSessionID?: string; title?: string; profile?: string; kind?: ChatKind; host?: ChatHost } = {},
@@ -178,6 +185,14 @@ export class ChatSession extends Observable<ChatView> {
     this.transcript = transcript
     if (options.profile !== undefined) this.profile = options.profile
     this.kind = kind
+    const chat = this
+    this.activity = new ChatActivity({
+      get client() { return chat.host?.client },
+      get sessionID() { return chat.sessionID },
+      get isRuntimeGone() { return chat.isRuntimeGone },
+      get isRunning() { return chat.transcript.isRunning },
+      processFinished: (process) => chat.host?.backgroundFinished?.(chat, process),
+    })
     this.publish()
   }
 
@@ -186,6 +201,7 @@ export class ChatSession extends Observable<ChatView> {
     this.streamedText.cancel()
     this.cancelRereadRetry()
     this.historyGeneration += 1
+    this.activity.detach()
     this.host = undefined
   }
 
@@ -481,7 +497,7 @@ export class ChatSession extends Observable<ChatView> {
     if (typeof event.seq === 'number' && event.session_id === this.sessionID) {
       this.lastSeq = Math.max(this.lastSeq ?? 0, event.seq)
     }
-    if (event.type.startsWith('subagent.')) return  // package C/G
+    if (this.activity.apply(event)) return  // J: subagent events
     const kind = eventKind(event)
     if (kind.kind === 'messageDelta' || kind.kind === 'reasoningDelta') {
       if (this.coalescesStreamedText) {
@@ -680,6 +696,7 @@ export class ChatSession extends Observable<ChatView> {
     // Their submits reach Hermes before the Stop: one answered `queued` was cleared by it.
     const sentBeforeStop = this.transcript.unansweredPrompts
     const result = await client.call(SessionMethod.sessionInterrupt, { session_id: this.sessionID }) as { status?: string } | null
+    this.activity.turnStopped()
     // Hermes cleared its queue with the Stop; only a hosted-task check answers `not_interrupted`.
     if (result?.status !== 'not_interrupted') this.change((t) => t.serverClearedQueue(sentBeforeStop))
   }

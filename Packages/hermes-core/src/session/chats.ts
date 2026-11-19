@@ -5,6 +5,7 @@ import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import { RPCError, type JSONValue } from '../protocol/jsonrpc.ts'
 import { GatewayMethod } from '../protocol/methods.ts'
+import type { BackgroundProcess } from './background/background-processes.ts'
 import { ChatSession, type ChatHost, type ChatKind, type LatestHistory } from './chat-session.ts'
 import { SessionMethod, newSessionSource } from './methods.ts'
 import {
@@ -43,6 +44,8 @@ export interface ChatsHost {
   readonly generation: number
   readonly bots: readonly Bot[]
   refreshLists(): void
+  /** J: a chat's background process finished (`ConnectionAlerts`). */
+  backgroundFinished?(chat: ChatSession, process: BackgroundProcess): void
 }
 
 export class BotChatError extends Error {
@@ -127,6 +130,7 @@ export class ChatManager extends Observable<ChatsSnapshot> {
       revive: (chat) => this.revive(chat),
       track: (chat) => this.track(chat),
       restoreText: (chat, text) => this.composer(chat).restoreText(text),
+      backgroundFinished: (chat, process) => this.host.backgroundFinished?.(chat, process),
     }
   }
 
@@ -716,6 +720,12 @@ export class ChatManager extends Observable<ChatsSnapshot> {
       case 'disconnected':
         return
     }
+  }
+
+  /** J: a parked request was answered from a notification. */
+  dropOtherRequest(id: string): void {
+    if (!this.get().otherRequests.some((request) => request.id === id)) return
+    this.update({ otherRequests: this.get().otherRequests.filter((request) => request.id !== id) })
   }
 
   // MARK: Live runtime ids

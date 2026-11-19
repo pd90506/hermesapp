@@ -28,11 +28,13 @@ function isListed(block: TranscriptBlock): boolean {
  * there as a reply streams in; scrolled up, it stays put while rows grow or an older
  * page lands above. The header reads the next older page when it comes on screen.
  */
-export function TranscriptList({ chat, view, bottomInset, overlay }: {
+export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }: {
   chat: ChatSession
   view: ChatView
   /** The composer row's height: it floats over the list's end, the messages under it. */
   bottomInset: number
+  /** J: more room under the last row, for the row of pills while one shows. */
+  endRoom?: number
   /** Drawn over the list's bottom edge: the row of pills (`ChatPillRow`). */
   overlay: (state: { awayFromEnd: boolean; messagesBelow: number; scrollToEnd: () => void }) => ReactNode
 }) {
@@ -52,8 +54,8 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
     getItemKey: (index) => rows[index]!.key,
     estimateSize: (index) => estimate(rows[index]!),
     overscan: 6,
-    paddingEnd: bottomInset,
-    scrollPaddingEnd: bottomInset,
+    paddingEnd: bottomInset + endRoom,
+    scrollPaddingEnd: bottomInset + endRoom,
     ...(kept ? { initialMeasurementsCache: kept.measurements, initialOffset: kept.offset } : {}),
   })
   // A row above the screen that changes height moves the rows under it by as much, so

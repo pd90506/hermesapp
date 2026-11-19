@@ -12,7 +12,16 @@ export interface ChatPill {
   order: number
   /** Renders nothing (returns null) while it has nothing to show. */
   Pill: ComponentType<ChatPillProps>
+  /**
+   * J: whether it shows (a hook). While any pill that has one shows at the end of the chat,
+   * the list keeps room under its last row for the row of pills (`pillRowRoom`), so the
+   * pill never covers the newest message, as the Mac's bar takes room above the composer.
+   */
+  useShown?: (chat: ChatSession) => boolean
 }
+
+/** J: the room a row of pills takes over the composer: a 32 pt pill, its margin and gap. */
+export const pillRowRoom = 44
 
 /**
  * Extension point 3 (package A): pills in the row of the scroll-to-bottom button, just

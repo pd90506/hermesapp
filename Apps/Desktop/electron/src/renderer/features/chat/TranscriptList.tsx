@@ -50,23 +50,42 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
     getItemKey: (index) => rows[index]!.key,
     estimateSize: (index) => estimate(rows[index]!),
     overscan: 6,
+    // Keeps the rows on screen in place when an older page lands above them.
     anchorTo: 'end',
-    followOnAppend: true,
-    scrollEndThreshold: followDistance,
     paddingEnd: bottomInset,
     scrollPaddingEnd: bottomInset,
-    ...(kept ? { initialMeasurementsCache: kept.measurements } : {}),
-    ...(kept && !kept.atEnd ? { initialOffset: kept.offset } : {}),
+    ...(kept ? { initialMeasurementsCache: kept.measurements, initialOffset: kept.offset } : {}),
   })
   const [awayFromEnd, setAwayFromEnd] = useState(false)
   const [visible, setVisible] = useState<ReadonlySet<string>>(new Set())
 
-  // Opens at the newest message (or where it was left).
-  const opened = useRef(false)
+  // Whether the list follows its end: true at the end (and when it opens there), false
+  // once the user scrolls up. The footer row is always last, so the virtualizer's own
+  // follow-on-append (which looks for a new last key) never fires; the list follows here.
+  const following = useRef(kept ? kept.atEnd : true)
+  // Where it is, kept up to date while it is on screen (the ref is gone by unmount).
+  const position = useRef({ offset: kept?.offset ?? 0, atEnd: following.current })
+
+  // Opens at the newest message, or where it was left; then, while following, every
+  // change (a new message, a reply growing, a row measured) keeps the end in view.
+  // A new prompt at the end (sent from here or elsewhere) brings the list back to the end.
+  const newestPrompt = [...blocks].reverse().find((block) => block.kind === 'item' && block.item.role === 'user')?.id
+  const seenPrompt = useRef(newestPrompt)
+  const restored = useRef(false)
   useLayoutEffect(() => {
-    if (opened.current || rows.length <= 2) return
-    opened.current = true
-    if (!kept || kept.atEnd) virtualizer.scrollToIndex(rows.length - 1, { align: 'end' })
+    const element = scroller.current
+    if (!element) return
+    if (newestPrompt !== seenPrompt.current) {
+      seenPrompt.current = newestPrompt
+      if (restored.current) following.current = true
+    }
+    if (following.current) {
+      const end = element.scrollHeight - element.clientHeight
+      if (Math.abs(element.scrollTop - end) > 1) element.scrollTop = end
+    } else if (!restored.current && kept) {
+      element.scrollTop = kept.offset
+    }
+    restored.current = true
   })
 
   const measureView = useCallback(() => {
@@ -74,25 +93,30 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
     if (!element) return
     const top = element.scrollTop
     const bottom = top + element.clientHeight
-    setAwayFromEnd(element.scrollHeight - bottom > awayFromEndDistance)
+    const distance = element.scrollHeight - bottom
+    setAwayFromEnd(distance > awayFromEndDistance)
     const shownBottom = bottom - bottomInset
     const shown = new Set<string>()
     for (const item of virtualizer.getVirtualItems()) {
       if (item.end > top && item.start < shownBottom) shown.add(String(item.key))
     }
     setVisible((old) => sameSet(old, shown) ? old : shown)
+    position.current = { offset: top, atEnd: following.current }
   }, [virtualizer, bottomInset])
+
+  const onScroll = useCallback(() => {
+    const element = scroller.current
+    if (element && restored.current) {
+      following.current = element.scrollHeight - element.scrollTop - element.clientHeight <= followDistance
+    }
+    measureView()
+  }, [measureView])
 
   useEffect(() => { measureView() })
 
   // On leaving the screen: where it was, for when it comes back.
   useEffect(() => () => {
-    const element = scroller.current
-    keepScroll(chat, {
-      offset: element?.scrollTop ?? 0,
-      atEnd: element ? element.scrollHeight - element.scrollTop - element.clientHeight <= followDistance : true,
-      measurements: virtualizer.takeSnapshot(),
-    })
+    keepScroll(chat, { ...position.current, measurements: virtualizer.takeSnapshot() })
   }, [chat, virtualizer])
 
   // The header on screen reads the next older page, once the layout has settled.
@@ -105,14 +129,16 @@ export function TranscriptList({ chat, view, bottomInset, overlay }: {
 
   const scrollToEnd = useCallback(() => {
     const reduce = scroller.current?.ownerDocument.defaultView?.matchMedia('(prefers-reduced-motion: reduce)').matches
-    virtualizer.scrollToIndex(rows.length - 1, { align: 'end', behavior: reduce ? 'auto' : 'smooth' })
-  }, [virtualizer, rows.length])
+    const element = scroller.current
+    if (!element) return
+    element.scrollTo({ top: element.scrollHeight - element.clientHeight, behavior: reduce ? 'auto' : 'smooth' })
+  }, [])
 
   const messagesBelow = MessagesBelow.count(blocks, visible)
 
   return (
     <div className={styles.frame}>
-      <div ref={scroller} className={styles.scroller} onScroll={measureView} data-chat-scroller=""
+      <div ref={scroller} className={styles.scroller} onScroll={onScroll} data-chat-scroller=""
         style={bottomInset > 0 ? { maskImage: fade(bottomInset) } : undefined}>
         <div className={styles.content} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => {

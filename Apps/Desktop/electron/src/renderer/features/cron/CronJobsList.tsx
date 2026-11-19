@@ -239,7 +239,7 @@ function JobRow({ job, expanded, running, targets, now, onToggle, onMenu }: {
     <div className={styles.job} role="listitem" data-testid={`cronJob.${job.id}`}
       onContextMenu={(event) => onMenu(event, false)}>
       <button type="button" className={styles.summary} aria-expanded={expanded}
-        title={expanded ? 'Hides its runs' : 'Shows its runs'} onClick={onToggle}>
+        onClick={onToggle}>
         <span className={styles.chevron}><CronIcon name={expanded ? 'chevronDown' : 'chevronRight'} /></span>
         <span className={styles.dot} data-state={dotState(job)} />
         <span className={styles.text}>

@@ -142,7 +142,7 @@ function SessionRow({ row, profile, now, connected, selected, pinned, unread, st
   const menu = useContextMenu(() => rowMenu(pinned, connected), (id) => onAction(id as RowAction))
   // The flyout outside the row: events from a portal bubble through React's tree.
   return (<>
-    <div className={styles.row} role="listitem" title={title} tabIndex={0} aria-selected={selected}
+    <div className={styles.row} role="listitem" tabIndex={0} aria-selected={selected}
       data-selected={selected || undefined} data-menu-open={menu.isOpen || undefined} data-profile={profile}
       onClick={onSelect} onContextMenu={menu.onContextMenu}
       onKeyDown={(event) => { if (event.key === 'Enter') onSelect() }}>

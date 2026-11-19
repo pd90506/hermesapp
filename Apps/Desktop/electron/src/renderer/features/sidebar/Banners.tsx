@@ -30,7 +30,7 @@ export function Banners() {
         </div>
       )}
       {waiting.length > 0 && (
-        <button type="button" className={styles.waiting} title="Open the chat waiting for you" data-testid="waitingChatsBanner"
+        <button type="button" className={styles.waiting} data-testid="waitingChatsBanner"
           onClick={openWaiting}>
           <Icon name="hand" />
           <span className={styles.text}>{waiting.length === 1 ? '1 chat waiting for you' : `${waiting.length} chats waiting for you`}</span>

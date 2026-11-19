@@ -6,6 +6,7 @@ import { describeError } from './describe.ts'
 import { Observable } from './observable.ts'
 import { EventType, GatewayMethod } from './protocol/methods.ts'
 import type { JSONValue } from './protocol/jsonrpc.ts'
+import { defaultSourceSettings, showsSource, type SessionSourceSettings } from './settings/sources.ts'
 
 export type LinkState =
   | { phase: 'disconnected' }
@@ -70,6 +71,8 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
   private sessionListToken = 0
   /** The `session.list` limit that settled, per profile. */
   private readonly sessionListLimits = new Map<string, number>()
+  /** Settings ▸ Session Sources: which listed sources the lists hide. */
+  private sourceSettings: SessionSourceSettings = defaultSourceSettings
   private readonly options: Required<Omit<GatewayConnectionOptions, 'client' | 'maxReconnectAttempts'>> &
     Pick<GatewayConnectionOptions, 'client' | 'maxReconnectAttempts'>
 
@@ -133,6 +136,12 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     this.sessionListToken += 1
     this.sessionListLimits.clear()
     this.update({ ...initial })
+  }
+
+  /** Hides the sources Settings ▸ Session Sources hides, and reads the list again. */
+  setSourceSettings(settings: SessionSourceSettings): void {
+    this.sourceSettings = settings
+    void this.refreshSessionList()
   }
 
   /** Shows `profile`'s sessions, reading them when they are not there yet. */
@@ -277,7 +286,7 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
           this.sessionListLimits.set(profile, limit)
           const bot = this.get().bots.find((candidate) => candidate.name === profile)
           this.update({
-            sessions: { ...this.get().sessions, [profile]: historyRows(rows, bot) },
+            sessions: { ...this.get().sessions, [profile]: historyRows(rows, bot).filter((row) => showsSource(this.sourceSettings, row.source)) },
             sessionListLoading: false,
           })
           return

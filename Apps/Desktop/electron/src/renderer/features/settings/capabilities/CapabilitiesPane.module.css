@@ -1,0 +1,138 @@
+/* The Capabilities pane (L): the Mac's layout, a toolbar row, the kind picker, an inset list. */
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: var(--settings-pane-width);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-9);
+  box-sizing: border-box;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+}
+
+.scope {
+  flex: 1;
+  min-width: 0;
+}
+
+.scope > * {
+  justify-content: flex-start;
+  padding: 0;
+  min-height: 0;
+}
+
+/* The picker sits right after its label, as the Mac's fixed-size Picker. */
+.scope > * > :first-child {
+  flex: none;
+}
+
+.search {
+  width: var(--settings-search-width);
+  height: var(--settings-button-height);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  height: var(--settings-list-height);
+  overflow-y: auto;
+  border: var(--hairline) solid var(--surface-card-stroke);
+  border-radius: var(--settings-group-radius);
+  background: var(--surface-card);
+}
+
+/* Alternating rows, as the Mac's inset list. */
+.row:nth-child(even) {
+  background: var(--fill-hover);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-5);
+}
+
+.text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.titleText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.note,
+.noteCaution {
+  overflow: hidden;
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.noteCaution {
+  color: var(--caution);
+}
+
+.placeholder {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: var(--settings-dialog-width);
+  text-align: center;
+}
+
+.emptyTitle {
+  font-size: var(--text-dialog-title);
+  font-weight: var(--weight-semibold);
+}
+
+.emptyDetail {
+  color: var(--text-secondary);
+  line-height: var(--line-body);
+  user-select: text;
+}
+
+.footnote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}

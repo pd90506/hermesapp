@@ -123,3 +123,67 @@
     --shadow-flyout: 0 8px 16px rgb(0 0 0 / 0.26);
   }
 }
+
+/* L: the Providers and Capabilities settings panes (Apps/Shared/Views/ProvidersView.swift,
+   CapabilitiesView.swift). Switch sizes are NSSwitch's (38 x 22 pt) and WinUI ToggleSwitch's
+   (40 x 20 px); the list height and search width are CapabilitiesView's on the Mac. */
+:root {
+  --settings-pane-width: 640px;
+  --settings-row-height: 44px;
+  --settings-group-radius: var(--radius-lg);
+  --settings-segment-height: 24px;
+  --settings-button-height: 28px;
+  --settings-search-width: 220px;
+  --settings-list-height: 440px;
+  --settings-dialog-width: 420px;
+  --settings-dialog-wide-width: 480px;
+  --settings-menu-width: 160px;
+  --settings-code-size: 28px;
+  --text-dialog-title: 17px;
+  --spinner-size: 12px;
+  --spinner-stroke: 2px;
+  --switch-width: 40px;
+  --switch-height: 20px;
+  --switch-knob: 12px;
+  --switch-inset: 3px;
+  --settings-segment-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  --settings-segment-selected: #ffffff;
+  --settings-dialog-fill: #f9f9f9;
+  --settings-backdrop: rgb(0 0 0 / 0.3);
+  --switch-off-fill: transparent;
+  --switch-off-stroke: rgb(0 0 0 / 0.45);
+  --switch-off-knob: rgb(0 0 0 / 0.62);
+  --switch-on-knob: #ffffff;
+}
+
+:root[data-platform='mac'] {
+  --settings-row-height: 36px;
+  --settings-button-height: 22px;
+  --settings-segment-height: 20px;
+  --switch-width: 38px;
+  --switch-height: 22px;
+  --switch-knob: 18px;
+  --switch-inset: 1px;
+  --switch-off-fill: rgb(0 0 0 / 0.09);
+  --switch-off-stroke: rgb(0 0 0 / 0.05);
+  --switch-off-knob: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --settings-dialog-fill: #2c2c2c;
+    --settings-backdrop: rgb(0 0 0 / 0.5);
+    --settings-segment-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    --settings-segment-selected: rgb(255 255 255 / 0.16);
+    --switch-off-stroke: rgb(255 255 255 / 0.55);
+    --switch-off-knob: rgb(255 255 255 / 0.77);
+    --switch-on-knob: #000000;
+  }
+
+  :root[data-platform='mac'] {
+    --switch-off-fill: rgb(255 255 255 / 0.15);
+    --switch-off-stroke: transparent;
+    --switch-off-knob: #ececec;
+    --switch-on-knob: #ffffff;
+  }
+}

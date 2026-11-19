@@ -49,7 +49,7 @@
   --motion: 167ms;
   --ease: cubic-bezier(0, 0, 0, 1);
 
-  /* Type. Font families per platform in platform.css; CJK glyphs follow data-cjk. */
+  /* Type. Font families in platform.css; CJK glyphs follow data-cjk. */
   --font-cjk: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC';
   --weight-regular: 400;
   --weight-semibold: 600;

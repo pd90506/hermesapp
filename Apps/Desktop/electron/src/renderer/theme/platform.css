@@ -1,44 +1,25 @@
 /*
- * What differs by platform, keyed on <html data-platform> (set by the preload): the
- * system's fonts and sizes, its list selection, and the frame's geometry
- * (--frame-*, also from the preload). Positions and behaviour stay the Mac's.
+ * The app's own look, the same on macOS and Windows (the user, 2026-11-19: one design
+ * for both, suited to Electron, not each system's). Only what the system itself draws
+ * differs: the frame's geometry (--frame-*, from the preload: the traffic lights or the
+ * caption buttons and the room they take) and the window's material (vibrancy or Mica,
+ * from the main process).
  */
-
-/* Windows 11: Segoe UI Variable, 14 px body (WinUI's BodyTextBlock), Fluent list
-   selection (a fill and the accent's pill). */
-:root[data-platform='windows'],
-:root[data-platform='linux'] {
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', var(--font-cjk), system-ui, sans-serif;
-  --font-display: 'Segoe UI Variable Display', 'Segoe UI', var(--font-cjk), system-ui, sans-serif;
-  --font-mono: 'Cascadia Mono', Consolas, var(--font-cjk);
+:root {
+  /* The system's own UI font on each (San Francisco, Segoe UI Variable), at one size. */
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', var(--font-cjk), sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', var(--font-cjk), sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, var(--font-cjk), monospace;
   --text-body: 14px;
   --text-caption: 12px;
   --text-section: 14px;
   --text-title: 14px;
   --text-heading: 20px;
+  /* A list's selection: a quiet fill, no indicator. */
   --selection-fill: var(--fill-selected);
   --selection-text: var(--text);
-  --selection-indicator: var(--accent);
-  --row-radius: var(--radius-md);
-  --icon-font: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
-}
-
-/* macOS: the system font at 13 pt (NSFont.systemFontSize), the source list's rounded
-   selection in the accent, no indicator. */
-:root[data-platform='mac'] {
-  --font-ui: -apple-system, BlinkMacSystemFont, var(--font-cjk), system-ui, sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, var(--font-cjk), system-ui, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, var(--font-cjk);
-  --text-body: 13px;
-  --text-caption: 11px;
-  --text-section: 13px;
-  --text-title: 13px;
-  --text-heading: 20px;
-  --selection-fill: color-mix(in srgb, var(--accent) 20%, transparent);
-  --selection-text: var(--text);
   --selection-indicator: transparent;
-  --row-radius: var(--radius-lg);
-  --icon-font: none;
+  --row-radius: var(--radius-md);
 }
 
 /* Fallbacks before the preload's values arrive (and in tests). */

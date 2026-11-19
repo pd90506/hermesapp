@@ -3,9 +3,9 @@
 .frame {
   position: absolute;
   top: 0;
-  right: var(--rail-trailing-inset);
-  width: var(--rail-width);
-  padding: var(--rail-vertical-inset) 0;
+  right: var(--prompt-rail-trailing-inset);
+  width: var(--prompt-rail-width);
+  padding: var(--prompt-rail-vertical-inset) 0;
   box-sizing: border-box;
   display: flex;
   pointer-events: none;
@@ -35,29 +35,29 @@
   align-items: center;
   justify-content: flex-end;
   flex: none;
-  width: var(--rail-width);
+  width: var(--prompt-rail-width);
   padding: 0;
   border: none;
   background: transparent;
 }
 
 .bar {
-  width: var(--rail-tick-width);
-  height: var(--rail-tick-height);
-  border-radius: var(--rail-tick-height);
-  background: var(--rail-tick);
+  width: var(--prompt-rail-tick-width);
+  height: var(--prompt-rail-tick-height);
+  border-radius: var(--prompt-rail-tick-height);
+  background: var(--prompt-rail-tick);
 }
 
 .tick[data-current] .bar {
-  width: var(--rail-tick-current-width);
-  background: var(--rail-tick-current);
+  width: var(--prompt-rail-tick-current-width);
+  background: var(--prompt-rail-tick-current);
 }
 
 /* The panel: over the rail, in the composer's glass, the messages under it blurred. */
 .panel {
   position: absolute;
   right: 0;
-  width: var(--rail-panel-width);
+  width: var(--prompt-rail-panel-width);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -65,7 +65,7 @@
   padding: var(--space-4);
   overflow-y: auto;
   border: var(--hairline) solid var(--composer-stroke);
-  border-radius: var(--rail-panel-radius);
+  border-radius: var(--prompt-rail-panel-radius);
   background: var(--composer-fill);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow-glass);
@@ -83,7 +83,7 @@
   flex: none;
   padding: var(--space-3) var(--space-5);
   border: none;
-  border-radius: var(--rail-row-radius);
+  border-radius: var(--prompt-rail-row-radius);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;

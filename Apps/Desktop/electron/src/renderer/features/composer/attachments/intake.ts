@@ -72,14 +72,17 @@ export async function attachIncoming(tray: AttachmentTray, files: readonly Incom
 /** The image as Hermes takes it, or undefined when it cannot be decoded here. */
 async function prepareImage(file: IncomingFile, bytes: Uint8Array): Promise<ComposerImage | undefined> {
   const source = file.path ? { source: file.path } : {}
-  const bitmap = await decode(bytes, file.type)
+  let bitmap = await decode(bytes, file.type)
+  if (!bitmap && !ImageAttachmentPolicy.canSendUnchanged(file.name)) bitmap = await decodeWithSystem(bytes)
   const width = bitmap?.width
   const height = bitmap?.height
   if (ImageAttachmentPolicy.canSendUnchanged(file.name) && bytes.byteLength <= ImageAttachmentPolicy.maxBytes) {
     bitmap?.close()
     return { id: attachmentID(), filename: file.name, bytes, ...(width ? { width, height } : {}), ...source }
   }
-  const hasAlpha = ['png', 'gif', 'webp', 'tif', 'tiff', 'heic', 'heif'].includes(fileExtension(file.name))
+  // Like the Mac app (kCGImagePropertyHasAlpha): PNG only when the image really has
+  // transparency, so an ordinary HEIC photo becomes a JPEG.
+  const hasAlpha = bitmap ? bitmapHasAlpha(bitmap) : ['png', 'gif', 'webp', 'tif', 'tiff'].includes(fileExtension(file.name))
   const attempts = ImageAttachmentPolicy.encodeAttempts(bytes.byteLength, width, height, hasAlpha)
   try {
     for (const attempt of attempts) {
@@ -103,6 +106,27 @@ async function decode(bytes: Uint8Array, type?: string): Promise<ImageBitmap | u
     return await createImageBitmap(new Blob([bytes as BlobPart], type ? { type } : {}))
   } catch {
     return undefined
+  }
+}
+
+/** A format Chromium cannot read (HEIC in Electron): the system decodes it to PNG first. */
+async function decodeWithSystem(bytes: Uint8Array): Promise<ImageBitmap | undefined> {
+  const png = await window.talaria.files.convertImage(bytes, { format: 'png' })
+  return png ? decode(png.bytes, 'image/png') : undefined
+}
+
+/** True when any pixel is not fully opaque. Checked on a copy of at most 512 px. */
+function bitmapHasAlpha(bitmap: ImageBitmap): boolean {
+  try {
+    const size = scaled(bitmap.width, bitmap.height, 512)
+    const context = new OffscreenCanvas(size.width, size.height).getContext('2d')
+    if (!context) return true
+    context.drawImage(bitmap, 0, 0, size.width, size.height)
+    const pixels = context.getImageData(0, 0, size.width, size.height).data
+    for (let i = 3; i < pixels.length; i += 4) if (pixels[i]! < 255) return true
+    return false
+  } catch {
+    return true
   }
 }
 

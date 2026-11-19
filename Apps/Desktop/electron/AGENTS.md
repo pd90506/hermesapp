@@ -41,3 +41,18 @@ Tokens live only in `src/renderer/theme/tokens.css`, one `/* <letter> */` sectio
 package. `tests/stylesheet-scan.test.ts` fails on a raw colour or pixel size in a
 `*.module.css`, and on `platform ===` branching or `navigator.platform` / `userAgent`
 in renderer code; style a platform with `:global([data-platform='windows'])`.
+
+## Messages sent mid-reply, compression, clarify (package F)
+
+- `composer.queue` (`PromptQueue`, `hermes-core/src/composer/queue/`) holds a text message
+  sent while a reply or a compression runs, in the app, until the session is free (PR #145
+  rule). `ChatComposer.submit` asks `queue.holdsNextSend`. **E:** a message with images
+  or files is not held; it goes to Hermes's queue. Add that condition where `submit`
+  checks `holdsNextSend`.
+- `/compress` and `/compact` run through `composer.queue.compress(topic)`, which shows the
+  "Compressing context…" card; `submit` routes them until D's slash commands land.
+  **D:** route them (and a Bot Chat's `/new`, `/reset`, `/clear`) to the same call and drop
+  the `compressCommand` check in `submit`.
+- `ChatSession.steer`, `compress` and `answerClarify` are F's. The clarify card
+  (`features/composer/cards/ClarifyCard.tsx`) shows where the other request cards do, via
+  `RequestCard`.

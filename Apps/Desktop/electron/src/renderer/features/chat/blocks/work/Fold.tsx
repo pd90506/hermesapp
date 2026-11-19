@@ -58,14 +58,19 @@ function ChevronMark({ direction }: { direction: 'right' | 'down' | 'up' }) {
   )
 }
 
+/** Within this of its end the chat follows its end (`TranscriptList`'s `followDistance`). */
+const followDistance = 24
+
 /**
  * Holds the line at its place in the chat's scroller while the fold opens or closes and
- * the rows around it are measured again (the list would otherwise follow its end, or
- * keep a row above the screen still, and move the line away from the pointer).
+ * the rows around it are measured again (the list would otherwise keep a row above the
+ * screen still, and move the line away from the pointer). A chat at its end stays at its
+ * end instead: what a fold shows is not a new message, so it doesn't leave the end behind.
  */
-function keepPlace(line: HTMLElement): void {
+export function keepPlace(line: HTMLElement): void {
   const scroller = line.closest<HTMLElement>('[data-chat-scroller]')
   if (!scroller) return
+  if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= followDistance) return
   const view = scroller.ownerDocument.defaultView
   if (!view) return
   const offset = () => line.getBoundingClientRect().top - scroller.getBoundingClientRect().top

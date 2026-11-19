@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   Observable, blockKind, makeItem, reviewDisplayKind, transcriptBlocks,
   type ChatSession, type JSONValue, type ToolPhase, type TranscriptBlock, type TranscriptItem,
@@ -8,6 +8,7 @@ import { ModelContext } from '../src/renderer/app/hooks.ts'
 import type { AppModel } from '../src/renderer/app/model.ts'
 import { blockRenderer } from '../src/renderer/features/chat/blocks/registry.ts'
 import '../src/renderer/features/chat/blocks/registered-blocks.ts'
+import { keepPlace } from '../src/renderer/features/chat/blocks/work/Fold.tsx'
 
 class NoResizeObserver {
   observe(): void {}
@@ -162,5 +163,45 @@ describe('notice lines', () => {
     draw(transcriptBlocks([review], false))
     const row = screen.getByTestId('review-note')
     expect(row.textContent).toBe('Self-improvement reviewMemory updated')
+  })
+})
+
+describe('a fold in the chat', () => {
+  function scroller(top: number) {
+    const element = document.createElement('div')
+    element.setAttribute('data-chat-scroller', '')
+    Object.defineProperties(element, {
+      scrollHeight: { value: 1000, configurable: true },
+      clientHeight: { value: 500, configurable: true },
+    })
+    element.scrollTop = top
+    const line = document.createElement('button')
+    element.append(line)
+    document.body.append(element)
+    let lineTop = 300
+    line.getBoundingClientRect = () => ({ top: lineTop }) as DOMRect
+    element.getBoundingClientRect = () => ({ top: 0 }) as DOMRect
+    return { element, line, move: (to: number) => { lineTop = to } }
+  }
+  const frames = (count: number) => { for (let index = 0; index < count; index += 1) vi.advanceTimersToNextFrame() }
+
+  it('keeps its line in place, and a chat at its end at its end', () => {
+    vi.useFakeTimers()
+    try {
+      const up = scroller(200)
+      keepPlace(up.line)
+      up.move(260)
+      frames(1)
+      expect(up.element.scrollTop).toBe(160)
+
+      const end = scroller(500)
+      keepPlace(end.line)
+      end.move(260)
+      frames(2)
+      expect(end.element.scrollTop).toBe(500)
+    } finally {
+      vi.useRealTimers()
+      document.body.replaceChildren()
+    }
   })
 })

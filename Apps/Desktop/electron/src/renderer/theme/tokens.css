@@ -339,3 +339,28 @@
   --clarify-badge: 20px;
   --clarify-checkbox: 14px;
 }
+
+/* G: message action bars and the prompt rail (Apps/Shared/Views/MessageCopyButton.swift,
+   PromptRail.swift). */
+:root {
+  /* The bar under a message: 26 tall, its icons and time a quiet grey (the user,
+     2026-10-19: lighter than secondary text). */
+  --message-bar-height: 26px;
+  --message-bar-button: 24px;
+  --message-bar-ink: color-mix(in srgb, var(--text) 42%, transparent);
+  --message-bar-reveal: 150ms;
+  /* The rail: 22 wide, 28 from the chat's edge, 24 clear of the top and the composer;
+     ticks at most 14 apart, 10 x 2 (the prompt the chat is at 16 x 2). */
+  --rail-width: 22px;
+  --rail-trailing-inset: 28px;
+  --rail-vertical-inset: 24px;
+  --rail-tick-width: 10px;
+  --rail-tick-current-width: 16px;
+  --rail-tick-height: 2px;
+  --rail-tick: var(--text-tertiary);
+  --rail-tick-current: var(--text);
+  --rail-panel-width: 280px;
+  --rail-panel-max-height: 420px;
+  --rail-panel-radius: 12px;
+  --rail-row-radius: var(--radius-md);
+}

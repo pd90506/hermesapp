@@ -3,9 +3,13 @@
 // earlier one.
 import { registerBlockRenderer } from './registry.ts'
 import { AssistantBlock, SystemBlock, ToolBlock, UserBlock } from './MessageBlocks.tsx'
+import { addMessageActions } from '../actions/register.ts'
 
 // A
 registerBlockRenderer('user', UserBlock)
 registerBlockRenderer('assistant', AssistantBlock)
 registerBlockRenderer('system', SystemBlock)
 registerBlockRenderer('tool', ToolBlock)
+
+// G: wraps the renderers registered above (C's too) with the action bars and the copy menu.
+addMessageActions()

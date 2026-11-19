@@ -12,6 +12,11 @@
   gap: var(--space-4);
 }
 
+/* Every card slot drew nothing: no gap over the composer. */
+.cards:empty {
+  display: none;
+}
+
 .card {
   display: flex;
   flex-direction: column;

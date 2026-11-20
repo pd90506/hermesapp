@@ -192,6 +192,13 @@
   overflow-wrap: normal;
 }
 
+/* The fence's bare <code>: the browser's own `code { font-family: monospace }` would
+   replace the font above, and in Chinese text (the transcript's lang) Chromium's
+   monospace on Windows is NSimSun, a serif. */
+.codePre code {
+  font-family: inherit;
+}
+
 .token {
   color: var(--token-light, currentColor);
 }

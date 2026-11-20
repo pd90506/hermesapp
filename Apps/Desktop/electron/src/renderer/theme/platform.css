@@ -9,7 +9,11 @@
   /* The system's own UI font on each (San Francisco, Segoe UI Variable). */
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', var(--font-cjk), sans-serif;
   --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', var(--font-cjk), sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, var(--font-cjk), monospace;
+  /* Code: each system's own programming font (Cascadia Mono or Consolas, SF Mono or
+     Menlo), CJK glyphs from --font-cjk. Never the generic `monospace` or `ui-monospace`
+     first on Windows: there Chromium resolves them per the text's language, and in
+     Chinese text (the transcript's `lang`) that is NSimSun, a serif. */
+  --font-mono: 'Cascadia Mono', Consolas, var(--font-cjk), monospace;
   /* One type scale, 14 px body, scaled by the UI text size (14 by default, so unscaled). */
   --text-system-ui: 14;
   --text-body: round(nearest, calc(14px * var(--ui-scale)), 1px);
@@ -22,6 +26,11 @@
   --selection-text: var(--text);
   --selection-indicator: transparent;
   --row-radius: var(--radius-md);
+}
+
+/* ui-monospace is SF Mono, which apps reach only through this name. */
+:root[data-platform='mac'] {
+  --font-mono: ui-monospace, 'SF Mono', Menlo, var(--font-cjk), monospace;
 }
 
 /* Fallbacks before the preload's values arrive (and in tests). */

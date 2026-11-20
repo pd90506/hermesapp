@@ -8,6 +8,7 @@ import { useContextMenu, type ContextMenuEntry } from '../../../ui/ContextMenu.t
 import { copyText } from '../../markdown/clipboard.ts'
 import type { BlockProps } from '../blocks/registry.ts'
 import { MessageActionBar } from './MessageActionBar.tsx'
+import { useIsInTurnWork } from '../blocks/work/remembered.ts'
 import styles from './MessageActions.module.css'
 
 /**
@@ -65,9 +66,9 @@ export function MessageWithActions({ item, chat, isNewest, align, children }: {
   const branch = useBranch(item, chat)
   const [menuOpen, setMenuOpen] = useState(false)
   const onMenuOpen = useCallback((open: boolean) => setMenuOpen(open), [])
-  // TODO(C/G merge): also no bar inside a turn's opened work: `&& !useIsInTurnWork()`
-  // (C's blocks/work/remembered.ts, PR #181), as the Mac's `isInTurnWork`.
-  const hasBar = item.role === 'user' || ConversationMarkdown.hasActionBar(item)
+  // No bar inside a turn's opened work (its commentary), as the Mac's `isInTurnWork`.
+  const inTurnWork = useIsInTurnWork()
+  const hasBar = !inTurnWork && (item.role === 'user' || ConversationMarkdown.hasActionBar(item))
   return (
     <div className={styles.message} data-menu-open={menuOpen || undefined} onContextMenu={onContextMenu}>
       {children}

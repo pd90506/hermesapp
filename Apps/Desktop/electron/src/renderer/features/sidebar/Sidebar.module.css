@@ -27,7 +27,7 @@
   width: var(--frame-traffic-lights-width);
   /* No band gap after it where it takes no room (Windows), so the toggle's slot starts
      at the window's edge. */
-  margin-right: min(0px, calc(var(--frame-traffic-lights-width) - var(--space-2)));
+  margin-right: calc(min(var(--frame-traffic-lights-width), var(--space-2)) - var(--space-2));
 }
 
 /* As wide as the profile rail, so the toggle sits over its avatars whether it shows or

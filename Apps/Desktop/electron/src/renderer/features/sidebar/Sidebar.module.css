@@ -25,6 +25,8 @@
 .trafficLights {
   flex: none;
   width: var(--frame-traffic-lights-width);
+  /* Its width already holds its margins (none on Windows): no band gap after it. */
+  margin-right: calc(var(--space-2) * -1);
 }
 
 /* As wide as the profile rail, so the toggle sits over its avatars whether it shows or not. */

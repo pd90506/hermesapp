@@ -23,7 +23,7 @@ function renderList(snapshot: Partial<ConnectionSnapshot>) {
   Object.assign(connection, {
     call, restoreLists: () => {}, sessionListLimit: () => undefined, refreshListsInBackground: () => {},
     // The chats (A): none on screen.
-    chats: Object.assign(new Store({ otherRequests: [], unsent: {} }), { openSession, openBotChat: vi.fn(async () => {}) }),
+    chats: Object.assign(new Store({ otherRequests: [], unsent: {} }), { active: undefined, warm: [], forget: vi.fn(), openSession, openBotChat: vi.fn(async () => {}) }),
   })
   const bridge = { sidebar: { load: async () => ({}), save: async () => {} } } as unknown as TalariaBridge
   const app = new Store<Partial<AppSnapshot>>({ loaded: true, railShown: true, currentServerID: 'srv' })

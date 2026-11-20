@@ -3,10 +3,11 @@ import type { ConnectionSnapshot, GatewayConnection } from '../connection.ts'
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import { GatewayMethod } from '../protocol/methods.ts'
+import type { ChatSession } from '../session/chat-session.ts'
 import { SessionReadMarks, activityCacheKey, listDate, readRowActivity, sortByListDate, type SessionRowActivity } from './activity.ts'
 import { avatarDataURL, hasAvatar } from './avatar.ts'
 import { sessionDateGroups, type CalendarOptions, type SessionDateGroup } from './date-groups.ts'
-import { SessionActionError, SessionActions } from './manage.ts'
+import { SessionActionError, SessionActions, isProtected } from './manage.ts'
 import { SessionPins } from './pins.ts'
 import { markRead, readWatermarks, type SessionsREST } from './rest.ts'
 import { searchResults, searchSessions, type SessionSearchResult } from './search.ts'
@@ -122,6 +123,43 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
     this.connection = options.connection
     this.now = options.now ?? (() => Date.now())
     this.connection.subscribe(() => this.connectionChanged())
+    this.followOpenChat()
+  }
+
+  // MARK: The chat on screen (package A)
+
+  private openChat?: { chat: ChatSession; unsubscribe: () => void }
+
+  /**
+   * The chat on screen is the selected row: it is seen as replies arrive, and its newest
+   * reply is marked read on the server. Follows the connection's chats (`ChatManager`)
+   * and the open chat's view, whose stored id settles after a New chat opens.
+   */
+  private followOpenChat(): void {
+    const chats = (this.connection as Partial<GatewayConnection>).chats
+    if (!chats) return
+    const follow = () => {
+      const chat = chats.get().active
+      if (chat !== this.openChat?.chat) {
+        this.openChat?.unsubscribe()
+        this.openChat = chat ? { chat, unsubscribe: chat.subscribe(() => this.openChatChanged()) } : undefined
+      }
+      this.openChatChanged()
+    }
+    chats.subscribe(follow)
+    follow()
+  }
+
+  private openChatChanged(): void {
+    const view = this.openChat?.chat.get()
+    const profile = view?.profile ?? this.connection.get().selectedProfile
+    const selection: SidebarSelection | undefined = !view || !profile ? undefined
+      : view.kind === 'botChat' ? { kind: 'bot', profile }
+        : view.storedSessionID ? { kind: 'session', profile, id: view.storedSessionID } : undefined
+    const old = this.get().selection
+    const same = old?.kind === selection?.kind && old?.profile === selection?.profile &&
+      (old?.kind !== 'session' || (selection?.kind === 'session' && old.id === selection.id))
+    if (!same) this.select(selection)
   }
 
   private update(change: Partial<SidebarSnapshot>): void {
@@ -259,8 +297,8 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
   }
 
   /**
-   * Selects a row. Until the chat core opens chats (package A), the selected session
-   * counts as on screen: it is seen, and its newest reply is marked read on the server.
+   * Selects a row: the chat on screen (followed from A's chats, and set at once on a
+   * click). It is seen, and its newest reply is marked read on the server.
    */
   select(selection: SidebarSelection | undefined): void {
     const old = this.get().selection
@@ -328,9 +366,36 @@ export class SessionSidebar extends Observable<SidebarSnapshot> {
   }
 
   async delete(profile: string, row: SessionSummary): Promise<void> {
-    if (await this.act(async () => { await SessionActions.delete(this.call, row, profile, this.bot(profile)); return true })) {
+    if (await this.act(async () => {
+      if (!isProtected(row, this.bot(profile))) await this.closeOpenChats(profile, row)
+      await SessionActions.delete(this.call, row, profile, this.bot(profile))
+      return true
+    })) {
       if (this.isOnScreen(profile, row.id)) this.update({ selection: { kind: 'bot', profile } })
       this.connection.refreshListsInBackground()
+    }
+  }
+
+  /**
+   * Closes this connection's chats showing the row, on screen or warm (HermesKit's
+   * `deleteStored`): a live session refuses deletion (4023), so its turn is stopped and
+   * its runtime closed first, and the chat forgotten.
+   */
+  private async closeOpenChats(profile: string, row: SessionSummary): Promise<void> {
+    const chats = (this.connection as Partial<GatewayConnection>).chats
+    if (!chats) return
+    const ids = new Set([row.id, ...(row.resolved_id ? [row.resolved_id] : [])])
+    const showing = [...new Set([...(chats.active ? [chats.active] : []), ...chats.warm])].filter((chat) => {
+      const view = chat.get()
+      return (view.profile ?? profile) === profile && view.storedSessionID !== undefined && ids.has(view.storedSessionID)
+    })
+    for (const chat of showing) {
+      const view = chat.get()
+      if (!view.isRuntimeGone) {
+        if (view.isRunning) await this.call('session.interrupt', { session_id: view.sessionID }).catch(() => {})
+        await this.call('session.close', { session_id: view.sessionID }).catch(() => {})
+      }
+      chats.forget(chat)
     }
   }
 

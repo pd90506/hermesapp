@@ -397,18 +397,18 @@
   --message-bar-reveal: 150ms;
   /* The rail: 22 wide, 28 from the chat's edge, 24 clear of the top and the composer;
      ticks at most 14 apart, 10 x 2 (the prompt the chat is at 16 x 2). */
-  --rail-width: 22px;
-  --rail-trailing-inset: 28px;
-  --rail-vertical-inset: 24px;
-  --rail-tick-width: 10px;
-  --rail-tick-current-width: 16px;
-  --rail-tick-height: 2px;
-  --rail-tick: var(--text-tertiary);
-  --rail-tick-current: var(--text);
-  --rail-panel-width: 280px;
-  --rail-panel-max-height: 420px;
-  --rail-panel-radius: 12px;
-  --rail-row-radius: var(--radius-md);
+  --prompt-rail-width: 22px;
+  --prompt-rail-trailing-inset: 28px;
+  --prompt-rail-vertical-inset: 24px;
+  --prompt-rail-tick-width: 10px;
+  --prompt-rail-tick-current-width: 16px;
+  --prompt-rail-tick-height: 2px;
+  --prompt-rail-tick: var(--text-tertiary);
+  --prompt-rail-tick-current: var(--text);
+  --prompt-rail-panel-width: 280px;
+  --prompt-rail-panel-max-height: 420px;
+  --prompt-rail-panel-radius: 12px;
+  --prompt-rail-row-radius: var(--radius-md);
 }
 
 /* E: attachments and media (features/composer/attachments, features/chat/blocks/media).

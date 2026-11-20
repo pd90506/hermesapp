@@ -48,3 +48,13 @@ describe('renderer code', () => {
     expect(code).not.toMatch(/process\.platform|navigator\.(platform|userAgent)/)
   })
 })
+
+describe('tokens', () => {
+  // Each package adds its own `:root` block; a name two of them define means the later
+  // silently wins for both (G's prompt rail once narrowed the profile rail to 22 px).
+  it('are each defined once at the top level', () => {
+    const css = withoutComments(readFileSync(join(renderer, 'theme/tokens.css'), 'utf8'))
+    const names = [...css.matchAll(/^:root\s*\{([^}]*)\}/gm)].flatMap((block) => [...block[1]!.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1]!))
+    expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual([])
+  })
+})

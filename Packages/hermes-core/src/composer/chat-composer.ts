@@ -7,6 +7,9 @@ import { ReasoningEffort } from './model/reasoning-effort.ts'
 import { ComposerSlash } from './slash/composer-slash.ts'
 import { isLinkFailure, runSlash, type SlashOutcome } from './slash/run-slash.ts'
 import { isSlashCommand, parseSlashCommand } from './slash/slash-commands.ts'
+import { AttachmentError } from './attachments/policy.ts'
+import { StrandedImages } from './attachments/stranded.ts'
+import { AttachmentTray } from './attachments/tray.ts'
 import { PromptQueue } from './queue/prompt-queue.ts'
 
 export interface ComposerView {
@@ -40,11 +43,19 @@ export class ChatComposer extends Observable<ComposerView> {
   /** The slash-command list (package D). */
   readonly slash: ComposerSlash
 
+  /** E: the images and files attached to this chat's composer. */
+  readonly attachments: AttachmentTray
   /** Messages held while a reply or a compression runs, and `/compress` (package F). */
   readonly queue: PromptQueue
 
-  constructor(readonly session: ChatSession, private readonly actions?: ComposerActions) {
+  constructor(readonly session: ChatSession, stranded = new StrandedImages(), private readonly actions?: ComposerActions) {
     super({ draft: '', isSubmitting: false })
+    this.attachments = new AttachmentTray(session, stranded, (message) => {
+      if (message === undefined) this.clearError()
+      else this.set({ ...this.get(), error: message })
+    })
+    // Send's state follows the cards (uploads under way, cards added or removed).
+    this.attachments.subscribe(() => this.set({ ...this.get() }))
     this.queue = new PromptQueue(this, session)
     const errors = { showError: (message: string, cause?: unknown) => this.showError(message, cause), clearError: () => this.clearError() }
     this.models = new ComposerModels(session, errors)
@@ -80,7 +91,8 @@ export class ChatComposer extends Observable<ComposerView> {
 
   /** Something to send, and no send in flight. */
   get canSubmit(): boolean {
-    return !this.get().isSubmitting && this.get().draft.trim() !== ''
+    if (this.get().isSubmitting || this.attachments.isUploading) return false
+    return this.get().draft.trim() !== '' || this.attachments.hasCards
   }
 
   /**
@@ -89,6 +101,10 @@ export class ChatComposer extends Observable<ComposerView> {
    * keeps its bubble, marked, in the transcript.
    */
   async submit(): Promise<void> {
+    // Images still uploading are waited for (the Send button waits for them too).
+    if (this.attachments.hasCards && !this.get().isSubmitting && !this.attachments.isUploadingFiles) {
+      return this.submitWithAttachments()
+    }
     if (!this.canSubmit) return
     if (isSlashCommand(this.get().draft)) {
       await this.submitSlash()
@@ -110,7 +126,7 @@ export class ChatComposer extends Observable<ComposerView> {
     } catch (error) {
       if (error instanceof SendCancelledError) {
         this.restoreText(text)
-      } else if (error instanceof GatewayClientError && error.kind === 'notConnected') {
+      } else if (error instanceof AttachmentError || (error instanceof GatewayClientError && error.kind === 'notConnected')) {
         // Offline before it went out: the bubble went, the text comes back here.
         this.restoreText(text)
         this.set({ ...this.get(), error: describeError(error) })
@@ -121,9 +137,49 @@ export class ChatComposer extends Observable<ComposerView> {
     }
   }
 
+  /**
+   * E: sends the draft with the attached images and files (HermesKit's `ChatComposer.submit`).
+   * The draft and the cards clear at once (the bubble shows them). If the send fails, the
+   * images it queued come off the queue, and the cards and the draft come back for a
+   * retry, which uploads them again.
+   */
+  private async submitWithAttachments(): Promise<void> {
+    const text = this.get().draft
+    const signal = { cancelled: false }
+    this.sending = signal
+    this.set({ draft: '', isSubmitting: true })
+    const tray = this.attachments
+    tray.isSending = true
+    try {
+      await tray.uploadsSettled()
+      const taken = tray.take()
+      const prompt = tray.promptFor(text, taken)
+      try {
+        await this.session.send(text, signal, prompt)
+      } catch (error) {
+        await prompt.release()
+        tray.isSending = false
+        this.restoreText(text)
+        tray.restore(taken)
+        if (error instanceof AttachmentError || (error instanceof GatewayClientError && error.kind === 'notConnected')) {
+          this.set({ ...this.get(), error: error instanceof AttachmentError ? error.message : describeError(error) })
+        }
+      }
+    } finally {
+      tray.isSending = false
+      if (this.sending === signal) this.sending = undefined
+      this.set({ ...this.get(), isSubmitting: false })
+    }
+  }
+
   /** Stops a send that is still waiting to go out; its text comes back. */
   cancelSubmit(): void {
     if (this.sending) this.sending.cancelled = true
+  }
+
+  /** E: shows a failure in the composer (an attachment that could not be read or added). */
+  reportError(message: string): void {
+    this.showError(message)
   }
 
   private clearDraftAndError(): void {

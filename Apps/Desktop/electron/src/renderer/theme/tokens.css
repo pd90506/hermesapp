@@ -330,6 +330,20 @@
   }
 }
 
+/* J: the pills over the composer (task list, background tasks, subagents) and their
+   cards (the Mac's ChatPillRow, TodoPill, BackgroundProcessesPill, SubagentsPill). */
+:root {
+  --pill-card-radius: 16px;
+  --pill-card-max-height: 360px;
+  --pill-todo-glyph: 20px;
+  --pill-todo-indent: 18px;
+  --pill-todo-line: 1.5px;
+  --pill-row-icon: 16px;
+  --pill-ring-stroke: 2px;
+  --pill-output-lines: 12;
+  --pill-done: var(--success);
+}
+
 /* F: the cards over the composer (held and queued messages, compression) and the clarify
    card (Apps/Shared/Composer/ComposerView.swift, Apps/Shared/Views/ClarifyCardView.swift). */
 :root {
@@ -363,6 +377,29 @@
   --rail-panel-max-height: 420px;
   --rail-panel-radius: 12px;
   --rail-row-radius: var(--radius-md);
+}
+
+/* E: attachments and media (features/composer/attachments, features/chat/blocks/media).
+   Composer pills after Hermes Desktop's (a 32 px thumbnail, the name and a detail line, a
+   remove button on hover); transcript image cards one fixed size, as on the Mac (160×120). */
+:root {
+  --attachment-pill-max: 224px;
+  --attachment-thumb: 32px;
+  --attachment-remove: 20px;
+  --attachment-remove-icon: 12px;
+  --media-card-width: 160px;
+  --media-card-height: 120px;
+  --file-chip-max: 280px;
+  --file-chip-icon: 28px;
+  --media-spinner: 14px;
+  --media-spinner-stroke: 1.5px;
+  --viewer-backdrop: rgb(0 0 0 / 0.72);
+  --viewer-bar-text: #ffffff;
+  --viewer-bar-fill: rgb(255 255 255 / 0.12);
+  --viewer-bar-fill-hover: rgb(255 255 255 / 0.2);
+  --viewer-inset: 48px;
+  --drop-outline: 2px;
+  --drop-fill: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 /* D: composer controls (features/composer/model, slash, context): the model and effort

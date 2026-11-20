@@ -1,4 +1,5 @@
 import type { JSONValue } from '../protocol/jsonrpc.ts'
+import { originalFileNames } from '../media/file-names.ts'
 
 /** An image in a user message (HermesKit's `TranscriptImage`). */
 export interface TranscriptImage {
@@ -21,8 +22,9 @@ export function storedImages(paths: readonly string[]): TranscriptImage[] {
 }
 
 export function lastPathComponent(path: string): string {
-  const trimmed = path.replace(/\/+$/, '')
-  const index = trimmed.lastIndexOf('/')
+  // A Windows gateway's paths use backslashes (E: `C:\Users\…\images\a.png`).
+  const trimmed = path.replace(/[\\/]+$/, '')
+  const index = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
   return index >= 0 ? trimmed.slice(index + 1) : trimmed
 }
 
@@ -209,6 +211,8 @@ function attachmentReference(line: string): string | undefined {
 
 /** What a bubble shows for a reference: its file name. */
 export function attachmentDisplayName(ref: string): string {
+  const original = originalFileNames.name(ref)
+  if (original) return original
   const name = lastPathComponent(ref)
   return name === '' ? ref : name
 }

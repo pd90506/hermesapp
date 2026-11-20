@@ -1,0 +1,264 @@
+/* E: images and files in the transcript (the Mac's TranscriptImages and TranscriptFiles;
+   the file chips and the viewer after Hermes Desktop's). */
+.glyph {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.userMedia {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+}
+
+.reply {
+  display: flex;
+  flex-direction: column;
+  gap: var(--md-block-gap);
+}
+
+.delivered {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.imageRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.userMedia .imageRow {
+  justify-content: flex-end;
+}
+
+.fileColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.fileRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.imageCard {
+  display: block;
+  width: var(--media-card-width);
+  height: var(--media-card-height);
+  padding: 0;
+  overflow: hidden;
+  border: var(--hairline) solid var(--divider);
+  border-radius: var(--radius-xl);
+  background: var(--fill-hover);
+  cursor: zoom-in;
+}
+
+.imageCard:disabled {
+  cursor: default;
+}
+
+.thumbnail {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: 100%;
+  padding: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.placeholderName {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spinner {
+  width: var(--media-spinner);
+  height: var(--media-spinner);
+  border: var(--media-spinner-stroke) solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fileChip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: var(--file-chip-max);
+  border: var(--hairline) solid var(--divider);
+  border-radius: var(--radius-xl);
+  background: var(--surface-card);
+}
+
+.fileChip:hover {
+  background: var(--fill-hover);
+}
+
+.fileChip[data-error] {
+  border-color: color-mix(in srgb, var(--critical) 45%, transparent);
+}
+
+.fileOpen {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.fileIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--file-chip-icon);
+  height: var(--file-chip-icon);
+  border-radius: var(--radius-lg);
+  background: var(--fill-selected);
+  color: var(--text-secondary);
+}
+
+.fileText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fileName {
+  overflow: hidden;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileError {
+  overflow: hidden;
+  font-size: var(--text-caption);
+  color: var(--critical);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileSave {
+  display: inline-flex;
+  flex: none;
+  margin-right: var(--space-3);
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  opacity: 0;
+}
+
+.fileChip:hover .fileSave,
+.fileSave:focus-visible {
+  opacity: 1;
+}
+
+.fileSave:hover {
+  background: var(--fill-pressed);
+  color: var(--text);
+}
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--viewer-inset);
+  background: var(--viewer-backdrop);
+}
+
+.viewerBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 100%;
+  color: var(--viewer-bar-text);
+}
+
+.viewerName {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewerError {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewerButton,
+.viewerClose {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--viewer-bar-fill);
+  color: inherit;
+}
+
+.viewerClose {
+  padding: var(--space-3);
+}
+
+.viewerButton:hover,
+.viewerClose:hover {
+  background: var(--viewer-bar-fill-hover);
+}
+
+.viewerImage {
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-flyout);
+}

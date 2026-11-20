@@ -154,7 +154,7 @@ export async function runSlash(session: ChatSession, value: string, catalogs: Sl
   if (message === '') return note(session, `/${name}: ${type === 'skill' ? 'skill payload missing message' : 'empty message'}`)
   // Show the invocation, never the expanded skill body.
   const display = nonEmpty(result.display)?.trim() ?? (argument === '' ? `/${name}` : `/${name} ${argument}`)
-  await session.send(message, undefined, display)
+  await session.send(message, undefined, undefined, display)
   return { kind: 'submitted', display }
 }
 

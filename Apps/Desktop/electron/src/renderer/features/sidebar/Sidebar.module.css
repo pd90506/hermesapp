@@ -29,12 +29,14 @@
   margin-right: calc(var(--space-2) * -1);
 }
 
-/* As wide as the profile rail, so the toggle sits over its avatars whether it shows or not. */
+/* As wide as the profile rail, so the toggle sits over its avatars whether it shows or
+   not. Where the traffic lights already take the rail's width (macOS), it can't sit over
+   the avatars: it takes only its own width, leaving the name its room. */
 .railToggle {
   display: flex;
   flex: none;
   justify-content: center;
-  width: var(--rail-width);
+  width: max(var(--icon-button-size), calc(var(--rail-width) - var(--frame-traffic-lights-width)));
 }
 
 /* The name starts where the list's text does past the rail's line (SessionList's

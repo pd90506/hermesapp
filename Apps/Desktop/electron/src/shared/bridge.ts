@@ -62,6 +62,27 @@ export interface SavedSettings {
   markdownColors?: MarkdownColorsJSON
 }
 
+/* J: notifications */
+/** The chat a notification is about: a click opens it, Approve / Reject answer its request. */
+export interface NotificationTarget {
+  serverID: string
+  profile?: string
+  storedSessionID?: string
+  isBotChat: boolean
+  /** An approval's server request id: the notification has Approve and Reject (macOS). */
+  requestID?: string
+}
+
+export interface SystemNotification {
+  title: string
+  body: string
+  /** Peer alerts with the same tag within a second show once. */
+  tag: string
+  target?: NotificationTarget
+}
+
+export type NotificationAction = 'approve' | 'reject'
+
 /** A key with its modifiers, as a `KeyboardEvent` reports them. */
 export interface Shortcut {
   key: string
@@ -157,7 +178,53 @@ export interface TalariaBridge {
     /** Light, dark or the system's look for the whole app (`nativeTheme.themeSource`). */
     setMode(mode: AppearanceMode): void
   }
+  /* J: notifications */
+  /** The system's notifications (Electron `Notification`, in the main process). */
+  notifications: {
+    /** Shows one; false when the system can't. */
+    show(notification: SystemNotification): Promise<boolean>
+    /** Settings ▸ Notifications' test, past every switch. */
+    test(): Promise<boolean>
+    /** A notification was clicked: the window is in front; open its chat. */
+    onClick(handler: (target: NotificationTarget) => void): () => void
+    /** Approve or Reject was pressed on an approval's notification. */
+    onAction(handler: (target: NotificationTarget, action: NotificationAction) => void): () => void
+  }
+  /* E: attachments and files */
+  files: {
+    /** The system's open dialog, any type, several files; empty when cancelled. */
+    pick(): Promise<PickedFile[]>
+    /** A picked file's bytes (only paths `pick` returned). */
+    read(path: string): Promise<Uint8Array>
+    /** The path of a dropped or pasted file, or '' for one that is not on disk. */
+    pathFor(file: File): string
+    /**
+     * Re-encodes an image Chromium cannot decode (HEIC, TIFF) with the OS's decoder;
+     * null when this computer cannot read it.
+     */
+    convertImage(bytes: Uint8Array, options: { maxPixels?: number; format: 'png' | 'jpeg' }): Promise<ConvertedImage | null>
+    /** Streams a dashboard download to the app's cache, once per address; the saved file's path. */
+    download(request: BridgeHttpRequest, name: string): Promise<{ ok: true; path: string } | { ok: false; status: number; body: string }>
+    /** Opens a downloaded file in its default app; false when refused. */
+    open(path: string): Promise<boolean>
+    /** The system's save dialog for a downloaded file; false when cancelled. */
+    saveAs(path: string, name: string): Promise<boolean>
+  }
 }
+
+/* E: attachments and files */
+export interface PickedFile {
+  path: string
+  name: string
+  size: number
+}
+
+export interface ConvertedImage {
+  bytes: Uint8Array
+  width: number
+  height: number
+}
+
 
 export type AppearanceMode = 'system' | 'light' | 'dark'
 
@@ -191,6 +258,18 @@ export const IPC = {
   localBackendRunning: 'talaria:local-backend:running',
   linksOpen: 'talaria:links:open',
   themeSetMode: 'talaria:theme:set-mode',
+  /* J: notifications */
+  notificationShow: 'talaria:notifications:show',
+  notificationTest: 'talaria:notifications:test',
+  notificationClick: 'talaria:notifications:click',
+  notificationAction: 'talaria:notifications:action',
+  /* E: attachments and files */
+  filesPick: 'talaria:files:pick',
+  filesRead: 'talaria:files:read',
+  filesConvertImage: 'talaria:files:convert-image',
+  filesDownload: 'talaria:files:download',
+  filesOpen: 'talaria:files:open',
+  filesSaveAs: 'talaria:files:save-as',
 } as const
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */

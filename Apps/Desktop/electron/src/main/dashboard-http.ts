@@ -39,6 +39,12 @@ export class DashboardHttp {
     this.cookies.clear()
   }
 
+  /** E: the `Cookie` header this jar sends to `url`'s host, for a download streamed elsewhere. */
+  cookieHeader(url: URL): string | undefined {
+    const jar = this.cookies.get(url.host)
+    return jar && jar.size > 0 ? [...jar].map(([name, value]) => `${name}=${value}`).join('; ') : undefined
+  }
+
   private keep(host: string, setCookies: string[]): void {
     if (setCookies.length === 0) return
     const jar = this.cookies.get(host) ?? new Map<string, string>()

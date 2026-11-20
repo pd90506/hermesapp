@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { ChatSession } from '@talaria/hermes-core'
 import { useConnection, useSnapshot } from '../../app/hooks.ts'
 import { Composer } from '../composer/Composer.tsx'
-import { chatPills } from './overlay.ts'
+import { chatPills, pillRowRoom } from './overlay.ts'
 import './registered-pills.ts'
 import { ScrollToBottomButton } from './ScrollToBottomButton.tsx'
 import { TranscriptList } from './TranscriptList.tsx'
@@ -18,6 +18,8 @@ export function ChatView({ chat }: { chat: ChatSession }) {
   const view = useSnapshot(chat)
   const composerRow = useRef<HTMLDivElement>(null)
   const [composerHeight, setComposerHeight] = useState(0)
+  // J: the registry is fixed at import, so these hooks run in the same order every render.
+  const pillsShown = chatPills().map((pill) => pill.useShown?.(chat) ?? false).some(Boolean)
   useLayoutEffect(() => {
     const element = composerRow.current
     const window = element?.ownerDocument.defaultView
@@ -29,7 +31,7 @@ export function ChatView({ chat }: { chat: ChatSession }) {
   }, [])
   return (
     <div className={styles.chat}>
-      <TranscriptList chat={chat} view={view} bottomInset={composerHeight} overlay={({ awayFromEnd, messagesBelow, scrollToEnd }) => (
+      <TranscriptList chat={chat} view={view} bottomInset={composerHeight} endRoom={pillsShown ? pillRowRoom : 0} overlay={({ awayFromEnd, messagesBelow, scrollToEnd }) => (
         <>
           {chatPills().filter((pill) => pill.order < 100).map(({ id, Pill }) => <Pill key={id} chat={chat} />)}
           {awayFromEnd && <ScrollToBottomButton count={messagesBelow} onClick={scrollToEnd} />}

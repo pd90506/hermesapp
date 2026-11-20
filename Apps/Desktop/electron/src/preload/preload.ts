@@ -1,6 +1,7 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
-  IPC, frameGeometry, sidebarShortcuts, type Appearance, type Platform, type SocketEvent, type TalariaBridge,
+  IPC, frameGeometry, sidebarShortcuts, type Appearance, type NotificationAction, type NotificationTarget, type Platform,
+  type SocketEvent, type TalariaBridge,
 } from '../shared/bridge.ts'
 
 const platform: Platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
@@ -92,6 +93,36 @@ const bridge: TalariaBridge = {
   },
   theme: {
     setMode: (mode) => ipcRenderer.send(IPC.themeSetMode, mode),
+  },
+  /* J: notifications */
+  notifications: {
+    show: (notification) => ipcRenderer.invoke(IPC.notificationShow, notification),
+    test: () => ipcRenderer.invoke(IPC.notificationTest),
+    onClick(handler) {
+      const listener = (_event: unknown, target: NotificationTarget) => handler(target)
+      ipcRenderer.on(IPC.notificationClick, listener)
+      return () => ipcRenderer.removeListener(IPC.notificationClick, listener)
+    },
+    onAction(handler) {
+      const listener = (_event: unknown, target: NotificationTarget, action: NotificationAction) => handler(target, action)
+      ipcRenderer.on(IPC.notificationAction, listener)
+      return () => ipcRenderer.removeListener(IPC.notificationAction, listener)
+    },
+  },
+  files: {
+    pick: () => ipcRenderer.invoke(IPC.filesPick),
+    read: (path) => ipcRenderer.invoke(IPC.filesRead, path),
+    pathFor: (file) => {
+      try {
+        return webUtils.getPathForFile(file)
+      } catch {
+        return ''
+      }
+    },
+    convertImage: (bytes, options) => ipcRenderer.invoke(IPC.filesConvertImage, bytes, options),
+    download: (request, name) => ipcRenderer.invoke(IPC.filesDownload, request, name),
+    open: (path) => ipcRenderer.invoke(IPC.filesOpen, path),
+    saveAs: (path, name) => ipcRenderer.invoke(IPC.filesSaveAs, path, name),
   },
 }
 

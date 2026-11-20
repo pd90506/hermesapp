@@ -29,6 +29,7 @@ Don't edit `ChatView`, `TranscriptList` or `Composer` to place your feature.
 | --- | --- | --- | --- |
 | Transcript blocks | `registerBlockRenderer(kind, Component)` in `features/chat/blocks/registry.ts` | `features/chat/blocks/registered-blocks.ts` | How a block draws. `kind` is `blockKind(block)`: `user`, `assistant`, `system` or `tool` for one row, `work` for a group (C). The last registration of a kind wins, so a package can replace a renderer (C does `tool`). |
 | Composer slots | `registerComposerSlot({ id, area, order, Slot })` in `features/composer/slots.ts` | `features/composer/registered-slots.ts` | `cards` over the composer (F), `attachments` in the card (E), `leading` toolbar start (E), `modelEffort` (D), `trailing` before Send (D). |
+| Composer keys | `registerComposerKeyHandler(handler)` in `features/composer/slots.ts` | `features/composer/registered-slots.ts` (with the package's slots) | Keys the text area offers before its own Return handling, never while an input method composes (D: the slash list's arrows, Tab, Return, Esc). |
 | Chat pills | `registerChatPill({ id, order, Pill })` in `features/chat/overlay.ts` | `features/chat/registered-pills.ts` | The row of the scroll-to-bottom button over the composer (J). The scroll button is at order 100. A pill returns `null` when it has nothing to show. |
 | Chat edge | `registerChatEdge({ id, Edge })` in `features/chat/edge.ts` | `features/chat/registered-edges.ts` | Drawn over the transcript's trailing side room (`--chat-side-room`): the prompt rail (G). Gets the listed blocks, the ids on screen, `atEnd`, `scrollToBlock(id)` and `onUserScroll(listener)`. |
 
@@ -40,7 +41,9 @@ Copy Conversation menu. A package that draws a reply inside its own block (C's `
 answer) wraps it in `MessageWithActions` from `features/chat/actions/MessageActions.tsx`.
 
 Components get the `ChatSession` (and, for slots, its `ChatComposer`); read them with
-`useSnapshot`.
+`useSnapshot`. `ChatComposer` carries D's `models` (model and effort pickers) and `slash`
+(the slash list); `submit()` runs a slash command instead of sending it. A chat's token use
+is `ChatSession.usage`.
 
 **A turn's work (C).** `transcriptBlocks` folds each turn's work before its answer into one
 `work` block (`hermes-core/src/session/work/`: `TurnWork`, `ToolCallView`, `ToolCallSummary`);

@@ -17,5 +17,6 @@ source when adding a shape.
 | `server-requests.json` | Which server requests are declined, and with which code |
 | `session-projection.json` | Stored transcript rows as chat rows: hidden rows, tool calls, attachments, skill turns |
 | `servers-auth.json` | The browser sign-in's PKCE challenge, the local backend's ready-port line |
+| `turn-work.json` | A turn's work folded as the chat shows it (commentary, groups of steps, card calls, the settled line) and tool calls' titles, statuses and counts |
 | `cron-jobs.json` (Swift: `CronFixtureTests.swift`) | Cron job rows: fields read, titles, states, delivery targets and toggles, schedule presets, run session ids |
 | `appearance-themes.json` | Every colour theme's accent, window surfaces and Markdown colours (light and dark), the System theme tinted with a system accent, and how the Appearance settings load and clamp text sizes. Generated from HermesKit (`HERMES_EXPORT_FIXTURES=1 swift test --filter AppearanceFixtureTests`); the desktop app's theme stylesheet is generated from it (`Apps/Desktop/electron/scripts/export-themes.mjs`) |

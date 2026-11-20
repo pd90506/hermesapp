@@ -1,0 +1,397 @@
+{
+  "_comment": "A turn's work as the chat folds it (HermesKit's TranscriptGrouping, TurnWork, ToolCallView; hermes-core's session/work), from stored rows as hermes_state_messages.py stores them and tool calls as tool.complete reports them (tui_gateway/server.py _tool_complete). Generated once from hermes-core and checked by both cores.",
+  "turns": [
+    {
+      "name": "a settled turn: commentary, one group of steps, the answer with its reasoning as the last step",
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "Why does the test fail?",
+          "timestamp": 1700000000
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "Let me look.",
+          "reasoning": "**Planning the check**\nStatus first.",
+          "timestamp": 1700000002,
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "terminal",
+                "arguments": "{\"command\":\"cd /repo && git status 2>&1 | tail -5\"}"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": "{\"path\":\"src/index.ts\"}"
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "role": "tool",
+          "tool_call_id": "c1",
+          "content": "{\"output\": \"On branch main\", \"exit_code\": 0}",
+          "timestamp": 1700000003
+        },
+        {
+          "id": 4,
+          "role": "tool",
+          "tool_call_id": "c2",
+          "content": "{\"content\": \"1|export {}\"}",
+          "timestamp": 1700000004
+        },
+        {
+          "id": 5,
+          "role": "assistant",
+          "content": "The fixture changed.",
+          "reasoning": "Done.",
+          "timestamp": 1700000045
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "Why does the test fail?"
+        },
+        {
+          "work": {
+            "title": "Completed in 45s",
+            "entries": [
+              {
+                "commentary": "Let me look."
+              },
+              {
+                "group": "Ran commands, read files",
+                "steps": [
+                  "Think · Planning the check",
+                  "Bash · cd /repo && git status 2>&1 | tail -5",
+                  "Read · src/index.ts",
+                  "Think · Done."
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "role": "assistant",
+          "text": "The fixture changed."
+        }
+      ]
+    },
+    {
+      "name": "text between steps splits the work; a delegated task keeps its own row",
+      "rows": [
+        {
+          "id": 1,
+          "role": "user",
+          "content": "Upgrade it.",
+          "timestamp": 1700000000
+        },
+        {
+          "id": 2,
+          "role": "assistant",
+          "content": "",
+          "reasoning": "Plan the upgrade.",
+          "timestamp": 1700000001,
+          "tool_calls": [
+            {
+              "id": "c1",
+              "type": "function",
+              "function": {
+                "name": "web_search",
+                "arguments": "{\"query\":\"release notes\"}"
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "role": "tool",
+          "tool_call_id": "c1",
+          "content": "{\"data\": {\"web\": [{\"title\": \"Notes\", \"url\": \"https://example.com/notes\"}]}}",
+          "timestamp": 1700000002
+        },
+        {
+          "id": 4,
+          "role": "assistant",
+          "content": "No backup needed.",
+          "timestamp": 1700000003,
+          "tool_calls": [
+            {
+              "id": "c2",
+              "type": "function",
+              "function": {
+                "name": "delegate_task",
+                "arguments": "{\"goal\":\"Check plugins\"}"
+              }
+            },
+            {
+              "id": "c3",
+              "type": "function",
+              "function": {
+                "name": "patch",
+                "arguments": "{\"path\":\"config/app.yaml\"}"
+              }
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "role": "tool",
+          "tool_call_id": "c2",
+          "content": "{\"message\": \"Plugins fine\"}",
+          "timestamp": 1700000030
+        },
+        {
+          "id": 6,
+          "role": "tool",
+          "tool_call_id": "c3",
+          "content": "{\"success\": true, \"diff\": \"-a\\n+b\"}",
+          "timestamp": 1700000031
+        },
+        {
+          "id": 7,
+          "role": "assistant",
+          "content": "Upgrade done.",
+          "timestamp": 1700000065
+        }
+      ],
+      "expected": [
+        {
+          "role": "user",
+          "text": "Upgrade it."
+        },
+        {
+          "work": {
+            "title": "Completed in 1m 05s",
+            "entries": [
+              {
+                "group": "Searched",
+                "steps": [
+                  "Think · Plan the upgrade.",
+                  "Web search · release notes"
+                ]
+              },
+              {
+                "commentary": "No backup needed."
+              },
+              {
+                "card": "delegate_task"
+              },
+              {
+                "group": "Edited files",
+                "steps": [
+                  "Patch · config/app.yaml"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "role": "assistant",
+          "text": "Upgrade done."
+        }
+      ]
+    }
+  ],
+  "toolCalls": [
+    {
+      "name": "terminal",
+      "args": {
+        "command": "cd /repo && git status 2>&1 | tail -5"
+      },
+      "result": {
+        "output": "On branch main",
+        "exit_code": 0
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Ran git status",
+        "status": "success",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "terminal",
+      "args": {
+        "command": "grep x f"
+      },
+      "result": {
+        "output": "",
+        "exit_code": 1
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Ran grep x f",
+        "status": "notice",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "terminal",
+      "args": {
+        "command": "make"
+      },
+      "phase": "running",
+      "expected": {
+        "title": "Running make",
+        "status": "running",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "terminal",
+      "args": {
+        "command": "sleep 99"
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Result unavailable",
+        "status": "warning",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "read_file",
+      "args": {
+        "path": "/home/u/notes.md",
+        "offset": 237,
+        "limit": 23
+      },
+      "result": {
+        "content": "237|a\n259|b"
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Read notes.md L237-259",
+        "status": "success",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "read_file",
+      "args": {
+        "path": "x.md"
+      },
+      "result": {
+        "error": "File not found: x.md"
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Read x.md",
+        "status": "notice",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "web_search",
+      "args": {
+        "query": "swift grid"
+      },
+      "result": {
+        "data": {
+          "web": [
+            {
+              "title": "A",
+              "url": "https://example.com/a"
+            },
+            {
+              "title": "B",
+              "url": "https://example.com/b"
+            }
+          ]
+        }
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Searched “swift grid”",
+        "status": "success",
+        "countLabel": "2 results"
+      }
+    },
+    {
+      "name": "web_extract",
+      "args": {
+        "urls": [
+          "https://example.com/docs"
+        ]
+      },
+      "result": {
+        "success": false,
+        "error": "403 Forbidden"
+      },
+      "phase": "failed",
+      "expected": {
+        "title": "Read example.com/docs",
+        "status": "error",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "skill_view",
+      "args": {
+        "name": "swiftui"
+      },
+      "result": {
+        "success": true
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Loaded skill: swiftui",
+        "status": "success",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "custom_lookup",
+      "args": {
+        "id": 7
+      },
+      "result": {
+        "path": "notes.md",
+        "bytes": 12
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Custom Lookup",
+        "status": "success",
+        "countLabel": null
+      }
+    },
+    {
+      "name": "memory",
+      "result": {
+        "success": true,
+        "message": "Saved.",
+        "entry_count": 4
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Saved to memory",
+        "status": "success",
+        "countLabel": "4 entries"
+      }
+    },
+    {
+      "name": "browser_scroll",
+      "result": {
+        "ok": true
+      },
+      "phase": "complete",
+      "expected": {
+        "title": "Browser Scroll",
+        "status": "success",
+        "countLabel": null
+      }
+    }
+  ]
+}

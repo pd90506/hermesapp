@@ -1,0 +1,75 @@
+/* "Switch model?": an in-window dialog over a scrim, the same on every platform. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7);
+  background: var(--composer-dialog-scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: var(--composer-dialog-width);
+  max-width: 100%;
+  padding: var(--space-8);
+  border: var(--hairline) solid var(--composer-menu-stroke);
+  border-radius: var(--radius-xl);
+  background: var(--composer-menu-fill);
+  box-shadow: var(--shadow-flyout);
+  color: var(--text);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+}
+
+.message {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  overflow-wrap: anywhere;
+}
+
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.primary,
+.secondary {
+  height: var(--settings-field-height);
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: var(--text-body);
+}
+
+.primary {
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.primary:hover {
+  opacity: 0.9;
+}
+
+.secondary {
+  border: var(--hairline) solid var(--composer-menu-stroke);
+  background: transparent;
+  color: var(--text);
+}
+
+.secondary:hover {
+  background: var(--fill-hover);
+}

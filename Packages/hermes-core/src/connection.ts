@@ -1,6 +1,6 @@
 import { Bot, historyRows, type ProfileRow, type SessionSummary } from './bots.ts'
 import { GatewayClient, GatewayClientError, type GatewayClientConfiguration, type GatewayReady } from './client.ts'
-import type { GatewayConnector } from './connector.ts'
+import { DashboardConnector, type GatewayConnector } from './connector.ts'
 import { DashboardError } from './dashboard.ts'
 import { dashboardAPIFor, type DashboardAPI } from './dashboard-api.ts'
 import { describeError } from './describe.ts'
@@ -8,6 +8,7 @@ import { Observable } from './observable.ts'
 import { EventType, GatewayMethod } from './protocol/methods.ts'
 import type { JSONValue } from './protocol/jsonrpc.ts'
 import { ChatManager } from './session/chats.ts'
+import { ConnectionAlerts } from './session/background/system-alerts.ts'
 import { messagesSource } from './session/messages-source.ts'
 import { defaultSourceSettings, showsSource, type SessionSourceSettings } from './settings/sources.ts'
 
@@ -81,6 +82,8 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
 
   /** This server's chats (package A): open, warm, re-bound after a reconnect. */
   readonly chats: ChatManager
+  /** This server's system notifications (package J). */
+  readonly alerts: ConnectionAlerts
 
   constructor(options: GatewayConnectionOptions = {}) {
     super(initial)
@@ -95,6 +98,16 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
       get generation() { return connection.generation },
       get bots() { return connection.get().bots },
       refreshLists: () => this.refreshListsInBackground(),
+      backgroundFinished: (chat, process) => this.alerts.backgroundFinished(chat, process),
+    })
+    this.alerts = new ConnectionAlerts({
+      get client() { return connection.client },
+      get active() { return connection.chats.active },
+      get warm() { return connection.chats.warm },
+      get bots() { return connection.get().bots },
+      sessionRow: (profile, id) => this.get().sessions[profile]?.find((row) => row.id === id),
+      get otherRequests() { return connection.chats.get().otherRequests },
+      dropOtherRequest: (id) => this.chats.dropOtherRequest(id),
     })
     this.options = {
       backoff: options.backoff ?? ((attempt) => exponentialBackoff(attempt)),
@@ -166,6 +179,10 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
 
   /** The connector's REST routes (settings panes, cron), while one is set; undefined without REST access. */
   get dashboardAPI(): DashboardAPI | undefined { return dashboardAPIFor(this.connector) }
+  /** E: the dashboard connector, for downloads the main process streams to disk (§10.10). */
+  get dashboardConnector(): DashboardConnector | undefined {
+    return this.connector instanceof DashboardConnector ? this.connector : undefined
+  }
 
   /** One call on the live socket (`plugins.manage`); throws `notConnected` without one. */
   call(method: string, params?: JSONValue): Promise<JSONValue> {
@@ -212,6 +229,7 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
       if (client !== this.client) return
       if (item.kind === 'event' && item.event.type === EventType.sessionsChanged) this.refreshListsInBackground()
       this.chats.handle(item)
+      this.alerts.handle(item)
       if (item.kind === 'disconnected' && item.error && this.connector) {
         this.client = undefined
         this.startReconnect()
@@ -219,7 +237,9 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
     })
     this.client = client
     try {
-      return await client.connect()
+      const ready = await client.connect()
+      this.alerts.connected()
+      return ready
     } catch (error) {
       if (this.client === client) this.client = undefined
       throw error

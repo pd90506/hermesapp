@@ -330,6 +330,52 @@
   }
 }
 
+/* C: a turn's work, reasoning and tool calls (features/chat/blocks/work). Sizes from the
+   Mac's TurnWorkView, WorkStepCard and ToolTextBox (MessageRowContent.swift); the lines
+   are the callout style (12 pt at a 13 pt body). */
+:root {
+  --work-text: round(nearest, calc(var(--text-body) * 12 / 13), 1px);
+  --work-label: round(nearest, calc(var(--text-caption) * 10 / 11), 1px);
+  --work-icon: 14px;
+  --work-chevron: 10px;
+  --work-indent: 20px;
+  --work-spinner: 11px;
+  --work-spinner-stroke: 1.5px;
+  --work-status-dot: 7px;
+  --work-focus-ring: 2px;
+  --work-box-line: 1.4em;
+  --work-box-padding-y: 4px;
+  --work-card-fill: color-mix(in srgb, var(--text) 3%, transparent);
+  --work-card-stroke: var(--divider);
+  --work-box-fill: color-mix(in srgb, var(--text) 4%, transparent);
+  /* The review line's gold-to-purple (Desktop's .tool-memory-legendary-*). */
+  --review-gradient: linear-gradient(to right, #d8a32e, #b0638a, #9a6ee0);
+  --review-icon: #b87a5a;
+  --review-glow: rgb(146 84 222 / 0.38);
+  --review-detail: #8a6fae;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --review-gradient: linear-gradient(to right, #f2c15c, #d07aa4, #b495f5);
+    --review-detail: #a993c8;
+  }
+}
+
+/* J: the pills over the composer (task list, background tasks, subagents) and their
+   cards (the Mac's ChatPillRow, TodoPill, BackgroundProcessesPill, SubagentsPill). */
+:root {
+  --pill-card-radius: 16px;
+  --pill-card-max-height: 360px;
+  --pill-todo-glyph: 20px;
+  --pill-todo-indent: 18px;
+  --pill-todo-line: 1.5px;
+  --pill-row-icon: 16px;
+  --pill-ring-stroke: 2px;
+  --pill-output-lines: 12;
+  --pill-done: var(--success);
+}
+
 /* F: the cards over the composer (held and queued messages, compression) and the clarify
    card (Apps/Shared/Composer/ComposerView.swift, Apps/Shared/Views/ClarifyCardView.swift). */
 :root {
@@ -363,4 +409,63 @@
   --prompt-rail-panel-max-height: 420px;
   --prompt-rail-panel-radius: 12px;
   --prompt-rail-row-radius: var(--radius-md);
+}
+
+/* E: attachments and media (features/composer/attachments, features/chat/blocks/media).
+   Composer pills after Hermes Desktop's (a 32 px thumbnail, the name and a detail line, a
+   remove button on hover); transcript image cards one fixed size, as on the Mac (160×120). */
+:root {
+  --attachment-pill-max: 224px;
+  --attachment-thumb: 32px;
+  --attachment-remove: 20px;
+  --attachment-remove-icon: 12px;
+  --media-card-width: 160px;
+  --media-card-height: 120px;
+  --file-chip-max: 280px;
+  --file-chip-icon: 28px;
+  --media-spinner: 14px;
+  --media-spinner-stroke: 1.5px;
+  --viewer-backdrop: rgb(0 0 0 / 0.72);
+  --viewer-bar-text: #ffffff;
+  --viewer-bar-fill: rgb(255 255 255 / 0.12);
+  --viewer-bar-fill-hover: rgb(255 255 255 / 0.2);
+  --viewer-inset: 48px;
+  --drop-outline: 2px;
+  --drop-fill: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* D: composer controls (features/composer/model, slash, context): the model and effort
+   pills and their menus, the slash-command list and the context gauge. After Hermes
+   Desktop's composer (model-pill.tsx, reasoning-pill.tsx, completion-drawer.tsx): menus
+   open upward from their pill, start-aligned; the model menu scrolls past 360 px. */
+:root {
+  --composer-menu-width: 288px;
+  --composer-effort-menu-width: 208px;
+  --composer-menu-max-height: 360px;
+  --composer-menu-item-height: var(--menu-item-height);
+  --composer-menu-check: 14px;
+  --composer-pill-chevron: 10px;
+  --composer-pill-max-width: 240px;
+  --slash-list-width: 320px;
+  --slash-list-max-height: 352px;
+  --context-ring: 14px;
+  --context-ring-stroke: 2px;
+  --context-details-width: 280px;
+  --composer-dialog-width: 360px;
+  /* The app's one menu look (H's ui/ContextMenu). */
+  --composer-menu-fill: var(--menu-surface);
+  --composer-menu-stroke: var(--menu-stroke);
+  --composer-menu-radius: var(--menu-radius);
+  --composer-menu-padding: var(--menu-padding);
+  --composer-dialog-scrim: rgb(0 0 0 / 0.3);
+  --context-warn: #f7630c;
+  --context-full: #c42b1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --composer-dialog-scrim: rgb(0 0 0 / 0.5);
+    --context-warn: #ff9f0a;
+    --context-full: #ff6961;
+  }
 }

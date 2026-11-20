@@ -70,8 +70,13 @@ export class PagedServer {
   botTip: string | undefined = 'coder-chat'
   /** The replay `session.events.since` answers. */
   replay: { events: unknown[]; latest_seq: number; truncated?: boolean; epoch?: string } | undefined
+  /** E: each runtime session's image queue (`image.attach_bytes`). */
+  readonly queuedImages = new Map<string, string[]>()
+  readonly stagedFiles = new Set<string>()
   /** Fails these methods with this RPC error. */
   readonly errors = new Map<string, { code: number; message: string }>()
+  /** Answers for methods this server doesn't know (other packages' calls). */
+  readonly handlers = new Map<string, (params: Record<string, unknown>) => unknown>()
 
   constructor(readonly store = new FakeMessageStore()) {}
 
@@ -130,7 +135,8 @@ export class PagedServer {
       this.heldFrames.push(frame)
       return undefined
     }
-    const result = this.result(frame.method, frame.params ?? {})
+    const handler = this.handlers.get(frame.method)
+    const result = handler ? handler(frame.params ?? {}) : this.result(frame.method, frame.params ?? {})
     if (result === undefined) return undefined
     return { jsonrpc: '2.0', id: frame.id, result }
   }
@@ -189,11 +195,39 @@ export class PagedServer {
       case 'prompt.submit': {
         // The prompt's row is written at submit (`methods_prompt.py:817-820`).
         const id = this.store.nextID()
-        this.store.append([storedRow(id, 'user', String(params.text))])
+        // The turn takes the session's queued images; the row names them (`session_history.py:51-60`).
+        const queued = this.queuedImages.get(String(params.session_id)) ?? []
+        this.queuedImages.delete(String(params.session_id))
+        const text = [String(params.text), ...queued.map((path) => `@image:${path}`)].filter((line) => line !== '').join('\n')
+        this.store.append([storedRow(id, 'user', text)])
         return { status: 'streaming', user_row_id: id }
       }
       case 'session.interrupt':
         return { status: 'interrupted' }
+      // E: attachments (`methods_prompt.py:886-1010`).
+      case 'image.attach_bytes': {
+        this.counter += 1
+        const path = `/home/h/.hermes/images/${this.counter}-${String(params.filename)}`
+        const sid = String(params.session_id)
+        this.queuedImages.set(sid, [...(this.queuedImages.get(sid) ?? []), path])
+        return { attached: true, path, count: this.queuedImages.get(sid)!.length }
+      }
+      case 'image.detach': {
+        const sid = String(params.session_id)
+        const queued = this.queuedImages.get(sid) ?? []
+        const detached = queued.includes(String(params.path))
+        this.queuedImages.set(sid, queued.filter((path) => path !== params.path))
+        return { detached, count: this.queuedImages.get(sid)!.length }
+      }
+      case 'file.attach': {
+        // Like the gateway: a taken name gets a number (`notes.txt` → `notes-2.txt`).
+        const asked = String(params.name)
+        let name = asked
+        for (let n = 2; this.stagedFiles.has(name); n += 1) name = asked.replace(/(\.[^.]*)?$/, (ext) => `-${n}${ext}`)
+        this.stagedFiles.add(name)
+        return { attached: true, name, path: `/home/h/.hermes/attachments/${name}`,
+          ref_text: `@file:attachments/${name}`, uploaded: true }
+      }
       default:
         return undefined
     }

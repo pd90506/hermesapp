@@ -18,22 +18,37 @@
   align-items: center;
   gap: var(--space-2);
   height: var(--frame-title-band-height);
-  padding: 0 var(--space-4) 0 var(--space-4);
+  padding: 0 var(--space-4) 0 0;
   -webkit-app-region: drag;
 }
 
 .trafficLights {
   flex: none;
   width: var(--frame-traffic-lights-width);
-  margin-left: calc(var(--space-4) * -1);
+  /* No band gap after it where it takes no room (Windows), so the toggle's slot starts
+     at the window's edge. */
+  margin-right: calc(min(var(--frame-traffic-lights-width), var(--space-2)) - var(--space-2));
 }
 
+/* As wide as the profile rail, so the toggle sits over its avatars whether it shows or
+   not. Where the traffic lights already take the rail's width (macOS), it can't sit over
+   the avatars: it takes only its own width, leaving the name its room. */
+.railToggle {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  width: max(var(--icon-button-size), calc(var(--rail-width) - var(--frame-traffic-lights-width)));
+}
+
+/* The name starts where the list's text does past the rail's line (SessionList's
+   section inset); the band's gap is part of it. After the traffic lights (macOS) it is
+   past that line anyway, and keeps the band's usual small inset. */
 .heading {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  padding-left: var(--space-2);
+  padding-left: max(var(--space-2), calc(var(--space-7) - var(--space-2) - var(--frame-traffic-lights-width)));
 }
 
 .name,

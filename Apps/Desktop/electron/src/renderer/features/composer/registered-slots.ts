@@ -3,3 +3,4 @@
 // E
 import './attachments/register.ts'
 import './cards/register.ts' // F
+import './model/register.ts' // D: model and effort pills, slash list, context gauge

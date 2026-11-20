@@ -1,0 +1,130 @@
+/* The context gauge (the Mac's ContextGaugeButton): a 14 pt ring and the percentage in the
+   caption size, in the secondary text colour; its details open upward, end-aligned. */
+.anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--composer-control);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.button:hover,
+.button[data-open] {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.ring {
+  width: var(--context-ring);
+  height: var(--context-ring);
+  fill: none;
+  stroke-width: var(--context-ring-stroke);
+}
+
+.track {
+  stroke: currentColor;
+  opacity: 0.35;
+}
+
+.fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dasharray var(--motion-fast) var(--ease);
+}
+
+.ring[data-tone='warn'] .fill {
+  stroke: var(--context-warn);
+}
+
+.ring[data-tone='full'] .fill {
+  stroke: var(--context-full);
+}
+
+.panel {
+  position: absolute;
+  bottom: calc(100% + var(--space-4));
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: var(--context-details-width);
+  padding: var(--space-7);
+  border: var(--hairline) solid var(--composer-menu-stroke);
+  border-radius: var(--composer-menu-radius);
+  background: var(--composer-menu-fill);
+  box-shadow: var(--shadow-flyout);
+  color: var(--text);
+  font-size: var(--text-body);
+  text-align: start;
+}
+
+.section,
+.sessionSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sessionSection {
+  padding-top: var(--space-6);
+  border-top: var(--hairline) solid var(--divider);
+}
+
+.heading {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+}
+
+.bar {
+  height: var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--fill-selected);
+}
+
+.barFill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.bar[data-tone='warn'] .barFill {
+  background: var(--context-warn);
+}
+
+.value,
+.number {
+  font-variant-numeric: tabular-nums;
+}
+
+.caption {
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-7);
+}
+
+.label {
+  color: var(--text-secondary);
+}
+
+.number {
+  text-align: end;
+}

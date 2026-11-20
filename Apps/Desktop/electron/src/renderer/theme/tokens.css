@@ -401,3 +401,39 @@
   --drop-outline: 2px;
   --drop-fill: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+
+/* D: composer controls (features/composer/model, slash, context): the model and effort
+   pills and their menus, the slash-command list and the context gauge. After Hermes
+   Desktop's composer (model-pill.tsx, reasoning-pill.tsx, completion-drawer.tsx): menus
+   open upward from their pill, start-aligned; the model menu scrolls past 360 px. */
+:root {
+  --composer-menu-width: 288px;
+  --composer-effort-menu-width: 208px;
+  --composer-menu-max-height: 360px;
+  --composer-menu-item-height: var(--menu-item-height);
+  --composer-menu-check: 14px;
+  --composer-pill-chevron: 10px;
+  --composer-pill-max-width: 240px;
+  --slash-list-width: 320px;
+  --slash-list-max-height: 352px;
+  --context-ring: 14px;
+  --context-ring-stroke: 2px;
+  --context-details-width: 280px;
+  --composer-dialog-width: 360px;
+  /* The app's one menu look (H's ui/ContextMenu). */
+  --composer-menu-fill: var(--menu-surface);
+  --composer-menu-stroke: var(--menu-stroke);
+  --composer-menu-radius: var(--menu-radius);
+  --composer-menu-padding: var(--menu-padding);
+  --composer-dialog-scrim: rgb(0 0 0 / 0.3);
+  --context-warn: #f7630c;
+  --context-full: #c42b1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --composer-dialog-scrim: rgb(0 0 0 / 0.5);
+    --context-warn: #ff9f0a;
+    --context-full: #ff6961;
+  }
+}

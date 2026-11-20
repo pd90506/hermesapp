@@ -25,8 +25,9 @@
 .trafficLights {
   flex: none;
   width: var(--frame-traffic-lights-width);
-  /* Its width already holds its margins (none on Windows): no band gap after it. */
-  margin-right: calc(var(--space-2) * -1);
+  /* No band gap after it where it takes no room (Windows), so the toggle's slot starts
+     at the window's edge. */
+  margin-right: min(0px, calc(var(--frame-traffic-lights-width) - var(--space-2)));
 }
 
 /* As wide as the profile rail, so the toggle sits over its avatars whether it shows or
@@ -40,13 +41,14 @@
 }
 
 /* The name starts where the list's text does past the rail's line (SessionList's
-   section inset); the band's gap is part of it. */
+   section inset); the band's gap is part of it. After the traffic lights (macOS) it is
+   past that line anyway, and keeps the band's usual small inset. */
 .heading {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  padding-left: calc(var(--space-7) - var(--space-2));
+  padding-left: max(var(--space-2), calc(var(--space-7) - var(--space-2) - var(--frame-traffic-lights-width)));
 }
 
 .name,

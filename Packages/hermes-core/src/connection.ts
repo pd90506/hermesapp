@@ -1,6 +1,6 @@
 import { Bot, historyRows, type ProfileRow, type SessionSummary } from './bots.ts'
 import { GatewayClient, GatewayClientError, type GatewayClientConfiguration, type GatewayReady } from './client.ts'
-import type { GatewayConnector } from './connector.ts'
+import { DashboardConnector, type GatewayConnector } from './connector.ts'
 import { DashboardError } from './dashboard.ts'
 import { dashboardAPIFor, type DashboardAPI } from './dashboard-api.ts'
 import { describeError } from './describe.ts'
@@ -179,6 +179,10 @@ export class GatewayConnection extends Observable<ConnectionSnapshot> {
 
   /** The connector's REST routes (settings panes, cron), while one is set; undefined without REST access. */
   get dashboardAPI(): DashboardAPI | undefined { return dashboardAPIFor(this.connector) }
+  /** E: the dashboard connector, for downloads the main process streams to disk (§10.10). */
+  get dashboardConnector(): DashboardConnector | undefined {
+    return this.connector instanceof DashboardConnector ? this.connector : undefined
+  }
 
   /** One call on the live socket (`plugins.manage`); throws `notConnected` without one. */
   call(method: string, params?: JSONValue): Promise<JSONValue> {

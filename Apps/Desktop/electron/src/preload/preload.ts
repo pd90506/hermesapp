@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC, frameGeometry, sidebarShortcuts, type Appearance, type NotificationAction, type NotificationTarget, type Platform,
   type SocketEvent, type TalariaBridge,
@@ -108,6 +108,21 @@ const bridge: TalariaBridge = {
       ipcRenderer.on(IPC.notificationAction, listener)
       return () => ipcRenderer.removeListener(IPC.notificationAction, listener)
     },
+  },
+  files: {
+    pick: () => ipcRenderer.invoke(IPC.filesPick),
+    read: (path) => ipcRenderer.invoke(IPC.filesRead, path),
+    pathFor: (file) => {
+      try {
+        return webUtils.getPathForFile(file)
+      } catch {
+        return ''
+      }
+    },
+    convertImage: (bytes, options) => ipcRenderer.invoke(IPC.filesConvertImage, bytes, options),
+    download: (request, name) => ipcRenderer.invoke(IPC.filesDownload, request, name),
+    open: (path) => ipcRenderer.invoke(IPC.filesOpen, path),
+    saveAs: (path, name) => ipcRenderer.invoke(IPC.filesSaveAs, path, name),
   },
 }
 

@@ -1,6 +1,7 @@
 import { Bot, botChatTitle, type SessionSummary } from '../bots.ts'
 import { GatewayClientError, type GatewayClient, type GatewayReady, type Inbound } from '../client.ts'
 import { ChatComposer } from '../composer/chat-composer.ts'
+import { StrandedImages } from '../composer/attachments/stranded.ts'
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
 import { RPCError, type JSONValue } from '../protocol/jsonrpc.ts'
@@ -120,6 +121,8 @@ export class ChatManager extends Observable<ChatsSnapshot> {
   private openingToken = 0
   private committedEpoch?: string
   private readonly chatHost: ChatHost
+  /** E: images failed sends left queued, kept across reopening a chat and reconnects (§10.3). */
+  readonly strandedImages = new StrandedImages()
 
   constructor(private readonly host: ChatsHost) {
     super({ otherRequests: [], unsent: {} })
@@ -130,6 +133,7 @@ export class ChatManager extends Observable<ChatsSnapshot> {
       revive: (chat) => this.revive(chat),
       track: (chat) => this.track(chat),
       restoreText: (chat, text) => this.composer(chat).restoreText(text),
+      strandedImages: this.strandedImages,
       backgroundFinished: (chat, process) => this.host.backgroundFinished?.(chat, process),
     }
   }
@@ -153,7 +157,7 @@ export class ChatManager extends Observable<ChatsSnapshot> {
   composer(chat: ChatSession): ChatComposer {
     let composer = this.composers.get(chat)
     if (!composer) {
-      composer = new ChatComposer(chat)
+      composer = new ChatComposer(chat, this.strandedImages)
       this.composers.set(chat, composer)
     }
     return composer
@@ -613,6 +617,7 @@ export class ChatManager extends Observable<ChatsSnapshot> {
    */
   async restore(ready: GatewayReady, client: GatewayClient | undefined, gen: number): Promise<void> {
     if (!client) throw new GatewayClientError('connectionClosed')
+    this.strandedImages.flushInBackground(client)
     const chat = this.active
     if (!chat) {
       this.committedEpoch = ready.replay_epoch

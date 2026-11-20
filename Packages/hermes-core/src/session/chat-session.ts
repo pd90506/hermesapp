@@ -1,6 +1,9 @@
 import { GatewayClientError, type GatewayClient, type GatewayEvent } from '../client.ts'
 import { describeError } from '../describe.ts'
 import { Observable } from '../observable.ts'
+import type { PromptAttachments } from '../composer/attachments/tray.ts'
+import { AttachmentError } from '../composer/attachments/policy.ts'
+import type { StrandedImages } from '../composer/attachments/stranded.ts'
 import type { JSONValue } from '../protocol/jsonrpc.ts'
 import { ChatActivity } from './background/chat-activity.ts'
 import type { BackgroundProcess } from './background/background-processes.ts'
@@ -87,6 +90,8 @@ export interface ChatHost {
   track(chat: ChatSession): void
   /** Gives text only a vanished bubble held back to the chat's composer. */
   restoreText(chat: ChatSession, text: string): void
+  /** E: images a failed send left queued; cleared before every send (§10.3). */
+  readonly strandedImages?: StrandedImages
   /** J: a background process of the chat finished (a notification). */
   backgroundFinished?(chat: ChatSession, process: BackgroundProcess): void
 }
@@ -626,21 +631,24 @@ export class ChatSession extends Observable<ChatView> {
    * out it is never cancelled: Hermes may run it. A failure after that keeps the bubble,
    * marked as not confirmed.
    */
-  async send(text: string, signal?: SendSignal): Promise<void> {
+  async send(text: string, signal?: SendSignal, attachments?: PromptAttachments): Promise<void> {
     const trimmed = text.trim()
-    if (trimmed === '') return
+    if (trimmed === '' && !attachments) return
     this.hasPrompted = true
     this.lastPromptAt = Date.now()
     let itemID = ''
-    this.change((t) => { itemID = t.appendUserPrompt(trimmed) })
+    this.change((t) => { itemID = t.appendUserPrompt(trimmed, attachments?.bubble ?? {}) })
     this.sendingPrompts.add(itemID)
     try {
-      await this.performSend(trimmed, itemID, signal)
+      await this.performSend(trimmed, itemID, signal, attachments)
     } catch (error) {
       const dispatched = this.dispatchedPrompts.has(itemID)
-      if (!dispatched && (error instanceof SendCancelledError || isNotConnected(error))) {
-        // Nothing went out and the composer takes the text back: the bubble goes.
+      if (!dispatched && (error instanceof SendCancelledError || isNotConnected(error) || error instanceof AttachmentError || attachments)) {
+        // Nothing went out and the composer takes the text (and cards) back: the bubble goes.
         this.change((t) => t.withdrawPrompt(itemID))
+        if (attachments && !(error instanceof SendCancelledError || error instanceof AttachmentError || isNotConnected(error))) {
+          this.change((t) => t.keepError(describeError(error)))
+        }
       } else if (this.transcript.holdsPrompt(itemID)) {
         // Only the bubble holds the text. A dispatched submit may have run.
         this.change((t) => t.submitFailed(describeError(error), itemID, dispatched))
@@ -653,7 +661,7 @@ export class ChatSession extends Observable<ChatView> {
     }
   }
 
-  private async performSend(prompt: string, itemID: string, signal?: SendSignal): Promise<void> {
+  private async performSend(prompt: string, itemID: string, signal?: SendSignal, attachments?: PromptAttachments): Promise<void> {
     await this.settleIdentity()
     if (signal?.cancelled) throw new SendCancelledError()
     let reviveError: unknown
@@ -666,16 +674,29 @@ export class ChatSession extends Observable<ChatView> {
     try {
       if (reviveError !== undefined) throw reviveError
       const client = this.currentClient()
+      // E: stranded images of this session would ride with the prompt.
+      const stranded = this.host?.strandedImages
+      if (stranded && !(await stranded.clear(this.sessionID, client, () => signal?.cancelled === true))) {
+        if (signal?.cancelled) throw new SendCancelledError()
+        throw AttachmentError.strandedImages()
+      }
+      if (signal?.cancelled) throw new SendCancelledError()
+      if (attachments) {
+        const images = await attachments.prepare(client, this.sessionID, () => signal?.cancelled === true)
+        if (signal?.cancelled) throw new SendCancelledError()
+        this.change((t) => t.updatePromptImages(images, itemID))
+      }
       this.dispatchedPrompts.add(itemID)
-      const answer = await client.call(SessionMethod.promptSubmit, { session_id: this.sessionID, text: prompt },
+      const answer = await client.call(SessionMethod.promptSubmit, { session_id: this.sessionID, text: attachments?.prompt ?? prompt },
         promptSubmitTimeoutMs) as { status?: string; user_row_id?: number } | null
       this.promptAnswered(itemID, answer?.status ?? undefined, answer?.user_row_id ?? undefined)
     } catch (error) {
       if (this.rebuiltDispatchedPrompts.has(itemID)) this.change((t) => t.withdrawPrompt(itemID))
       if (!this.transcript.holdsPrompt(itemID) && !(isNotConnected(error) && !this.dispatchedPrompts.has(itemID))) {
-        // A rebuild replaced the bubble meanwhile: its text goes back to the draft.
+        // A rebuild replaced the bubble meanwhile: its text goes back to the draft (with
+        // attachments the composer takes back the text and the cards itself).
         this.change((t) => t.keepError(describeError(error)))
-        this.host?.restoreText(this, prompt)
+        if (!attachments) this.host?.restoreText(this, prompt)
       }
       throw error
     }
@@ -784,6 +805,11 @@ export class ChatSession extends Observable<ChatView> {
   }
 
   // MARK: Clients
+
+  /** The connection's current client, without waiting; undefined while offline. */
+  get client(): GatewayClient | undefined {
+    return this.host?.client
+  }
 
   private currentClient(): GatewayClient {
     const client = this.host?.client

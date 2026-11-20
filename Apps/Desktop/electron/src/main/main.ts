@@ -12,6 +12,7 @@ import { captionSymbolColor, currentPlatform, windowFrameOptions } from './windo
 import { registerLocalBackend } from './ipc/local-backend.ts'
 import { registerServers } from './ipc/servers.ts'
 import { attachSettingsShortcut, registerSettingsMenu } from './ipc/settings-window.ts'
+import { registerFiles } from './ipc/files.ts'
 import { registerNotifications } from './ipc/notifications.ts'
 
 // Its own data folder, `Talaria Desktop`: `Talaria` was the (now removed) Flutter app's,
@@ -112,6 +113,7 @@ function start(): void {
   registerLocalBackend(platform)
   registerSettingsMenu(platform, () => window)
   registerLinks()
+  registerFiles(http, () => window)
   registerNotifications(platform, () => window)
   ipcMain.on(IPC.captionColors, (event, colors: { symbol: string }) => {
     const owner = BrowserWindow.fromWebContents(event.sender)

@@ -13,8 +13,8 @@ import styles from './Sidebar.module.css'
 
 /**
  * The sidebar column, as the Mac's split view: the title band over it (the rail's
- * toggle, the profile's name with the connection under it, Search and New chat at its
- * end), then the profile rail beside the list: the picked tab's page, or the search's
+ * toggle centred over the rail's column, the profile's name with the connection under
+ * it from where the list's text starts, Search and New chat at its end), then the profile rail beside the list: the picked tab's page, or the search's
  * results while the search field has text, then the banners and the tabs.
  */
 export function Sidebar() {
@@ -57,8 +57,11 @@ export function Sidebar() {
     <aside className={styles.sidebar} data-rail={app.railShown || undefined}>
       <header className={styles.band}>
         <span className={styles.trafficLights} />
-        <IconButton icon="sidebar" label={`${app.railShown ? 'Hide Profiles' : 'Show Profiles'}${shortcuts ? ` (${shortcuts.toggleProfiles.label})` : ''}`}
-          onClick={() => model.toggleRail()} />
+        {/* Over the rail's avatars, shown or hidden, so the name beside it never moves. */}
+        <span className={styles.railToggle}>
+          <IconButton icon="sidebar" label={`${app.railShown ? 'Hide Profiles' : 'Show Profiles'}${shortcuts ? ` (${shortcuts.toggleProfiles.label})` : ''}`}
+            onClick={() => model.toggleRail()} />
+        </span>
         <div className={styles.heading}>
           <span className={styles.name}>{bot?.displayName ?? 'Talaria'}</span>
           <span className={styles.status}>{status(connection.link, connection.isTryingNoticeably, app.server?.serverURL)}</span>

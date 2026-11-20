@@ -1,4 +1,4 @@
-import type { ChatSession, PendingChat } from '@talaria/hermes-core'
+import { chatTitle, type ChatSession, type TitledBot } from '@talaria/hermes-core'
 import { useConnection, useSnapshot } from '../../app/hooks.ts'
 import { ChatView } from './ChatView.tsx'
 import styles from './ChatPane.module.css'
@@ -10,13 +10,14 @@ import styles from './ChatPane.module.css'
  */
 export function ChatPane() {
   const connection = useConnection()
-  const link = useSnapshot(connection).link
+  const { link, bots } = useSnapshot(connection)
   const chats = useSnapshot(connection.chats)
+  const title = chats.opening ? chatTitle(chats.opening, bots, true) : chats.active ? <ActiveTitle chat={chats.active} bots={bots} /> : null
   return (
     <main className={styles.pane}>
-      <div className={styles.band} />
+      <header className={styles.band}>{title && <h1 className={styles.title}>{title}</h1>}</header>
       {chats.opening
-        ? <Opening pending={chats.opening} bots={connection.get().bots} />
+        ? <Opening title={chatTitle(chats.opening, bots, true)} />
         : chats.active
           ? <ChatView key={chatKey(chats.active)} chat={chats.active} />
           : (
@@ -50,17 +51,15 @@ function chatKey(chat: ChatSession): number {
   return key
 }
 
-/** The Mac's `title(of opening:)`: the bot's name, or "title · bot" for a side chat. */
-function openingTitle(pending: PendingChat, bots: readonly { name: string; displayName: string }[]): string {
-  const bot = bots.find((candidate) => candidate.name === pending.profile)?.displayName ?? pending.profile ?? 'Hermes'
-  if (pending.kind === 'botChat') return bot
-  return `${pending.title?.trim() || 'Side chat'} · ${bot}`
+/** The chat's title, kept up as the chat renames itself. */
+function ActiveTitle({ chat, bots }: { chat: ChatSession; bots: readonly TitledBot[] }) {
+  return chatTitle(useSnapshot(chat), bots)
 }
 
-function Opening({ pending, bots }: { pending: PendingChat; bots: readonly { name: string; displayName: string }[] }) {
+function Opening({ title }: { title: string }) {
   return (
     <div className={styles.empty}>
-      <span className={styles.spinner} role="progressbar" aria-label={`Opening ${openingTitle(pending, bots)}`} />
+      <span className={styles.spinner} role="progressbar" aria-label={`Opening ${title}`} />
     </div>
   )
 }

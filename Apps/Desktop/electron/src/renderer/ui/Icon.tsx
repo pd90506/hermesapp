@@ -1,21 +1,24 @@
 import styles from './Icon.module.css'
 
 /**
- * The app's icons: one line drawing each (16-unit grid), the same on macOS and Windows.
- * The comments name the Fluent and SF icons each one stands for.
+ * The app's icons: one line drawing each (16-unit grid, or Lucide's 24-unit one where
+ * `grid` says so), the same on macOS and Windows. The comments name the Fluent and SF
+ * icons each one stands for.
  */
 const icons = {
-  /** Fluent GlobalNavButton / SF `sidebar.left`. */
+  /** Lucide `panel-left` (ISC, as Hermes Desktop uses) / SF `sidebar.left`. */
   sidebar: {
-    path: 'M2.5 3.5h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM6 3.5v9M3 6h1.5M3 8h1.5',
+    grid: 24,
+    path: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM9 3v18',
   },
   /** Fluent Edit / SF `square.and.pencil`. */
   compose: {
     path: 'M7 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M12.3 1.9l1.8 1.8-6 6-2.4.6.6-2.4z',
   },
-  /** Fluent Settings / SF `gearshape`. */
+  /** Lucide `settings` (ISC, as Hermes Desktop uses) / SF `gearshape`. */
   settings: {
-    path: 'M8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8zM6.9 1.5h2.2l.4 1.7 1.3.7 1.7-.6 1.1 1.9-1.3 1.2v1.2l1.3 1.2-1.1 1.9-1.7-.6-1.3.7-.4 1.7H6.9l-.4-1.7-1.3-.7-1.7.6-1.1-1.9 1.3-1.2V7.4L2.4 6.2l1.1-1.9 1.7.6 1.3-.7z',
+    grid: 24,
+    path: 'M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
   },
   /** Fluent More / SF `ellipsis`. */
   more: {
@@ -118,15 +121,15 @@ const icons = {
   check: {
     path: 'M3 8.5l3.2 3.2L13 4.5',
   },
-} as const
+} satisfies Record<string, { path: string; grid?: 24 }>
 
 export type IconName = keyof typeof icons
 
 export function Icon({ name }: { name: IconName }) {
-  const icon = icons[name]
+  const icon: { path: string; grid?: 24 } = icons[name]
   return (
     <span className={styles.icon} aria-hidden="true">
-      <svg className={styles.symbol} viewBox="0 0 16 16">
+      <svg className={styles.symbol} viewBox={icon.grid ? '0 0 24 24' : '0 0 16 16'} data-grid={icon.grid}>
         <path d={icon.path} />
       </svg>
     </span>

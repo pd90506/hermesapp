@@ -93,4 +93,15 @@ describe('ChatPane', () => {
     await act(async () => { await connection.chats.openBotChat('coder') })
     expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('half a thought')
   })
+
+  it('titles the chat on screen and follows its renames', async () => {
+    const server = new PagedServer()
+    const connection = await openPane(server)
+    await act(async () => { await connection.chats.openBotChat('coder') })
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Coder')
+    await act(async () => { await connection.chats.newChat('default') })
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Side chat · Hermes')
+    act(() => { connection.chats.get().active?.setTitle('Plan the trip') })
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Plan the trip · Hermes')
+  })
 })

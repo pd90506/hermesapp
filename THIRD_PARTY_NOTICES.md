@@ -48,6 +48,30 @@ MIT, see above).
 pass, the one-second de-duplication, and flashing the window's taskbar entry until it is
 focused.
 
+## Lucide icons (Electron desktop app)
+
+`Apps/Desktop/electron/src/renderer/ui/Icon.tsx` draws its `settings` and `sidebar` icons with
+the paths of Lucide's `settings` and `panel-left` (lucide-static 0.577.0, the version official
+Hermes Desktop pins as lucide-react), under the ISC license:
+
+```
+ISC License
+
+Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2026 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2026.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
 ## SwiftMath
 
 See AGENTS.md, "Dependencies" (MIT, used by the app targets).

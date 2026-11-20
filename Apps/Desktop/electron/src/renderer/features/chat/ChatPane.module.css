@@ -11,8 +11,22 @@
 .band {
   flex: none;
   height: var(--frame-title-band-height);
+  display: flex;
+  align-items: center;
+  min-width: 0;
   margin-right: var(--frame-caption-width);
+  padding: 0 var(--space-7);
   -webkit-app-region: drag;
+}
+
+/* The chat's title (the Mac's navigation title), at the band's start. */
+.title {
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-title);
+  font-weight: var(--weight-semibold);
 }
 
 .empty {

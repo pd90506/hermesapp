@@ -709,6 +709,30 @@ export class ChatSession extends Observable<ChatView> {
     }
   }
 
+  /**
+   * A widget's prompt (`::preview`'s `hermes.send`): a user turn Hermes stores as
+   * `display_kind: "hidden"`, so no bubble shows; the widget updating is the answer, as on
+   * Desktop (`requestComposerSubmit(prompt, { displayKind: 'hidden' })`). Answers whether
+   * Hermes took it.
+   */
+  async sendHidden(text: string): Promise<boolean> {
+    const trimmed = text.trim()
+    if (trimmed === '') return false
+    try {
+      const client = await this.liveClient()
+      this.hasPrompted = true
+      this.lastPromptAt = Date.now()
+      await client.call(SessionMethod.promptSubmit, { session_id: this.sessionID, text: trimmed, display_kind: 'hidden' },
+        promptSubmitTimeoutMs)
+      this.change((t) => t.requestReread())
+      this.rereadIfNeeded()
+      return true
+    } catch (error) {
+      this.change((t) => t.keepError(describeError(error)))
+      return false
+    }
+  }
+
   /** `prompt.submit` answered: the bubble shows until the stored rows replace it. */
   private promptAnswered(itemID: string, status?: string, userRowID?: number): void {
     if (this.transcript.holdsPrompt(itemID)) this.change((t) => t.promptAnswered(itemID, status, userRowID))

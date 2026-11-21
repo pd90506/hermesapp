@@ -210,6 +210,18 @@ export interface TalariaBridge {
     /** The system's save dialog for a downloaded file; false when cancelled. */
     saveAs(path: string, name: string): Promise<boolean>
   }
+  /* Embeds: web images and `::preview` widgets in replies */
+  embeds: {
+    /**
+     * Serves a widget's page at an address of its own (`talaria-widget:`), with the open
+     * content policy Desktop gives previews; the address, for a sandboxed iframe.
+     */
+    hostWidget(html: string): Promise<string>
+    /** Forgets a hosted page once its frame is gone. */
+    releaseWidget(url: string): void
+    /** A web image (http or https) fetched by the main process, as a data URL; null when it can't be. */
+    remoteImage(url: string): Promise<string | null>
+  }
 }
 
 /* E: attachments and files */
@@ -270,6 +282,10 @@ export const IPC = {
   filesDownload: 'talaria:files:download',
   filesOpen: 'talaria:files:open',
   filesSaveAs: 'talaria:files:save-as',
+  /* Embeds */
+  embedsHostWidget: 'talaria:embeds:host-widget',
+  embedsReleaseWidget: 'talaria:embeds:release-widget',
+  embedsRemoteImage: 'talaria:embeds:remote-image',
 } as const
 
 /** The window's geometry the renderer lays out around, set by the preload as CSS variables. */

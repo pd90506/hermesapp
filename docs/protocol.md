@@ -1796,6 +1796,51 @@ or files still goes at once, and Hermes queues it by `busy_input_mode` (§10.3).
   the caches folder and opens Quick Look. The menu has Save… (macOS save panel) or Save to Files
   (iOS), Open (macOS, the default app), and Share once downloaded.
 
+### 10.11 Web images and widgets in replies
+
+- **What the model is told.** The `desktop` surface's system prompt (`agent/prompt_builder.py`,
+  `PLATFORM_HINTS["desktop"]`) says: web images render via `![alt](url)`, local files only via
+  `MEDIA:` (local Markdown images are blocked), and an inline widget or chart is an HTML file the
+  agent writes, then `::preview{file="path.html"}` alone on its line. The frame injects the
+  app's theme first as `var(--foreground)`, `var(--muted-foreground)`, `var(--accent)`,
+  `var(--border)`, `var(--card)`, the app font, zero margins and a transparent background; it
+  spans the column up to 960 px and its height follows the content up to 1200 px.
+  `data-hermes-send="prompt"` on a clickable element, or `window.hermes.send("prompt")`, sends that
+  prompt as a hidden user turn. A session with another source gets none of this: a new
+  source has no hint unless the server's config sets `platform_hints.<source>`, and many
+  `desktop`-only behaviours (client toolsets, connector cards, batch approvals) key on the source,
+  so the apps keep `desktop`.
+- **Directives** (`TranscriptDirectives`, hermes-core `media/directives.ts`) follow Desktop's
+  `apps/desktop/src/lib/transcript-directives.ts`: `::name{key="value"}` wherever a word starts,
+  single quotes accepted, a brace body up to 2048 characters; only a name the app claims
+  (`preview`) is drawn and any other stays text. `[client choice]` Directives in fenced code
+  stay text, and while a reply streams a directive whose brace is still open on its last
+  line waits.
+- **Reading the page:** `GET /api/fs/read-text?path=&profile=&session_id=` →
+  `{text, binary, truncated, byteSize, language, mimeType, path}` (`hermes_cli/web_routers/files.py`,
+  `fs_read_text`), as Desktop's remote mode reads it (`readDesktopFileText`). `session_id` (a
+  stored key) only for a relative path, which resolves against that chat's folder. The page is
+  read once the reply has finished (Desktop waits too: mid-stream the file may be half-written).
+  `[client choice]` It is read again after each later turn of the chat, so a widget the agent
+  updated shows the new page. A binary, cut or unreadable file shows as the file's card.
+- **The frame** (Desktop's `inline-preview-directive.tsx`): `sandbox="allow-scripts"`, never
+  `allow-same-origin`, so the page runs with an opaque origin. Size reports and prompts arrive by
+  `postMessage`, `{type: "hermes-inline-preview-size" | "hermes-inline-preview-intent", token, …}`;
+  only messages from the frame itself with its mount's token count. A prompt is at most 500
+  characters (longer is refused, never cut), one per second, and is answered with
+  `{type: "hermes-inline-preview-intent-ack", token, id, ack}`.
+  - `[client choice]` The Electron app serves the page at `talaria-widget://page/<id>` with
+    the policy Hermes gives its own previews (`hermes_cli/webapp_previews.py`, `_GUEST_SOURCES`:
+    any script, style, image, font or fetch source; the isolation is the sandbox), because a
+    `srcdoc` frame would inherit the app's policy, which allows no inline script. A link the
+    page follows opens in the browser.
+- **The hidden prompt:** `prompt.submit` with `display_kind: "hidden"`; Hermes stores the row
+  hidden, so no bubble shows (stored rows typed `hidden` are never listed).
+- **Web images:** `[client choice]` fetched by the Electron main process (no cookies), else
+  through the gateway, as Desktop retries one this computer cannot load:
+  `GET /api/media/proxy?url=` → `{data_url}` (allowlisted image hosts only). Desktop loads the
+  URL in the page directly; Talaria's renderer never touches the network.
+
 ## 11. Live sidebar (server pushes)
 
 These arrive in the same `event` notification envelope (§2). Broadcasts carry an empty

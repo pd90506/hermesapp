@@ -48,6 +48,15 @@ MIT, see above).
 pass, the one-second de-duplication, and flashing the window's taskbar entry until it is
 focused.
 
+## Widgets in replies (Electron desktop app)
+
+`Apps/Desktop/electron/src/renderer/features/chat/blocks/media/widget-frame.ts` and
+`Embeds.tsx` adapt the official Hermes Desktop's `inline-preview-directive.tsx`, and
+`Packages/hermes-core/src/media/directives.ts` its `transcript-directives.ts` (hermes-agent,
+commit `3b1ce49a`, MIT, see above): the `::preview` frame's theme prelude, size report,
+`hermes.send` script and limits, and how directives are read. The widget page's content
+policy in `src/main/ipc/embeds.ts` is the one in `hermes_cli/webapp_previews.py`.
+
 ## Lucide icons (Electron desktop app)
 
 `Apps/Desktop/electron/src/renderer/ui/Icon.tsx` draws its `settings` and `sidebar` icons with

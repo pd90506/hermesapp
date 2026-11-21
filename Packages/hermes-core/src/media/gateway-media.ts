@@ -4,6 +4,7 @@ import { requestStatus, type DashboardAPI } from '../dashboard-api.ts'
 import { describeError } from '../describe.ts'
 import type { HttpRequest } from '../http.ts'
 import { isImagePath } from './files.ts'
+import { isRelativePath } from './directives.ts'
 
 declare function setTimeout(handler: () => void, ms?: number): unknown
 
@@ -28,6 +29,40 @@ export async function imageDataURL(api: DashboardAPI, path: string, profile: str
   if (profile !== undefined) query.push(['profile', profile])
   const answer = await api.send('GET', '/api/fs/read-data-url', { query, timeoutMs: 60_000 }) as { dataUrl?: unknown } | null
   if (typeof answer?.dataUrl === 'string' && answer.dataUrl.startsWith('data:')) return answer.dataUrl
+  throw new DashboardError('http', 404, 'no image data')
+}
+
+/** `/api/fs/read-text`'s cap on what it returns (`_FS_TEXT_PREVIEW_MAX_BYTES`): a longer file is cut. */
+export interface GatewayTextFile {
+  text: string
+  binary: boolean
+  truncated: boolean
+}
+
+/**
+ * Reads a text file on the gateway, as Desktop's remote mode reads a `::preview` page
+ * (`readDesktopFileText`): `GET /api/fs/read-text?path=&profile=&session_id=` →
+ * `{text, binary, truncated}` (`hermes_cli/web_routers/files.py`). `storedSessionID` is sent
+ * only for a relative path, which the gateway resolves against that chat's folder.
+ */
+export async function readGatewayText(api: DashboardAPI, path: string, profile: string | undefined,
+  storedSessionID: string | undefined): Promise<GatewayTextFile> {
+  const query: Array<[string, string]> = [['path', path]]
+  if (profile !== undefined) query.push(['profile', profile])
+  if (storedSessionID !== undefined && isRelativePath(path)) query.push(['session_id', storedSessionID])
+  const answer = await api.send('GET', '/api/fs/read-text', { query, timeoutMs: 60_000 }) as
+    { text?: unknown; binary?: unknown; truncated?: unknown } | null
+  if (typeof answer?.text !== 'string') throw new DashboardError('http', 404, 'no text')
+  return { text: answer.text, binary: answer.binary === true, truncated: answer.truncated === true }
+}
+
+/**
+ * A web image the gateway fetches for the app, as Desktop retries one this computer could not
+ * load (`GET /api/media/proxy?url=` → `{data_url}`, only the gateway's allowlisted image hosts).
+ */
+export async function proxiedImageDataURL(api: DashboardAPI, url: string): Promise<string> {
+  const answer = await api.send('GET', '/api/media/proxy', { query: [['url', url]], timeoutMs: 60_000 }) as { data_url?: unknown } | null
+  if (typeof answer?.data_url === 'string' && answer.data_url.startsWith('data:image/')) return answer.data_url
   throw new DashboardError('http', 404, 'no image data')
 }
 

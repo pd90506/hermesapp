@@ -55,7 +55,9 @@ focused.
 `Packages/hermes-core/src/media/directives.ts` its `transcript-directives.ts` (hermes-agent,
 commit `3b1ce49a`, MIT, see above): the `::preview` frame's theme prelude, size report,
 `hermes.send` script and limits, and how directives are read. The widget page's content
-policy in `src/main/ipc/embeds.ts` is the one in `hermes_cli/webapp_previews.py`.
+policy in `src/main/ipc/embeds.ts` is the one in `hermes_cli/webapp_previews.py`. HermesKit's
+`Files/TranscriptDirectives.swift` and `Files/WidgetFrame.swift` (the iOS app's widgets) port
+the same code.
 
 ## Lucide icons (Electron desktop app)
 

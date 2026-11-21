@@ -5,8 +5,9 @@ import serverRequests from '../../fixtures/server-requests.json' with { type: 'j
 import sessionList from '../../fixtures/session-list.json' with { type: 'json' }
 import sessionProjection from '../../fixtures/session-projection.json' with { type: 'json' }
 import turnWork from '../../fixtures/turn-work.json' with { type: 'json' }
+import replyEmbeds from '../../fixtures/reply-embeds.json' with { type: 'json' }
 import {
-  Bot, EndpointError, GatewayEndpoint, ServerRequestMethod, StepGroups, WorkSteps, declineServerRequest, defaultServerName,
+  Bot, EndpointError, TranscriptDirectives, previewTarget, GatewayEndpoint, ServerRequestMethod, StepGroups, WorkSteps, declineServerRequest, defaultServerName,
   historyRows, makeItem, settledTitle, storedItems, toolCallView, transcriptBlocks, workDuration,
   type JSONValue, type ProfileRow, type SessionSummary, type StoredMessage, type ToolPhase, type TranscriptItem,
 } from '../src/index.ts'
@@ -112,5 +113,15 @@ describe('turn-work.json', () => {
     }
     const view = toolCallView(call)
     expect({ title: view.title, status: view.status, countLabel: view.countLabel ?? null }).toEqual(item.expected)
+  })
+})
+
+describe('reply-embeds.json', () => {
+  test.each(replyEmbeds.directives)('directives in $text', (item) => {
+    expect(TranscriptDirectives.segments(item.text, item.streaming)).toEqual(item.segments)
+  })
+
+  test.each(replyEmbeds.previewTargets)('preview target of $file', (item) => {
+    expect(previewTarget(item.file) ?? null).toEqual(item.target)
   })
 })

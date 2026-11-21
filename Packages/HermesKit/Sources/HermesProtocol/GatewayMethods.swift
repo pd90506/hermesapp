@@ -292,16 +292,21 @@ public struct PromptSubmitParams: Sendable, Hashable, Codable {
     /// Queue behind a running turn instead of applying `display.busy_input_mode`
     /// (`contracts/prompt_voice.py:35`, `methods_prompt.py:768-770`).
     public var queued: Bool?
+    /// `hidden`: a prompt a widget sent (`::preview`'s `hermes.send`), which Hermes stores
+    /// as a hidden row, so no bubble shows (`docs/protocol.md` §10.11).
+    public var displayKind: String?
 
-    public init(sessionID: String, text: String, queued: Bool? = nil) {
+    public init(sessionID: String, text: String, queued: Bool? = nil, displayKind: String? = nil) {
         self.sessionID = sessionID
         self.text = text
         self.queued = queued
+        self.displayKind = displayKind
     }
 
     enum CodingKeys: String, CodingKey {
         case text, queued
         case sessionID = "session_id"
+        case displayKind = "display_kind"
     }
 }
 

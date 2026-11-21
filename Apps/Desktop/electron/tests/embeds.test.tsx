@@ -5,10 +5,11 @@ import { ModelContext } from '../src/renderer/app/hooks.ts'
 import type { AppModel } from '../src/renderer/app/model.ts'
 import { ChatPane } from '../src/renderer/features/chat/ChatPane.tsx'
 import {
-  evaluateIntent, initialWidgetHeight, reportedHeight, widgetDocument,
+  evaluateIntent, initialWidgetHeight, reportedHeight, widgetDocument, type WidgetTheme,
 } from '../src/renderer/features/chat/blocks/media/widget-frame.ts'
 import { PagedServer, completePayload, eventually, rows } from '../../../../Packages/hermes-core/tests/support/paged-server.ts'
 import { FakeDashboardAPI } from '../../../../Packages/hermes-core/tests/support/fake-dashboard-api.ts'
+import replyEmbeds from '../../../../Packages/fixtures/reply-embeds.json' with { type: 'json' }
 
 class NoResizeObserver {
   observe(): void {}
@@ -44,6 +45,22 @@ beforeAll(() => {
 afterEach(cleanup)
 
 const theme = { vars: { '--foreground': '#111' }, font: 'Segoe UI', colorScheme: 'light' as const }
+
+// The cases HermesKit's WidgetFrame checks too (Packages/fixtures/reply-embeds.json).
+describe('reply-embeds.json', () => {
+  it.each(replyEmbeds.widgetDocuments)('the page for token $token', (item) => {
+    expect(widgetDocument(item.html, item.token, item.theme as WidgetTheme)).toBe(item.document)
+  })
+  it.each(replyEmbeds.intents)('intent at $now', (item) => {
+    expect(evaluateIntent(item.data, item.token, item.now, item.lastAcceptedAt)).toEqual(item.decision)
+  })
+  it.each(replyEmbeds.reportedHeights)('reported height', (item) => {
+    expect(reportedHeight(item.data, item.token) ?? null).toBe(item.height)
+  })
+  it.each(replyEmbeds.initialHeights)('initial height $raw', (item) => {
+    expect(initialWidgetHeight(item.raw) ?? null).toBe(item.height)
+  })
+})
 
 describe('widget page', () => {
   it('puts the theme first, after the doctype, and the scripts before </body>', () => {

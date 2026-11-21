@@ -17,6 +17,10 @@ struct AssistantMessageContent: View {
     /// (`MediaTags.segments`); the tags themselves are not shown. Without it the
     /// files are left out.
     var deliveredFiles: (([DeliveredFile]) -> AnyView)?
+    /// Draws the reply's web images and widgets (`ReplyParts`: `![alt](https://…)` lines,
+    /// `::preview{file=…}`) where they were written; the iOS app's (`ReplyEmbedView`).
+    /// Without it they stay text, as on the Mac.
+    var embeds: ((ReplyParts.Segment) -> AnyView)?
     /// Branch in New Chat from this reply; without it the bar has no "…" menu.
     var branch: (() -> Void)?
     let copy: () -> Void
@@ -41,13 +45,28 @@ struct AssistantMessageContent: View {
                 if !item.reasoning.isEmpty {
                     ReasoningFold(item: item)
                 }
-                ForEach(Array(Self.segments(item).enumerated()), id: \.offset) { _, segment in
-                    switch segment {
-                    case .markdown(let text):
-                        MarkdownView(text: text, isStreaming: item.isActive, conversationSource: conversationSource)
-                            .equatable()
-                    case .files(let files):
-                        if let deliveredFiles { deliveredFiles(files) }
+                if let embeds, ReplyParts.hasEmbeds(item.text) {
+                    ForEach(Array(ReplyParts.segments(item.text, isStreaming: item.isActive).enumerated()),
+                            id: \.offset) { _, segment in
+                        switch segment {
+                        case .markdown(let text):
+                            MarkdownView(text: text, isStreaming: item.isActive, conversationSource: conversationSource)
+                                .equatable()
+                        case .files(let files):
+                            if let deliveredFiles { deliveredFiles(files) }
+                        case .directive, .images:
+                            embeds(segment)
+                        }
+                    }
+                } else {
+                    ForEach(Array(Self.segments(item).enumerated()), id: \.offset) { _, segment in
+                        switch segment {
+                        case .markdown(let text):
+                            MarkdownView(text: text, isStreaming: item.isActive, conversationSource: conversationSource)
+                                .equatable()
+                        case .files(let files):
+                            if let deliveredFiles { deliveredFiles(files) }
+                        }
                     }
                 }
                 if item.outcome == "interrupted" {

@@ -87,12 +87,13 @@ extension GatewayClient {
     /// `queued: true` holds the prompt behind a running turn instead of letting
     /// the gateway's busy mode steer or redirect with it.
     @discardableResult
-    public func submitPrompt(sessionID: String, text: String, queued: Bool? = nil) async throws -> PromptSubmitResult {
+    public func submitPrompt(sessionID: String, text: String, queued: Bool? = nil,
+                             displayKind: String? = nil) async throws -> PromptSubmitResult {
         // The ack can lag behind a busy session; Desktop allows the full agent-turn
         // ceiling (`apps/desktop/src/api/client.ts:27`, 1 800 s) so the ack timeout
         // never reports a failure for a turn the server is still running.
         try await call(GatewayMethod.promptSubmit,
-                       params: PromptSubmitParams(sessionID: sessionID, text: text, queued: queued),
+                       params: PromptSubmitParams(sessionID: sessionID, text: text, queued: queued, displayKind: displayKind),
                        timeout: Self.promptSubmitTimeout)
     }
 

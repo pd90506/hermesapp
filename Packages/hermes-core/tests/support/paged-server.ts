@@ -199,7 +199,9 @@ export class PagedServer {
         const queued = this.queuedImages.get(String(params.session_id)) ?? []
         this.queuedImages.delete(String(params.session_id))
         const text = [String(params.text), ...queued.map((path) => `@image:${path}`)].filter((line) => line !== '').join('\n')
-        this.store.append([storedRow(id, 'user', text)])
+        // A widget's prompt is stored hidden (`display_kind`, `methods_prompt.py`).
+        const row = storedRow(id, 'user', text)
+        this.store.append([params.display_kind === 'hidden' ? { ...row, display_kind: 'hidden' } : row])
         return { status: 'streaming', user_row_id: id }
       }
       case 'session.interrupt':

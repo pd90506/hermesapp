@@ -77,3 +77,13 @@ in renderer code; style a platform with `:global([data-platform='windows'])`.
 - `ChatSession.steer`, `compress` and `answerClarify` are F's. The clarify card
   (`features/composer/cards/ClarifyCard.tsx`) shows where the other request cards do, via
   `RequestCard`.
+
+## Embeds in replies
+
+`features/chat/blocks/media/Embeds.tsx` draws web images (`![alt](https://…)`, from
+`Markdown.tsx`'s `img`) and `::preview{file=…}` widgets (from `MediaMarkdown`); the rules are
+docs/protocol.md §10.11. The main process side is `src/main/ipc/embeds.ts`
+(`talaria.embeds`): it serves each widget page at `talaria-widget://page/<id>` with its own
+content policy (the renderer's CSP allows `frame-src talaria-widget:` only) and fetches web
+images. A widget frame is always `sandbox="allow-scripts"`, never `allow-same-origin`. A new
+directive name goes in hermes-core's `claimedDirectives` and `DirectiveView`.

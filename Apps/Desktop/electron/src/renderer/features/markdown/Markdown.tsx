@@ -9,6 +9,7 @@ import {
   type CJKLanguage,
 } from '@talaria/hermes-core'
 import { CodeBlock } from './CodeBlock.tsx'
+import { WebImage } from '../chat/blocks/media/Embeds.tsx'
 import styles from './Markdown.module.css'
 
 /**
@@ -110,6 +111,16 @@ function Link({ node: _node, href, children, title }: Props<'a'>) {
   )
 }
 
+/**
+ * `![alt](src)`: a web image shows in place (Desktop's `MarkdownImage`); any other source
+ * stays its link, as Hermes tells the model that local files go by `MEDIA:` only.
+ */
+function Image({ node: _node, alt, src }: Props<'img'>) {
+  const url = typeof src === 'string' ? src.trim() : ''
+  if (/^https?:\/\//i.test(url)) return <WebImage url={url} alt={typeof alt === 'string' ? alt : ''} />
+  return <Link href={url || undefined}>{alt || url}</Link>
+}
+
 /** Fenced code (`data-block`, from Streamdown's `pre`) goes to `CodeBlock`. */
 function Code({ node: _node, className, children, ...props }: Props<'code'> & { 'data-block'?: string }) {
   if (!('data-block' in props)) return <code className={styles.inlineCode}>{children}</code>
@@ -185,8 +196,7 @@ const components: Components = {
   blockquote: plain('blockquote', styles.quote),
   hr: () => <div className={styles.rule} role="separator">────────</div>,
   a: Link,
-  // `![alt](src)`: shown as its link; inline media is the attachments work's.
-  img: ({ alt, src }: Props<'img'>) => <Link href={typeof src === 'string' ? src : undefined}>{alt || src}</Link>,
+  img: Image,
   code: Code,
   inlineCode: ({ children }: Props<'code'>) => <code className={styles.inlineCode}>{children}</code>,
   table: Table,

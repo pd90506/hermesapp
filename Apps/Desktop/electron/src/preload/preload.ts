@@ -124,6 +124,11 @@ const bridge: TalariaBridge = {
     open: (path) => ipcRenderer.invoke(IPC.filesOpen, path),
     saveAs: (path, name) => ipcRenderer.invoke(IPC.filesSaveAs, path, name),
   },
+  embeds: {
+    hostWidget: (html) => ipcRenderer.invoke(IPC.embedsHostWidget, html),
+    releaseWidget: (url) => ipcRenderer.send(IPC.embedsReleaseWidget, url),
+    remoteImage: (url) => ipcRenderer.invoke(IPC.embedsRemoteImage, url),
+  },
 }
 
 contextBridge.exposeInMainWorld('talaria', bridge)

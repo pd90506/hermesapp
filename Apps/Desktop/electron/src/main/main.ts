@@ -14,6 +14,7 @@ import { registerServers } from './ipc/servers.ts'
 import { attachSettingsShortcut, registerSettingsMenu } from './ipc/settings-window.ts'
 import { registerFiles } from './ipc/files.ts'
 import { registerNotifications } from './ipc/notifications.ts'
+import { keepWidgetsInPlace, registerEmbedSchemes, registerEmbeds } from './ipc/embeds.ts'
 
 // Its own data folder, `Talaria Desktop`: `Talaria` was the (now removed) Flutter app's,
 // with another settings.json, and may still be on a machine.
@@ -27,6 +28,7 @@ const platform = currentPlatform()
 // `FluentOverlayScrollbar` was the older name (Chromium before the rename); an unknown
 // name is ignored. macOS draws its own overlay scrollbars already.
 if (platform === 'windows') app.commandLine.appendSwitch('enable-features', 'OverlayScrollbar,FluentOverlayScrollbar')
+registerEmbedSchemes()
 const http = new DashboardHttp()
 const sockets = new Sockets()
 let window: BrowserWindow | undefined
@@ -91,6 +93,7 @@ function createWindow(): void {
     return { action: 'deny' }
   })
   created.webContents.on('will-navigate', (event) => event.preventDefault())
+  keepWidgetsInPlace(created.webContents)
   const devServer = process.env.TALARIA_DEV_SERVER
   if (devServer) void created.loadURL(devServer)
   else void created.loadFile(join(__dirname, '../renderer/index.html'))
@@ -115,6 +118,7 @@ function start(): void {
   registerLinks()
   registerFiles(http, () => window)
   registerNotifications(platform, () => window)
+  registerEmbeds()
   ipcMain.on(IPC.captionColors, (event, colors: { symbol: string }) => {
     const owner = BrowserWindow.fromWebContents(event.sender)
     if (!owner || platform === 'mac' || !/^#[0-9a-f]{6}$/i.test(colors.symbol)) return

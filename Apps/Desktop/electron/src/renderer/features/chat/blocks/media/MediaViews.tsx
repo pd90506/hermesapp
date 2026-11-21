@@ -1,13 +1,14 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { Fragment, useEffect, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  MediaTags, deliveredFileName, fileKind, imageID, isImagePath, type ChatSession, type DeliveredFile, type GatewayConnection,
-  type TranscriptImage, type TranscriptItem,
+  MediaTags, TranscriptDirectives, deliveredFileName, fileKind, imageID, isImagePath, type ChatSession, type DeliveredFile, type GatewayConnection,
+  type MediaSegment, type TranscriptDirective, type TranscriptImage, type TranscriptItem,
 } from '@talaria/hermes-core'
 import { useConnection, useSnapshot } from '../../../../app/hooks.ts'
 import { Markdown } from '../../../markdown/Markdown.tsx'
 import { actionIcons, fileIcons } from './icons.ts'
 import { localImageURL } from './local-images.ts'
+import { DirectiveView } from './Embeds.tsx'
 import { failureText, fullImage, openFile, saveFile, useThumbnail, type GatewayFile } from './media.ts'
 import styles from './MediaViews.module.css'
 
@@ -52,16 +53,34 @@ function SentImage({ image, chat }: { image: TranscriptImage; chat: ChatSession 
     file={image.path ? { path: image.path, name: image.name, ...scope(view.profile, view.storedSessionID) } : undefined} />
 }
 
-/** A reply in Markdown, with the files it delivered (`MEDIA:` tags) where their tags were. */
+/**
+ * A reply in Markdown, with the files it delivered (`MEDIA:` tags) where their tags were,
+ * and its widgets (`::preview{file=…}`, `Embeds.tsx`) where their directives were.
+ */
 export function MediaMarkdown({ text, streaming, chat }: { text: string; streaming: boolean; chat: ChatSession }) {
   const view = useSnapshot(chat)
-  if (!text.includes('MEDIA:')) return <Markdown text={text} streaming={streaming} />
-  const segments = MediaTags.segments(text, streaming)
+  const hasMedia = text.includes('MEDIA:')
+  if (!hasMedia && !TranscriptDirectives.mayContain(text)) return <Markdown text={text} streaming={streaming} />
+  const parts = TranscriptDirectives.segments(text, streaming)
+  if (!hasMedia && parts.every((part) => part.kind === 'markdown')) return <Markdown text={text} streaming={streaming} />
+  const files = (paths: readonly DeliveredFile[]) => (
+    <DeliveredFiles files={paths} profile={view.profile} storedSessionID={view.storedSessionID} />
+  )
+  type Shown = (MediaSegment | { kind: 'directive'; directive: TranscriptDirective }) & { last: boolean }
+  const segments = parts.flatMap((part, index): Shown[] => {
+    const last = streaming && index === parts.length - 1
+    if (part.kind === 'directive') return [{ kind: 'directive' as const, directive: part, last }]
+    return MediaTags.segments(part.text, last).map((segment) => ({ ...segment, last }))
+  })
   return (
     <div className={styles.reply}>
-      {segments.map((segment, index) => segment.kind === 'markdown'
-        ? <Markdown key={index} text={segment.text} streaming={streaming && index === segments.length - 1} />
-        : <DeliveredFiles key={index} files={segment.files} profile={view.profile} storedSessionID={view.storedSessionID} />)}
+      {segments.map((segment, index) => {
+        const isLast = segment.last && index === segments.length - 1
+        if (segment.kind === 'markdown') return <Markdown key={index} text={segment.text} streaming={isLast} />
+        if (segment.kind === 'files') return <Fragment key={index}>{files(segment.files)}</Fragment>
+        return <DirectiveView key={index} directive={segment.directive} streaming={streaming} chat={chat}
+          fallback={(path) => files([{ path }])} />
+      })}
     </div>
   )
 }

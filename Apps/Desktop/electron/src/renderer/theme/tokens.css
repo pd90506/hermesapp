@@ -434,6 +434,16 @@
   --drop-fill: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
+/* Embeds: web images and `::preview` widgets in replies (features/chat/blocks/media/Embeds.tsx).
+   After Hermes Desktop: an image at its own size up to 40 rem by about 26 rem, a widget the
+   column's width up to 960 px (its height follows the page, 120 to 1200 px, in widget-frame.ts). */
+:root {
+  --web-image-max-width: 640px;
+  --web-image-max-height: 420px;
+  --web-image-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 10px 24px rgb(0 0 0 / 0.05);
+  --widget-max-width: 960px;
+}
+
 /* D: composer controls (features/composer/model, slash, context): the model and effort
    pills and their menus, the slash-command list and the context gauge. After Hermes
    Desktop's composer (model-pill.tsx, reasoning-pill.tsx, completion-drawer.tsx): menus

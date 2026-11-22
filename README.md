@@ -1,19 +1,67 @@
 # hermesapp
 
-**Talaria**: native **macOS** and **iOS** clients (SwiftUI, platform look) for a self-hosted
-[Hermes Agent](https://github.com/NousResearch/hermes-agent).
+**Talaria**: clients for a self-hosted [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+
+| App | Platforms | Built with | Where | Status |
+| --- | --- | --- | --- | --- |
+| **Talaria Desktop** | Windows and macOS | Electron + React (TypeScript) | `Apps/Desktop/electron` | The desktop app; new work happens here |
+| **Talaria for iOS** | iPhone | SwiftUI | `Apps/iOS`, `Apps/Shared` | Active |
+| **Talaria for Mac** (SwiftUI) | macOS | SwiftUI | `Apps/macOS`, `Apps/Shared` | Bug fixes only |
 
 The apps don't add anything to Hermes. They connect to the dashboard's existing TUI-gateway
-JSON-RPC WebSocket (`/api/ws`), the same interface the official Electron desktop app uses for a
+JSON-RPC WebSocket (`/api/ws`), the same interface the official Hermes Desktop app uses for a
 remote gateway. See [`docs/protocol.md`](docs/protocol.md).
+
+The desktop app moved to Electron in November 2026, so Windows and macOS share one app with
+one look. The earlier Flutter Windows app was removed; its last state is on the
+[`archive/flutter-desktop`](https://github.com/pd90506/hermesapp/tree/archive/flutter-desktop)
+branch.
 
 ## Download
 
-Signed Mac builds are on the [Releases](https://github.com/pd90506/hermesapp/releases) page and
-update themselves in the app (Sparkle). There is no App Store or TestFlight build of the iOS app;
-build it yourself (see [Signing](#signing)).
+There are no published builds of Talaria Desktop yet; build it yourself (see
+[Talaria Desktop](#talaria-desktop-electron)). Signed builds of the SwiftUI Mac app are on the
+[Releases](https://github.com/pd90506/hermesapp/releases) page and update themselves in the app
+(Sparkle). There is no App Store or TestFlight build of the iOS app; build it yourself (see
+[Signing](#signing-apple-apps)).
 
-## Current features
+## Talaria Desktop (Electron)
+
+One app for Windows 11 and macOS. Both platforms get the same layout, in the style of the
+official Hermes Desktop; only the window frame differs (Mica and Windows' own caption buttons
+on Windows, inset traffic lights and vibrancy on macOS) and each uses its system font.
+
+- **Servers and sign-in.** Several dashboards connected at once, with password, access token,
+  session token or browser sign-in. The app can also run its own local `hermes serve`. Each
+  server's secret is encrypted with Electron's `safeStorage` (DPAPI on Windows, the Keychain on
+  macOS).
+- **Sidebar.** The profile rail, each profile's pinned Bot Chat over its sessions, date groups,
+  pinned and unread chats, search, and the session menu (pin, rename, archive, delete).
+- **Chat.** Streaming replies with Markdown (code highlighting and math), a turn's work as
+  folded tool rows, reasoning and notices, approval, clarify, sudo and secret cards, held
+  messages and compression cards over the composer, message actions (copy, Branch in New Chat)
+  and a prompt rail. Attachments (images and files), remote Markdown images and `::preview`
+  HTML widgets in replies. Pills for tasks, background jobs and subagents, and system
+  notifications.
+- **Composer.** Model and reasoning-effort pickers, slash commands, a context gauge.
+- **Cron Jobs** tab, **Providers** and **Capabilities** panes, and a **Settings** overlay
+  (servers, appearance with the colour themes, light/dark and text sizes, notifications,
+  session sources).
+
+Not there yet: installers and auto-update (the app is packed as an unpacked folder), and voice
+input.
+
+How the code is laid out and the rules for working on it are in
+[`docs/desktop-electron.md`](docs/desktop-electron.md) and
+[`Apps/Desktop/electron/AGENTS.md`](Apps/Desktop/electron/AGENTS.md).
+
+## iOS and the SwiftUI Mac app
+
+The SwiftUI Mac app was the first desktop client. It still works and gets bug fixes, but new
+desktop features go to Talaria Desktop. The iOS app stays in SwiftUI. Both share
+`Apps/Shared` and the `HermesKit` package.
+
+### Features
 
 - **Native macOS and iOS chat.** The Mac has a collapsible profile rail, session list and chat;
   iPhone shows profiles in a drawer, then sessions or chat. Profiles are scoped to their server.
@@ -29,7 +77,8 @@ build it yourself (see [Signing](#signing)).
   reopen immediately while catching up in the background. Streaming replies, reasoning,
   tool-call summaries and details, interim/waiting rows, notices and approval/clarify cards are
   displayed. Assistant Markdown includes GFM tables and native SwiftMath rendering of LaTeX;
-  code blocks and message copying are supported. The chat can jump to the latest prompt or
+  code blocks and message copying are supported. Replies can show remote Markdown images and
+  `::preview` HTML widgets. The chat can jump to the latest prompt or
   scroll to the bottom without losing its place while older pages load.
 - **Composer.** Send images and files (including PDFs) using `+`, paste or drag-and-drop; files
   sent by Hermes appear in the transcript and can be saved. Pick the model and reasoning effort
@@ -48,14 +97,21 @@ build it yourself (see [Signing](#signing)).
   Markdown colours have their own settings. The Mac uses pointer hover feedback and the iPhone
   uses a floating composer and profile drawer.
 
-The shared Swift package also builds and tests on Linux; the SwiftUI apps need a Mac with Xcode.
+The Swift package also builds and tests on Linux; the SwiftUI apps need a Mac with Xcode.
 The Linux CI does **not** verify Apple UI builds. Voice input and
-native token-refresh wiring are not in the apps yet. See [Known limitations](#known-limitations)
+native token-refresh wiring are not in the apps yet. See [Known limitations](#known-limitations-apple-apps)
 and [`docs/protocol.md`](docs/protocol.md) for details.
 
 ## Layout
 
 ```
+Apps/Desktop/electron/     Talaria Desktop (Electron + React): src/main (window, HTTP, WebSockets,
+                           settings, secrets), src/preload (the window.talaria bridge),
+                           src/renderer (React views, CSS Modules, design tokens).
+Packages/hermes-core/      The desktop app's client core in TypeScript, a port of HermesKit
+                           (protocol, connection, sessions, chat, composer), with no DOM.
+Packages/fixtures/         JSON cases that HermesKit and hermes-core must both pass.
+package.json, pnpm-workspace.yaml   The pnpm workspace for the two packages above.
 Packages/HermesKit/        Linux-compatible Swift package for protocol, networking, auth,
                            multi-server/session state, transcript, composer, slash commands,
                            Markdown, appearance, files and Cron Jobs.
@@ -70,15 +126,33 @@ Apps/UITests/              macOS and iOS UI tests, run inside the test VM.
 project.yml                XcodeGen source of truth; never commit the generated .xcodeproj.
 Config/                    Shared settings and ignored local signing configuration.
 backend/                   Reserved for server-side helpers (e.g. a push relay).
-docs/protocol.md           Source-cited protocol notes for native clients.
+docs/                      Protocol notes, the Electron app, flaky tests, performance tracing.
 scripts/check-project-spec.py  Static check of project.yml on Linux.
 scripts/vm-test.sh         Mac-hosted build, VM-only automated test runner.
-.github/workflows/         Linux-only Swift package CI.
+scripts/windows/           Build-Electron.ps1: install, test and pack the desktop app on Windows.
+scripts/windows-test-vm/   The headless Hyper-V VM for Windows UI screenshots.
+.github/workflows/         Linux CI: the Swift package, and the Electron workspace.
 ```
 
 ## Building
 
-### The package (Linux or Mac)
+### Talaria Desktop (Windows, macOS or Linux)
+
+Needs Node 22.12 or later and pnpm 10.28.0 (from corepack, or `npx pnpm@10.28.0`):
+
+```sh
+pnpm install          # at the repo root
+pnpm typecheck
+pnpm test
+pnpm desktop:dev      # Vite dev server + Electron
+pnpm desktop:pack     # an unpacked app in Apps/Desktop/electron/dist
+```
+
+On Windows, `scripts/windows/Build-Electron.ps1` installs, tests and packs in one go. Linux CI
+type-checks, tests and builds the workspace; packing and screenshots happen on Windows and the
+Mac.
+
+### The Swift package (Linux, Windows or Mac)
 
 The package builds and tests anywhere Swift 6.2 or later runs, without Xcode:
 
@@ -90,7 +164,7 @@ python3 scripts/check-project-spec.py        # after editing project.yml or addi
 
 The manifest pins `swift-tools-version: 6.2`, the version in Xcode 26.
 
-### The apps (Mac, Xcode 26)
+### The SwiftUI apps (Mac, Xcode 26)
 
 ```sh
 brew install xcodegen                              # once
@@ -100,53 +174,32 @@ xcodebuild -project Hermes.xcodeproj -scheme HermesMac -configuration Debug buil
 ```
 
 For iOS, build `HermesiOS` in Xcode or with `xcodebuild` after signing is configured (see
-[Signing](#signing)); installing on a paired phone requires it to be unlocked.
+[Signing](#signing-apple-apps)); installing on a paired phone requires it to be unlocked.
 `Apps/Shared/AppIcon.icon` is adapted from Hermes Desktop's Icon Composer asset (MIT; see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 
-### Automated tests: Mac-hosted Tart VM only
+### Tests
 
-**Never run automated tests, a test dashboard or `scripts/live-test.sh` on the Mac host.** The
-host compiles test products; a single [Tart](https://tart.run) VM, `hermesapp-test-vm`, runs all
-package live, macOS window and macOS UI tests. Run this from the feature's own worktree:
+- **Talaria Desktop:** `pnpm test` at the repo root (also run by CI on Linux). Windows UI
+  screenshots are taken in a headless Hyper-V VM (`scripts/windows-test-vm/`).
+- **Swift package:** `swift test --package-path Packages/HermesKit` anywhere (also run by CI).
+- **Apple apps:** live, window and UI tests run only inside a macOS [Tart](https://tart.run) VM,
+  never on the Mac itself: `scripts/vm-test.sh` builds on the Mac and runs the tests in the VM
+  against a Hermes installed there. For example:
 
-```sh
-scripts/vm-test.sh                          # full live + window + macOS UI suite
-scripts/vm-test.sh --ios                    # full suite plus iOS simulator UI tests
-scripts/vm-test.sh --only window            # focused iteration; live,window,ui can be combined
-scripts/vm-test.sh --test HermesMacTests/HoverTests  # one suite or test
-```
+  ```sh
+  scripts/vm-test.sh --changed     # the tests the branch's changes need
+  scripts/vm-test.sh --ios         # everything, plus the iOS simulator UI tests
+  ```
 
-`--keep` leaves the VM running only for an immediate follow-up run. Runs queue on a single VM
-lock; build intermediates stay in that worktree's ignored `build/vm-test`, screenshots return to
-`build/vm-test/screenshots/`, and test app bundles are removed from the host afterwards. The VM
-uses only its own `hermesapp-test` Hermes profile. The ignored repo-root `.env` supplies the
-model endpoint and key (`CLIPROXYAPI_BASE_URL`, `CLIPROXYAPI_KEY`, optional
-`CLIPROXYAPI_MODEL`) to the VM; never commit it or put it in logs. Without them, tests
-requiring model responses skip or fail. **Before reporting a PR ready to merge, run the full suite without
-`--only` or `--test`** (and add `--ios` if iOS changed). Show VM screenshots for visible UI
-changes. See [`AGENTS.md`](AGENTS.md) for the complete host/VM rules and the git workflow.
+  Tests that need a model reply use an endpoint and key from the git-ignored `.env`.
 
-### Why XcodeGen
+The full rules for agents and contributors (which host checks what, the test VMs, the git
+workflow) are in [`AGENTS.md`](AGENTS.md).
 
-A hand-maintained `.xcodeproj` can't be edited sensibly on Linux and causes merge conflicts.
+The Xcode project is generated from `project.yml` by XcodeGen and never committed.
 
-- **XcodeGen** keeps the whole project in one short YAML file (`project.yml`):
-  - The generated project and Info.plists are ignored by git.
-  - Any host, or an agent, can edit the YAML.
-  - It's a single Homebrew binary with no Swift manifest to compile.
-  - It's mature and handles local Swift packages, multi-platform targets, entitlements and xcconfigs.
-- **Tuist** needs its own CLI and a Swift-DSL manifest that also only evaluates on macOS, which
-  is more machinery for two targets.
-- **Xcode 16+ synchronized folders** reduce `project.pbxproj` churn, but the pbxproj is still a
-  committed, hand-merged artefact.
-
-Linux can't run XcodeGen or Xcode, so `scripts/check-project-spec.py` checks
-the spec statically (YAML parses, paths exist, local package products exist, remote packages use
-HTTPS and pin a version, every app Swift file belongs to a target). The real check is
-`xcodegen generate` and an Xcode build on the Mac.
-
-## Signing
+## Signing (Apple apps)
 
 - Bundle ids are `$(HERMES_BUNDLE_ID_PREFIX).mac` and `.ios`. The committed prefix is the
   placeholder `com.example.hermesapp` (in `Config/Shared.xcconfig`).
@@ -162,6 +215,8 @@ HTTPS and pin a version, every app Swift file belongs to a target). The real che
   the sandbox back, and "This Mac" with it gone.
 
 ## Connecting to Hermes
+
+This section describes the Apple apps; Talaria Desktop offers the same sign-in methods.
 
 - In the app, enter the dashboard URL, e.g. `https://hermes.example.ts.net` (a Tailscale HTTPS
   name), and pick a sign-in method:
@@ -214,73 +269,54 @@ HTTPS and pin a version, every app Swift file belongs to a target). The real che
   - That does **not** cover `http://*.ts.net`. Plain-HTTP tailnet names will be blocked, so use the
     Tailscale HTTPS name.
 
-## Known limitations
+## Known limitations (Apple apps)
 
-- **Voice input** is not available yet (`docs/protocol.md` §10.4).
-- The "Access token (ticket)" mode takes an access token only, which can't be refreshed.
-  `basic` access tokens last 12 h, so re-enter the token after that, or use "Sign in with
-  browser", whose pair renews itself.
-- **Clarify multi-select.** The UI still presents `multi_select` as a single-choice Picker,
-  although the package models it (`ClarifySelection`).
-- **Slash-command UI.** The composer calls `ChatComposer.submitSlash()` for drafts starting with
-  `/`, and the package handles server-side commands and supported client actions. `/new`,
-  `/reset` and `/clear` create a chat outside a Bot Chat (inside it, they compress instead);
-  `/help` lists commands; `/model` and `/reasoning` change the chat's choices. `/resume` opens a
-  matching session only when its ID is already in History. Other Desktop client-side actions
-  such as `/branch` and `/skin` have no slash UI here yet; the app shows a local note instead of
-  sending them as prompts. Forking a session is available from its row or message action menu.
-  `/profile` cannot switch the profile of a new chat from the composer.
-- **Local rows.** Slash-command output, notices and `/btw` / `/bg` answers exist on this device
-  only (Hermes never stores them; Desktop loses them on reload too). They keep their place while
-  the stored transcript is re-read, but a cold resume (reconnect to a restarted backend, a
-  reclaimed chat) drops them, and a row added mid-turn moves below that turn.
-- **Reasoning.** Only `reasoning.delta` and `reasoning.available` fill a reply's reasoning, as in
-  Desktop; `thinking.delta` frames are spinner text (an explained provider wait shows as
-  `Transcript.providerWait`). A prompt, steer, note or `/btw` row added while a reply streams
-  splits the reply into two bubbles around it (Desktop's `appendAfterActiveReply`).
-- **Rename.** Only a chat open in the app (on screen or recently shown) can be renamed: the
-  package uses `session.title`, which needs a live session. Desktop renames other rows over the
-  dashboard REST API, which the package doesn't use.
-- **Archive.** Archived chats can't be listed (`session.list` has no archived filter), so unarchive
-  is only an undo for a row the app still holds.
-- **Deleting a chat open elsewhere.** A chat open in another client (e.g. a Desktop window) can't
-  be deleted: the gateway answers 4023 until that client closes it.
-- **Stored tool rows** show no output, except for `write_file`, `patch` and `skill_manage`, as in
-  the gateway's own history projection; live tool rows carry their output.
-- **Files.** A file is uploaded when it is attached; removing its card does not delete it from the
-  gateway (there is no call for that). Files travel inside one WebSocket frame as base64, about a
-  third larger than the file, and the app refuses files over 50 MB (Hermes' PDF cap). The gateway
-  itself takes frames up to 384 MiB (16 MiB on gateways older than desktop contract v5), and
-  Desktop allows 256 MiB per file; see `docs/protocol.md` §10.5.
-- **Reclaimed chats.** When the backend reclaims an idle chat, the chat stays on screen and is
-  resumed by its next action or when it is shown again; until then nothing streams into it.
-- **Live updates.** `sessions.changed` refreshes the lists at most every 10 s, and the roster also
-  keeps its 15 s poll: Hermes has no roster-change event.
-- Requests for sessions other than the open one show only as a badge (and on the bot's row when
-  this app opened that session).
-- **Profiles.** The app only lists bots and opens or creates their Bot Chats. It does not create,
-  rename or delete profiles, and it does not run Desktop's sweep that re-hides Bot Chats. Bot
-  Chats can't be renamed, archived or deleted from the app; the server itself only refuses the
-  rename.
-- Math the SwiftMath parser can't handle, even after rewriting (e.g. `\cancel`, `\&`,
-  `\mathop`), shows as LaTeX source. Some rewrites are approximations: `\boxed` drops the box,
-  `\underbrace`/`\overbrace` become under/overlines, `\overset` becomes a superscript. `\color`
-  is ignored because math takes the text color.
-- Prose selection works within one paragraph, list item or cell, not across blocks. Math images
-  aren't selectable; use "Copy LaTeX" from the context menu.
-- Markdown edge cases, by design: a display-math opener with no closer is plain text once the
-  reply finishes (while streaming it shows as source); quotes and lists nest at most 16 deep and
-  emphasis 32 deep, deeper markers stay text; a `$…$` span in a table cell keeps its pipes, so
-  `| $a | b$ |` is one cell; `$` + capitals + `/` or `:` (`$HOME/`) is read as a shell variable.
-- Rendering: every streamed delta re-parses the reply and re-evaluates its block views; the math
-  image cache is bounded by count (500), not bytes; math in the reasoning pane is sized for body
-  text although reasoning uses the callout font.
-- A `-32601` from this app can beat a Desktop window's answer to `vault.*` prompts when both are
-  attached to the same session (see `docs/protocol.md` §6).
+- **Voice input** is not available yet.
+- **Access tokens** can't be renewed: re-enter one after it expires (12 h on `basic`
+  dashboards), or use "Sign in with browser", which renews itself.
+- **Clarify questions** that allow several answers still offer only one choice.
+- **Slash commands.** Server-side commands, skills, `/new`, `/reset`, `/clear`, `/help`,
+  `/model`, `/reasoning`, `/compress`, `/btw`, `/bg` and `/stop` work. `/resume` opens only a
+  session already in History. Others from Hermes Desktop, such as `/branch`, `/skin` and
+  `/profile`, aren't there yet; the app shows a note instead of sending them. Fork a session
+  from its row or message menu.
+- **Device-only rows.** Slash-command output, notices and `/btw` / `/bg` answers stay on this
+  device (Hermes doesn't store them) and can disappear after a reconnect to a restarted backend.
+- **Rename** works only for a chat the app has opened recently.
+- **Archive** can be undone only for a row still on screen: archived chats can't be listed.
+- **A chat open in another client** (say a Hermes Desktop window) can't be deleted until that
+  client closes it.
+- **Stored tool rows** show no output (except file writes, patches and skill edits); live ones
+  do.
+- **Files** over 50 MB are refused. Removing an attached file's card doesn't delete the upload.
+- **Idle chats** the backend reclaims stay on screen and resume on their next action.
+- **Lists** refresh at most every 10 s after a change, and the profile list every 15 s.
+- Requests for a session other than the open one show only as a badge.
+- **Profiles** can't be created, renamed or deleted in the app, and Bot Chats can't be renamed,
+  archived or deleted.
+- **Math** the renderer can't handle shows as LaTeX source, and a few commands are approximated
+  (`\boxed` drops its box, `\color` is ignored).
+- **Selecting text** works within one paragraph, list item or table cell, not across them.
+  Formulas aren't selectable; use "Copy LaTeX".
 
-## Rules for contributors and agents
+Implementation notes behind these are in [`AGENTS.md`](AGENTS.md) and
+[`docs/protocol.md`](docs/protocol.md).
 
-See [`AGENTS.md`](AGENTS.md).
+## Contributing
+
+Development rules, for people and coding agents alike, are in [`AGENTS.md`](AGENTS.md).
+
+## Credits
+
+Talaria Desktop adapts MIT-licensed code from the official
+[Hermes Desktop](https://github.com/NousResearch/hermes-agent) (Nous Research): the app icon,
+Shiki themes, system notifications and the `::preview` widget frame and directives. Its
+structure (platform differences in the shell, frame geometry as CSS variables, design tokens
+with a stylesheet scan) follows patterns from
+[deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) (MIT). Other bundled
+libraries include Electron, React, streamdown, Shiki, KaTeX, Lucide icons and, in the Apple
+apps, SwiftMath and Sparkle. Licenses and details are in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## License
 

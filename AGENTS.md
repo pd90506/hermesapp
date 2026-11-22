@@ -5,8 +5,10 @@ on the Mac.
 
 ## What this is
 
-Native SwiftUI clients for macOS 26 and iOS 26 that connect to a self-hosted Hermes Agent
-through its **existing** dashboard WebSocket JSON-RPC (`/api/ws`). See `README.md` for the
+Clients for a self-hosted Hermes Agent that connect through its **existing** dashboard
+WebSocket JSON-RPC (`/api/ws`): Talaria Desktop, one Electron + React app for Windows and
+macOS (see [Electron desktop app](#electron-desktop-app)), and SwiftUI apps for iOS 26 and
+macOS 26 (the SwiftUI Mac app gets bug fixes only; new desktop work goes to Electron). See `README.md` for the
 overview and `docs/protocol.md` for the protocol.
 
 ## Hard rules
@@ -219,9 +221,9 @@ Every third-party dependency, its license, pin and reason. Add a row here before
 
 ## Electron desktop app
 
-The desktop app for Windows and macOS is moving to Electron (decided by the user, 2026-11-19;
+The desktop app for Windows and macOS is Electron (decided by the user, 2026-11-19;
 the plan is in `docs/desktop-electron.md`). One renderer serves both; the SwiftUI Mac app
-stays until it catches up. The Flutter Windows app was removed (the user, 2026-11-19:
+gets bug fixes only. The Flutter Windows app was removed (the user, 2026-11-19:
 "Flutter版不需要了，归档删除"); its last state is on the `archive/flutter-desktop` branch.
 
 - **Layout.** `Packages/hermes-core` is the protocol and connection logic in TypeScript (a port
@@ -255,6 +257,91 @@ stays until it catches up. The Flutter Windows app was removed (the user, 2026-1
   menu) or Ctrl+, opens it (`src/main/ipc/settings-window.ts`). A pane registers itself in
   `features/settings/registered.ts` (`registerSettingsPane`) and is built from `features/settings/ui/Rows.tsx`
   (PageHeading, ListRow, ToggleRow, Switch, TextField, Select, Button, Pill).
+
+## Why XcodeGen
+
+A hand-maintained `.xcodeproj` can't be edited sensibly on Linux and causes merge conflicts.
+
+- **XcodeGen** keeps the whole project in one short YAML file (`project.yml`):
+  - The generated project and Info.plists are ignored by git.
+  - Any host, or an agent, can edit the YAML.
+  - It's a single Homebrew binary with no Swift manifest to compile.
+  - It's mature and handles local Swift packages, multi-platform targets, entitlements and xcconfigs.
+- **Tuist** needs its own CLI and a Swift-DSL manifest that also only evaluates on macOS, which
+  is more machinery for two targets.
+- **Xcode 16+ synchronized folders** reduce `project.pbxproj` churn, but the pbxproj is still a
+  committed, hand-merged artefact.
+
+Linux can't run XcodeGen or Xcode, so `scripts/check-project-spec.py` checks
+the spec statically (YAML parses, paths exist, local package products exist, remote packages use
+HTTPS and pin a version, every app Swift file belongs to a target). The real check is
+`xcodegen generate` and an Xcode build on the Mac.
+
+## Known limitations of the Apple apps: implementation notes
+
+The README lists these for users; the details for whoever works on them:
+
+- **Voice input** is not available yet (`docs/protocol.md` §10.4).
+- The "Access token (ticket)" mode takes an access token only, which can't be refreshed.
+  `basic` access tokens last 12 h, so re-enter the token after that, or use "Sign in with
+  browser", whose pair renews itself.
+- **Clarify multi-select.** The UI still presents `multi_select` as a single-choice Picker,
+  although the package models it (`ClarifySelection`).
+- **Slash-command UI.** The composer calls `ChatComposer.submitSlash()` for drafts starting with
+  `/`, and the package handles server-side commands and supported client actions. `/new`,
+  `/reset` and `/clear` create a chat outside a Bot Chat (inside it, they compress instead);
+  `/help` lists commands; `/model` and `/reasoning` change the chat's choices. `/resume` opens a
+  matching session only when its ID is already in History. Other Desktop client-side actions
+  such as `/branch` and `/skin` have no slash UI here yet; the app shows a local note instead of
+  sending them as prompts. Forking a session is available from its row or message action menu.
+  `/profile` cannot switch the profile of a new chat from the composer.
+- **Local rows.** Slash-command output, notices and `/btw` / `/bg` answers exist on this device
+  only (Hermes never stores them; Desktop loses them on reload too). They keep their place while
+  the stored transcript is re-read, but a cold resume (reconnect to a restarted backend, a
+  reclaimed chat) drops them, and a row added mid-turn moves below that turn.
+- **Reasoning.** Only `reasoning.delta` and `reasoning.available` fill a reply's reasoning, as in
+  Desktop; `thinking.delta` frames are spinner text (an explained provider wait shows as
+  `Transcript.providerWait`). A prompt, steer, note or `/btw` row added while a reply streams
+  splits the reply into two bubbles around it (Desktop's `appendAfterActiveReply`).
+- **Rename.** Only a chat open in the app (on screen or recently shown) can be renamed: the
+  package uses `session.title`, which needs a live session. Desktop renames other rows over the
+  dashboard REST API, which the package doesn't use.
+- **Archive.** Archived chats can't be listed (`session.list` has no archived filter), so unarchive
+  is only an undo for a row the app still holds.
+- **Deleting a chat open elsewhere.** A chat open in another client (e.g. a Desktop window) can't
+  be deleted: the gateway answers 4023 until that client closes it.
+- **Stored tool rows** show no output, except for `write_file`, `patch` and `skill_manage`, as in
+  the gateway's own history projection; live tool rows carry their output.
+- **Files.** A file is uploaded when it is attached; removing its card does not delete it from the
+  gateway (there is no call for that). Files travel inside one WebSocket frame as base64, about a
+  third larger than the file, and the app refuses files over 50 MB (Hermes' PDF cap). The gateway
+  itself takes frames up to 384 MiB (16 MiB on gateways older than desktop contract v5), and
+  Desktop allows 256 MiB per file; see `docs/protocol.md` §10.5.
+- **Reclaimed chats.** When the backend reclaims an idle chat, the chat stays on screen and is
+  resumed by its next action or when it is shown again; until then nothing streams into it.
+- **Live updates.** `sessions.changed` refreshes the lists at most every 10 s, and the roster also
+  keeps its 15 s poll: Hermes has no roster-change event.
+- Requests for sessions other than the open one show only as a badge (and on the bot's row when
+  this app opened that session).
+- **Profiles.** The app only lists bots and opens or creates their Bot Chats. It does not create,
+  rename or delete profiles, and it does not run Desktop's sweep that re-hides Bot Chats. Bot
+  Chats can't be renamed, archived or deleted from the app; the server itself only refuses the
+  rename.
+- Math the SwiftMath parser can't handle, even after rewriting (e.g. `\cancel`, `\&`,
+  `\mathop`), shows as LaTeX source. Some rewrites are approximations: `\boxed` drops the box,
+  `\underbrace`/`\overbrace` become under/overlines, `\overset` becomes a superscript. `\color`
+  is ignored because math takes the text color.
+- Prose selection works within one paragraph, list item or cell, not across blocks. Math images
+  aren't selectable; use "Copy LaTeX" from the context menu.
+- Markdown edge cases, by design: a display-math opener with no closer is plain text once the
+  reply finishes (while streaming it shows as source); quotes and lists nest at most 16 deep and
+  emphasis 32 deep, deeper markers stay text; a `$…$` span in a table cell keeps its pipes, so
+  `| $a | b$ |` is one cell; `$` + capitals + `/` or `:` (`$HOME/`) is read as a shell variable.
+- Rendering: every streamed delta re-parses the reply and re-evaluates its block views; the math
+  image cache is bounded by count (500), not bytes; math in the reasoning pane is sized for body
+  text although reasoning uses the callout font.
+- A `-32601` from this app can beat a Desktop window's answer to `vault.*` prompts when both are
+  attached to the same session (see `docs/protocol.md` §6).
 
 ## Windows host
 

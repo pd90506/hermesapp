@@ -120,9 +120,10 @@ scripts/vm-test.sh --test HermesMacTests/HoverTests  # one suite or test
 `--keep` leaves the VM running only for an immediate follow-up run. Runs queue on a single VM
 lock; build intermediates stay in that worktree's ignored `build/vm-test`, screenshots return to
 `build/vm-test/screenshots/`, and test app bundles are removed from the host afterwards. The VM
-uses only its own `hermesapp-test` Hermes profile. The ignored `.env.vm-hermes` supplies the
-model key to the VM; never commit it or put it in logs. Without it, tests requiring model
-responses skip or fail. **Before reporting a PR ready to merge, run the full suite without
+uses only its own `hermesapp-test` Hermes profile. The ignored repo-root `.env` supplies the
+model endpoint and key (`CLIPROXYAPI_BASE_URL`, `CLIPROXYAPI_KEY`, optional
+`CLIPROXYAPI_MODEL`) to the VM; never commit it or put it in logs. Without them, tests
+requiring model responses skip or fail. **Before reporting a PR ready to merge, run the full suite without
 `--only` or `--test`** (and add `--ios` if iOS changed). Show VM screenshots for visible UI
 changes. See [`AGENTS.md`](AGENTS.md) for the complete host/VM rules and the git workflow.
 

@@ -44,21 +44,22 @@
 # The VM is a clone of Cirrus Labs' macOS + Xcode image (user admin/admin). Its disk
 # persists, so it keeps its own Hermes, installed here on the first run: the macOS
 # tests run against a dashboard on the VM's own 127.0.0.1, in the hermesapp-test
-# profile. The model key comes from the git-ignored .env.vm-hermes
-# (OPENCODE_GO_API_KEY=..., written by the user) in this worktree or, failing that, the
-# main checkout, and is copied into the VM only.
-# Without it the VM's Hermes still lists profiles and sessions, but can't reply.
+# profile. Its model is served by a CLIProxyAPI endpoint (OpenAI-compatible), named in
+# the git-ignored .env at the repo root (written by the user) in this worktree or, failing
+# that, the main checkout: CLIPROXYAPI_BASE_URL, CLIPROXYAPI_KEY and, optionally,
+# CLIPROXYAPI_MODEL (default claude-haiku-5-5). The key is copied into the VM only.
+# Without them the VM's Hermes still lists profiles and sessions, but can't reply.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$PWD
-# The main checkout (the one holding .git), for the git-ignored key file.
+# The main checkout (the one holding .git), for the git-ignored .env.
 main=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 
 IMAGE=${HERMES_VM_IMAGE:-ghcr.io/cirruslabs/macos-golden-gate-xcode:27}
 VM=${HERMES_VM_NAME:-hermesapp-test-vm}
 PROFILE=hermesapp-test
 PORT=9139
-KEY_FILE=.env.vm-hermes
+ENV_FILE=.env
 keep=0 ios=0 only="" tests=() changed=0 slow=0
 usage() { echo "usage: $0 [--keep] [--ios] [--slow] [--changed | [--only live,window,ui] [--test Scheme/Suite[/test]]...]" >&2; exit 2; }
 while (($#)); do
@@ -370,29 +371,45 @@ runs window || boot_sim || status=1
 trap 'remove_products; ((keep)) || tart stop "$VM" >/dev/null 2>&1 || true; report_times; release_vm' EXIT
 
 # 2. The VM's own Hermes: installed once, a hermesapp-test profile on the test model
-#    (memory off, as on the Mac), and the model key from $KEY_FILE.
+#    (memory off, as on the Mac), served by the endpoint and key in $ENV_FILE.
 step "Hermes and its test profile"
 vexec "command -v hermes >/dev/null || curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
     | bash -s -- --non-interactive --skip-browser --skip-computer-use"
+env_file=$repo/$ENV_FILE
+[[ -f $env_file ]] || env_file=$main/$ENV_FILE
+env_value() {  # one setting from $env_file, without surrounding quotes
+  [[ -f $env_file ]] || return 0
+  sed -n "s/^$1=//p" "$env_file" | tail -1 | sed -e 's/^["'\'']//' -e 's/["'\'']$//'
+}
+proxy_url=$(env_value CLIPROXYAPI_BASE_URL)
+proxy_model=$(env_value CLIPROXYAPI_MODEL)
+proxy_model=${proxy_model:-claude-haiku-5-5}
+# The model goes through a named provider entry, `cliproxy`, whose key Hermes reads
+# from CLIPROXYAPI_KEY in the profile's .env; model.* repeats the endpoint for the
+# auxiliary tasks (titles, compression), which take the main model's.
+settings=(memory.memory_enabled=false memory.user_profile_enabled=false)
+if [[ -n $proxy_url ]]; then
+  settings+=(model.provider=cliproxy "model.default=$proxy_model" "model.base_url=$proxy_url"
+    model.api_mode=chat_completions model.key_env=CLIPROXYAPI_KEY
+    "providers.cliproxy.api=$proxy_url" providers.cliproxy.key_env=CLIPROXYAPI_KEY
+    providers.cliproxy.transport=openai_chat providers.cliproxy.discover_models=false)
+fi
 vexec "hermes profile list 2>/dev/null | grep -qw $PROFILE || hermes profile create $PROFILE --clone --no-alias >/dev/null
-  for kv in model.provider=opencode-go model.default=deepseek-v4.1-flash \
-      memory.memory_enabled=false memory.user_profile_enabled=false; do
+  for kv in ${settings[*]}; do
     hermes -p $PROFILE config set \${kv%%=*} \${kv#*=} >/dev/null
   done"
-key_file=$repo/$KEY_FILE
-[[ -f $key_file ]] || key_file=$main/$KEY_FILE
-if [[ -f $key_file ]] && grep -q '^OPENCODE_GO_API_KEY=.' "$key_file"; then
+if [[ -n $proxy_url ]] && grep -q '^CLIPROXYAPI_KEY=.' "$env_file"; then
   # The key goes through a pipe into the profile's .env (and the default one); it is
   # never echoed, logged or passed on a command line.
-  grep '^OPENCODE_GO_API_KEY=' "$key_file" | head -1 | tart exec -i "$VM" /bin/zsh -lc '
+  grep '^CLIPROXYAPI_KEY=' "$env_file" | head -1 | tart exec -i "$VM" /bin/zsh -lc '
     export PATH=$HOME/.local/bin:$PATH
     IFS= read -r line
     for f in ~/.hermes/.env "$(hermes -p '"$PROFILE"' config env-path)"; do
       mkdir -p "${f:h}"; touch "$f"; chmod 600 "$f"
-      { grep -v "^OPENCODE_GO_API_KEY=" "$f" || true; print -r -- "$line"; } >"$f.new" && mv "$f.new" "$f"
+      { grep -v "^CLIPROXYAPI_KEY=" "$f" || true; print -r -- "$line"; } >"$f.new" && mv "$f.new" "$f"
     done'
 else
-  echo "No $KEY_FILE with OPENCODE_GO_API_KEY: the VM's Hermes can't reply, so tests that need a reply will fail or skip."
+  echo "No CLIPROXYAPI_BASE_URL and CLIPROXYAPI_KEY in $ENV_FILE: the VM's Hermes can't reply, so tests that need a reply will fail or skip."
 fi
 
 # 3. Its dashboard on the VM's loopback, with a fresh session token (as live-test.sh

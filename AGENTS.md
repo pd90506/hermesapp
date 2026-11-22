@@ -172,12 +172,15 @@ Every third-party dependency, its license, pin and reason. Add a row here before
     across runs, so Hermes is installed there once and reused. Window and UI tests in the VM
     connect to that Hermes, in the `hermesapp-test` profile, instead of tunnelling to a
     dashboard on the Mac.
-  - The model key is the user's dedicated OpenCode Go test key, in the git-ignored
-    `.env.vm-hermes` at the repo root on the Mac (`OPENCODE_GO_API_KEY=…`, mode 600; the
-    user writes it). It is copied into the VM's `~/.hermes/.env` and nowhere else. Never put
-    it in a commit, a log, a chat message or the host's `~/.hermes`.
-  - Without that file, the VM's Hermes still serves profiles and session lists (enough for
-    layout checks) but cannot answer messages; tests that need a reply skip.
+  - The test model is served by the user's CLIProxyAPI endpoint, the same one the Windows
+    test VM uses. The git-ignored `.env` at the repo root on the Mac names it (the user
+    writes it): `CLIPROXYAPI_BASE_URL` (e.g. `https://hermes.example.ts.net:8317/v1`),
+    `CLIPROXYAPI_KEY` and, optionally, `CLIPROXYAPI_MODEL` (default `claude-haiku-5-5`).
+    The script points the test profile at it as a named provider, `cliproxy`, and pipes the
+    key into the VM's `~/.hermes/.env` and the profile's `.env`, nowhere else. Never put the
+    key in a commit, a log, a chat message or the host's `~/.hermes`.
+  - Without those settings, the VM's Hermes still serves profiles and session lists (enough
+    for layout checks) but cannot answer messages; tests that need a reply skip.
 - Fake server payloads must match what Hermes actually sends, not the contract's optional fields.
   For example, resume payloads have `session_key` and no `stored_session_id`. Cite the Hermes
   source line when adding a fixture shape.

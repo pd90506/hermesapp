@@ -1,0 +1,547 @@
+{
+  "_comment": "Generated from hermes-core directives.ts and the Electron widget-frame.ts; HermesKit must agree (see README).",
+  "directives": [
+    {
+      "text": "Here is the chart.\n\n::preview{file=\"chart.html\"}\n\nAnything else?",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "Here is the chart."
+        },
+        {
+          "kind": "directive",
+          "name": "preview",
+          "attrs": {
+            "file": "chart.html"
+          },
+          "source": "::preview{file=\"chart.html\"}"
+        },
+        {
+          "kind": "markdown",
+          "text": "Anything else?"
+        }
+      ]
+    },
+    {
+      "text": "Open it: ::preview{file='/tmp/a.html' height=\"480\"} now",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "Open it:"
+        },
+        {
+          "kind": "directive",
+          "name": "preview",
+          "attrs": {
+            "file": "/tmp/a.html",
+            "height": "480"
+          },
+          "source": "::preview{file='/tmp/a.html' height=\"480\"}"
+        },
+        {
+          "kind": "markdown",
+          "text": "now"
+        }
+      ]
+    },
+    {
+      "text": "::chart{file=\"a.html\"}",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "::chart{file=\"a.html\"}"
+        }
+      ]
+    },
+    {
+      "text": "Use std::preview{x} here",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "Use std::preview{x} here"
+        }
+      ]
+    },
+    {
+      "text": "```\n::preview{file=\"a.html\"}\n```",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "```\n::preview{file=\"a.html\"}\n```"
+        }
+      ]
+    },
+    {
+      "text": "::preview{file=\"a.html\"",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "::preview{file=\"a.html\""
+        }
+      ]
+    },
+    {
+      "text": "Done.\n::preview{file=\"a.ht",
+      "streaming": true,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "Done."
+        }
+      ]
+    },
+    {
+      "text": "Done.\n::preview{file=\"a.html\"}",
+      "streaming": true,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "Done."
+        },
+        {
+          "kind": "directive",
+          "name": "preview",
+          "attrs": {
+            "file": "a.html"
+          },
+          "source": "::preview{file=\"a.html\"}"
+        }
+      ]
+    },
+    {
+      "text": "::preview{file=\"<https://example.com/a.html>\"}",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "directive",
+          "name": "preview",
+          "attrs": {
+            "file": "https://example.com/a.html"
+          },
+          "source": "::preview{file=\"<https://example.com/a.html>\"}"
+        }
+      ]
+    },
+    {
+      "text": "Two:\n::preview{file=\"a.html\"} ::preview{file=\"b.html\"}\nEnd.",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "Two:"
+        },
+        {
+          "kind": "directive",
+          "name": "preview",
+          "attrs": {
+            "file": "a.html"
+          },
+          "source": "::preview{file=\"a.html\"}"
+        },
+        {
+          "kind": "directive",
+          "name": "preview",
+          "attrs": {
+            "file": "b.html"
+          },
+          "source": "::preview{file=\"b.html\"}"
+        },
+        {
+          "kind": "markdown",
+          "text": "End."
+        }
+      ]
+    },
+    {
+      "text": "::preview\n\ntext",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "directive",
+          "name": "preview",
+          "attrs": {},
+          "source": "::preview"
+        },
+        {
+          "kind": "markdown",
+          "text": "text"
+        }
+      ]
+    },
+    {
+      "text": "No directive at all.",
+      "streaming": false,
+      "segments": [
+        {
+          "kind": "markdown",
+          "text": "No directive at all."
+        }
+      ]
+    },
+    {
+      "text": "",
+      "streaming": false,
+      "segments": []
+    }
+  ],
+  "previewTargets": [
+    {
+      "file": "chart.html",
+      "target": {
+        "kind": "html",
+        "path": "chart.html"
+      }
+    },
+    {
+      "file": "`/tmp/Report.HTM`",
+      "target": {
+        "kind": "html",
+        "path": "/tmp/Report.HTM"
+      }
+    },
+    {
+      "file": "file:///C:/work/a%20b.html",
+      "target": {
+        "kind": "html",
+        "path": "C:/work/a b.html"
+      }
+    },
+    {
+      "file": "file:///tmp/x.xhtml",
+      "target": {
+        "kind": "html",
+        "path": "/tmp/x.xhtml"
+      }
+    },
+    {
+      "file": "/tmp/data.csv",
+      "target": {
+        "kind": "file",
+        "path": "/tmp/data.csv"
+      }
+    },
+    {
+      "file": "https://example.com/a.html",
+      "target": {
+        "kind": "url",
+        "url": "https://example.com/a.html"
+      }
+    },
+    {
+      "file": "  ",
+      "target": null
+    },
+    {
+      "file": "~/w/page.htm",
+      "target": {
+        "kind": "html",
+        "path": "~/w/page.htm"
+      }
+    }
+  ],
+  "initialHeights": [
+    {
+      "raw": "480",
+      "height": 480
+    },
+    {
+      "raw": "tall",
+      "height": null
+    },
+    {
+      "raw": "50",
+      "height": 120
+    },
+    {
+      "raw": "5000",
+      "height": 1200
+    },
+    {
+      "raw": "",
+      "height": null
+    },
+    {
+      "raw": "300.5",
+      "height": null
+    }
+  ],
+  "reportedHeights": [
+    {
+      "data": {
+        "type": "hermes-inline-preview-size",
+        "token": "t",
+        "height": 40
+      },
+      "token": "t",
+      "height": 120
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-size",
+        "token": "t",
+        "height": 5000
+      },
+      "token": "t",
+      "height": 1200
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-size",
+        "token": "t",
+        "height": 333.6
+      },
+      "token": "t",
+      "height": 334
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-size",
+        "token": "x",
+        "height": 300
+      },
+      "token": "t",
+      "height": null
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-size",
+        "token": "t",
+        "height": 0
+      },
+      "token": "t",
+      "height": null
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-size",
+        "token": "t",
+        "height": "300"
+      },
+      "token": "t",
+      "height": null
+    },
+    {
+      "data": {
+        "type": "other",
+        "token": "t",
+        "height": 300
+      },
+      "token": "t",
+      "height": null
+    }
+  ],
+  "intents": [
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "other",
+        "id": 1,
+        "prompt": "refresh"
+      },
+      "token": "tok",
+      "now": 5000,
+      "lastAcceptedAt": 0,
+      "decision": null
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "tok",
+        "id": 1,
+        "prompt": "  refresh "
+      },
+      "token": "tok",
+      "now": 5000,
+      "lastAcceptedAt": 0,
+      "decision": {
+        "kind": "accept",
+        "id": 1,
+        "prompt": "refresh"
+      }
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "tok",
+        "id": 1,
+        "prompt": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "token": "tok",
+      "now": 5000,
+      "lastAcceptedAt": 0,
+      "decision": {
+        "kind": "reject",
+        "id": 1,
+        "ack": {
+          "ok": false,
+          "error": "too_long",
+          "maxLength": 500
+        }
+      }
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "tok",
+        "id": 1,
+        "prompt": "again"
+      },
+      "token": "tok",
+      "now": 5400,
+      "lastAcceptedAt": 5000,
+      "decision": {
+        "kind": "reject",
+        "id": 1,
+        "ack": {
+          "ok": false,
+          "error": "throttled",
+          "retryAfterMs": 600
+        }
+      }
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "tok",
+        "id": 1,
+        "prompt": ""
+      },
+      "token": "tok",
+      "now": 5000,
+      "lastAcceptedAt": 0,
+      "decision": {
+        "kind": "reject",
+        "id": 1,
+        "ack": {
+          "ok": false,
+          "error": "invalid"
+        }
+      }
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "tok",
+        "id": 1,
+        "prompt": 42
+      },
+      "token": "tok",
+      "now": 5000,
+      "lastAcceptedAt": 0,
+      "decision": {
+        "kind": "reject",
+        "id": 1,
+        "ack": {
+          "ok": false,
+          "error": "invalid"
+        }
+      }
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "tok",
+        "id": "seven",
+        "prompt": "ok"
+      },
+      "token": "tok",
+      "now": 5000,
+      "lastAcceptedAt": 0,
+      "decision": {
+        "kind": "accept",
+        "id": null,
+        "prompt": "ok"
+      }
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-intent",
+        "token": "tok",
+        "id": 1,
+        "prompt": "later"
+      },
+      "token": "tok",
+      "now": 6500,
+      "lastAcceptedAt": 5000,
+      "decision": {
+        "kind": "accept",
+        "id": 1,
+        "prompt": "later"
+      }
+    },
+    {
+      "data": {
+        "type": "hermes-inline-preview-size",
+        "token": "tok"
+      },
+      "token": "tok",
+      "now": 0,
+      "lastAcceptedAt": 0,
+      "decision": null
+    }
+  ],
+  "widgetDocuments": [
+    {
+      "html": "<!DOCTYPE html><html><body><p>hi</p></body></html>",
+      "token": "t1",
+      "theme": {
+        "vars": {
+          "--foreground": "#111111",
+          "--muted-foreground": "#777777",
+          "--accent": "#3366ff",
+          "--border": "#dddddd",
+          "--card": "#ffffff"
+        },
+        "font": "-apple-system, system-ui",
+        "colorScheme": "light"
+      },
+      "document": "<!DOCTYPE html><meta charset=\"utf-8\"><style>:root{color-scheme:light;--foreground:#111111;--muted-foreground:#777777;--accent:#3366ff;--border:#dddddd;--card:#ffffff}html,body{margin:0;padding:0;background:transparent;color:var(--foreground,inherit);font-family:-apple-system, system-ui;}</style><html><body><p>hi</p><script>(function(){var t=\"t1\";var lastH=0;function post(){var d=document.documentElement;var b=document.body;var h=Math.max(d?d.scrollHeight:0,b?b.scrollHeight:0);if(Math.abs(h-lastH)>1){lastH=h;parent.postMessage({type:\"hermes-inline-preview-size\",token:t,height:h},\"*\")}}if(typeof ResizeObserver===\"function\"){var ro=new ResizeObserver(post);ro.observe(document.documentElement);if(document.body)ro.observe(document.body)}addEventListener(\"load\",post);post()})()</script><script>(function(){var t=\"t1\";var n=0,w={};addEventListener(\"message\",function(e){var d=e.data;if(e.source!==parent||!d||d.type!==\"hermes-inline-preview-intent-ack\"||d.token!==t||!w[d.id])return;var r=w[d.id];delete w[d.id];r(d.ack)});function send(p){if(typeof p!==\"string\"||!p.trim())return Promise.resolve({ok:false,error:\"invalid\"});var id=++n;return new Promise(function(res){var done=function(a){clearTimeout(k);res(a)};var k=setTimeout(function(){if(w[id]){delete w[id];res({ok:false,error:\"undelivered\"})}},5000);w[id]=done;parent.postMessage({type:\"hermes-inline-preview-intent\",token:t,id:id,prompt:p},\"*\")})}window.hermes={send:send,maxLength:500};addEventListener(\"click\",function(e){var el=e.target&&e.target.closest?e.target.closest(\"[data-hermes-send]\"):null;if(el)send(el.getAttribute(\"data-hermes-send\")||\"\")},true)})()</script></body></html>"
+    },
+    {
+      "html": "<p>bare</p>",
+      "token": "t2",
+      "theme": {
+        "vars": {
+          "--foreground": "#eeeeee"
+        },
+        "font": "",
+        "colorScheme": "dark"
+      },
+      "document": "<!doctype html><meta charset=\"utf-8\"><style>:root{color-scheme:dark;--foreground:#eeeeee}html,body{margin:0;padding:0;background:transparent;color:var(--foreground,inherit);}</style><p>bare</p><script>(function(){var t=\"t2\";var lastH=0;function post(){var d=document.documentElement;var b=document.body;var h=Math.max(d?d.scrollHeight:0,b?b.scrollHeight:0);if(Math.abs(h-lastH)>1){lastH=h;parent.postMessage({type:\"hermes-inline-preview-size\",token:t,height:h},\"*\")}}if(typeof ResizeObserver===\"function\"){var ro=new ResizeObserver(post);ro.observe(document.documentElement);if(document.body)ro.observe(document.body)}addEventListener(\"load\",post);post()})()</script><script>(function(){var t=\"t2\";var n=0,w={};addEventListener(\"message\",function(e){var d=e.data;if(e.source!==parent||!d||d.type!==\"hermes-inline-preview-intent-ack\"||d.token!==t||!w[d.id])return;var r=w[d.id];delete w[d.id];r(d.ack)});function send(p){if(typeof p!==\"string\"||!p.trim())return Promise.resolve({ok:false,error:\"invalid\"});var id=++n;return new Promise(function(res){var done=function(a){clearTimeout(k);res(a)};var k=setTimeout(function(){if(w[id]){delete w[id];res({ok:false,error:\"undelivered\"})}},5000);w[id]=done;parent.postMessage({type:\"hermes-inline-preview-intent\",token:t,id:id,prompt:p},\"*\")})}window.hermes={send:send,maxLength:500};addEventListener(\"click\",function(e){var el=e.target&&e.target.closest?e.target.closest(\"[data-hermes-send]\"):null;if(el)send(el.getAttribute(\"data-hermes-send\")||\"\")},true)})()</script>"
+    },
+    {
+      "html": "<!doctype html>\n<div>no body close</div>",
+      "token": "t3",
+      "theme": {
+        "vars": {
+          "--foreground": "#111111",
+          "--muted-foreground": "#777777",
+          "--accent": "#3366ff",
+          "--border": "#dddddd",
+          "--card": "#ffffff"
+        },
+        "font": "-apple-system, system-ui",
+        "colorScheme": "light"
+      },
+      "document": "<!doctype html><meta charset=\"utf-8\"><style>:root{color-scheme:light;--foreground:#111111;--muted-foreground:#777777;--accent:#3366ff;--border:#dddddd;--card:#ffffff}html,body{margin:0;padding:0;background:transparent;color:var(--foreground,inherit);font-family:-apple-system, system-ui;}</style>\n<div>no body close</div><script>(function(){var t=\"t3\";var lastH=0;function post(){var d=document.documentElement;var b=document.body;var h=Math.max(d?d.scrollHeight:0,b?b.scrollHeight:0);if(Math.abs(h-lastH)>1){lastH=h;parent.postMessage({type:\"hermes-inline-preview-size\",token:t,height:h},\"*\")}}if(typeof ResizeObserver===\"function\"){var ro=new ResizeObserver(post);ro.observe(document.documentElement);if(document.body)ro.observe(document.body)}addEventListener(\"load\",post);post()})()</script><script>(function(){var t=\"t3\";var n=0,w={};addEventListener(\"message\",function(e){var d=e.data;if(e.source!==parent||!d||d.type!==\"hermes-inline-preview-intent-ack\"||d.token!==t||!w[d.id])return;var r=w[d.id];delete w[d.id];r(d.ack)});function send(p){if(typeof p!==\"string\"||!p.trim())return Promise.resolve({ok:false,error:\"invalid\"});var id=++n;return new Promise(function(res){var done=function(a){clearTimeout(k);res(a)};var k=setTimeout(function(){if(w[id]){delete w[id];res({ok:false,error:\"undelivered\"})}},5000);w[id]=done;parent.postMessage({type:\"hermes-inline-preview-intent\",token:t,id:id,prompt:p},\"*\")})}window.hermes={send:send,maxLength:500};addEventListener(\"click\",function(e){var el=e.target&&e.target.closest?e.target.closest(\"[data-hermes-send]\"):null;if(el)send(el.getAttribute(\"data-hermes-send\")||\"\")},true)})()</script>"
+    },
+    {
+      "html": "<html><BODY>x</BODY ></html>",
+      "token": "tok \"q\"",
+      "theme": {
+        "vars": {
+          "--foreground": "#eeeeee"
+        },
+        "font": "",
+        "colorScheme": "dark"
+      },
+      "document": "<!doctype html><meta charset=\"utf-8\"><style>:root{color-scheme:dark;--foreground:#eeeeee}html,body{margin:0;padding:0;background:transparent;color:var(--foreground,inherit);}</style><html><BODY>x<script>(function(){var t=\"tok \\\"q\\\"\";var lastH=0;function post(){var d=document.documentElement;var b=document.body;var h=Math.max(d?d.scrollHeight:0,b?b.scrollHeight:0);if(Math.abs(h-lastH)>1){lastH=h;parent.postMessage({type:\"hermes-inline-preview-size\",token:t,height:h},\"*\")}}if(typeof ResizeObserver===\"function\"){var ro=new ResizeObserver(post);ro.observe(document.documentElement);if(document.body)ro.observe(document.body)}addEventListener(\"load\",post);post()})()</script><script>(function(){var t=\"tok \\\"q\\\"\";var n=0,w={};addEventListener(\"message\",function(e){var d=e.data;if(e.source!==parent||!d||d.type!==\"hermes-inline-preview-intent-ack\"||d.token!==t||!w[d.id])return;var r=w[d.id];delete w[d.id];r(d.ack)});function send(p){if(typeof p!==\"string\"||!p.trim())return Promise.resolve({ok:false,error:\"invalid\"});var id=++n;return new Promise(function(res){var done=function(a){clearTimeout(k);res(a)};var k=setTimeout(function(){if(w[id]){delete w[id];res({ok:false,error:\"undelivered\"})}},5000);w[id]=done;parent.postMessage({type:\"hermes-inline-preview-intent\",token:t,id:id,prompt:p},\"*\")})}window.hermes={send:send,maxLength:500};addEventListener(\"click\",function(e){var el=e.target&&e.target.closest?e.target.closest(\"[data-hermes-send]\"):null;if(el)send(el.getAttribute(\"data-hermes-send\")||\"\")},true)})()</script></BODY ></html>"
+    }
+  ]
+}

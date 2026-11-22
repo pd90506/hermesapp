@@ -422,6 +422,7 @@ private struct MessageRow: View {
                 AssistantMessageContent(item: item, isHovering: isHovering, isNewest: isNewest,
                                         conversationSource: { ConversationMarkdown.export(session.transcript.items) },
                                         deliveredFiles: deliveredFiles,
+                                        embeds: embeds,
                                         branch: branchAction,
                                         copy: copyMessage)
             }
@@ -457,6 +458,20 @@ private struct MessageRow: View {
 
     private func deliveredFiles(_ files: [DeliveredFile]) -> AnyView {
         AnyView(DeliveredFilesView(files: files, context: fileContext, thumbnails: server.thumbnails))
+    }
+
+    /// iOS: web images and `::preview` widgets in replies (`ReplyEmbedView`).
+    private var embeds: ((ReplyParts.Segment) -> AnyView)? {
+        #if os(iOS)
+        let (item, session, profile, connection) = (item, session, profile, server.connection)
+        let fileCard = { (path: String) in deliveredFiles([DeliveredFile(path: path)]) }
+        return { segment in
+            AnyView(ReplyEmbedView(segment: segment, isStreaming: item.isActive, session: session, profile: profile,
+                                   connection: connection, fileCard: fileCard))
+        }
+        #else
+        return nil
+        #endif
     }
 
     @ViewBuilder private var copyMenu: some View {

@@ -850,9 +850,12 @@ public final class ChatSession: Identifiable {
     /// A prompt already on screen goes out even if the send is cancelled now: a
     /// cancelled request would be reported as failed while Hermes may run it.
     private static func submitUncancellably(_ client: GatewayClient, sessionID: String, text: String,
-                                            queued: Bool? = nil) async throws -> PromptSubmitResult
+                                            queued: Bool? = nil, displayKind: String? = nil) async throws
+        -> PromptSubmitResult
     {
-        try await Task { try await client.submitPrompt(sessionID: sessionID, text: text, queued: queued) }.value
+        try await Task {
+            try await client.submitPrompt(sessionID: sessionID, text: text, queued: queued, displayKind: displayKind)
+        }.value
     }
 
     /// Detaches `paths`; the ones whose detach got no answer become stranded.
@@ -1123,6 +1126,26 @@ public final class ChatSession: Identifiable {
             "session_id": .string(sessionID), "subagent_id": .string(subagentID),
         ])
         return answer["found"]?.boolValue == true
+    }
+
+    /// A widget's prompt (`::preview`'s `hermes.send`): a user turn Hermes stores as
+    /// `display_kind: "hidden"`, so no bubble shows; the widget updating is the answer, as
+    /// on Desktop (`requestComposerSubmit(prompt, { displayKind: 'hidden' })`) and in
+    /// hermes-core's `ChatSession.sendHidden`. Answers whether Hermes took it.
+    public func sendHidden(_ text: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        do {
+            let client = try await liveClient()
+            hasPrompted = true
+            _ = try await Self.submitUncancellably(client, sessionID: sessionID, text: trimmed, displayKind: "hidden")
+            current.requestReread()
+            rereadIfNeeded()
+            return true
+        } catch {
+            current.keepError(GatewayConnection.describe(error))
+            return false
+        }
     }
 
     // MARK: - Steering a running turn

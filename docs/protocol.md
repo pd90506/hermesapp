@@ -1834,12 +1834,27 @@ or files still goes at once, and Hermes queues it by `busy_input_mode` (§10.3).
     any script, style, image, font or fetch source; the isolation is the sandbox), because a
     `srcdoc` frame would inherit the app's policy, which allows no inline script. A link the
     page follows opens in the browser.
+  - `[client choice]` The iOS app (`Apps/Shared/Views/ReplyEmbeds.swift`, HermesKit
+    `WidgetFrame`) runs it in a `WKWebView` that loads a trusted host page with no base URL
+    and no content policy; the host holds the page in a `sandbox="allow-scripts"` `srcdoc`
+    frame, so the isolation is Desktop's opaque-origin frame and the page's sources are as
+    open as Hermes' `_GUEST_SOURCES`. The host forwards only what that frame posts to a
+    `WKScriptMessageHandler`, and the app drops a handler message from any frame but the
+    host's. The web view's store is `nonPersistent`; a link the page follows opens in the
+    browser and the web view never navigates. The page the frame gets is byte for byte the
+    Electron app's (`Packages/fixtures/reply-embeds.json`).
 - **The hidden prompt:** `prompt.submit` with `display_kind: "hidden"`; Hermes stores the row
   hidden, so no bubble shows (stored rows typed `hidden` are never listed).
 - **Web images:** `[client choice]` fetched by the Electron main process (no cookies), else
   through the gateway, as Desktop retries one this computer cannot load:
   `GET /api/media/proxy?url=` → `{data_url}` (allowlisted image hosts only). Desktop loads the
   URL in the page directly; Talaria's renderer never touches the network.
+  - `[client choice]` The iOS app fetches them itself (an ephemeral `URLSession`, no
+    cookies; an `image/*` answer of at most 20 MB), else through the same proxy, and draws
+    them natively; a tap shows one full size in Quick Look. Only a line holding nothing but
+    images (`![alt](https://…)`, outside code) shows them: the native Markdown view lays a
+    paragraph out as text runs, so an image inside a sentence, list or quote stays its
+    link (`ReplyParts`). The Mac app keeps both as text.
 
 ## 11. Live sidebar (server pushes)
 

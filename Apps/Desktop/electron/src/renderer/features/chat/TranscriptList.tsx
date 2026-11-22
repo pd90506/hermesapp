@@ -84,7 +84,9 @@ export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }
   const anchor = useRef<{ key: string; delta: number }>(undefined)
   const firstBlock = blocks[0]?.id
   const seenFirst = useRef(firstBlock)
-  const holding = useRef<{ key: string; delta: number }>(undefined)
+  // A chat shown again holds the message that was at its top where it was, as its rows
+  // are measured again (an offset alone moves it by every row above that measures anew).
+  const holding = useRef<{ key: string; delta: number } | undefined>(kept && !kept.atEnd ? kept.anchor : undefined)
   // The user scrolling, for the trailing edge (G's prompt rail ends a pick with it).
   const scrollListeners = useRef(new Set<() => void>()).current
   const onUserScroll = useCallback((listener: () => void) => {
@@ -106,10 +108,12 @@ export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }
     // Held until the user scrolls again: the new rows (and the header) are measured over
     // the next frames, and each measurement would otherwise move the message.
     const held = holding.current
+    let placed = false
     if (held) {
       const item = virtualizer.measurementsCache.find((candidate) => candidate.key === held.key)
       const top = item ? item.start - held.delta : undefined
       if (top !== undefined && Math.abs(element.scrollTop - top) > 0.5) element.scrollTop = top
+      placed = top !== undefined
     }
     if (newestPrompt !== seenPrompt.current) {
       seenPrompt.current = newestPrompt
@@ -118,7 +122,7 @@ export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }
     if (following.current) {
       const end = element.scrollHeight - element.clientHeight
       if (Math.abs(element.scrollTop - end) > 1) element.scrollTop = end
-    } else if (!restored.current && kept) {
+    } else if (!restored.current && kept && !placed) {
       element.scrollTop = kept.offset
     }
     restored.current = true
@@ -157,7 +161,8 @@ export function TranscriptList({ chat, view, bottomInset, endRoom = 0, overlay }
 
   // On leaving the screen: where it was, for when it comes back.
   useEffect(() => () => {
-    keepScroll(chat, { ...position.current, measurements: virtualizer.takeSnapshot() })
+    const top = holding.current ?? anchor.current
+    keepScroll(chat, { ...position.current, ...(top ? { anchor: top } : {}), measurements: virtualizer.takeSnapshot() })
   }, [chat, virtualizer])
 
   // The header on screen reads the next older page, once the layout has settled.

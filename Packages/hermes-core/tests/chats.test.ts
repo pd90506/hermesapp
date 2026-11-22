@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { ChatSession, GatewayClientError, MessagesBelow, PaintBudget, messageDay, transcriptBlocks } from '../src/index.ts'
+import { ChatManager, ChatSession, GatewayClientError, MessagesBelow, PaintBudget, messageDay, transcriptBlocks } from '../src/index.ts'
 import { PagedServer, completePayload, eventually, rows, storedRow, FakeMessageStore } from './support/paged-server.ts'
 
 const texts = (chat: ChatSession) => chat.get().items.map((item) => `${item.role}:${item.text}`)
@@ -258,5 +258,57 @@ describe('the list', () => {
     const connection = await server.connect()
     await connection.disconnect()
     await expect(connection.chats.newChat('coder')).rejects.toBeInstanceOf(GatewayClientError)
+  })
+})
+
+describe('picking a profile', () => {
+  test('a profile shown for the first time gets a New chat', async () => {
+    const server = new PagedServer()
+    const connection = await server.connect()
+    const chat = await connection.chats.showProfile('coder')
+    expect(connection.chats.active).toBe(chat)
+    expect(chat.profile).toBe('coder')
+    expect(server.calls('session.create')[0]).toEqual({ source: 'desktop', profile: 'coder' })
+  })
+
+  test('going back to a profile shows the chat it showed last, the same chat object', async () => {
+    const server = new PagedServer(new FakeMessageStore(rows(1, 4)))
+    const { connection, chat } = await openStored(server)
+    const coder = await connection.chats.showProfile('coder')
+    expect(coder).not.toBe(chat)
+    const resumes = server.calls('session.resume').length
+    expect(await connection.chats.showProfile('default')).toBe(chat)
+    expect(connection.chats.active).toBe(chat)
+    expect(server.calls('session.resume')).toHaveLength(resumes)
+    // And back again: coder's New chat, not a second one.
+    expect(await connection.chats.showProfile('coder')).toBe(coder)
+    expect(server.calls('session.create')).toHaveLength(1)
+  })
+
+  test('a profile whose Bot Chat was on screen shows its Bot Chat again', async () => {
+    const server = new PagedServer(new FakeMessageStore(rows(1, 4)))
+    server.botTip = 'coder-tip'
+    const connection = await server.connect()
+    const bot = await connection.chats.openBotChat('coder')
+    await connection.chats.showProfile('default')
+    expect(await connection.chats.showProfile('coder')).toBe(bot)
+  })
+
+  test('the chat on screen stays when it is already one of the profile\'s', async () => {
+    const server = new PagedServer(new FakeMessageStore(rows(1, 4)))
+    const { connection, chat } = await openStored(server)
+    expect(await connection.chats.showProfile('default')).toBe(chat)
+    expect(server.calls('session.create')).toHaveLength(0)
+  })
+
+  test('each profile\'s last chat stays warm beyond the warm limit', async () => {
+    const server = new PagedServer(new FakeMessageStore(rows(1, 4)))
+    const { connection, chat } = await openStored(server)
+    await connection.chats.showProfile('coder')
+    for (let index = 0; index < ChatManager.warmChatLimit + 2; index += 1) {
+      await connection.chats.openSession('coder', { id: `other-${index}` })
+    }
+    expect(connection.chats.warm).toContain(chat)
+    expect(await connection.chats.showProfile('default')).toBe(chat)
   })
 })

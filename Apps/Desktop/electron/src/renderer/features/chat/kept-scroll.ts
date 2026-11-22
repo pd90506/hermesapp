@@ -9,6 +9,8 @@ import type { ChatSession } from '@talaria/hermes-core'
 export interface KeptScroll {
   offset: number
   atEnd: boolean
+  /** The first message on screen and how far below the top it sat. */
+  anchor?: { key: string; delta: number }
   measurements: VirtualItem[]
 }
 

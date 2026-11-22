@@ -1,6 +1,7 @@
 import { describeError, hasAvatar, type Bot, type BotActivity, type ServerEntry, type SessionSidebar } from '@talaria/hermes-core'
 import { Fragment, useRef, useState } from 'react'
 import { useModel, useServers, useSnapshot } from '../../app/hooks.ts'
+import type { AppModel } from '../../app/model.ts'
 import { useContextMenu } from '../../ui/ContextMenu.tsx'
 import { IconButton } from '../../ui/IconButton.tsx'
 import { useMinuteClock } from './age.ts'
@@ -81,12 +82,27 @@ function ServerProfiles({ server, now, current, named, onChangeAvatar, onError }
         <RailItem key={bot.name} bot={bot} image={kept.avatars[bot.name]} activity={activity(sidebar, bot, now)}
           selected={current && bot.name === snapshot.selectedProfile} connected={connected}
           label={named ? `${bot.displayName} — ${server.name}` : bot.displayName}
-          onSelect={() => model.selectProfile(server.id, bot.name)}
+          onSelect={() => pickProfile(model, server, sidebar, bot.name)}
           onChangeAvatar={() => onChangeAvatar(sidebar, bot.name)}
           onRemoveAvatar={() => void sidebar.removeAvatar(bot.name).catch((failure) => onError(describeError(failure)))} />
       ))}
     </div>
   )
+}
+
+/**
+ * A profile picked in the rail: the sidebar lists its sessions and the pane shows the
+ * chat it showed last, as on the Mac (`ProfileChats`), with its scroll position; a New
+ * chat the first time (`ChatManager.showProfile`).
+ */
+function pickProfile(model: AppModel, server: ServerEntry, sidebar: SessionSidebar, profile: string): void {
+  model.selectProfile(server.id, profile)
+  const chats = server.connection.chats
+  void chats.showProfile(profile, server.connection.get().sessions[profile]).then((chat) => {
+    if (chats.active !== chat) return
+    if (chat.kind === 'botChat') sidebar.select({ kind: 'bot', profile })
+    else if (chat.storedSessionID) sidebar.select({ kind: 'session', profile, id: chat.storedSessionID })
+  }, () => {})
 }
 
 /**

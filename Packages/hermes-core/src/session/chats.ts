@@ -49,6 +49,13 @@ export interface ChatsHost {
   backgroundFinished?(chat: ChatSession, process: BackgroundProcess): void
 }
 
+/** A profile's chat shown last: the chat object while it lives, and what reopens it. */
+export interface LastChat {
+  chat?: ChatSession
+  kind: ChatSession['kind']
+  storedSessionID?: string
+}
+
 export class BotChatError extends Error {
   constructor(readonly kind: 'registryUnavailable' | 'registryUnconfirmed' | 'notRegistered', readonly profile: string,
     readonly detail?: string) {
@@ -117,6 +124,8 @@ export class ChatManager extends Observable<ChatsSnapshot> {
   /** Runtime id serving each `profile/stored` key on this socket. */
   private readonly liveRuntimeIDs = new Map<string, string>()
   private readonly botChatOpens = new Map<string, Promise<Opened>>()
+  /** Each profile's chat shown last (HermesKit's `ProfileChats`), for `showProfile`. */
+  private readonly lastChats = new Map<string, LastChat>()
   private selectionToken = 0
   private openingToken = 0
   private committedEpoch?: string
@@ -266,6 +275,41 @@ export class ChatManager extends Observable<ChatsSnapshot> {
     return this.active === chat ? this.keepShowing(chat) : this.revisit(chat, client)
   }
 
+  /**
+   * A profile picked in the rail: shows the chat it showed last, as the Mac does
+   * (`ProfileChats`), warm with its scroll position when it still is, else opened
+   * again; a profile with nothing shown yet gets a New chat, as Hermes Desktop's
+   * profile switch starts fresh. A session the server no longer has gives a New chat.
+   * The chat on screen stays when it already is one of `profile`'s.
+   */
+  async showProfile(profile: string, listed: readonly SessionSummary[] = []): Promise<ChatSession> {
+    const active = this.active
+    if (active && active.profile === profile && !this.get().opening) return this.keepShowing(active)
+    const last = this.lastChats.get(profile)
+    const kept = last?.chat
+    if (kept && (this.warmChats.includes(kept) || this.get().unsent[profile] === kept)) {
+      this.beginSelection()
+      return this.revisit(kept, this.requireClient())
+    }
+    if (last?.kind === 'botChat') return this.openBotChat(profile)
+    const stored = kept?.storedSessionID ?? last?.storedSessionID
+    if (stored) {
+      const id = stored
+      try {
+        return await this.openSession(profile, listed.find((row) => row.id === id) ?? { id })
+      } catch (error) {
+        if (!isSessionGone(error)) throw error
+        if (this.lastChats.get(profile) === last) this.lastChats.delete(profile)
+      }
+    }
+    return this.newChat(profile)
+  }
+
+  /** What `profile` showed last, if anything (for tests and the sidebar's selection). */
+  lastChat(profile: string): Readonly<LastChat> | undefined {
+    return this.lastChats.get(profile)
+  }
+
   private setUnsent(profile: string, chat: ChatSession | undefined): void {
     const unsent = { ...this.get().unsent }
     if (chat) unsent[profile] = chat
@@ -330,9 +374,16 @@ export class ChatManager extends Observable<ChatsSnapshot> {
   }
 
   private activate(chat: ChatSession): void {
+    if (chat.profile !== undefined) {
+      this.lastChats.set(chat.profile, {
+        chat, kind: chat.kind, ...(chat.storedSessionID ? { storedSessionID: chat.storedSessionID } : {}),
+      })
+    }
     this.warmChats = [chat, ...this.warmChats.filter((other) => other !== chat)]
-    const dropped = this.warmChats.slice(ChatManager.warmChatLimit)
-    this.warmChats = this.warmChats.slice(0, ChatManager.warmChatLimit)
+    // Each profile's last chat stays warm too, so going back to its profile shows it as it was.
+    const remembered = new Set([...this.lastChats.values()].map((last) => last.chat))
+    const dropped = this.warmChats.slice(ChatManager.warmChatLimit).filter((old) => !remembered.has(old))
+    this.warmChats = this.warmChats.filter((old, index) => index < ChatManager.warmChatLimit || remembered.has(old))
     const unsent = new Set(Object.values(this.get().unsent))
     for (const old of dropped) {
       if (unsent.has(old)) continue
@@ -556,6 +607,7 @@ export class ChatManager extends Observable<ChatsSnapshot> {
   /** Forgets a chat that can no longer be shown (gone, or deleted). */
   forget(chat: ChatSession): void {
     chat.cancelRereadRetry()
+    for (const [profile, last] of this.lastChats) if (last.chat === chat) this.lastChats.delete(profile)
     this.warmChats = this.warmChats.filter((other) => other !== chat)
     this.composers.delete(chat)
     const unsent = Object.fromEntries(Object.entries(this.get().unsent).filter(([, other]) => other !== chat))
@@ -684,6 +736,12 @@ export class ChatManager extends Observable<ChatsSnapshot> {
       chat.detach()
     }
     this.warmChats = []
+    // What each profile showed is kept, by its identity: reopened after the reconnect.
+    for (const [profile, last] of this.lastChats) {
+      const { chat, ...identity } = last
+      const stored = chat?.storedSessionID ?? identity.storedSessionID
+      this.lastChats.set(profile, { kind: identity.kind, ...(stored ? { storedSessionID: stored } : {}) })
+    }
     this.composers.clear()
     this.liveRuntimeIDs.clear()
     this.botChatOpens.clear()
